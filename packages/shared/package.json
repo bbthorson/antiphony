@@ -2,8 +2,10 @@
   "name": "@vox-pop/shared",
   "version": "0.1.0",
   "private": true,
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
