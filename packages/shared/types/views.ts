@@ -32,7 +32,7 @@ export const ProfileViewDetailedSchema = ProfileViewBasicSchema.extend({
         handle: z.string(),
         did: z.string(),
     }).optional(),
-    rssFeedUrl: z.string().optional().nullable(),
+
     usageIntent: z.string().optional().nullable(),
     /** Hydrated RSS Data (fetched from sub-collection) */
     rssSummary: z.object({

@@ -43,11 +43,7 @@ export const UserRecordSchema = z.object({
     id: z.string(),
     /** Public handle (e.g. @brad). Optional for Lite Users. */
     handle: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/).nullable().optional(),
-    /** 
-     * URL to RSS feed.
-     * @note RSS Summary data is stored in sub-collection `enrichment/rss`.
-     */
-    rssFeedUrl: z.string().nullable().optional(),
+
     /** User stated intent (e.g. "Podcaster", "Listener") */
     usageIntent: z.string().nullable().optional(),
     /** 
@@ -180,8 +176,19 @@ export const OrganizationRecordSchema = z.object({
     id: z.string(),
     /** Display name of the organization */
     name: z.string().min(3).max(50),
+    /** 
+     * Unique handle for the organization (e.g. voxpop.com/@mypodcast).
+     * Used for public URLs.
+     */
+    slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/),
     /** URL to avatar/logo */
     avatarUrl: z.string().url().optional(),
+    /** URL to the podcast RSS feed */
+    rssFeedUrl: z.string().url().optional(),
+    /** External website URL */
+    websiteUrl: z.string().url().optional(),
+    /** Description or tagline */
+    description: z.string().optional(),
     /** Owner ID (User ID) */
     ownerId: z.string(),
     /** Server timestamp of creation */
