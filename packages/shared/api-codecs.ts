@@ -43,3 +43,11 @@ export const BetaSignupRequestSchema = z.object({
   usageIntent: z.string().min(3).max(500),
   inviteCode: z.string().optional(),
 });
+
+export const FcmTokenRequestSchema = z.object({
+  token: z.string().min(1)
+});
+
+export const BadgeResetRequestSchema = z.object({
+  type: z.enum(['new_replier', 'unread_reply'])
+});
