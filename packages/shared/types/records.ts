@@ -130,28 +130,7 @@ export const ReplyRecordSchema = z.object({
 });
 export type ReplyRecord = z.infer<typeof ReplyRecordSchema>;
 
-/**
- * The raw beta signup data stored in Firestore.
- */
-export const BetaSignupRecordSchema = z.object({
-    /** Unique Signup ID (usually auto-generated or email-based) */
-    id: z.string(),
-    /** User's email address */
-    email: z.string().email(),
-    /** Stated intent for using Vox Pop */
-    usageIntent: z.string().min(3),
-    /** Optional invite code used during signup */
-    inviteCode: z.string().optional(),
-    /** Server timestamp of signup */
-    createdAt: FirestoreTimestampSchema,
-    /** Current status of the signup (waitlist, invited, joined) */
-    status: z.enum(['waitlist', 'invited', 'joined']).default('waitlist'),
-    /** The invite code generated for this user (when invited) */
-    generatedInviteCode: z.string().optional(),
-    /** Timestamp when the user was invited */
-    invitedAt: FirestoreTimestampSchema.optional(),
-});
-export type BetaSignupRecord = z.infer<typeof BetaSignupRecordSchema>;
+
 
 /**
  * SIP Enrichment data stored in `users/{uid}/enrichment/sip`.

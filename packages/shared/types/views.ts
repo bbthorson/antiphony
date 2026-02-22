@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BetaSignupRecordSchema, FirestoreTimestampSchema, OrganizationRecordSchema, PromptRecordSchema, ReplyRecordSchema } from './records';
+import { FirestoreTimestampSchema, OrganizationRecordSchema, PromptRecordSchema, ReplyRecordSchema } from './records';
 
 /**
  * Layered Profile Views
@@ -164,13 +164,7 @@ export const ReplyViewSchema = z.object({
 });
 export type ReplyView = z.infer<typeof ReplyViewSchema>;
 
-/**
- * A view of a beta signup.
- */
-export const BetaSignupViewSchema = z.object({
-    record: BetaSignupRecordSchema,
-});
-export type BetaSignupView = z.infer<typeof BetaSignupViewSchema>;
+
 
 // #endregion
 

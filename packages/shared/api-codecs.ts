@@ -38,11 +38,7 @@ export const UpdateProfileRequestSchema = z.object({
   usageIntent: z.string().optional().nullable(),
 });
 
-export const BetaSignupRequestSchema = z.object({
-  email: z.string().email(),
-  usageIntent: z.string().min(3).max(500),
-  inviteCode: z.string().optional(),
-});
+
 
 export const FcmTokenRequestSchema = z.object({
   token: z.string().min(1)
