@@ -34,7 +34,6 @@ export const UpdateProfileRequestSchema = z.object({
   displayName: z.string().max(50).optional(),
   bio: z.string().max(160).optional(),
   avatarUrl: z.string().url().optional().nullable(),
-  rssFeedUrl: z.string().url().optional().nullable(),
   usageIntent: z.string().optional().nullable(),
 });
 
