@@ -93,6 +93,8 @@ export const PromptRecordSchema = z.object({
     aiSummary: z.string().optional(),
     aiLabels: z.array(z.string()).optional(),
     transcription: z.string().optional(),
+    /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
+    waveformPeaks: z.array(z.number()).optional(),
 });
 export type PromptRecord = z.infer<typeof PromptRecordSchema>;
 
@@ -127,6 +129,8 @@ export const ReplyRecordSchema = z.object({
     sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),
     energyLevel: z.enum(['High', 'Low']).optional(),
     engagementScore: z.number().min(1).max(10).optional(),
+    /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
+    waveformPeaks: z.array(z.number()).optional(),
 });
 export type ReplyRecord = z.infer<typeof ReplyRecordSchema>;
 
