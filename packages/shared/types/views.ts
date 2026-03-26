@@ -222,6 +222,21 @@ export interface Replier {
     totalReplies: number;
 }
 
+/** Enriched replier with full profile data for CRM views */
+export interface EnrichedReplier {
+    profile: ProfileViewBasic;
+    totalReplies: number;
+    lastReplyDate: string; // ISO date string
+    firstReplyAt: string; // ISO date string
+}
+
+/** Person-level CRM data (private to prompt author) */
+export interface ContactCrmData {
+    notes: string;
+    tags: string[];
+    lastUpdated: string; // ISO date string
+}
+
 
 // #endregion
 
