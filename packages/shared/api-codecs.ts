@@ -37,8 +37,6 @@ export const UpdateProfileRequestSchema = z.object({
   usageIntent: z.string().nullable().optional(),
 });
 
-
-
 export const FcmTokenRequestSchema = z.object({
   token: z.string().min(1)
 });
