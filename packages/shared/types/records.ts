@@ -95,6 +95,13 @@ export const PromptRecordSchema = z.object({
     transcription: z.string().optional(),
     /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
     waveformPeaks: z.array(z.number()).optional(),
+    /** Social Share Video Fields */
+    socialVideoUrl: z.string().url().optional(),
+    socialVideoStoragePath: z.string().optional(),
+    socialVideoStatus: z.enum(['pending', 'complete', 'error']).optional(),
+    socialVideoError: z.string().optional(),
+    /** The audio URL/path used to generate the current video (for cache invalidation) */
+    socialVideoSourceAudio: z.string().optional(),
 });
 export type PromptRecord = z.infer<typeof PromptRecordSchema>;
 
@@ -131,6 +138,13 @@ export const ReplyRecordSchema = z.object({
     engagementScore: z.number().min(1).max(10).optional(),
     /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
     waveformPeaks: z.array(z.number()).optional(),
+    /** Social Share Video Fields */
+    socialVideoUrl: z.string().url().optional(),
+    socialVideoStoragePath: z.string().optional(),
+    socialVideoStatus: z.enum(['pending', 'complete', 'error']).optional(),
+    socialVideoError: z.string().optional(),
+    /** The audio URL/path used to generate the current video (for cache invalidation) */
+    socialVideoSourceAudio: z.string().optional(),
 });
 export type ReplyRecord = z.infer<typeof ReplyRecordSchema>;
 
