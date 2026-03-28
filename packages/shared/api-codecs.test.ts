@@ -3,12 +3,12 @@ import { UpdateAuthorDataRequestSchema, SubmitReplyRequestSchema } from './api-c
 
 describe('API Codecs Security Limits', () => {
   describe('UpdateAuthorDataRequestSchema', () => {
-    it('should reject authorNotes longer than 5000 characters', () => {
+    it('should reject notes longer than 5000 characters', () => {
       const longNotes = 'a'.repeat(5001);
       const input = {
         replyId: '123',
         data: {
-          authorNotes: longNotes,
+          notes: longNotes,
         },
       };
       const result = UpdateAuthorDataRequestSchema.safeParse(input);
@@ -52,7 +52,7 @@ describe('API Codecs Security Limits', () => {
       const input = {
         replyId: '123',
         data: {
-          authorNotes: 'Valid notes',
+          notes: 'Valid notes',
           authorTags: ['valid tag'],
         }
       };

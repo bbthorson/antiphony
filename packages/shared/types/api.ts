@@ -14,7 +14,7 @@ export const PublicProfileDtoSchema = ProfileViewBasicSchema.extend({
         handle: z.string(),
         did: z.string(),
     }).optional(),
-    rssFeedUrl: z.string().optional().nullable(),
+    rssFeedUrl: z.string().nullable().optional(),
 });
 export type PublicProfileDto = z.infer<typeof PublicProfileDtoSchema>;
 

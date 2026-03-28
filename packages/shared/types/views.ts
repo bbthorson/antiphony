@@ -33,7 +33,7 @@ export const ProfileViewDetailedSchema = ProfileViewBasicSchema.extend({
         did: z.string(),
     }).optional(),
 
-    usageIntent: z.string().optional().nullable(),
+    usageIntent: z.string().nullable().optional(),
     /** Hydrated RSS Data (fetched from sub-collection) */
     rssSummary: z.object({
         title: z.string().optional(),
@@ -47,6 +47,7 @@ export const ProfileViewDetailedSchema = ProfileViewBasicSchema.extend({
         lastFetchedAt: FirestoreTimestampSchema.optional(),
     }).optional(),
     promptAudioUrl: z.string().optional(),
+    /** @deprecated Use stats.prompts from ProfileViewBasic instead */
     totalPrompts: z.number().optional(),
     totalReplies: z.number().optional(),
     favoritePromptId: z.string().optional(),
@@ -185,11 +186,17 @@ export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
 /**
  * Strips private fields from a ReplyView, returning a client-safe object.
  * Works on plain objects (does not re-validate with Zod for performance).
+ *
+ * Strips both top-level private fields AND `record.notes` (per-reply author notes
+ * are private CRM data stored on the Firestore document as `notes`).
  */
 export function toReplyViewPublic(reply: ReplyView): ReplyViewPublic {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { listenerPhoneNumber, authorRating, authorTags, authorNotes, ...publicReply } = reply;
-    return publicReply;
+    // Also strip notes from the nested record (private CRM field)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { notes: _notes, ...publicRecord } = publicReply.record;
+    return { ...publicReply, record: { ...publicRecord } } as ReplyViewPublic;
 }
 
 

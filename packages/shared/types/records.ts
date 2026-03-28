@@ -121,8 +121,13 @@ export const ReplyRecordSchema = z.object({
     audio: BlobRefSchema.optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
-    /** Life-cycle status */
-    status: z.enum(['live', 'archived']).default('live'),
+    /**
+     * Life-cycle status.
+     * - `live`: Visible and accepting replies.
+     * - `archived`: Visible but closed for new replies.
+     * - `deleted`: Soft deleted.
+     */
+    status: z.enum(['live', 'archived', 'deleted']).default('live'),
     /** @deprecated AT Protocol migration field (Optional) */
     replyToUri: z.string().optional(),
     /** Private notes by the Prompt author about this reply */
@@ -202,7 +207,6 @@ export type OrganizationRecord = z.infer<typeof OrganizationRecordSchema>;
  * Stored in `organizations/{orgId}/members/{userId}`
  */
 export const OrganizationMemberRecordSchema = z.object({
-    id: z.string(), // userId
     orgId: z.string(),
     userId: z.string(),
     /** Role in the organization */

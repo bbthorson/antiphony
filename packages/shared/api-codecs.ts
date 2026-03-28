@@ -6,7 +6,7 @@ export const UpdateAuthorDataRequestSchema = z.object({
     isVerified: z.boolean().optional(),
     authorRating: z.number().optional(), // Renamed from creatorRating
     authorTags: z.array(z.string().max(50)).max(20).optional(), // Renamed from creatorTags
-    authorNotes: z.string().max(5000).optional(), // Renamed from creatorNotes
+    notes: z.string().max(5000).optional(),
   }),
 });
 
@@ -33,8 +33,8 @@ export const UpdateProfileRequestSchema = z.object({
   handle: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/).optional(),
   displayName: z.string().max(50).optional(),
   bio: z.string().max(160).optional(),
-  avatarUrl: z.string().url().optional().nullable(),
-  usageIntent: z.string().optional().nullable(),
+  avatarUrl: z.string().url().nullable().optional(),
+  usageIntent: z.string().nullable().optional(),
 });
 
 
