@@ -158,11 +158,39 @@ export const ReplyViewSchema = z.object({
     /** @private Confirmed listener phone number (never exposed publicly) */
     listenerPhoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/).optional(),
     isVerified: z.boolean().default(false),
+    /** @private Author's rating of this reply (only visible to prompt author) */
     authorRating: z.number().optional(),
+    /** @private Author's tags for this reply (only visible to prompt author) */
     authorTags: z.array(z.string()).optional(),
+    /** @private Author's notes on this reply (only visible to prompt author) */
     authorNotes: z.string().optional(),
 });
 export type ReplyView = z.infer<typeof ReplyViewSchema>;
+
+/**
+ * Public-safe ReplyView schema — strips PII and author-private CRM fields.
+ * Use this for ALL client-facing API responses. Keep ReplyView for internal/service use only.
+ *
+ * Note: listenerPhoneNumber is not currently populated during hydration, but this schema
+ * provides defense-in-depth in case Firestore documents contain the field from SIP/phone flows.
+ */
+export const ReplyViewPublicSchema = ReplyViewSchema.omit({
+    listenerPhoneNumber: true,
+    authorRating: true,
+    authorTags: true,
+    authorNotes: true,
+});
+export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
+
+/**
+ * Strips private fields from a ReplyView, returning a client-safe object.
+ * Works on plain objects (does not re-validate with Zod for performance).
+ */
+export function toReplyViewPublic(reply: ReplyView): ReplyViewPublic {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { listenerPhoneNumber, authorRating, authorTags, authorNotes, ...publicReply } = reply;
+    return publicReply;
+}
 
 
 
