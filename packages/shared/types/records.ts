@@ -59,6 +59,10 @@ export const UserRecordSchema = z.object({
     avatarUrl: z.string().url().optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
+    /** Account status. Deactivated accounts retain data but are excluded from lookups. */
+    status: z.enum(['active', 'deactivated']).default('active'),
+    /** Timestamp when the account was deactivated (soft deleted) */
+    deactivatedAt: FirestoreTimestampSchema.optional(),
     /**
      * Denormalized org memberships — { orgId: role } for fast lookup.
      * Source of truth is organizations/{orgId}/members/{userId}.
