@@ -44,3 +44,29 @@ export const FcmTokenRequestSchema = z.object({
 export const BadgeResetRequestSchema = z.object({
   type: z.enum(['new_replier', 'unread_reply'])
 });
+
+// Organization management
+export const UpdateOrgRequestSchema = z.object({
+  name: z.string().min(3).max(50).optional(),
+  slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/).optional(),
+  description: z.string().optional(),
+  avatarUrl: z.string().url().nullable().optional(),
+  rssFeedUrl: z.string().url().nullable().optional(),
+  websiteUrl: z.string().url().nullable().optional(),
+  billingEmail: z.string().email().nullable().optional(),
+  domain: z.string().nullable().optional(),
+});
+
+export const CreateOrgInviteRequestSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['admin', 'member']),
+});
+
+export const UpdateMemberRoleRequestSchema = z.object({
+  role: z.enum(['admin', 'member']),
+});
+
+export const SwitchOrgRequestSchema = z.object({
+  /** orgId to switch to, or null to switch to personal context */
+  orgId: z.string().nullable(),
+});

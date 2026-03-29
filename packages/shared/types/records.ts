@@ -59,6 +59,12 @@ export const UserRecordSchema = z.object({
     avatarUrl: z.string().url().optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
+    /**
+     * Denormalized org memberships — { orgId: role } for fast lookup.
+     * Source of truth is organizations/{orgId}/members/{userId}.
+     * Kept in sync by Cloud Function trigger.
+     */
+    orgMemberships: z.record(z.string(), z.enum(['owner', 'admin', 'member'])).optional(),
 });
 export type UserRecord = z.infer<typeof UserRecordSchema>;
 
@@ -74,6 +80,8 @@ export const PromptRecordSchema = z.object({
     title: z.string().min(3),
     /** Optional extra context */
     description: z.string().nullable().optional(),
+    /** User who created this prompt (differs from authorId when org-owned) */
+    createdBy: z.string().optional(),
     /** URL to the recorded audio file (GCS) */
     audioUrl: z.string().url().or(z.literal('')),
     /** AT Protocol blob reference (future replacement for audioUrl) */
@@ -195,6 +203,16 @@ export const OrganizationRecordSchema = z.object({
     ownerId: z.string(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
+    /** Verified domain (e.g., "acme.com") — enables auto-join, enterprise features */
+    domain: z.string().nullable().optional(),
+    /** Whether the domain has been verified via DNS TXT record */
+    domainVerified: z.boolean().default(false),
+    /** DNS verification token (stored server-side until verification completes) */
+    domainVerificationToken: z.string().optional(),
+    /** Billing email — required for paid orgs, where invoices go */
+    billingEmail: z.string().email().nullable().optional(),
+    /** Tier determines isolation and feature set */
+    tier: z.enum(['free', 'pro', 'enterprise']).default('free'),
     /** Stripe Customer ID */
     stripeCustomerId: z.string().optional(),
     /** Subscription Status */
@@ -216,5 +234,27 @@ export const OrganizationMemberRecordSchema = z.object({
     invitedBy: z.string().optional(),
 });
 export type OrganizationMemberRecord = z.infer<typeof OrganizationMemberRecordSchema>;
+
+/**
+ * An invite to join an Organization.
+ * Stored in `organizations/{orgId}/invites/{inviteId}`
+ */
+export const OrgInviteRecordSchema = z.object({
+    id: z.string(),
+    orgId: z.string(),
+    /** Email the invite was sent to */
+    email: z.string().email(),
+    /** Role to assign on acceptance */
+    role: z.enum(['admin', 'member']),
+    /** User ID of who sent the invite */
+    invitedBy: z.string(),
+    /** Invite lifecycle status */
+    status: z.enum(['pending', 'accepted', 'expired', 'revoked']).default('pending'),
+    /** Server timestamp of creation */
+    createdAt: FirestoreTimestampSchema,
+    /** When this invite expires */
+    expiresAt: FirestoreTimestampSchema,
+});
+export type OrgInviteRecord = z.infer<typeof OrgInviteRecordSchema>;
 
 // #endregion
