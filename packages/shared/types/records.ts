@@ -59,6 +59,8 @@ export const UserRecordSchema = z.object({
     avatarUrl: z.string().url().optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
+    /** Individual account tier — free or creator_pro */
+    tier: z.enum(['free', 'creator_pro']).default('free'),
     /** Account status. Deactivated accounts retain data but are excluded from lookups. */
     status: z.enum(['active', 'deactivated']).default('active'),
     /** Timestamp when the account was deactivated (soft deleted) */
@@ -215,8 +217,8 @@ export const OrganizationRecordSchema = z.object({
     domainVerificationToken: z.string().optional(),
     /** Billing email — required for paid orgs, where invoices go */
     billingEmail: z.string().email().nullable().optional(),
-    /** Tier determines isolation and feature set */
-    tier: z.enum(['free', 'pro', 'enterprise']).default('free'),
+    /** Tier determines isolation and feature set. All orgs are paid (business or enterprise). */
+    tier: z.enum(['free', 'pro', 'business', 'enterprise']).default('business'),
     /** Stripe Customer ID */
     stripeCustomerId: z.string().optional(),
     /** Subscription Status */
