@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FirestoreTimestampSchema, OrganizationRecordSchema, OrgInviteRecordSchema, PromptRecordSchema, ReplyRecordSchema } from './records';
+import { FirestoreTimestampSchema, OrganizationRecordSchema, OrganizationMemberRecordSchema, OrgInviteRecordSchema, PromptRecordSchema, ReplyRecordSchema } from './records';
 
 /**
  * Layered Profile Views
@@ -212,6 +212,12 @@ export const OrganizationViewSchema = z.object({
     currentUserRole: z.enum(['owner', 'admin', 'member']).optional(),
 });
 export type OrganizationView = z.infer<typeof OrganizationViewSchema>;
+
+export const OrganizationMemberViewSchema = z.object({
+    record: OrganizationMemberRecordSchema,
+    profile: ProfileViewBasicSchema,
+});
+export type OrganizationMemberView = z.infer<typeof OrganizationMemberViewSchema>;
 
 export const OrgInviteViewSchema = z.object({
     record: OrgInviteRecordSchema,
