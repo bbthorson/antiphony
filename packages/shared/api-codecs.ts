@@ -70,3 +70,14 @@ export const SwitchOrgRequestSchema = z.object({
   /** orgId to switch to, or null to switch to personal context */
   orgId: z.string().nullable(),
 });
+
+// Reply lifecycle management
+export const UpdateReplyStatusRequestSchema = z.object({
+  status: z.enum(['live', 'archived', 'deleted']),
+});
+
+// Bulk reply actions
+export const BulkReplyActionRequestSchema = z.object({
+  replyIds: z.array(z.string()).min(1).max(100),
+  action: z.enum(['markRead', 'archive', 'delete', 'restore']),
+});
