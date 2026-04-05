@@ -27,6 +27,8 @@ export const CreatePromptRequestSchema = z.object({
   description: z.string().max(1000).optional(),
   audioUrl: z.string().url().or(z.literal('')),
   setAsGreeting: z.union([z.boolean(), z.string().transform(val => val === 'true')]).optional(),
+  /** Explicit org context override (normally inferred from auth.currentOrg) */
+  orgId: z.string().nullable().optional(),
 });
 
 export const UpdateProfileRequestSchema = z.object({

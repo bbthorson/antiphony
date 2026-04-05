@@ -80,8 +80,10 @@ export type UserRecord = z.infer<typeof UserRecordSchema>;
 export const PromptRecordSchema = z.object({
     /** Unique Prompt ID */
     id: z.string(),
-    /** ID of the User who created this prompt. @see UserRecord */
+    /** ID of the User who created this prompt. Always a user ID, never an org ID. @see UserRecord */
     authorId: z.string(),
+    /** Organization context this prompt belongs to (null = personal/no org) */
+    orgId: z.string().nullable().optional(),
     /** The main text of the question/prompt */
     title: z.string().min(3),
     /** Optional extra context */
