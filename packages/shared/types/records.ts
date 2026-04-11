@@ -157,6 +157,10 @@ export const ReplyRecordSchema = z.object({
     sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),
     energyLevel: z.enum(['High', 'Low']).optional(),
     engagementScore: z.number().min(1).max(10).optional(),
+    /** URL to noise-reduced audio (ElevenLabs Voice Isolation, paid tiers only) */
+    enhancedAudioUrl: z.string().url().optional(),
+    /** Storage path for enhanced audio */
+    enhancedStoragePath: z.string().optional(),
     /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
     waveformPeaks: z.array(z.number()).optional(),
     /** Social Share Video Fields */
