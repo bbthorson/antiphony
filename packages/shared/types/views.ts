@@ -278,6 +278,8 @@ export interface EnrichedReplier {
     totalReplies: number;
     lastReplyDate: string; // ISO date string
     firstReplyAt: string; // ISO date string
+    /** Phone number for anonymous repliers (from Firebase Auth, only visible to prompt author) */
+    phoneNumber?: string;
 }
 
 /** Person-level CRM data (private to prompt author) */
