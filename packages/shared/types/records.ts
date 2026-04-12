@@ -186,6 +186,38 @@ export const SipEnrichmentSchema = z.object({
 });
 export type SipEnrichment = z.infer<typeof SipEnrichmentSchema>;
 
+/**
+ * Call forwarding configuration stored in `users/{uid}/private_data/call_forwarding`.
+ * Tracks the user's PSTN forwarding setup for routing missed calls to VoxPop IVR.
+ */
+export const CallForwardingConfigSchema = z.object({
+    /** User's personal phone number (E.164) */
+    phoneNumber: z.string(),
+    /** Line type from Twilio Lookup v2 */
+    lineType: z.string().nullable(),
+    /** Carrier name from Twilio Lookup v2 */
+    carrier: z.string().nullable(),
+    /** free = shared Twilio number (ForwardedFrom routing), paid = dedicated number */
+    tier: z.enum(['free', 'paid']),
+    /** The VoxPop Twilio number calls forward to (E.164) */
+    voxpopNumber: z.string(),
+    /** Twilio Phone Number SID (paid tier only) */
+    twilioNumberSid: z.string().nullable().optional(),
+    /** Forwarding verification state */
+    verificationStatus: z.enum(['pending', 'verifying', 'verified', 'failed']).default('pending'),
+    /** Last verification attempt timestamp */
+    lastVerificationAt: FirestoreTimestampSchema.optional(),
+    /** Number of verification attempts */
+    verificationAttempts: z.number().default(0),
+    /** Reason for verification failure */
+    failureReason: z.string().nullable().optional(),
+    /** Whether call forwarding is active */
+    enabled: z.boolean().default(false),
+    createdAt: FirestoreTimestampSchema,
+    updatedAt: FirestoreTimestampSchema,
+});
+export type CallForwardingConfig = z.infer<typeof CallForwardingConfigSchema>;
+
 // #endregion
 
 // #region Organization Schemas
