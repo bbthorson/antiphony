@@ -150,7 +150,7 @@ export const ReplyViewSchema = z.object({
     aiScore: z.number().optional(),
     aiLabels: z.array(z.string()).optional(),
     aiSummary: z.string().optional(),
-    aiStatus: z.enum(['pending', 'complete', 'error']).optional(),
+    aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
     aiError: z.string().optional(),
     transcription: z.string().optional(),
     sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),

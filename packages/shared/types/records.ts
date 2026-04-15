@@ -149,7 +149,7 @@ export const ReplyRecordSchema = z.object({
     /** Private notes by the Prompt author about this reply */
     notes: z.string().optional(),
     /** AI Enrichment Fields */
-    aiStatus: z.enum(['pending', 'complete', 'error']).optional(),
+    aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
     aiError: z.string().optional(),
     aiSummary: z.string().optional(),
     aiLabels: z.array(z.string()).optional(),
@@ -163,6 +163,8 @@ export const ReplyRecordSchema = z.object({
     enhancedStoragePath: z.string().optional(),
     /** Pre-computed waveform peaks (normalized 0–1) for instant audio visualization */
     waveformPeaks: z.array(z.number()).optional(),
+    /** Duration of the audio in seconds, computed server-side from ffmpeg. */
+    audioDurationSec: z.number().optional(),
     /** Social Share Video Fields */
     socialVideoUrl: z.string().url().optional(),
     socialVideoStoragePath: z.string().optional(),
