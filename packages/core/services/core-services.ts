@@ -2,8 +2,18 @@ import type {
     PromptView,
     ProfileView,
     OrganizationView,
+    OrganizationMemberView,
+    OrgInviteView,
+    PromptRecord,
+    ReplyRecord,
     ReplyView,
 } from 'shared/types';
+import type {
+    OrganizationRecord,
+    OrganizationMemberRecord,
+    OrgInviteRecord,
+} from 'shared/types/records';
+import type { PromptDocument } from 'shared/types/storage';
 import type { RssSummary } from './rss';
 
 // Re-export so other core files (and apps/web) can reach RssSummary via
@@ -62,6 +72,16 @@ export interface PromptServiceContract {
         lastPromptId?: string,
         publicOnly?: boolean,
     ): Promise<PromptView[]>;
+
+    /** Fetch a single prompt record by ID (no hydration). Used by replies.updateReplyStatus. */
+    getPromptRecord(promptId: string): Promise<PromptRecord | null>;
+
+    /**
+     * Create a new prompt. Accepts a partial PromptRecord — missing fields are
+     * filled (id, createdAt, status, replyCount). Used by users.ensureUserExists
+     * when seeding the General Inbox prompt for a new user.
+     */
+    createPrompt(input: Partial<PromptRecord>): Promise<PromptRecord & { replyCount: number }>;
 }
 
 export interface UserServiceContract {
@@ -73,6 +93,9 @@ export interface UserServiceContract {
      * users (no handle) with phone numbers from the identity provider.
      */
     getUsersByIds(uids: string[], options?: { includePrivateData?: boolean }): Promise<ProfileView[]>;
+
+    /** Idempotent user-stub creation. Used by replies.createReplyTransaction. */
+    ensureUserExists(uid: string): Promise<void>;
 }
 
 export interface OrganizationServiceContract {
@@ -91,6 +114,42 @@ export interface RssServiceContract {
     parseFeed(url: string, limit?: number): Promise<RssSummary | null>;
 }
 
+/**
+ * Narrow contract for HydrationService — the view-building layer that the
+ * prompts/replies/organizations services all call to assemble records +
+ * author profiles + computed fields. Exposed via `CoreServices.hydration`
+ * so core classes don't need module-scope access to `hydrationService`.
+ */
+export interface HydrationServiceContract {
+    hydratePrompt(document: PromptDocument, prefetchedAuthor?: ProfileView): Promise<PromptView>;
+
+    hydrateReply(
+        record: ReplyRecord,
+        knownRecipient?: ProfileView,
+        preloadedAuthor?: ProfileView,
+    ): Promise<ReplyView | null>;
+
+    hydrateRepliesWithRecipient(
+        records: ReplyRecord[],
+        recipient: ProfileView,
+        options?: { includePrivateData?: boolean },
+    ): Promise<ReplyView[]>;
+
+    hydrateOrganization(
+        record: OrganizationRecord,
+        currentUserRole?: 'owner' | 'admin' | 'member',
+    ): Promise<OrganizationView>;
+
+    hydrateOrganizations(
+        records: OrganizationRecord[],
+        currentUserId?: string,
+    ): Promise<OrganizationView[]>;
+
+    hydrateMembers(records: OrganizationMemberRecord[]): Promise<OrganizationMemberView[]>;
+
+    hydrateInvite(record: OrgInviteRecord, prefetchedOrgName?: string): Promise<OrgInviteView>;
+}
+
 // --- Aggregate ---
 
 /**
@@ -101,6 +160,7 @@ export interface RssServiceContract {
  * so tests can read like `services.users.getUserData(...)`.
  */
 export interface CoreServices {
+    hydration: HydrationServiceContract;
     prompts: PromptServiceContract;
     users: UserServiceContract;
     organizations: OrganizationServiceContract;
