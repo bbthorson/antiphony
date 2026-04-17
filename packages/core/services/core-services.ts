@@ -4,26 +4,11 @@ import type {
     OrganizationView,
     ReplyView,
 } from 'shared/types';
+import type { RssSummary } from './rss';
 
-/**
- * Inlined here to keep `packages/core/` free of imports into `apps/web/`.
- * When `rss.ts` moves to core in a later Task E step, collapse back to a
- * clean import — or promote this type to `packages/shared/types` if it
- * proves useful beyond the feeds surface.
- */
-export interface RssSummary {
-    title?: string;
-    description?: string;
-    image?: string;
-    link?: string;
-    items?: Array<{
-        title?: string;
-        link?: string;
-        content?: string;
-        pubDate?: string;
-    }>;
-    lastFetchedAt?: Date;
-}
+// Re-export so other core files (and apps/web) can reach RssSummary via
+// the contract module without also importing ./rss directly.
+export type { RssSummary };
 
 /**
  * CoreServices is the Phase 2.5 solution for service-to-service dependency
