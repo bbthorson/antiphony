@@ -7,7 +7,10 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "declaration": true,
-        "outDir": "./dist"
+        "outDir": "./dist",
+        "paths": {
+            "shared/*": ["../shared/*"]
+        }
     },
     "include": [
         "./**/*.ts"
