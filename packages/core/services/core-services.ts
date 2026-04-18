@@ -77,6 +77,13 @@ export interface PromptServiceContract {
     getPromptRecord(promptId: string): Promise<PromptRecord | null>;
 
     /**
+     * Batch fetch prompt records by ID. Result is positionally aligned with
+     * the input — `null` at indices where the prompt is missing. Used by
+     * replies.assertOwnsAllReplies to avoid an N+1 across bulk actions.
+     */
+    getPromptRecordsByIds(promptIds: string[]): Promise<Array<PromptRecord | null>>;
+
+    /**
      * Create a new prompt. Accepts a partial PromptRecord — missing fields are
      * filled (id, createdAt, status, replyCount). Used by users.ensureUserExists
      * when seeding the General Inbox prompt for a new user.
