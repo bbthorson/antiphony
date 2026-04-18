@@ -135,7 +135,7 @@ export class ReplyService {
         }
 
         const promptIds = [...new Set(validReplies.map(r => r.promptId))];
-        const prompts = await Promise.all(promptIds.map(id => this.services.prompts.getPromptRecord(id)));
+        const prompts = await this.services.prompts.getPromptRecordsByIds(promptIds);
         for (const prompt of prompts) {
             if (!prompt) throw new NotFoundError('Parent prompt not found.');
             if (prompt.authorId !== authenticatedUid) throw new ForbiddenError('You do not own all prompts for these replies.');

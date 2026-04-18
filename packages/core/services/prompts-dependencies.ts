@@ -48,6 +48,13 @@ export interface PromptDependencies {
     /** Fetch a pure PromptRecord by ID (no computed fields), or null if missing. */
     getRecordById(promptId: string): Promise<PromptRecord | null>;
 
+    /**
+     * Batch fetch PromptRecords by ID. Result is positionally aligned with
+     * the input — `null` at indices where the prompt is missing or fails
+     * schema validation.
+     */
+    getRecordsByIds(promptIds: string[]): Promise<Array<PromptRecord | null>>;
+
     /** Generate a new unique prompt ID without creating the document. */
     newPromptId(): string;
 

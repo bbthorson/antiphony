@@ -149,6 +149,21 @@ export class PromptService {
     }
 
     /**
+     * Batch fetch of prompt records. Positionally aligned with the input;
+     * `null` at indices where the prompt is missing. Used by bulk ownership
+     * checks to avoid an N+1.
+     */
+    async getPromptRecordsByIds(promptIds: string[]): Promise<Array<PromptRecord | null>> {
+        if (promptIds.length === 0) return [];
+        try {
+            return await this.deps.getRecordsByIds(promptIds);
+        } catch (error) {
+            console.error('[PromptService] Error in batch getPromptRecordsByIds:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Validates input and creates a new prompt.
      * Business logic moved from API route to Service.
      */
