@@ -383,6 +383,40 @@ export const UserProfileDataSchema = z.object({
 });
 export type UserProfileData = z.infer<typeof UserProfileDataSchema>;
 
+/**
+ * RSS feed summary schema — what `rssService.parseFeed` returns. Kept as a
+ * shared schema because both the profile-detailed view and the org-profile
+ * aggregated payload embed it. The original interface lives in
+ * `packages/core/services/rss.ts`; this schema mirrors its shape for
+ * runtime validation at the transport layer.
+ */
+export const RssSummarySchema = z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    image: z.string().optional(),
+    link: z.string().optional(),
+    items: z.array(z.object({
+        title: z.string().optional(),
+        link: z.string().optional(),
+        content: z.string().optional(),
+        pubDate: z.string().optional(),
+    })).optional(),
+    lastFetchedAt: FirestoreTimestampSchema.optional(),
+});
+export type RssSummary = z.infer<typeof RssSummarySchema>;
+
+/**
+ * Aggregated payload returned by `feedService.getOrgProfileData` — org
+ * details, org-context prompts (live only), and the RSS summary if the
+ * org has `rssFeedUrl` configured.
+ */
+export const OrgProfileDataSchema = z.object({
+    org: OrganizationViewSchema,
+    prompts: z.array(PromptViewSchema),
+    rssSummary: RssSummarySchema.nullable(),
+});
+export type OrgProfileData = z.infer<typeof OrgProfileDataSchema>;
+
 /** Enriched replier with full profile data for CRM views */
 export interface EnrichedReplier {
     profile: ProfileViewBasic;
