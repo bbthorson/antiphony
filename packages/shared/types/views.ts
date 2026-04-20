@@ -263,14 +263,53 @@ export const PromptRepliersSchema = z.object({
 });
 export type PromptRepliers = z.infer<typeof PromptRepliersSchema>;
 
-export type PromptWithReplies = PromptView & { replies: ReplyView[] };
+/**
+ * Prompt joined with its hydrated replies. The serverProxy HTTP transport
+ * sends `replies: []` today (replies are fetched client-side on demand), but
+ * the shape is kept for parity with the in-process service.
+ */
+export const PromptWithRepliesSchema = PromptViewSchema.extend({
+    replies: z.array(ReplyViewSchema),
+});
+export type PromptWithReplies = z.infer<typeof PromptWithRepliesSchema>;
 
-export interface Replier {
-    handle: string;
-    lastReplyDate: string; // ISO date string
-    firstReplyAt: string; // ISO date string
-    totalReplies: number;
-}
+/**
+ * Per-replier summary (handle + counts + first/last reply timestamps).
+ * Timestamps are ISO strings on the wire; the service serializes them before
+ * returning.
+ */
+export const ReplierSchema = z.object({
+    handle: z.string(),
+    /** ISO date string */
+    lastReplyDate: z.string(),
+    /** ISO date string */
+    firstReplyAt: z.string(),
+    totalReplies: z.number(),
+});
+export type Replier = z.infer<typeof ReplierSchema>;
+
+/**
+ * Discriminated union returned by `feedService.resolveHandle`. Either a user
+ * (when the handle resolves to a user profile) or an organization (when it
+ * resolves to an org slug). The service returns `null` when neither matches —
+ * callers that need the null case should wrap this in `.nullable()`.
+ */
+export const HandleResolutionSchema = z.discriminatedUnion('type', [
+    z.object({ type: z.literal('user'), profile: ProfileViewSchema }),
+    z.object({ type: z.literal('org'), org: OrganizationViewSchema }),
+]);
+export type HandleResolution = z.infer<typeof HandleResolutionSchema>;
+
+/**
+ * Aggregated payload returned by `feedService.getUserProfileData` —
+ * profile + their prompts (with empty replies arrays) + repliers summary.
+ */
+export const UserProfileDataSchema = z.object({
+    profileUser: ProfileViewSchema,
+    allPromptsWithReplies: z.array(PromptWithRepliesSchema),
+    repliers: z.array(ReplierSchema),
+});
+export type UserProfileData = z.infer<typeof UserProfileDataSchema>;
 
 /** Enriched replier with full profile data for CRM views */
 export interface EnrichedReplier {

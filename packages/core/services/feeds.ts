@@ -7,13 +7,12 @@ import {
     type PromptView,
     type OrganizationView,
     type ReplyView,
+    type HandleResolution,
 } from 'shared/types';
 import type { CoreServices, RssSummary } from './core-services';
 
-/** Result of resolving a handle — either a user or an organization */
-export type HandleResolution =
-    | { type: 'user'; profile: ProfileView }
-    | { type: 'org'; org: OrganizationView };
+/** Re-exported from shared/types so external callers can keep the existing import path. */
+export type { HandleResolution };
 
 /**
  * FeedService composes prompts, users, organizations, replies, and RSS feeds
@@ -115,7 +114,7 @@ export class FeedService {
 
         // Replies are fetched by the client on demand. The promptsWithReplies
         // shape is preserved for backward compatibility; replies is always [].
-        const promptsWithReplies = prompts.map((prompt) => {
+        const promptsWithReplies: PromptWithReplies[] = prompts.map((prompt) => {
             return { ...prompt, replies: [] };
         });
 
