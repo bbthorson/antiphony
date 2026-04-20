@@ -126,6 +126,53 @@ export const PromptViewSchema = z.object({
 });
 export type PromptView = z.infer<typeof PromptViewSchema>;
 
+/**
+ * Public-safe PromptView schema — strips owner-only enrichment fields AND
+ * narrows the nested `author` to `ProfileViewBasicSchema` so PII (email,
+ * phone, lastSeen, reply counts) and admin fields (blockedUsers, moderation
+ * counters, ban state) never cross the public API boundary.
+ *
+ * Mirrors `ReplyViewPublicSchema`'s omit pattern, plus a deliberate
+ * `.extend({ author })` to enforce the narrower profile shape. The API
+ * contract itself now reflects the intended public surface — future
+ * callers can't accidentally leak admin fields through the author slot.
+ */
+export const PromptViewPublicSchema = PromptViewSchema.omit({
+    analytics: true,
+    moderation: true,
+    aiScore: true,
+    aiLabels: true,
+    aiSummary: true,
+    aiStatus: true,
+    aiError: true,
+    transcription: true,
+}).extend({
+    author: ProfileViewBasicSchema,
+});
+export type PromptViewPublic = z.infer<typeof PromptViewPublicSchema>;
+
+/**
+ * Strips owner-only enrichment fields from a PromptView AND narrows the
+ * nested author to `ProfileViewBasic` shape. Defense-in-depth against PII
+ * leakage: even if a caller forgets to validate against
+ * `PromptViewPublicSchema`, the returned object only carries the basic
+ * author fields.
+ *
+ * Does not re-validate with Zod (matches the `toReplyViewPublic` pattern
+ * — re-validation in the hot path of every public response is
+ * prohibitively expensive for a defensive copy).
+ */
+export function toPromptViewPublic(prompt: PromptView): PromptViewPublic {
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    const { analytics, moderation, aiScore, aiLabels, aiSummary, aiStatus, aiError, transcription, ...rest } = prompt;
+    const { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } = rest.author;
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    return {
+        ...rest,
+        author: { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt },
+    };
+}
+
 
 /**
  * A hydrated view of a reply, including author and recipient profiles.
