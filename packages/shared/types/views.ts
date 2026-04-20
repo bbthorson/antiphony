@@ -25,6 +25,31 @@ export const ProfileViewBasicSchema = z.object({
 });
 export type ProfileViewBasic = z.infer<typeof ProfileViewBasicSchema>;
 
+/**
+ * Project a wider profile (detailed/self/admin) down to the ProfileViewBasic
+ * shape. Use this wherever a public-facing response embeds a profile — it
+ * keeps PII (email, phoneNumber, lastSeenAt, unreadReplyCount, settings) and
+ * admin fields (blockedUsers, followers, following, reportCount, isBanned)
+ * from crossing the public API boundary.
+ *
+ * Mirrors `toPromptViewPublic` / `toReplyViewPublic`: plain-object projection,
+ * no Zod re-validation in the hot path.
+ */
+export function toProfileViewBasic(profile: {
+    id: string;
+    handle?: string | null;
+    displayName?: string;
+    avatarUrl?: string | null;
+    bio?: string;
+    stats?: { followers: number; following: number; prompts: number };
+    badges?: string[];
+    isVerified?: boolean;
+    createdAt?: unknown;
+}): ProfileViewBasic {
+    const { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } = profile;
+    return { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } as ProfileViewBasic;
+}
+
 /** Authenticated viewer — includes enrichment data visible to other users. */
 export const ProfileViewDetailedSchema = ProfileViewBasicSchema.extend({
     /** AT Protocol Identity link */
