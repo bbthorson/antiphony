@@ -418,14 +418,17 @@ export const OrgProfileDataSchema = z.object({
 export type OrgProfileData = z.infer<typeof OrgProfileDataSchema>;
 
 /** Enriched replier with full profile data for CRM views */
-export interface EnrichedReplier {
-    profile: ProfileViewBasic;
-    totalReplies: number;
-    lastReplyDate: string; // ISO date string
-    firstReplyAt: string; // ISO date string
+export const EnrichedReplierSchema = z.object({
+    profile: ProfileViewBasicSchema,
+    totalReplies: z.number(),
+    /** ISO date string */
+    lastReplyDate: z.string(),
+    /** ISO date string */
+    firstReplyAt: z.string(),
     /** Phone number for anonymous repliers (from Firebase Auth, only visible to prompt author) */
-    phoneNumber?: string;
-}
+    phoneNumber: z.string().optional(),
+});
+export type EnrichedReplier = z.infer<typeof EnrichedReplierSchema>;
 
 /** Person-level CRM data (private to prompt author) */
 export interface ContactCrmData {
