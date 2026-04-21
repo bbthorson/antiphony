@@ -33,6 +33,7 @@ export class UserService {
         // UIDs are case-sensitive, so lowercasing `sLhaGagvW5NE...` to
         // `slhagagvw5ne...` would cause the UID lookup to 404.
         const trimmedInput = handle ? handle.trim() : '';
+        if (!trimmedInput) return null;
         const sanitizedHandle = trimmedInput.toLowerCase();
         console.info(`[UserService] Fetching user data for handle: ${sanitizedHandle}`);
 
