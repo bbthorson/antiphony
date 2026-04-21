@@ -51,12 +51,17 @@ export const UserRecordSchema = z.object({
      * Defaults to 'voxpop.com'.
      */
     domain: z.string().default('voxpop.com'),
-    /** Display Name (e.g. "Brad Thorson") */
-    displayName: z.string().max(50).optional(),
-    /** Short bio/description */
-    bio: z.string().max(160).optional(),
-    /** URL to avatar image */
-    avatarUrl: z.string().url().optional(),
+    /**
+     * Display Name (e.g. "Brad Thorson"). Nullable: Firestore stores `null`
+     * when the user clears this field via the settings form, and the schema
+     * must match storage reality or `UserRecordSchema.parse` (in
+     * `getUserRecordByUid`) will throw.
+     */
+    displayName: z.string().max(50).nullable().optional(),
+    /** Short bio/description — nullable for the same reason as displayName. */
+    bio: z.string().max(160).nullable().optional(),
+    /** URL to avatar image — nullable for the same reason as displayName. */
+    avatarUrl: z.string().url().nullable().optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
     /** Individual account tier — free or creator_pro */
@@ -155,7 +160,17 @@ export const ReplyRecordSchema = z.object({
     aiLabels: z.array(z.string()).optional(),
     transcription: z.string().optional(),
     sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),
-    energyLevel: z.enum(['High', 'Low']).optional(),
+    /**
+     * AI-assigned energy level. Spec says `High | Low`, but Gemini also
+     * returns `Neutral` for flat-affect replies (e.g. a short "Perfect.").
+     * Widened to three-way so `ReplyRecordSchema.safeParse` in
+     * [replies-dependencies.ts:70](../../apps/web/src/services/replies-dependencies.ts)
+     * stops silently dropping those replies out of the people list.
+     * Consumers (mobile + dashboard) already render anything-not-`High` as a
+     * neutral chip. Long-term: sanitize the AI output in
+     * `functions/src/services/aiService.ts` rather than widening further.
+     */
+    energyLevel: z.enum(['High', 'Low', 'Neutral']).optional(),
     engagementScore: z.number().min(1).max(10).optional(),
     /** URL to noise-reduced audio (ElevenLabs Voice Isolation, paid tiers only) */
     enhancedAudioUrl: z.string().url().optional(),
