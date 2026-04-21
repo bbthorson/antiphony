@@ -226,7 +226,8 @@ export const ReplyViewSchema = z.object({
     aiError: z.string().optional(),
     transcription: z.string().optional(),
     sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),
-    energyLevel: z.enum(['High', 'Low']).optional(),
+    /** Must match the widened enum in `ReplyRecordSchema.energyLevel`. */
+    energyLevel: z.enum(['High', 'Low', 'Neutral']).optional(),
     engagementScore: z.number().min(1).max(10).optional(),
     /** @private Confirmed listener phone number (never exposed publicly) */
     listenerPhoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/).optional(),
