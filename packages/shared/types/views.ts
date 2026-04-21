@@ -11,9 +11,15 @@ import { FirestoreTimestampSchema, OrganizationRecordSchema, OrganizationMemberR
 export const ProfileViewBasicSchema = z.object({
     id: z.string(),
     handle: z.string().nullable().optional(),
-    displayName: z.string().optional(),
+    // `displayName` and `bio` are `.nullable()` — Firestore stores `null` for
+    // empty values on these fields (see users-dependencies.ts), and Zod's
+    // `.optional()` alone rejects `null`. This hit dashboard rendering on the
+    // Phase 3.1 HTTP cutover, when transport-layer Zod validation started
+    // actually exercising the wire shape. Consumers already use truthy
+    // checks / `??` / `||`, so widening the type to include `null` is safe.
+    displayName: z.string().nullable().optional(),
     avatarUrl: z.string().nullable().optional(),
-    bio: z.string().optional(),
+    bio: z.string().nullable().optional(),
     stats: z.object({
         followers: z.number().default(0),
         following: z.number().default(0),
@@ -38,9 +44,9 @@ export type ProfileViewBasic = z.infer<typeof ProfileViewBasicSchema>;
 export function toProfileViewBasic(profile: {
     id: string;
     handle?: string | null;
-    displayName?: string;
+    displayName?: string | null;
     avatarUrl?: string | null;
-    bio?: string;
+    bio?: string | null;
     stats?: { followers: number; following: number; prompts: number };
     badges?: string[];
     isVerified?: boolean;
