@@ -29,7 +29,11 @@ export class UserService {
     ) {}
 
     async getUserData(handle: string): Promise<ProfileView | null> {
-        const sanitizedHandle = handle ? handle.toLowerCase().trim() : '';
+        // Trim but keep original case for the UID fallback — Firebase Auth
+        // UIDs are case-sensitive, so lowercasing `sLhaGagvW5NE...` to
+        // `slhagagvw5ne...` would cause the UID lookup to 404.
+        const trimmedInput = handle ? handle.trim() : '';
+        const sanitizedHandle = trimmedInput.toLowerCase();
         console.info(`[UserService] Fetching user data for handle: ${sanitizedHandle}`);
 
         try {
@@ -49,9 +53,11 @@ export class UserService {
             const byUsername = await this.deps.findProfileByUsernameField(sanitizedHandle);
             if (byUsername) return byUsername;
 
-            // 3. Final fallback: direct UID lookup (handles URLs built with userId).
+            // 3. Final fallback: direct UID lookup (handles URLs built with
+            // userId). Pass the case-preserving `trimmedInput`, not the
+            // lowercased `sanitizedHandle` — UIDs are case-sensitive.
             console.info(`[UserService] No user found with handle/username: ${sanitizedHandle}, trying UID lookup`);
-            return await this.getUserDataByUid(sanitizedHandle);
+            return await this.getUserDataByUid(trimmedInput);
         } catch (error) {
             console.error(`[UserService] Error fetching user data for ${handle}:`, error);
             throw error;
