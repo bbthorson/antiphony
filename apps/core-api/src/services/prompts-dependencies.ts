@@ -12,14 +12,17 @@ import type {
 
 export type { PromptDependencies, PromptQueryOptions, ActivityRecord };
 
+function activitiesCollection() {
+    return getAdminDb().collection('activities');
+}
+
 /**
  * Firebase-wired `PromptDependencies` binding for core-api.
  *
- * **Scope as of this PR**: `getDocumentById`, `queryByAuthor`, `queryByOrg`,
- * `getRecordById`, and `getRecordsByIds` are implemented. The last two back
- * `prompts.getPromptRecord` and `getPromptRecordsByIds` on CoreServices,
- * which the reply-write ownership checks (Batch A4) reach. Create/update
- * methods stay stubbed until Batch A5 ports prompt writes.
+ * **Scope as of this PR**: all methods implemented except soft-delete
+ * specifics. `newPromptId` + `savePrompt` + `updatePrompt` + `newActivityId`
+ * + `saveActivity` back the prompt-write tier (Batch A5): POST /prompts,
+ * DELETE /prompts/:id, PATCH /prompts/:id/status, POST /prompts/:id/read.
  *
  * Parity source: `apps/web/src/services/prompts-dependencies.ts`.
  */
@@ -72,12 +75,6 @@ function parseQueryResults(snapshot: FirebaseFirestore.QuerySnapshot): PromptDoc
     }
     return results;
 }
-
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api prompts-dependencies] ${method} is not yet ported. See apps/core-api/src/services/prompts-dependencies.ts and apps/web/src/services/prompts-dependencies.ts for the binding to mirror.`,
-    );
-};
 
 export const firebasePromptDependencies: PromptDependencies = {
     // --- Implemented: getPromptData + getPromptsForUser paths ---
@@ -170,26 +167,25 @@ export const firebasePromptDependencies: PromptDependencies = {
         return promptIds.map((id) => map.get(id) ?? null);
     },
 
-    // --- Stubbed — fill in as prompt-write endpoints port ---
-
     newPromptId(): string {
-        return notYetPorted('newPromptId');
+        return promptsCollection().doc().id;
     },
 
-    async savePrompt(_record: PromptRecord & { replyCount: number }) {
-        return notYetPorted('savePrompt');
+    async savePrompt(record: PromptRecord & { replyCount: number }) {
+        await promptsCollection().doc(record.id).set(record);
     },
 
-    async updatePrompt(_promptId: string, _updates: Partial<PromptRecord>) {
-        return notYetPorted('updatePrompt');
+    async updatePrompt(promptId: string, updates: Partial<PromptRecord>) {
+        if (!promptId || !promptId.trim()) return;
+        await promptsCollection().doc(promptId).update(updates);
     },
 
     newActivityId(): string {
-        return notYetPorted('newActivityId');
+        return activitiesCollection().doc().id;
     },
 
-    async saveActivity(_activity: ActivityRecord) {
-        return notYetPorted('saveActivity');
+    async saveActivity(activity: ActivityRecord) {
+        await activitiesCollection().doc(activity.id).set(activity);
     },
 
     now(): Date {

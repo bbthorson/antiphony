@@ -84,7 +84,8 @@ export const firebaseCoreServices: CoreServices = {
             promptService.getPromptRecord(...args),
         getPromptRecordsByIds: (...args: Parameters<CoreServices['prompts']['getPromptRecordsByIds']>) =>
             promptService.getPromptRecordsByIds(...args),
-        createPrompt: () => notYetPorted('prompts.createPrompt'),
+        createPrompt: (...args: Parameters<CoreServices['prompts']['createPrompt']>) =>
+            promptService.createPrompt(...args),
     },
     users: {
         getUserData: (handle: string) => userService.getUserData(handle),

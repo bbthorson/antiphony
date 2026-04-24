@@ -11,12 +11,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../services/core-services-firebase.js', () => ({
     promptService: {
         getPromptData: vi.fn(),
+        validateAndCreatePrompt: vi.fn(),
+        updatePrompt: vi.fn(),
+        getPromptRecord: vi.fn(),
+        updatePromptStatus: vi.fn(),
+        deletePrompt: vi.fn(),
+    },
+    organizationService: {
+        isMember: vi.fn(),
     },
     userService: {},
-    organizationService: {},
     hydrationService: {},
     feedService: {},
     firebaseCoreServices: {},
+}));
+
+vi.mock('../services/replies-dependencies.js', () => ({
+    firebaseReplyDependencies: {
+        queryByPromptId: vi.fn(),
+        bulkMarkRepliesRead: vi.fn(),
+    },
 }));
 
 vi.mock('../lib/auth/session-verifier.js', () => ({
@@ -44,7 +58,8 @@ vi.mock('../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
-const { promptService } = await import('../services/core-services-firebase.js');
+const { promptService, organizationService } = await import('../services/core-services-firebase.js');
+const { firebaseReplyDependencies } = await import('../services/replies-dependencies.js');
 const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
 type MockPromptView = ReturnType<typeof mkPrompt>;
@@ -201,5 +216,283 @@ describe('GET /api/v1/prompts/:promptId', () => {
         const body = await res.json();
         expect(body.status).toBe('error');
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+});
+
+const jsonReq = (body: unknown, method: string) => ({
+    method,
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ok' },
+    body: JSON.stringify(body),
+});
+
+describe('POST /api/v1/prompts', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/prompts', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: 'T', audioUrl: 'https://x' }),
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s on invalid JSON', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request('/api/v1/prompts', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: 'Bearer ok' },
+            body: 'not-json',
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it('400s on schema failure', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request('/api/v1/prompts', jsonReq({ title: 'Title' }, 'POST'));
+        // Missing audioUrl.
+        expect(res.status).toBe(400);
+    });
+
+    it('creates a prompt and returns the id', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-create' });
+        vi.mocked(promptService.validateAndCreatePrompt).mockResolvedValue({
+            id: 'p-new',
+        } as unknown as Awaited<ReturnType<typeof promptService.validateAndCreatePrompt>>);
+
+        const res = await app().request(
+            '/api/v1/prompts',
+            jsonReq({ title: 'Hello prompt', audioUrl: 'https://audio/x.m4a' }, 'POST'),
+        );
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toEqual({ success: true, promptId: 'p-new' });
+        expect(promptService.validateAndCreatePrompt).toHaveBeenCalledWith({
+            title: 'Hello prompt',
+            description: '',
+            audioUrl: 'https://audio/x.m4a',
+            authorId: 'u-create',
+            orgId: null,
+            createdBy: 'u-create',
+        });
+    });
+
+    it('403s when viewer claims currentOrg but is not a member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-out', currentOrg: 'org-1' });
+        vi.mocked(organizationService.isMember).mockResolvedValue(false);
+
+        const res = await app().request(
+            '/api/v1/prompts',
+            jsonReq({ title: 'Title', audioUrl: 'https://audio' }, 'POST'),
+        );
+        expect(res.status).toBe(403);
+    });
+
+    it('uses currentOrg from session when viewer is a member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-org', currentOrg: 'org-2' });
+        vi.mocked(organizationService.isMember).mockResolvedValue(true);
+        vi.mocked(promptService.validateAndCreatePrompt).mockResolvedValue({
+            id: 'p-in-org',
+        } as unknown as Awaited<ReturnType<typeof promptService.validateAndCreatePrompt>>);
+
+        await app().request(
+            '/api/v1/prompts',
+            jsonReq({ title: 'Title', audioUrl: 'https://audio' }, 'POST'),
+        );
+
+        const call = vi.mocked(promptService.validateAndCreatePrompt).mock.calls[0][0];
+        expect(call.orgId).toBe('org-2');
+    });
+
+    it('setAsGreeting updates the inbox prompt best-effort', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-g' });
+        vi.mocked(promptService.validateAndCreatePrompt).mockResolvedValue({
+            id: 'p-g',
+        } as unknown as Awaited<ReturnType<typeof promptService.validateAndCreatePrompt>>);
+        vi.mocked(promptService.updatePrompt).mockResolvedValue(undefined);
+
+        await app().request(
+            '/api/v1/prompts',
+            jsonReq(
+                {
+                    title: 'Greeting audio',
+                    audioUrl: 'https://audio/greet.m4a',
+                    setAsGreeting: true,
+                },
+                'POST',
+            ),
+        );
+
+        expect(promptService.updatePrompt).toHaveBeenCalledWith('inbox_u-g', {
+            audioUrl: 'https://audio/greet.m4a',
+        });
+    });
+});
+
+describe('PATCH /api/v1/prompts/:promptId/status', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/prompts/p-1/status', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ status: 'archived' }),
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s on bad status', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request('/api/v1/prompts/p-1/status', jsonReq({ status: 'nope' }, 'PATCH'));
+        expect(res.status).toBe(400);
+    });
+
+    it('404s when the prompt is missing', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
+        const res = await app().request(
+            '/api/v1/prompts/p-miss/status',
+            jsonReq({ status: 'archived' }, 'PATCH'),
+        );
+        expect(res.status).toBe(404);
+    });
+
+    it('403s when viewer does not own and is not an org member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-owner' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-1',
+            authorId: 'owner',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(organizationService.isMember).mockResolvedValue(false);
+
+        const res = await app().request('/api/v1/prompts/p-1/status', jsonReq({ status: 'archived' }, 'PATCH'));
+        expect(res.status).toBe(403);
+    });
+
+    it('succeeds when viewer is the owner', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-1',
+            authorId: 'owner',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(promptService.updatePromptStatus).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/prompts/p-1/status', jsonReq({ status: 'archived' }, 'PATCH'));
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true, status: 'archived' });
+    });
+
+    it('allows an org member (author treated as org id)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'member' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-org',
+            authorId: 'org-id',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(organizationService.isMember).mockResolvedValue(true);
+        vi.mocked(promptService.updatePromptStatus).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/prompts/p-org/status', jsonReq({ status: 'live' }, 'PATCH'));
+        expect(res.status).toBe(200);
+    });
+});
+
+describe('DELETE /api/v1/prompts/:promptId', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/prompts/p-1', { method: 'DELETE' });
+        expect(res.status).toBe(401);
+    });
+
+    it('404s when prompt is missing', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
+        const res = await app().request('/api/v1/prompts/p-miss', {
+            method: 'DELETE',
+            headers: { authorization: 'Bearer ok' },
+        });
+        expect(res.status).toBe(404);
+    });
+
+    it('succeeds for owner', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-d',
+            authorId: 'owner',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(promptService.deletePrompt).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/prompts/p-d', {
+            method: 'DELETE',
+            headers: { authorization: 'Bearer ok' },
+        });
+        expect(res.status).toBe(200);
+        expect(promptService.deletePrompt).toHaveBeenCalledWith('p-d');
+    });
+
+    it('403s for non-owner non-member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'x' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-f',
+            authorId: 'y',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(organizationService.isMember).mockResolvedValue(false);
+
+        const res = await app().request('/api/v1/prompts/p-f', {
+            method: 'DELETE',
+            headers: { authorization: 'Bearer ok' },
+        });
+        expect(res.status).toBe(403);
+    });
+});
+
+describe('POST /api/v1/prompts/:promptId/read', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/prompts/p-1/read', { method: 'POST' });
+        expect(res.status).toBe(401);
+    });
+
+    it('short-circuits when there are no replies', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-r' });
+        vi.mocked(firebaseReplyDependencies.queryByPromptId).mockResolvedValue([]);
+
+        const res = await app().request('/api/v1/prompts/p-empty/read', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok' },
+        });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true });
+        expect(firebaseReplyDependencies.bulkMarkRepliesRead).not.toHaveBeenCalled();
+    });
+
+    it('bulk-marks all replies read when there are some', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-r' });
+        vi.mocked(firebaseReplyDependencies.queryByPromptId).mockResolvedValue([
+            { id: 'r-1' },
+            { id: 'r-2' },
+        ] as unknown as Awaited<ReturnType<typeof firebaseReplyDependencies.queryByPromptId>>);
+        vi.mocked(firebaseReplyDependencies.bulkMarkRepliesRead).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/prompts/p-has/read', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(200);
+        expect(firebaseReplyDependencies.bulkMarkRepliesRead).toHaveBeenCalledWith(
+            ['r-1', 'r-2'],
+            'u-r',
+        );
     });
 });

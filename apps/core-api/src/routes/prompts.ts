@@ -1,30 +1,49 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { toPromptViewPublic } from 'shared/types';
+import { CreatePromptRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
-import { optionalAuth } from '../middleware/auth.js';
-import { promptService } from '../services/core-services-firebase.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
+import {
+    promptService,
+    organizationService,
+} from '../services/core-services-firebase.js';
+import { firebaseReplyDependencies } from '../services/replies-dependencies.js';
+import {
+    checkIdempotency,
+    saveIdempotencyResult,
+    IdempotencyInProgressError,
+} from '../lib/idempotency.js';
+import { logger } from '../lib/logger.js';
 
 /**
- * GET /api/v1/prompts/:promptId
+ * Prompt endpoints mounted at `/api/v1/prompts`.
  *
- * Returns a prompt by id with an owner-aware projection:
- *   - Owner → full `PromptView` (analytics, moderation, AI enrichment).
- *   - Non-owner → stripped `PromptViewPublic` via `toPromptViewPublic`.
+ *   GET    /:promptId            — owner-aware PromptView (optional auth)
+ *   POST   /                     — create prompt (idempotency-capable)
+ *   PATCH  /:promptId/status     — update status (live/archived)
+ *   DELETE /:promptId            — soft-delete (status -> deleted)
+ *   POST   /:promptId/read       — mark all replies for the prompt as read
  *
- * Non-live / private prompts return 404 for non-owners (existence is
- * itself hidden, not just contents). Returns 404 on unknown prompts.
+ * Parity sources:
+ *   apps/web/src/app/api/v1/prompts/[promptId]/route.ts (GET + DELETE)
+ *   apps/web/src/app/api/v1/prompts/route.ts (POST)
+ *   apps/web/src/app/api/v1/prompts/[promptId]/status/route.ts (PATCH)
+ *   apps/web/src/app/api/v1/prompts/[promptId]/read/route.ts (POST)
  *
- * Response shape: `{ success: true, data: PromptView | PromptViewPublic }`
- * or `{ success: false, error: 'Prompt not found' }` with status 404.
- *
- * Parity with: apps/web/src/app/api/v1/prompts/[promptId]/route.ts
- *
- * **Auth**: `optionalAuth` middleware attaches `viewerUid` from a bearer
- * token if one is present. Anonymous requests get the public projection;
- * authenticated requests from the prompt owner get the full view.
+ * **Ownership model** (for writes): the prompt's `authorId` is the owner.
+ * Org members can also act on the prompt if the author is an org — this
+ * mirrors apps/web's `isMember(authorId, uid)` check, which treats the
+ * author field as either a user id or an org id.
  */
 
+const StatusUpdateSchema = z.object({ status: z.enum(['live', 'archived']) });
+
 const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// GET /:promptId
+// ---------------------------------------------------------------------------
 
 app.get('/:promptId', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const promptId = c.req.param('promptId');
@@ -36,7 +55,6 @@ app.get('/:promptId', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => 
     const viewerUid = c.get('viewerUid');
     const isOwner = viewerUid !== null && viewerUid === prompt.record.authorId;
 
-    // Hide existence of non-live/private prompts from non-owners.
     if (!isOwner && (prompt.record.status !== 'live' || prompt.visibility === 'private')) {
         return c.json({ success: false, error: 'Prompt not found' }, 404);
     }
@@ -45,6 +63,248 @@ app.get('/:promptId', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => 
         success: true,
         data: isOwner ? prompt : toPromptViewPublic(prompt),
     });
+});
+
+// ---------------------------------------------------------------------------
+// POST / — create
+// ---------------------------------------------------------------------------
+
+app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const session = c.get('viewerSession');
+
+    // `currentOrg` lives on the session as a custom claim — matches apps/web's
+    // protectedRouteWithOrg shape (set at org-switch time).
+    const currentOrg = (session?.currentOrg ?? null) as string | null;
+
+    if (currentOrg) {
+        const isMember = await organizationService.isMember(currentOrg, uid);
+        if (!isMember) {
+            return c.json(
+                {
+                    status: 'error',
+                    message: 'Not a member of active organization',
+                    requestId: c.get('requestId'),
+                },
+                403,
+            );
+        }
+    }
+
+    // Idempotency: if the client retries with the same Idempotency-Key, we
+    // either return the cached response (completed) or 409 (still processing).
+    try {
+        const idem = await checkIdempotency(c);
+        if (idem) {
+            return c.json(idem.cached as object);
+        }
+    } catch (err) {
+        if (err instanceof IdempotencyInProgressError) {
+            return c.json(
+                {
+                    status: 'error',
+                    message: err.message,
+                    requestId: c.get('requestId'),
+                },
+                409,
+            );
+        }
+        throw err;
+    }
+
+    // Body parsing. apps/web supports JSON + multipart; core-api accepts JSON
+    // only — apps/web is already a pure HTTP client at the post-flip point, so
+    // the multipart path (legacy hosted form) has no remaining callers.
+    let rawData: unknown;
+    try {
+        rawData = await c.req.json();
+    } catch {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid JSON body',
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const validation = CreatePromptRequestSchema.safeParse(rawData);
+    if (!validation.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Validation failed',
+                issues: validation.error.issues,
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const { title, description, audioUrl, setAsGreeting } = validation.data;
+
+    const created = await promptService.validateAndCreatePrompt({
+        title,
+        description: description || '',
+        audioUrl,
+        authorId: uid,
+        orgId: currentOrg,
+        createdBy: uid,
+    });
+
+    // Set-as-greeting updates the user's "General Inbox" prompt (id
+    // `inbox_{uid}`) with the new audio. Best-effort — failures log and
+    // the create still succeeds.
+    if (setAsGreeting) {
+        const inboxId = `inbox_${uid}`;
+        try {
+            await promptService.updatePrompt(inboxId, { audioUrl });
+        } catch (err) {
+            logger.error(
+                { err, requestId: c.get('requestId'), inboxId },
+                '[prompts] setAsGreeting: failed to update inbox prompt',
+            );
+        }
+    }
+
+    const responseBody = { success: true, promptId: created.id };
+    await saveIdempotencyResult(c, responseBody);
+
+    return c.json(responseBody);
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /:promptId/status
+// ---------------------------------------------------------------------------
+
+app.patch('/:promptId/status', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const promptId = c.req.param('promptId');
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid JSON body',
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const validation = StatusUpdateSchema.safeParse(body);
+    if (!validation.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid status',
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const promptRecord = await promptService.getPromptRecord(promptId);
+    if (!promptRecord) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Prompt not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    const isOwner = promptRecord.authorId === uid;
+    const isOrgMember =
+        !isOwner && (await organizationService.isMember(promptRecord.authorId, uid));
+    if (!isOwner && !isOrgMember) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Forbidden',
+                requestId: c.get('requestId'),
+            },
+            403,
+        );
+    }
+
+    await promptService.updatePromptStatus(promptId, validation.data.status);
+
+    return c.json({ success: true, status: validation.data.status });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /:promptId
+// ---------------------------------------------------------------------------
+
+app.delete('/:promptId', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const promptId = c.req.param('promptId');
+
+    const promptRecord = await promptService.getPromptRecord(promptId);
+    if (!promptRecord) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Prompt not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    const isOwner = promptRecord.authorId === uid;
+    const isOrgMember =
+        !isOwner && (await organizationService.isMember(promptRecord.authorId, uid));
+    if (!isOwner && !isOrgMember) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Forbidden',
+                requestId: c.get('requestId'),
+            },
+            403,
+        );
+    }
+
+    await promptService.deletePrompt(promptId);
+
+    return c.json({ success: true, message: 'Prompt deleted' });
+});
+
+// ---------------------------------------------------------------------------
+// POST /:promptId/read — mark all replies for this prompt as read-by-viewer
+// ---------------------------------------------------------------------------
+
+app.post('/:promptId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const promptId = c.req.param('promptId');
+
+    // Parity with apps/web: no ownership check here. `readBy` isn't projected
+    // to clients (hydrateReply hardcodes it to []) and the operation is
+    // idempotent arrayUnion — same reasoning as POST /replies/:id/read.
+    //
+    // Pull records through the query (includes status/visibility filters) so
+    // deleted replies aren't counted; caller intent is "mark everything the
+    // user can see on this prompt as read".
+    const replies = await firebaseReplyDependencies.queryByPromptId(promptId, {
+        includeArchived: true,
+    });
+    if (replies.length === 0) {
+        return c.json({ success: true });
+    }
+    await firebaseReplyDependencies.bulkMarkRepliesRead(
+        replies.map((r) => r.id),
+        uid,
+    );
+
+    return c.json({ success: true });
 });
 
 export { app as promptsRoute };
