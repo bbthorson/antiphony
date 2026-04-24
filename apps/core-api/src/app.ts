@@ -6,6 +6,7 @@ import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
 import { usersRoute } from './routes/users.js';
+import { usersMeRoute } from './routes/users-me.js';
 import { usersProfileRoute } from './routes/users-profile.js';
 import { organizationsSlugRoute } from './routes/organizations-slug.js';
 import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
@@ -53,8 +54,11 @@ export function app(): Hono {
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
     // Users routes all mount at /api/v1/users; route files distinguish by
-    // path tail (`/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
-    // Hono's router matches the more specific path when multiple apply.
+    // path tail (`/me` vs `/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
+    // Register the more specific `/me` mount FIRST so Hono prefers it over the
+    // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
+    // and 404 on user lookup).
+    a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);

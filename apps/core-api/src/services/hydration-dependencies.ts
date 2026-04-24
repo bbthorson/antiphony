@@ -8,9 +8,11 @@ export type { HydrationDependencies };
  * Firebase-wired `HydrationDependencies` binding for core-api.
  *
  * **Scope as of this PR**: implements `countOrgMembers` (for
- * `hydrateOrganization`) and `loadUser` (for `hydratePrompt`). Other
- * methods (`loadPrompt`, `getOrgMemberRole`, `getOrgName`, `getUsersByIds`)
- * stay stubbed and fill in as reply endpoints port.
+ * `hydrateOrganization`), `loadUser` (for `hydratePrompt`), and
+ * `getOrgMemberRole` (for `hydrateOrganizations` when called with a
+ * viewer — backs `GET /users/me/organizations`). Other methods
+ * (`loadPrompt`, `getOrgName`, `getUsersByIds`) stay stubbed and fill in
+ * as reply endpoints port.
  *
  * **Key difference vs. apps/web's binding**: no `DataLoader` wrapping.
  * Apps/web uses `DataLoader` inside React's `cache()` for per-render batch
@@ -51,14 +53,24 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         return firebaseUserDependencies.getProfileByUid(id);
     },
 
+    async getOrgMemberRole(orgId: string, userId: string) {
+        // Empty orgId or userId would blow up Firestore (`doc('')` throws).
+        // Treat as "not a member" rather than letting it surface as a 500.
+        if (!orgId || !userId || !userId.trim()) return undefined;
+        const doc = await getAdminDb()
+            .collection(`organizations/${orgId}/members`)
+            .doc(userId)
+            .get();
+        if (!doc.exists) return undefined;
+        const role = doc.data()?.role;
+        if (role === 'owner' || role === 'admin' || role === 'member') return role;
+        return undefined;
+    },
+
     // --- Stubbed — fill in as reply endpoints port ---
 
     async loadPrompt(_id: string) {
         return notYetPorted('loadPrompt');
-    },
-
-    async getOrgMemberRole(_orgId: string, _userId: string) {
-        return notYetPorted('getOrgMemberRole');
     },
 
     async getOrgName(_orgId: string) {

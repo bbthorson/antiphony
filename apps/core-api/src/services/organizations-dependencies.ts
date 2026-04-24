@@ -12,15 +12,22 @@ export type { OrganizationDependencies };
 /**
  * Firebase-wired `OrganizationDependencies` binding for core-api.
  *
- * **Scope as of this PR**: `getOrganizationBySlug` + `getMemberRole` are
- * implemented — the two methods `OrganizationService.getOrganizationBySlug`
- * needs, which is the minimum for the `FeedService.resolveHandle` org
- * fallback. Every other method is stubbed and throws on call; each
+ * **Scope as of this PR**: `getOrganizationBySlug`, `getMemberRole`, and
+ * `getOrganizationsForMember` are implemented. The `getOrganizationsForMember`
+ * method backs `GET /api/v1/users/me/organizations` — it does a collectionGroup
+ * query across every org's `members` subcollection to find every org the user
+ * belongs to. Every other method is stubbed and throws on call; each
  * subsequent PR that ports an org-related endpoint fills in the specific
  * methods its endpoint reaches.
  *
  * Parity source: `apps/web/src/services/organizations-dependencies.ts`.
  */
+
+// Firestore's `getAll()` caps at 1000 document refs per call. Chunk in the
+// `getOrganizationsForMember` path so a user with > 1000 org memberships
+// still resolves (today unreachable in practice, but the right layer to
+// enforce the provider limit).
+const FIRESTORE_GETALL_LIMIT = 1000;
 
 function orgsCollection() {
     return getAdminDb().collection('organizations');
@@ -83,8 +90,38 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
         return notYetPorted('getOrganizationById');
     },
 
-    async getOrganizationsForMember(_userId: string) {
-        return notYetPorted('getOrganizationsForMember');
+    async getOrganizationsForMember(userId: string) {
+        if (!userId || !userId.trim()) return [];
+        const db = getAdminDb();
+        const membersSnapshot = await db
+            .collectionGroup('members')
+            .where('userId', '==', userId)
+            .get();
+
+        if (membersSnapshot.empty) return [];
+
+        // Extract orgId from the doc's path rather than a denorm field on
+        // the member record. collectionGroup('members') returns docs with
+        // path `organizations/{orgId}/members/{userId}`, so the grandparent
+        // ref's id is authoritative — robust to legacy member docs that
+        // may not have embedded `orgId`.
+        const orgIds = membersSnapshot.docs
+            .map((doc) => doc.ref.parent.parent?.id)
+            .filter((id): id is string => Boolean(id));
+        if (orgIds.length === 0) return [];
+
+        const allDocs: FirebaseFirestore.DocumentSnapshot[] = [];
+        for (let i = 0; i < orgIds.length; i += FIRESTORE_GETALL_LIMIT) {
+            const refs = orgIds
+                .slice(i, i + FIRESTORE_GETALL_LIMIT)
+                .map((id) => orgsCollection().doc(id));
+            const chunk = await db.getAll(...refs);
+            allDocs.push(...chunk);
+        }
+
+        return allDocs
+            .filter((doc) => doc.exists)
+            .map((doc) => OrganizationRecordSchema.parse({ id: doc.id, ...doc.data() }));
     },
 
     async updateOrganization(_orgId: string, _updates: Partial<OrganizationRecord>) {
