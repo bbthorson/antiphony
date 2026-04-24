@@ -43,8 +43,12 @@ export const firebaseUserDependencies: UserDependencies = {
     // --- Implemented ---
 
     async listAllHandles() {
-        const snap = await handlesCollection().get();
-        return snap.docs.map((doc) => doc.id);
+        // Sitemap enumeration only needs the handle strings (doc IDs), not
+        // the uid bodies. `.listDocuments()` fetches references only — no
+        // document body reads — which is dramatically cheaper than `.get()`
+        // for collections of any meaningful size.
+        const refs = await handlesCollection().listDocuments();
+        return refs.map((ref) => ref.id);
     },
 
     // --- Stubbed — fill in as each route handler ports ---

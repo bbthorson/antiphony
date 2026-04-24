@@ -125,18 +125,46 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
                 );
             }
         } catch (error: unknown) {
-            consecutiveFailures++;
-            if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
-                circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
-                logger.error(
-                    { error, cooldownMs: CIRCUIT_COOLDOWN_MS },
-                    `[rate-limit] circuit opened after ${CIRCUIT_FAILURE_THRESHOLD} failures`,
+            // Discriminate between "systemic failure" (Firestore is down; trip
+            // the circuit) and "per-request contention" (concurrent writes on
+            // the SAME rate-limit bucket — e.g. one hot IP). Per-request errors
+            // must NOT increment the global counter, or a single aggressive
+            // caller could trip the circuit and fail-open rate limiting for
+            // everyone by hammering their own bucket.
+            //
+            // Firestore grpc error codes:
+            //   - ABORTED (10): transaction conflict / contention — per-bucket, expected
+            //     under concurrent load on the same doc. Don't count.
+            //   - FAILED_PRECONDITION (9): stale data in transaction — same, per-bucket.
+            //   - DEADLINE_EXCEEDED (4): could be systemic OR contention timeout.
+            //     Treat as systemic (rare enough it's not worth tolerating silently).
+            //   - Everything else (UNAVAILABLE, INTERNAL, UNAUTHENTICATED, etc.): systemic.
+            //
+            // The `code` field is set by @google-cloud/firestore error types;
+            // we check it structurally rather than importing the full error
+            // type because the Admin SDK's error hierarchy isn't exported.
+            const code = (error as { code?: number | string } | null)?.code;
+            const isPerRequest = code === 10 || code === 'ABORTED' || code === 9 || code === 'FAILED_PRECONDITION';
+
+            if (isPerRequest) {
+                logger.warn(
+                    { error, requestId: c.get('requestId'), key },
+                    '[rate-limit] transaction contention on bucket — not counted toward circuit breaker',
                 );
             } else {
-                logger.error({ error }, '[rate-limit] firestore error');
+                consecutiveFailures++;
+                if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+                    circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+                    logger.error(
+                        { error, cooldownMs: CIRCUIT_COOLDOWN_MS },
+                        `[rate-limit] circuit opened after ${CIRCUIT_FAILURE_THRESHOLD} systemic failures`,
+                    );
+                } else {
+                    logger.error({ error }, '[rate-limit] firestore systemic error');
+                }
             }
-            // Fail-open on Firestore errors — don't block legitimate traffic
-            // on a Firestore hiccup.
+            // Fail-open on all errors — don't block legitimate traffic on a
+            // Firestore hiccup or a contention blip.
         }
 
         return next();

@@ -1,4 +1,5 @@
 import type { ErrorHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
@@ -46,7 +47,10 @@ export const errorHandler: ErrorHandler = (error, c) => {
                 requestId,
                 ...(error.details ? { details: error.details } : {}),
             },
-            error.status as 400 | 401 | 403 | 404 | 409 | 422,
+            // Hono's ContentfulStatusCode is the full set of status codes
+            // valid for a JSON response body — covers 400/401/403/404/409/
+            // 422/429/500 and anything else ServiceError subclasses carry.
+            error.status as ContentfulStatusCode,
         );
     }
 
