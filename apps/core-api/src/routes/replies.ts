@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { toReplyViewPublic } from 'shared/types';
 import {
     UpdateReplyStatusRequestSchema,
     BulkReplyActionRequestSchema,
@@ -9,21 +10,25 @@ import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
 import { requireAuth } from '../middleware/auth.js';
 import { replyService, promptService } from '../services/core-services-firebase.js';
 import { firebaseReplyDependencies } from '../services/replies-dependencies.js';
+import {
+    resolvePendingUpload,
+    consumePendingUpload,
+} from '../lib/pending-uploads.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Reply-write endpoints mounted at `/api/v1/replies`. Auth-gated across the
  * board; ownership enforced via the reply's parent prompt.
  *
- * Coverage in this PR (Batch A4):
+ * Coverage (Batch A4 + A4.2):
+ *   POST  /                         — create reply; accepts either a direct
+ *                                     audioUrl (on-domain) or a pendingUploadId
+ *                                     (embed-redirect flow)
  *   PATCH /:replyId/status          — update reply status (live/archived/deleted)
  *   POST  /:replyId/read            — mark reply as read-by-viewer
  *   POST  /:replyId/notes           — update private notes on a reply
  *   POST  /bulk-action              — bulk status / bulk mark-read
  *   POST  /update-author-data       — update author annotations (rating/tags/notes)
- *
- * Not in this PR:
- *   POST /                          — create reply (requires pending-uploads
- *                                     port + ensureUserExists wire; A4.2)
  *
  * Parity sources:
  *   apps/web/src/app/api/v1/replies/[replyId]/status/route.ts
@@ -35,7 +40,111 @@ import { firebaseReplyDependencies } from '../services/replies-dependencies.js';
 
 const NoteSchema = z.object({ notes: z.string().max(5000) });
 
+// POST /replies accepts EITHER a pre-uploaded `audioUrl` (authenticated
+// /uploads/audio flow) OR a `pendingUploadId` (embed-redirect flow where
+// the iframe uploaded anonymously to /uploads/pending before redirecting
+// to this origin). Exactly one must be present.
+const CreateReplyRequestSchema = z
+    .object({
+        // min(1) on id fields — Firestore's `doc('')` throws at ref
+        // construction; reject empty strings at the validation boundary.
+        promptId: z.string().min(1),
+        audioUrl: z.string().url().optional(),
+        pendingUploadId: z.string().min(1).optional(),
+    })
+    .refine((d) => !!d.audioUrl !== !!d.pendingUploadId, {
+        message: 'Provide exactly one of audioUrl or pendingUploadId',
+    });
+
 const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/replies
+// ---------------------------------------------------------------------------
+
+app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid JSON body',
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const validation = CreateReplyRequestSchema.safeParse(body);
+    if (!validation.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid request body',
+                issues: validation.error.issues,
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const { promptId, audioUrl: directAudioUrl, pendingUploadId } = validation.data;
+
+    let audioUrl: string;
+    if (pendingUploadId) {
+        // Embed-redirect: the iframe uploaded to a pending row scoped to
+        // promptId. resolvePendingUpload verifies existence, expiry, and
+        // prompt-binding. Pending-row deletion happens AFTER reply creation
+        // so a transient failure preserves the upload (TTL sweep still
+        // catches orphans).
+        const pending = await resolvePendingUpload(pendingUploadId, promptId);
+        if (!pending) {
+            return c.json(
+                {
+                    status: 'error',
+                    message:
+                        'Pending upload not found, expired, or does not match this prompt',
+                    requestId: c.get('requestId'),
+                },
+                404,
+            );
+        }
+        audioUrl = pending.audioUrl;
+    } else {
+        // Refinement guarantees audioUrl is present here.
+        audioUrl = directAudioUrl!;
+    }
+
+    // createReplyTransaction internally: ensureUserExists(uid) →
+    // createReplyWithCounterIncrement → hydrateReply.
+    const hydratedReply = await replyService.createReplyTransaction(uid, {
+        promptId,
+        audioUrl,
+    });
+
+    // Best-effort cleanup of the pending row after a successful bind.
+    if (pendingUploadId) {
+        try {
+            await consumePendingUpload(pendingUploadId);
+        } catch (err) {
+            // consumePendingUpload swallows internally — this catch is
+            // defensive in case it evolves to throw.
+            logger.error(
+                { err, pendingUploadId, requestId: c.get('requestId') },
+                '[replies] consumePendingUpload failed',
+            );
+        }
+    }
+
+    return c.json({
+        success: true,
+        reply: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
+    });
+});
 
 // ---------------------------------------------------------------------------
 // PATCH /api/v1/replies/:replyId/status

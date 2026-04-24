@@ -21,6 +21,7 @@ vi.mock('../services/core-services-firebase.js', () => ({
         updateReplyNotes: vi.fn(),
         bulkMarkRead: vi.fn(),
         bulkUpdateStatus: vi.fn(),
+        createReplyTransaction: vi.fn(),
     },
     promptService: {
         getPromptRecord: vi.fn(),
@@ -36,6 +37,13 @@ vi.mock('../services/replies-dependencies.js', () => ({
         markReplyRead: vi.fn(),
         updateReply: vi.fn(),
     },
+}));
+
+const resolvePendingFn = vi.fn();
+const consumePendingFn = vi.fn();
+vi.mock('../lib/pending-uploads.js', () => ({
+    resolvePendingUpload: (id: string, promptId: string) => resolvePendingFn(id, promptId),
+    consumePendingUpload: (id: string) => consumePendingFn(id),
 }));
 
 vi.mock('../lib/auth/session-verifier.js', () => ({
@@ -86,6 +94,110 @@ const jsonInit = (body: unknown, extra: Record<string, string> = {}) => ({
 const jsonPatch = (body: unknown) => ({
     ...jsonInit(body),
     method: 'PATCH',
+});
+
+describe('POST /api/v1/replies', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        resolvePendingFn.mockReset();
+        consumePendingFn.mockReset();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/replies', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ promptId: 'p-1', audioUrl: 'https://audio' }),
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s when neither audioUrl nor pendingUploadId is provided', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request(
+            '/api/v1/replies',
+            jsonInit({ promptId: 'p-1' }),
+        );
+        expect(res.status).toBe(400);
+    });
+
+    it('400s when both audioUrl and pendingUploadId are provided', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request(
+            '/api/v1/replies',
+            jsonInit({
+                promptId: 'p-1',
+                audioUrl: 'https://audio/x.m4a',
+                pendingUploadId: 'pend_abc',
+            }),
+        );
+        expect(res.status).toBe(400);
+    });
+
+    it('creates via audioUrl branch and returns the hydrated reply', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-c' });
+        vi.mocked(replyService.createReplyTransaction).mockResolvedValue({
+            record: { id: 'r-new', promptId: 'p-1', authorId: 'u-c', notes: 'secret' },
+            author: { id: 'u-c' },
+        } as unknown as Awaited<ReturnType<typeof replyService.createReplyTransaction>>);
+
+        const res = await app().request(
+            '/api/v1/replies',
+            jsonInit({ promptId: 'p-1', audioUrl: 'https://audio/x.m4a' }),
+        );
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        // ReplyViewPublic strips `record.notes`.
+        expect(body.reply.record.notes).toBeUndefined();
+        expect(replyService.createReplyTransaction).toHaveBeenCalledWith('u-c', {
+            promptId: 'p-1',
+            audioUrl: 'https://audio/x.m4a',
+        });
+        expect(resolvePendingFn).not.toHaveBeenCalled();
+        expect(consumePendingFn).not.toHaveBeenCalled();
+    });
+
+    it('404s when the pendingUploadId cannot be resolved', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-p' });
+        resolvePendingFn.mockResolvedValue(null);
+
+        const res = await app().request(
+            '/api/v1/replies',
+            jsonInit({ promptId: 'p-1', pendingUploadId: 'pend_missing' }),
+        );
+
+        expect(res.status).toBe(404);
+        expect(replyService.createReplyTransaction).not.toHaveBeenCalled();
+    });
+
+    it('creates via pendingUploadId branch and cleans up the pending row after', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-pend' });
+        resolvePendingFn.mockResolvedValue({
+            id: 'pend_ok',
+            audioUrl: 'https://pending-storage/ok.m4a',
+            promptId: 'p-e',
+        });
+        vi.mocked(replyService.createReplyTransaction).mockResolvedValue({
+            record: { id: 'r-e', promptId: 'p-e', authorId: 'u-pend' },
+            author: { id: 'u-pend' },
+        } as unknown as Awaited<ReturnType<typeof replyService.createReplyTransaction>>);
+        consumePendingFn.mockResolvedValue(undefined);
+
+        const res = await app().request(
+            '/api/v1/replies',
+            jsonInit({ promptId: 'p-e', pendingUploadId: 'pend_ok' }),
+        );
+
+        expect(res.status).toBe(200);
+        expect(resolvePendingFn).toHaveBeenCalledWith('pend_ok', 'p-e');
+        expect(replyService.createReplyTransaction).toHaveBeenCalledWith('u-pend', {
+            promptId: 'p-e',
+            audioUrl: 'https://pending-storage/ok.m4a',
+        });
+        expect(consumePendingFn).toHaveBeenCalledWith('pend_ok');
+    });
 });
 
 describe('PATCH /api/v1/replies/:replyId/status', () => {

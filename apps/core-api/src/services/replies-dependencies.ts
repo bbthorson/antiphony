@@ -1,8 +1,17 @@
 import admin from 'firebase-admin';
 import { getAdminDb } from '../lib/firebase-admin.js';
 import { ReplyRecordSchema } from 'shared/types';
+import { NotFoundError } from 'shared/errors';
 import type { ReplyRecord } from 'shared/types';
 import { logger } from '../lib/logger.js';
+
+function promptsCollection() {
+    return getAdminDb().collection('prompts');
+}
+
+function activitiesCollection() {
+    return getAdminDb().collection('activities');
+}
 
 // Firestore write batches cap at 500 operations per commit. Bulk methods
 // chunk against this limit. Same constant as other bindings.
@@ -21,13 +30,9 @@ export type { ReplyDependencies, ReplyQueryOptions, ReplyActivityRecord };
 /**
  * Firebase-wired `ReplyDependencies` binding for core-api.
  *
- * **Scope as of this PR**: read path + most write/update methods
- * (`queryByPromptId`, `queryByPromptIds`, `getReplyById`, `getRepliesByIds`,
- * `updateReply`, `bulkUpdateReplies`, `markReplyRead`, `bulkMarkRepliesRead`)
- * are implemented — backs the full reply-writes-except-create surface in
- * Batch A4. The reply-create transaction (`createReplyWithCounterIncrement`
- * + `newReplyId` + `newActivityId`) stays stubbed until Batch A4.2 ports
- * `POST /replies` alongside the pending-uploads module.
+ * **Scope as of this PR**: all methods implemented. Reply create
+ * (`createReplyWithCounterIncrement` + `newReplyId` + `newActivityId`)
+ * landed in A4.2 alongside `POST /api/v1/replies`.
  *
  * Parity source: `apps/web/src/services/replies-dependencies.ts`. Logic is
  * mirrored directly; only imports differ (no `server-only`; pino not Winston).
@@ -73,12 +78,6 @@ function parseReplyDoc(
     }
     return parsed.data;
 }
-
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api replies-dependencies] ${method} is not yet ported. See apps/core-api/src/services/replies-dependencies.ts and apps/web/src/services/replies-dependencies.ts for the binding to mirror.`,
-    );
-};
 
 export const firebaseReplyDependencies: ReplyDependencies = {
     // --- Implemented: read paths for Batch A2 ---
@@ -204,18 +203,35 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         }
     },
 
-    // --- Stubbed — fill in when POST /replies ports (Batch A4.2) ---
-
     newReplyId() {
-        return notYetPorted('newReplyId');
+        return repliesCollection().doc().id;
     },
 
     newActivityId() {
-        return notYetPorted('newActivityId');
+        return activitiesCollection().doc().id;
     },
 
-    async createReplyWithCounterIncrement(_reply, _activity) {
-        return notYetPorted('createReplyWithCounterIncrement');
+    async createReplyWithCounterIncrement(reply, activity) {
+        const db = getAdminDb();
+        await db.runTransaction(async (t) => {
+            const promptRef = promptsCollection().doc(reply.promptId);
+            const replyRef = repliesCollection().doc(reply.id);
+
+            const promptDoc = await t.get(promptRef);
+            if (!promptDoc.exists) {
+                throw new NotFoundError(`Prompt ${reply.promptId} does not exist.`);
+            }
+
+            t.set(replyRef, reply);
+            t.update(promptRef, {
+                replyCount: admin.firestore.FieldValue.increment(1),
+                lastReplyAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            if (activity) {
+                t.set(activitiesCollection().doc(activity.id), activity);
+            }
+        });
     },
 
     now() {
