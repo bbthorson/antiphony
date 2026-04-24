@@ -3,6 +3,7 @@ import { OrganizationService } from '@vox-pop/core/services/organizations';
 import { HydrationService } from '@vox-pop/core/services/hydration';
 import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
+import { ReplyService } from '@vox-pop/core/services/replies';
 import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
 import { makeStorageService } from '@vox-pop/core/services/storage';
 import type { CoreServices } from '@vox-pop/core/services/core-services';
@@ -10,6 +11,7 @@ import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
+import { firebaseReplyDependencies } from './replies-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 
 /**
@@ -23,11 +25,15 @@ import { firebaseBlobStore } from './storage-dependencies.js';
  *     `queryByOrg` back them.
  *   - `HydrationService` — `hydrateOrganization` + `hydratePrompt` reachable.
  *   - `OrganizationService` — `getOrganizationBySlug` reachable.
- *   - `FeedService` — `resolveHandle`, `getUserProfileData`, `getOrgProfileData`
- *     all reachable (the latter two via the prompts + rss CoreServices wiring).
+ *   - `FeedService` — `resolveHandle`, `getUserProfileData`, `getOrgProfileData`,
+ *     plus `getPersonReplies` (Batch A2) reachable — all routed via the
+ *     prompts + rss + replies CoreServices wiring.
  *   - `RssService` — singleton from `@vox-pop/core/services/rss` used directly
  *     (no Firebase binding; it's a standalone URL-fetch class).
- *   - `ReplyService` — not wired yet.
+ *   - `ReplyService` — **wired this PR (Batch A2)**. `getRepliesForPrompt`,
+ *     `getRepliesForPrompts`, and `searchReplies` reachable. Write methods
+ *     (create, update, bulk, mark-read) still fall through to
+ *     `notYetPorted` stubs on the binding until Batch A4 ports.
  *
  * Note: no React `cache()` wrappers (unlike apps/web's binding). Core-api
  * isn't an RSC runtime.
@@ -81,7 +87,8 @@ export const firebaseCoreServices: CoreServices = {
     users: {
         getUserData: (handle: string) => userService.getUserData(handle),
         getUserDataByUid: (uid: string) => userService.getUserDataByUid(uid),
-        getUsersByIds: () => notYetPorted('users.getUsersByIds'),
+        getUsersByIds: (...args: Parameters<CoreServices['users']['getUsersByIds']>) =>
+            userService.getUsersByIds(...args),
         ensureUserExists: () => notYetPorted('users.ensureUserExists'),
     },
     organizations: {
@@ -89,7 +96,8 @@ export const firebaseCoreServices: CoreServices = {
             organizationService.getOrganizationBySlug(slug, currentUserId),
     },
     replies: {
-        getRepliesForPrompts: () => notYetPorted('replies.getRepliesForPrompts'),
+        getRepliesForPrompts: (...args: Parameters<CoreServices['replies']['getRepliesForPrompts']>) =>
+            replyService.getRepliesForPrompts(...args),
     },
     rss: {
         parseFeed: (url: string, limit?: number) => rssServiceSingleton.parseFeed(url, limit),
@@ -109,6 +117,7 @@ export const organizationService = new OrganizationService(
     firebaseCoreServices,
 );
 export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices);
+export const replyService = new ReplyService(firebaseReplyDependencies, firebaseCoreServices);
 export const feedService = new FeedService(firebaseCoreServices);
 // Re-export RssService's own singleton for completeness. Core owns both the
 // class and the singleton (it's a genuinely standalone service, no Firebase

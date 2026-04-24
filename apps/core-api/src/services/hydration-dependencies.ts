@@ -1,6 +1,7 @@
 import { getAdminDb } from '../lib/firebase-admin.js';
 import type { HydrationDependencies } from '@vox-pop/core/services/hydration-dependencies';
 import { firebaseUserDependencies } from './users-dependencies.js';
+import { firebaseCoreServices } from './core-services-firebase.js';
 
 export type { HydrationDependencies };
 
@@ -8,11 +9,12 @@ export type { HydrationDependencies };
  * Firebase-wired `HydrationDependencies` binding for core-api.
  *
  * **Scope as of this PR**: implements `countOrgMembers` (for
- * `hydrateOrganization`), `loadUser` (for `hydratePrompt`), and
+ * `hydrateOrganization`), `loadUser` (for `hydratePrompt`),
  * `getOrgMemberRole` (for `hydrateOrganizations` when called with a
- * viewer — backs `GET /users/me/organizations`). Other methods
- * (`loadPrompt`, `getOrgName`, `getUsersByIds`) stay stubbed and fill in
- * as reply endpoints port.
+ * viewer — backs `GET /users/me/organizations`), and `getUsersByIds` (for
+ * `hydrateRepliesWithRecipient` when `includePrivateData` is on — backs
+ * the reply-read endpoints in Batch A2). Remaining methods (`loadPrompt`,
+ * `getOrgName`) stay stubbed and fill in as org-admin + invite endpoints port.
  *
  * **Key difference vs. apps/web's binding**: no `DataLoader` wrapping.
  * Apps/web uses `DataLoader` inside React's `cache()` for per-render batch
@@ -67,7 +69,22 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         return undefined;
     },
 
-    // --- Stubbed — fill in as reply endpoints port ---
+    async getUsersByIds(ids: string[], options?: { includePrivateData?: boolean }) {
+        // Delegate to the users CoreServices binding — which calls
+        // `UserService.getUsersByIds` → `users-deps.getProfilesByIds` (and
+        // optionally `getPhoneNumbersForUids` for lite repliers when
+        // `includePrivateData` is set). Keeps peer-service access flowing
+        // through the Phase 2.5 DI seam instead of reaching past it.
+        //
+        // Circular module-load note: core-services-firebase imports this
+        // binding. Since `firebaseCoreServices` is only dereferenced here
+        // at CALL time (not at module-load), ESM's live-binding semantics
+        // resolve the cycle — the aggregate is finalized before any HTTP
+        // request ever arrives.
+        return firebaseCoreServices.users.getUsersByIds(ids, options);
+    },
+
+    // --- Stubbed — fill in as org invite + reply-write endpoints port ---
 
     async loadPrompt(_id: string) {
         return notYetPorted('loadPrompt');
@@ -75,9 +92,5 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
 
     async getOrgName(_orgId: string) {
         return notYetPorted('getOrgName');
-    },
-
-    async getUsersByIds(_ids: string[], _options?: { includePrivateData?: boolean }) {
-        return notYetPorted('getUsersByIds');
     },
 };

@@ -1,5 +1,5 @@
-import { getAdminDb } from '../lib/firebase-admin.js';
-import { ProfileViewSchema } from 'shared/types';
+import { getAdminDb, getAdminAuth } from '../lib/firebase-admin.js';
+import { ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types';
 import type { ProfileView } from 'shared/types';
 import { logger } from '../lib/logger.js';
 import type {
@@ -15,15 +15,25 @@ export type { UserDependencies, UpdateProfileDto };
  *
  * **Scope as of this PR**: the `getUserData` read path is fully implemented
  * (`resolveHandle`, `findProfileByHandleField`, `findProfileByUsernameField`,
- * `getProfileByUid`) plus `listAllHandles` for the sitemap endpoint. The
- * remaining methods (`getProfilesByIds`, `getUserRecordByUid`,
- * `getPhoneNumbersForUids`, `ensureUserStub`, `updateUserProfile`) are
- * stubbed and will be filled in as endpoints that need them port.
+ * `getProfileByUid`) plus `listAllHandles` for the sitemap endpoint, plus
+ * `getProfilesByIds` and `getPhoneNumbersForUids` (reached via hydration
+ * when `includePrivateData` is on — backs the reply-read batch A2). The
+ * remaining methods (`getUserRecordByUid`, `ensureUserStub`,
+ * `updateUserProfile`) are stubbed and will be filled in as endpoints that
+ * need them port.
  *
  * Parity source: `apps/web/src/services/users-dependencies.ts`. The logic
  * below is a direct mirror; only imports (no `server-only`, logger is pino
  * not Winston) and a couple of module-level helpers differ.
  */
+
+// Firestore's `getAll()` caps at 1000 document refs per call. `getProfilesByIds`
+// chunks against this limit rather than hoping callers don't exceed it.
+const FIRESTORE_GETALL_LIMIT = 1000;
+
+// Firebase Admin's `auth.getUsers()` accepts up to 100 identifiers per call.
+// `getPhoneNumbersForUids` chunks against this limit.
+const FIREBASE_AUTH_GETUSERS_LIMIT = 100;
 
 function usersCollection() {
     return getAdminDb().collection('users');
@@ -31,6 +41,26 @@ function usersCollection() {
 
 function handlesCollection() {
     return getAdminDb().collection('handles');
+}
+
+/**
+ * Basic-shape fallback for legacy user docs that fail `ProfileViewBasicSchema`
+ * validation. Mirrors the apps/web binding's `basicFallbackProfile` — PII and
+ * admin fields explicitly omitted so a single legacy record can't leak through
+ * the batch hydration path.
+ */
+function basicFallbackProfile(userData: FirebaseFirestore.DocumentData, id: string): ProfileView {
+    return {
+        id,
+        handle: userData.handle,
+        displayName: userData.displayName,
+        avatarUrl: userData.avatarUrl,
+        bio: userData.bio,
+        stats: userData.stats || { followers: 0, following: 0, prompts: 0 },
+        badges: userData.badges,
+        isVerified: userData.isVerified,
+        createdAt: userData.createdAt,
+    } as unknown as ProfileView;
 }
 
 /**
@@ -135,16 +165,103 @@ export const firebaseUserDependencies: UserDependencies = {
 
     // --- Stubbed — fill in as each route handler ports ---
 
-    async getProfilesByIds(_uids: string[]) {
-        return notYetPorted('getProfilesByIds');
+    async getProfilesByIds(uids: string[]) {
+        if (uids.length === 0) return [];
+        const uniqueUids = Array.from(new Set(uids));
+        const db = getAdminDb();
+
+        // Parallelize chunks — each chunk is an independent getAll() round
+        // trip. Firestore's getAll cap is 1000 refs per call, so for the
+        // overwhelming majority of inputs this resolves in a single chunk;
+        // parallelization matters mostly for unusually large ownership-check
+        // paths in the write tier.
+        const chunks: string[][] = [];
+        for (let i = 0; i < uniqueUids.length; i += FIRESTORE_GETALL_LIMIT) {
+            chunks.push(uniqueUids.slice(i, i + FIRESTORE_GETALL_LIMIT));
+        }
+        const chunkResults = await Promise.all(
+            chunks.map((chunk) =>
+                db.getAll(...chunk.map((uid) => usersCollection().doc(uid))),
+            ),
+        );
+        const snapshots: FirebaseFirestore.DocumentSnapshot[] = chunkResults.flat();
+
+        const profiles: ProfileView[] = [];
+        for (const doc of snapshots) {
+            if (!doc.exists) continue;
+            const userData = doc.data();
+            if (!userData) continue;
+
+            // Hydration-layer narrowing: batch lookup is the default feeder
+            // for `loadUser` (hydrating author/recipient across every PromptView
+            // / ReplyView), so it MUST NOT admit PII or admin fields. Explicit
+            // field selection + ProfileViewBasicSchema ensures
+            // email/phoneNumber/lastSeenAt/unreadReplyCount/settings/
+            // blockedUsers/followers/following/reportCount/isBanned never cross
+            // the hydration boundary. Callers that legitimately need more
+            // fields (self profile, phone enrichment for lite repliers) use
+            // dedicated paths.
+            const result = ProfileViewBasicSchema.safeParse({
+                id: doc.id,
+                handle: userData.handle,
+                displayName: userData.displayName,
+                avatarUrl: userData.avatarUrl,
+                bio: userData.bio,
+                stats: userData.stats,
+                badges: userData.badges,
+                isVerified: userData.isVerified,
+                createdAt: userData.createdAt,
+            });
+            if (result.success) {
+                profiles.push(result.data as ProfileView);
+            } else {
+                logger.error(
+                    { uid: doc.id, issues: result.error.format() },
+                    '[users-deps] ProfileViewBasicSchema validation failed; falling back to loose shape',
+                );
+                profiles.push(basicFallbackProfile(userData, doc.id));
+            }
+        }
+        return profiles;
     },
 
     async getUserRecordByUid(_uid: string) {
         return notYetPorted('getUserRecordByUid');
     },
 
-    async getPhoneNumbersForUids(_uids: string[]) {
-        return notYetPorted('getPhoneNumbersForUids');
+    async getPhoneNumbersForUids(uids: string[]) {
+        const phoneMap = new Map<string, string>();
+        if (uids.length === 0) return phoneMap;
+
+        // Deduplicate before chunking — callers can pass the same uid many
+        // times for a hot replier, and there's no reason to ask Auth twice.
+        const uniqueUids = Array.from(new Set(uids));
+        const chunks: string[][] = [];
+        for (let i = 0; i < uniqueUids.length; i += FIREBASE_AUTH_GETUSERS_LIMIT) {
+            chunks.push(uniqueUids.slice(i, i + FIREBASE_AUTH_GETUSERS_LIMIT));
+        }
+
+        try {
+            const auth = getAdminAuth();
+            // Parallelize chunk lookups. Firebase Admin getUsers caps each
+            // call at 100 uids, so parallelization wins for any replier
+            // population > 100 (CRM page on prolific prompts).
+            const results = await Promise.all(
+                chunks.map((chunk) => auth.getUsers(chunk.map((uid) => ({ uid })))),
+            );
+            for (const result of results) {
+                for (const userRecord of result.users) {
+                    if (userRecord.phoneNumber) {
+                        phoneMap.set(userRecord.uid, userRecord.phoneNumber);
+                    }
+                }
+            }
+        } catch (err) {
+            // Phone enrichment is best-effort; failures degrade gracefully so
+            // a single failed Auth batch doesn't blank out the entire reply list.
+            logger.error({ err }, '[users-deps] getPhoneNumbersForUids: Auth lookup failed');
+        }
+        return phoneMap;
     },
 
     async ensureUserStub(_uid: string) {

@@ -4,7 +4,10 @@ import { errorHandler } from './middleware/error-handler.js';
 import { handlesRoute } from './routes/handles.js';
 import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
+import { promptsRepliesRoute } from './routes/prompts-replies.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
+import { peopleRepliesRoute } from './routes/people-replies.js';
+import { repliesSearchRoute } from './routes/replies-search.js';
 import { usersRoute } from './routes/users.js';
 import { usersMeRoute } from './routes/users-me.js';
 import { usersProfileRoute } from './routes/users-profile.js';
@@ -53,6 +56,9 @@ export function app(): Hono {
     a.route('/api/v1/handles', handlesRoute);
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
+    // Mount the replies sub-route on /api/v1/prompts so `/:promptId/replies`
+    // composes with the existing `/:promptId` handler in promptsRoute.
+    a.route('/api/v1/prompts', promptsRepliesRoute);
     // Users routes all mount at /api/v1/users; route files distinguish by
     // path tail (`/me` vs `/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
     // Register the more specific `/me` mount FIRST so Hono prefers it over the
@@ -65,6 +71,8 @@ export function app(): Hono {
     // Same pattern for organizations slug routes.
     a.route('/api/v1/organizations/slug', organizationsSlugRoute);
     a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
+    a.route('/api/v1/people', peopleRepliesRoute);
+    a.route('/api/v1/replies', repliesSearchRoute);
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/utils/parse-rss', parseRssRoute);
