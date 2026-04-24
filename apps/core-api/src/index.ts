@@ -43,9 +43,11 @@ app.get('/health', (c) => {
 
 /**
  * Bind to the port Cloud Run / App Hosting injects via `PORT`. Falls back to
- * 8080 for local development (`npm run dev`).
+ * 8080 for local development (`npm run dev`). `Number() || 8080` is more
+ * defensive than `parseInt` — a garbage `PORT` value (e.g. `"abc"`) coerces
+ * to `NaN` → falsy → fallback, rather than passing `NaN` through to `serve()`.
  */
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
+const port = Number(process.env.PORT) || 8080;
 
 serve(
     {

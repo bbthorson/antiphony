@@ -15,10 +15,13 @@
 runConfig:
     # min=0 is fine for a solo-user deployment; revisit if we get real traffic.
     minInstances: 0
-    # startupProbe intentionally generous — on a cold start Node + Hono + the
-    # Firebase Admin SDK (added in PR #2) takes a few seconds to initialize.
+    # Cloud Run requires startupProbe.timeoutSeconds <= periodSeconds. Total
+    # startup window = failureThreshold × periodSeconds = 300s (5 min), which
+    # is plenty for Node + Hono + Firebase Admin (added in PR #2) cold starts.
+    # NOTE: the existing apps/web apphosting.yaml has timeoutSeconds: 240 >
+    # periodSeconds: 30 — latent misconfig to clean up in a separate PR.
     startupProbe:
-        timeoutSeconds: 240
+        timeoutSeconds: 10
         periodSeconds: 30
         failureThreshold: 10
     livenessProbe:
