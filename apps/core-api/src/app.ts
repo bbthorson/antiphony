@@ -6,7 +6,9 @@ import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
 import { usersRoute } from './routes/users.js';
+import { usersProfileRoute } from './routes/users-profile.js';
 import { organizationsSlugRoute } from './routes/organizations-slug.js';
+import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -47,12 +49,15 @@ export function app(): Hono {
     a.route('/api/v1/handles', handlesRoute);
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
-    // Both users routes mount at /api/v1/users; route files distinguish by
-    // path tail (`/:handle` vs `/:handle/prompts`). Hono's router matches
-    // the more specific path when both apply.
+    // Users routes all mount at /api/v1/users; route files distinguish by
+    // path tail (`/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
+    // Hono's router matches the more specific path when multiple apply.
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
+    a.route('/api/v1/users', usersProfileRoute);
+    // Same pattern for organizations slug routes.
     a.route('/api/v1/organizations/slug', organizationsSlugRoute);
+    a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
 
     // 4. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

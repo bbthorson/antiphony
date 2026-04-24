@@ -3,6 +3,7 @@ import { OrganizationService } from '@vox-pop/core/services/organizations';
 import { HydrationService } from '@vox-pop/core/services/hydration';
 import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
+import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
 import type { CoreServices } from '@vox-pop/core/services/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
@@ -14,15 +15,17 @@ import { firebasePromptDependencies } from './prompts-dependencies.js';
  *
  * **Scope as of this PR**:
  *   - `UserService` — fully constructed (getUserData path).
- *   - `PromptService` — constructed; `getPromptData` (direct singleton call)
- *     and `getPromptsForUser` (via CoreServices) are reachable. Binding
- *     impls of `getDocumentById` + `queryByAuthor` back them.
- *   - `HydrationService` — constructed; `hydrateOrganization` (count members)
- *     and `hydratePrompt` (load user) are reachable. Other hydrate methods
- *     throw until their endpoints port.
- *   - `OrganizationService` — constructed; `getOrganizationBySlug` reachable.
- *   - `FeedService` — constructed; `resolveHandle` reachable.
- *   - `ReplyService`, `RssService` — not wired yet; CoreServices stubs throw.
+ *   - `PromptService` — constructed; `getPromptData` (direct call),
+ *     `getPromptsForUser`, and `getPromptsForOrgContext` (both via CoreServices)
+ *     are reachable. Binding impls of `getDocumentById`, `queryByAuthor`,
+ *     `queryByOrg` back them.
+ *   - `HydrationService` — `hydrateOrganization` + `hydratePrompt` reachable.
+ *   - `OrganizationService` — `getOrganizationBySlug` reachable.
+ *   - `FeedService` — `resolveHandle`, `getUserProfileData`, `getOrgProfileData`
+ *     all reachable (the latter two via the prompts + rss CoreServices wiring).
+ *   - `RssService` — singleton from `@vox-pop/core/services/rss` used directly
+ *     (no Firebase binding; it's a standalone URL-fetch class).
+ *   - `ReplyService` — not wired yet.
  *
  * Note: no React `cache()` wrappers (unlike apps/web's binding). Core-api
  * isn't an RSC runtime.
@@ -67,7 +70,8 @@ export const firebaseCoreServices: CoreServices = {
     prompts: {
         getPromptsForUser: (...args: Parameters<CoreServices['prompts']['getPromptsForUser']>) =>
             promptService.getPromptsForUser(...args),
-        getPromptsForOrgContext: () => notYetPorted('prompts.getPromptsForOrgContext'),
+        getPromptsForOrgContext: (...args: Parameters<CoreServices['prompts']['getPromptsForOrgContext']>) =>
+            promptService.getPromptsForOrgContext(...args),
         getPromptRecord: () => notYetPorted('prompts.getPromptRecord'),
         getPromptRecordsByIds: () => notYetPorted('prompts.getPromptRecordsByIds'),
         createPrompt: () => notYetPorted('prompts.createPrompt'),
@@ -86,7 +90,7 @@ export const firebaseCoreServices: CoreServices = {
         getRepliesForPrompts: () => notYetPorted('replies.getRepliesForPrompts'),
     },
     rss: {
-        parseFeed: () => notYetPorted('rss.parseFeed'),
+        parseFeed: (url: string, limit?: number) => rssServiceSingleton.parseFeed(url, limit),
     },
 };
 
@@ -104,3 +108,7 @@ export const organizationService = new OrganizationService(
 );
 export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices);
 export const feedService = new FeedService(firebaseCoreServices);
+// Re-export RssService's own singleton for completeness. Core owns both the
+// class and the singleton (it's a genuinely standalone service, no Firebase
+// bindings). Routes that need it can import directly from here.
+export const rssService = rssServiceSingleton;

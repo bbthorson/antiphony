@@ -83,6 +83,14 @@ export const firebasePromptDependencies: PromptDependencies = {
         return parseQueryResults(snapshot);
     },
 
+    async queryByOrg(orgId: string, options?: PromptQueryOptions) {
+        if (!orgId || !orgId.trim()) return [];
+        const ref = promptsCollection();
+        const q = await applyListQuery(ref.where('orgId', '==', orgId), options, ref);
+        const snapshot = await q.get();
+        return parseQueryResults(snapshot);
+    },
+
     async getDocumentById(promptId: string) {
         if (!promptId || !promptId.trim()) return null;
         const docSnap = await promptsCollection().doc(promptId).get();
@@ -93,10 +101,6 @@ export const firebasePromptDependencies: PromptDependencies = {
     },
 
     // --- Stubbed — fill in as endpoints port ---
-
-    async queryByOrg(_orgId: string, _options?: PromptQueryOptions) {
-        return notYetPorted('queryByOrg');
-    },
 
     async getRecordById(_promptId: string) {
         return notYetPorted('getRecordById');
