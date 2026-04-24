@@ -46,7 +46,7 @@ export const firebaseUserDependencies: UserDependencies = {
         // Sitemap enumeration only needs the handle strings (doc IDs), not
         // the uid bodies. `.listDocuments()` fetches references only — no
         // document body reads — which is dramatically cheaper than `.get()`
-        // for collections of any meaningful size.
+    async listAllHandles() {
         const refs = await handlesCollection().listDocuments();
         return refs.map((ref) => ref.id);
     },
