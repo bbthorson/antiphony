@@ -9,6 +9,9 @@ import { usersRoute } from './routes/users.js';
 import { usersProfileRoute } from './routes/users-profile.js';
 import { organizationsSlugRoute } from './routes/organizations-slug.js';
 import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
+import { audioRoute } from './routes/audio.js';
+import { promptsPublicRoute } from './routes/prompts-public.js';
+import { parseRssRoute } from './routes/parse-rss.js';
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -58,6 +61,9 @@ export function app(): Hono {
     // Same pattern for organizations slug routes.
     a.route('/api/v1/organizations/slug', organizationsSlugRoute);
     a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
+    a.route('/api/v1/audio', audioRoute);
+    a.route('/api/v1/prompts/public', promptsPublicRoute);
+    a.route('/api/v1/utils/parse-rss', parseRssRoute);
 
     // 4. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
