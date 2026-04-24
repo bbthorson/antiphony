@@ -1,0 +1,42 @@
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
+
+/**
+ * ESLint config for `@vox-pop/core-api`.
+ *
+ * The central rule is the **dependency arrow invariant**: core-api must not
+ * import from `apps/web/` or `apps/mobile/`. Once the `@vox-pop/core`
+ * workspace dep is added (PR #2), core-api will import from core and shared
+ * only. Firebase Admin is allowed — core-api is the Firebase-wired
+ * deployment of core, and the no-Firebase rule lives on `packages/core/`
+ * itself, not on the deployments that wire bindings.
+ *
+ * See specs/decoupling-migration.md § Phase 4.
+ */
+export default [
+    {
+        ignores: ["dist/", "node_modules/"],
+    },
+    js.configs.recommended,
+    ...tseslint.configs.recommended,
+    {
+        rules: {
+            "no-restricted-imports": ["error", {
+                patterns: [
+                    {
+                        group: [
+                            "@/*",
+                            "apps/web/*",
+                            "apps/mobile/*",
+                            "../../apps/web/**",
+                            "../../apps/mobile/**",
+                        ],
+                        message: "core-api must not import from apps/web or apps/mobile. Dependency arrow: clients → core ← hosted.",
+                    },
+                ],
+            }],
+            "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/no-unused-vars": "warn",
+        },
+    },
+];

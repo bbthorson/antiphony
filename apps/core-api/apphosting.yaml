@@ -1,0 +1,33 @@
+# Firebase App Hosting config for the core-api backend (Phase 4a).
+#
+# Scope: this file configures the second App Hosting backend that will serve
+# the `/api/v1/*` surface. At PR #1 (scaffold), the backend serves only
+# `GET /` and `GET /health` — route migration, secrets wiring, and auth
+# bridge land in subsequent PRs.
+#
+# App Hosting discovers a framework adapter automatically; the Hono template
+# here matches the adapter's expectations (Node >= 22, `build` + `start`
+# npm scripts, PORT env var).
+#
+# See https://firebase.blog/posts/2025/06/app-hosting-frameworks/
+# and specs/decoupling-migration.md § Phase 4.
+
+runConfig:
+    # min=0 is fine for a solo-user deployment; revisit if we get real traffic.
+    minInstances: 0
+    # startupProbe intentionally generous — on a cold start Node + Hono + the
+    # Firebase Admin SDK (added in PR #2) takes a few seconds to initialize.
+    startupProbe:
+        timeoutSeconds: 240
+        periodSeconds: 30
+        failureThreshold: 10
+    livenessProbe:
+        failureThreshold: 10
+
+# Secrets wiring lands in PR #2 alongside the Firebase-admin bootstrap.
+# Mirror what apps/web's apphosting.yaml at repo root already references:
+#   NEXT_PUBLIC_FIREBASE_PROJECT_ID, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+#   ADMIN_SERVICE_ACCOUNT_JSON (or Application Default Credentials).
+# Kept out of PR #1 because the scaffold doesn't touch Firebase yet — a
+# secrets-free config proves the deploy pipeline works in isolation.
+env: []

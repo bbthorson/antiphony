@@ -1,0 +1,30 @@
+{
+  "name": "@vox-pop/core-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vox Pop core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment. Phase 4a of the decoupling migration — see specs/decoupling-migration.md.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.39.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
