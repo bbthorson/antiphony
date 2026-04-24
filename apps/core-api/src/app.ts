@@ -19,6 +19,8 @@ import { organizationsRoute } from './routes/organizations.js';
 import { audioRoute } from './routes/audio.js';
 import { promptsPublicRoute } from './routes/prompts-public.js';
 import { parseRssRoute } from './routes/parse-rss.js';
+import { onboardingRoute } from './routes/onboarding.js';
+import { uploadsPendingRoute } from './routes/uploads-pending.js';
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -85,6 +87,8 @@ export function app(): Hono {
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/utils/parse-rss', parseRssRoute);
+    a.route('/api/v1/onboarding', onboardingRoute);
+    a.route('/api/v1/uploads/pending', uploadsPendingRoute);
 
     // 4. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

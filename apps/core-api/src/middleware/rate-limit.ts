@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { getAdminDb, getAdmin } from '../lib/firebase-admin.js';
+import { extractClientIp } from '../lib/client-ip.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -41,25 +42,6 @@ export const RATE_LIMITS = {
     /** Moderate operations: RSS imports (10 per min). */
     standard: { limit: 10, windowMs: 60 * 1000 } satisfies RateLimitOptions,
 } as const;
-
-function extractClientIp(xff: string | undefined): string {
-    if (!xff) return 'unknown';
-    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
-    const ip = parts[parts.length - 1] || 'unknown';
-
-    if (
-        ip === 'unknown' ||
-        ip.startsWith('10.') ||
-        ip.startsWith('192.168.') ||
-        /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip) ||
-        ip === '127.0.0.1' ||
-        ip === '::1' ||
-        ip === 'localhost'
-    ) {
-        return 'unknown';
-    }
-    return ip;
-}
 
 // Circuit breaker state — module-scoped intentionally so it persists across
 // requests within the same Cloud Run instance.
