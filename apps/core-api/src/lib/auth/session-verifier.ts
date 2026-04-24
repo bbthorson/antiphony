@@ -66,13 +66,17 @@ const firebaseSessionVerifier: SessionVerifier = {
                 return decoded as VerifiedSession;
             } catch (sessionCookieErr) {
                 // Both failed — the token is neither a valid ID token nor
-                // a valid session cookie. Log both errors for debugging
-                // (verification failures are usually expired tokens or
-                // revoked sessions; the specific error matters for triage).
+                // a valid session cookie. Log both for diagnostic triage.
+                // `err` triggers pino's default error serializer (adds
+                // type/message/stack). The other error is kept as a
+                // secondary structured field with message + code so
+                // nothing is lost in the log line.
+                const altErr = idTokenErr as { message?: string; code?: string } | null;
                 logger.warn(
                     {
-                        idTokenErr: (idTokenErr as Error)?.message,
-                        sessionCookieErr: (sessionCookieErr as Error)?.message,
+                        err: sessionCookieErr,
+                        idTokenErrMessage: altErr?.message,
+                        idTokenErrCode: altErr?.code,
                     },
                     '[auth] token failed both ID-token and session-cookie verification',
                 );

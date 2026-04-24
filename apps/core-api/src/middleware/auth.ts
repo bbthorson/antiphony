@@ -84,7 +84,7 @@ export const optionalAuth = (): MiddlewareHandler => {
             // anonymous" — not a 401. This matches apps/web's behavior:
             // a stale/expired cookie doesn't block a public endpoint.
             logger.debug(
-                { err: (err as Error)?.message, requestId: c.get('requestId') },
+                { err, requestId: c.get('requestId') },
                 '[auth] optional-auth token verification failed; treating as anonymous',
             );
             setAnonymous(c);
@@ -122,7 +122,7 @@ export const requireAuth = (): MiddlewareHandler => {
         } catch (err) {
             setAnonymous(c);
             logger.info(
-                { err: (err as Error)?.message, requestId: c.get('requestId') },
+                { err, requestId: c.get('requestId') },
                 '[auth] required-auth token verification failed',
             );
             return c.json(
