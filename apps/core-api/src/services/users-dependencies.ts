@@ -1,6 +1,8 @@
+import admin from 'firebase-admin';
 import { getAdminDb, getAdminAuth } from '../lib/firebase-admin.js';
 import { ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types';
 import type { ProfileView } from 'shared/types';
+import { ConflictError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
 import type {
     UserDependencies,
@@ -13,14 +15,11 @@ export type { UserDependencies, UpdateProfileDto };
 /**
  * Firebase-wired `UserDependencies` binding for core-api.
  *
- * **Scope as of this PR**: the `getUserData` read path is fully implemented
- * (`resolveHandle`, `findProfileByHandleField`, `findProfileByUsernameField`,
- * `getProfileByUid`) plus `listAllHandles` for the sitemap endpoint, plus
- * `getProfilesByIds` and `getPhoneNumbersForUids` (reached via hydration
- * when `includePrivateData` is on — backs the reply-read batch A2). The
- * remaining methods (`getUserRecordByUid`, `ensureUserStub`,
- * `updateUserProfile`) are stubbed and will be filled in as endpoints that
- * need them port.
+ * **Scope as of this PR**: the full read path + write surface except
+ * `getUserRecordByUid`. `updateUserProfile` (backs PATCH /users/me) is
+ * a transactional handle-swap + profile-merge. `ensureUserStub` (backs
+ * users.ensureUserExists → POST /replies on apps/web's embed flow)
+ * writes a minimal user document on first sight.
  *
  * Parity source: `apps/web/src/services/users-dependencies.ts`. The logic
  * below is a direct mirror; only imports (no `server-only`, logger is pino
@@ -264,12 +263,65 @@ export const firebaseUserDependencies: UserDependencies = {
         return phoneMap;
     },
 
-    async ensureUserStub(_uid: string) {
-        return notYetPorted('ensureUserStub');
+    async ensureUserStub(uid: string) {
+        // Use `create()` instead of `get()` + `set()` to close the TOCTOU
+        // race where two concurrent requests for the same uid both see the
+        // doc missing and both attempt to create. `create()` fails with
+        // ALREADY_EXISTS (code 6) — we map that to "already exists, nothing
+        // to do" and return false.
+        const userRef = usersCollection().doc(uid);
+        try {
+            await userRef.create({
+                id: uid,
+                handle: '',
+                createdAt: admin.firestore.Timestamp.now(),
+                stats: { followers: 0, following: 0, prompts: 0 },
+            });
+            return true;
+        } catch (err) {
+            const code = (err as { code?: number })?.code;
+            // 6 = ALREADY_EXISTS in gRPC / Firestore SDK.
+            if (code === 6) return false;
+            throw err;
+        }
     },
 
-    async updateUserProfile(_uid: string, _updates: UpdateProfileDto) {
-        return notYetPorted('updateUserProfile');
+    async updateUserProfile(uid: string, updates: UpdateProfileDto) {
+        const db = getAdminDb();
+        await db.runTransaction(async (t) => {
+            const userRef = usersCollection().doc(uid);
+            const userDoc = await t.get(userRef);
+            const currentData = userDoc.data() || {};
+
+            // Handle swap — atomic check + claim + release. Throws
+            // ConflictError (409) if the requested handle is taken by
+            // someone else; caller maps this to 409.
+            if (updates.handle && updates.handle !== currentData.handle) {
+                const newHandleRef = handlesCollection().doc(updates.handle);
+                const newHandleDoc = await t.get(newHandleRef);
+
+                if (newHandleDoc.exists && newHandleDoc.data()?.uid !== uid) {
+                    throw new ConflictError('Handle is already taken');
+                }
+
+                t.set(newHandleRef, { uid });
+
+                if (currentData.handle) {
+                    const oldHandleRef = handlesCollection().doc(currentData.handle);
+                    t.delete(oldHandleRef);
+                }
+            }
+
+            const finalUpdates: UpdateProfileDto = { ...updates, updatedAt: new Date() };
+
+            // First-time initialization — set id/createdAt for new users.
+            if (!currentData.createdAt) {
+                finalUpdates.id = uid;
+                finalUpdates.createdAt = new Date();
+            }
+
+            t.set(userRef, finalUpdates, { merge: true });
+        });
     },
 
     now(): Date {

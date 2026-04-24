@@ -49,12 +49,6 @@ import { firebaseBlobStore } from './storage-dependencies.js';
  * goes through the object reference below; no lazy-singleton needed here.
  */
 
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api core-services-firebase] ${method} is not yet ported. See apps/core-api/src/services/core-services-firebase.ts.`,
-    );
-};
-
 // The CoreServices aggregate is built first with stubs for unwired services,
 // then passed to service constructors. Wired methods below replace the stubs.
 export const firebaseCoreServices: CoreServices = {
@@ -92,7 +86,8 @@ export const firebaseCoreServices: CoreServices = {
         getUserDataByUid: (uid: string) => userService.getUserDataByUid(uid),
         getUsersByIds: (...args: Parameters<CoreServices['users']['getUsersByIds']>) =>
             userService.getUsersByIds(...args),
-        ensureUserExists: () => notYetPorted('users.ensureUserExists'),
+        ensureUserExists: (...args: Parameters<CoreServices['users']['ensureUserExists']>) =>
+            userService.ensureUserExists(...args),
     },
     organizations: {
         getOrganizationBySlug: (slug: string, currentUserId?: string) =>

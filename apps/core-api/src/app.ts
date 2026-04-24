@@ -11,6 +11,7 @@ import { repliesSearchRoute } from './routes/replies-search.js';
 import { repliesRoute } from './routes/replies.js';
 import { usersRoute } from './routes/users.js';
 import { usersMeRoute } from './routes/users-me.js';
+import { usersActionsRoute } from './routes/users-actions.js';
 import { usersProfileRoute } from './routes/users-profile.js';
 import { organizationsSlugRoute } from './routes/organizations-slug.js';
 import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
@@ -67,6 +68,7 @@ export function app(): Hono {
     // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
     // and 404 on user lookup).
     a.route('/api/v1/users/me', usersMeRoute);
+    a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);
