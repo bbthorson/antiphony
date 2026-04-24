@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { handlesRoute } from './routes/handles.js';
+import { resolveRoute } from './routes/resolve.js';
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -40,6 +41,7 @@ export function app(): Hono {
 
     // 3. API routes.
     a.route('/api/v1/handles', handlesRoute);
+    a.route('/api/v1/resolve', resolveRoute);
 
     // 4. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

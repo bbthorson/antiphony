@@ -1,29 +1,38 @@
 import { UserService } from '@vox-pop/core/services/users';
+import { OrganizationService } from '@vox-pop/core/services/organizations';
+import { HydrationService } from '@vox-pop/core/services/hydration';
+import { FeedService } from '@vox-pop/core/services/feeds';
 import type { CoreServices } from '@vox-pop/core/services/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
+import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
+import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 
 /**
  * Firebase-wired `CoreServices` binding for core-api.
  *
- * **PR #2 scope**: constructs `UserService` with its Firebase-backed deps so
- * `GET /api/v1/handles` works. Every other service (prompts, organizations,
- * replies, hydration, rss) is a throwing stub — the TS contract requires a
- * full `CoreServices` to construct `UserService`, but those methods aren't
- * reached by the handles endpoint. Each PR that ports a new endpoint wires
- * the services it actually needs.
+ * **Scope as of this PR**:
+ *   - `UserService` — fully constructed (getUserData path implemented in deps).
+ *   - `HydrationService` — constructed; only `hydrateOrganization` + its
+ *     transitive `countOrgMembers` dep is implemented. Other hydrate methods
+ *     throw until their endpoints port.
+ *   - `OrganizationService` — constructed; only `getOrganizationBySlug` is
+ *     reachable (the `resolve` endpoint's org fallback).
+ *   - `PromptService`, `ReplyService`, `RssService` — not wired yet; the
+ *     CoreServices binding for each is a throwing stub. Wiring happens as
+ *     endpoints need them (prompts endpoints in PR #4).
  *
- * Note: no React `cache()` wrappers here (unlike apps/web's binding) —
- * core-api isn't an RSC runtime, so per-render dedup doesn't apply. Hono's
- * per-request lifecycle gives each request a fresh context; if in-request
- * caching becomes necessary later, introduce a request-scoped DataLoader
- * then.
+ * Note: no React `cache()` wrappers (unlike apps/web's binding). Core-api
+ * isn't an RSC runtime.
  *
- * Module-load cycle note: apps/web's binding uses a lazy-singleton pattern
- * because of an RSC `cache()` cycle via `firebaseCoreServices → users → core-services`.
- * Core-api doesn't have that cycle (no cache wrappers) so eager
- * construction is safe. If we ever add intra-core-services dependencies
- * (e.g., a service that reads from another's CoreServices binding at
- * module-load), reintroduce the lazy pattern at that point.
+ * ## Module-load order
+ *
+ * All three constructed services (UserService, OrganizationService,
+ * HydrationService) depend on `coreServices` for peer-service calls. With
+ * the throw-stubs for unimplemented methods, there's no cycle at
+ * module-load time — the stubs capture string identifiers, not live
+ * references. When a real cross-service call shows up (e.g., once
+ * PromptService is wired and uses `services.users.getUserDataByUid`), it
+ * goes through the object reference below; no lazy-singleton needed here.
  */
 
 const notYetPorted = (method: string): never => {
@@ -32,15 +41,25 @@ const notYetPorted = (method: string): never => {
     );
 };
 
+// The CoreServices aggregate is built first with stubs for unwired services,
+// then passed to service constructors. Wired methods below replace the stubs.
 export const firebaseCoreServices: CoreServices = {
     hydration: {
-        hydratePrompt: () => notYetPorted('hydration.hydratePrompt'),
-        hydrateReply: () => notYetPorted('hydration.hydrateReply'),
-        hydrateRepliesWithRecipient: () => notYetPorted('hydration.hydrateRepliesWithRecipient'),
-        hydrateOrganization: () => notYetPorted('hydration.hydrateOrganization'),
-        hydrateOrganizations: () => notYetPorted('hydration.hydrateOrganizations'),
-        hydrateMembers: () => notYetPorted('hydration.hydrateMembers'),
-        hydrateInvite: () => notYetPorted('hydration.hydrateInvite'),
+        hydratePrompt: (...args: Parameters<CoreServices['hydration']['hydratePrompt']>) =>
+            hydrationService.hydratePrompt(...args),
+        hydrateReply: (...args: Parameters<CoreServices['hydration']['hydrateReply']>) =>
+            hydrationService.hydrateReply(...args),
+        hydrateRepliesWithRecipient: (
+            ...args: Parameters<CoreServices['hydration']['hydrateRepliesWithRecipient']>
+        ) => hydrationService.hydrateRepliesWithRecipient(...args),
+        hydrateOrganization: (...args: Parameters<CoreServices['hydration']['hydrateOrganization']>) =>
+            hydrationService.hydrateOrganization(...args),
+        hydrateOrganizations: (...args: Parameters<CoreServices['hydration']['hydrateOrganizations']>) =>
+            hydrationService.hydrateOrganizations(...args),
+        hydrateMembers: (...args: Parameters<CoreServices['hydration']['hydrateMembers']>) =>
+            hydrationService.hydrateMembers(...args),
+        hydrateInvite: (...args: Parameters<CoreServices['hydration']['hydrateInvite']>) =>
+            hydrationService.hydrateInvite(...args),
     },
     prompts: {
         getPromptsForUser: () => notYetPorted('prompts.getPromptsForUser'),
@@ -50,13 +69,14 @@ export const firebaseCoreServices: CoreServices = {
         createPrompt: () => notYetPorted('prompts.createPrompt'),
     },
     users: {
-        getUserData: () => notYetPorted('users.getUserData'),
-        getUserDataByUid: () => notYetPorted('users.getUserDataByUid'),
+        getUserData: (handle: string) => userService.getUserData(handle),
+        getUserDataByUid: (uid: string) => userService.getUserDataByUid(uid),
         getUsersByIds: () => notYetPorted('users.getUsersByIds'),
         ensureUserExists: () => notYetPorted('users.ensureUserExists'),
     },
     organizations: {
-        getOrganizationBySlug: () => notYetPorted('organizations.getOrganizationBySlug'),
+        getOrganizationBySlug: (slug: string, currentUserId?: string) =>
+            organizationService.getOrganizationBySlug(slug, currentUserId),
     },
     replies: {
         getRepliesForPrompts: () => notYetPorted('replies.getRepliesForPrompts'),
@@ -67,11 +87,15 @@ export const firebaseCoreServices: CoreServices = {
 };
 
 /**
- * Wired `UserService` singleton. Constructed eagerly (no module cycle with
- * the CoreServices binding because no cache()/lazy deps inside core-api).
- *
- * When PR #3+ ports an endpoint that needs another service, add a similar
- * singleton (e.g., `promptService = new PromptService(firebasePromptDeps, firebaseCoreServices)`)
- * and wire it into `firebaseCoreServices.prompts`.
+ * Service singletons. Order doesn't matter at module-load because
+ * firebaseCoreServices above is built first and captures `userService`,
+ * `organizationService`, `hydrationService` by late binding (via arrow
+ * functions that evaluate the identifiers at call time, not module-load).
  */
+export const hydrationService = new HydrationService(firebaseHydrationDependencies);
 export const userService = new UserService(firebaseUserDependencies, firebaseCoreServices);
+export const organizationService = new OrganizationService(
+    firebaseOrganizationDependencies,
+    firebaseCoreServices,
+);
+export const feedService = new FeedService(firebaseCoreServices);
