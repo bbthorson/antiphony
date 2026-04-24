@@ -1,5 +1,6 @@
 import { getAdminDb } from '../lib/firebase-admin.js';
 import { PromptDocumentSchema } from 'shared/types/storage';
+import { PromptRecordSchema } from 'shared/types';
 import type { PromptDocument } from 'shared/types/storage';
 import type { PromptRecord } from 'shared/types';
 import { logger } from '../lib/logger.js';
@@ -14,13 +15,19 @@ export type { PromptDependencies, PromptQueryOptions, ActivityRecord };
 /**
  * Firebase-wired `PromptDependencies` binding for core-api.
  *
- * **Scope as of this PR**: `getDocumentById` + `queryByAuthor` are
- * implemented — those are what `PromptService.getPromptData` and
- * `PromptService.getPromptsForUser` reach (transitively through
- * `services.hydration.hydratePrompt`). Every other method stays stubbed.
+ * **Scope as of this PR**: `getDocumentById`, `queryByAuthor`, `queryByOrg`,
+ * `getRecordById`, and `getRecordsByIds` are implemented. The last two back
+ * `prompts.getPromptRecord` and `getPromptRecordsByIds` on CoreServices,
+ * which the reply-write ownership checks (Batch A4) reach. Create/update
+ * methods stay stubbed until Batch A5 ports prompt writes.
  *
  * Parity source: `apps/web/src/services/prompts-dependencies.ts`.
  */
+
+// Firestore's `getAll()` caps at 1000 document refs per call. Chunk in
+// `getRecordsByIds` to stay below the cap — matches the pattern in
+// users-dependencies / organizations-dependencies.
+const FIRESTORE_GETALL_LIMIT = 1000;
 
 function promptsCollection() {
     return getAdminDb().collection('prompts');
@@ -100,15 +107,70 @@ export const firebasePromptDependencies: PromptDependencies = {
         return PromptDocumentSchema.parse({ id: docSnap.id, ...data });
     },
 
-    // --- Stubbed — fill in as endpoints port ---
-
-    async getRecordById(_promptId: string) {
-        return notYetPorted('getRecordById');
+    async getRecordById(promptId: string) {
+        if (!promptId || !promptId.trim()) return null;
+        const docSnap = await promptsCollection().doc(promptId).get();
+        if (!docSnap.exists) return null;
+        const data = docSnap.data();
+        if (!data) return null;
+        return PromptRecordSchema.parse({ id: docSnap.id, ...data });
     },
 
-    async getRecordsByIds(_promptIds: string[]) {
-        return notYetPorted('getRecordsByIds');
+    async getRecordsByIds(promptIds: string[]) {
+        if (promptIds.length === 0) return [];
+        const db = getAdminDb();
+        // Filter empty/whitespace ids before Firestore lookup — `doc('')`
+        // throws at ref-construction time, which would turn a mildly
+        // malformed bulk request into an unhandled 500.
+        const uniqueIds = Array.from(
+            new Set(promptIds.filter((id) => id && id.trim())),
+        );
+        if (uniqueIds.length === 0) {
+            return promptIds.map(() => null);
+        }
+
+        // Parallelize chunk lookups — matches the users-deps pattern. Most
+        // inputs resolve in a single chunk; the parallelism matters only on
+        // unusually wide bulk-action ownership checks.
+        const chunks: string[][] = [];
+        for (let i = 0; i < uniqueIds.length; i += FIRESTORE_GETALL_LIMIT) {
+            chunks.push(uniqueIds.slice(i, i + FIRESTORE_GETALL_LIMIT));
+        }
+        const chunkResults = await Promise.all(
+            chunks.map((chunk) =>
+                db.getAll(...chunk.map((id) => promptsCollection().doc(id))),
+            ),
+        );
+        const snapshots: FirebaseFirestore.DocumentSnapshot[] = chunkResults.flat();
+
+        // Build a map so the return is positionally aligned with the input
+        // (including duplicates). Callers rely on the positional contract.
+        const map = new Map<string, PromptRecord | null>();
+        for (const snap of snapshots) {
+            if (!snap.exists) {
+                map.set(snap.id, null);
+                continue;
+            }
+            const data = snap.data();
+            if (!data) {
+                map.set(snap.id, null);
+                continue;
+            }
+            const parsed = PromptRecordSchema.safeParse({ id: snap.id, ...data });
+            if (!parsed.success) {
+                logger.error(
+                    { promptId: snap.id, issues: parsed.error.format() },
+                    '[prompts-deps] PromptRecord schema validation failed',
+                );
+                map.set(snap.id, null);
+                continue;
+            }
+            map.set(snap.id, parsed.data);
+        }
+        return promptIds.map((id) => map.get(id) ?? null);
     },
+
+    // --- Stubbed — fill in as prompt-write endpoints port ---
 
     newPromptId(): string {
         return notYetPorted('newPromptId');

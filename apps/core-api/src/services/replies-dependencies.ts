@@ -1,7 +1,15 @@
+import admin from 'firebase-admin';
 import { getAdminDb } from '../lib/firebase-admin.js';
 import { ReplyRecordSchema } from 'shared/types';
 import type { ReplyRecord } from 'shared/types';
 import { logger } from '../lib/logger.js';
+
+// Firestore write batches cap at 500 operations per commit. Bulk methods
+// chunk against this limit. Same constant as other bindings.
+const FIRESTORE_BATCH_LIMIT = 500;
+
+// Firestore getAll() caps at 1000 refs per call.
+const FIRESTORE_GETALL_LIMIT = 1000;
 import type {
     ReplyDependencies,
     ReplyQueryOptions,
@@ -13,14 +21,13 @@ export type { ReplyDependencies, ReplyQueryOptions, ReplyActivityRecord };
 /**
  * Firebase-wired `ReplyDependencies` binding for core-api.
  *
- * **Scope as of this PR**: read path for `getRepliesForPrompt` +
- * `getRepliesForPrompts` + `searchReplies` — which means `queryByPromptId`
- * and `queryByPromptIds` are implemented. Every write/mutation method
- * (`updateReply`, `bulkUpdateReplies`, `markReplyRead`, `bulkMarkRepliesRead`,
- * `createReplyWithCounterIncrement`, `newReplyId`, `newActivityId`) stays
- * stubbed and fills in when Batch A4 (reply writes) ports. `getReplyById`
- * and `getRepliesByIds` are also stubbed (reachable only via the write-tier
- * ownership checks).
+ * **Scope as of this PR**: read path + most write/update methods
+ * (`queryByPromptId`, `queryByPromptIds`, `getReplyById`, `getRepliesByIds`,
+ * `updateReply`, `bulkUpdateReplies`, `markReplyRead`, `bulkMarkRepliesRead`)
+ * are implemented — backs the full reply-writes-except-create surface in
+ * Batch A4. The reply-create transaction (`createReplyWithCounterIncrement`
+ * + `newReplyId` + `newActivityId`) stays stubbed until Batch A4.2 ports
+ * `POST /replies` alongside the pending-uploads module.
  *
  * Parity source: `apps/web/src/services/replies-dependencies.ts`. Logic is
  * mirrored directly; only imports differ (no `server-only`; pino not Winston).
@@ -120,34 +127,87 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         return allRecords;
     },
 
-    // --- Stubbed — fill in when reply writes (A4) port ---
+    // --- Implemented: read/update methods for Batch A4 ---
 
-    async getReplyById(_replyId) {
-        return notYetPorted('getReplyById');
+    async getReplyById(replyId) {
+        if (!replyId || !replyId.trim()) return null;
+        const doc = await repliesCollection().doc(replyId).get();
+        if (!doc.exists) return null;
+        return parseReplyDoc(doc);
     },
 
-    async getRepliesByIds(_replyIds) {
-        return notYetPorted('getRepliesByIds');
+    async getRepliesByIds(replyIds) {
+        if (replyIds.length === 0) return [];
+        const db = getAdminDb();
+        // Filter empty/whitespace ids before Firestore lookup — `doc('')`
+        // throws at ref-construction time.
+        const uniqueIds = Array.from(
+            new Set(replyIds.filter((id) => id && id.trim())),
+        );
+        if (uniqueIds.length === 0) {
+            return replyIds.map(() => null);
+        }
+
+        const chunks: string[][] = [];
+        for (let i = 0; i < uniqueIds.length; i += FIRESTORE_GETALL_LIMIT) {
+            chunks.push(uniqueIds.slice(i, i + FIRESTORE_GETALL_LIMIT));
+        }
+        const chunkResults = await Promise.all(
+            chunks.map((chunk) =>
+                db.getAll(...chunk.map((id) => repliesCollection().doc(id))),
+            ),
+        );
+        const snapshots: FirebaseFirestore.DocumentSnapshot[] = chunkResults.flat();
+
+        // Build a map so the return positionally aligns with the input
+        // (including duplicates). Matches apps/web's contract.
+        const map = new Map<string, ReplyRecord | null>();
+        for (const snap of snapshots) {
+            map.set(snap.id, snap.exists ? parseReplyDoc(snap) : null);
+        }
+        return replyIds.map((id) => map.get(id) ?? null);
     },
+
+    async updateReply(replyId, updates) {
+        await repliesCollection().doc(replyId).update(updates);
+    },
+
+    async bulkUpdateReplies(replyIds, updates) {
+        if (replyIds.length === 0) return;
+        for (let i = 0; i < replyIds.length; i += FIRESTORE_BATCH_LIMIT) {
+            const chunk = replyIds.slice(i, i + FIRESTORE_BATCH_LIMIT);
+            const batch = getAdminDb().batch();
+            for (const id of chunk) {
+                batch.update(repliesCollection().doc(id), updates);
+            }
+            await batch.commit();
+        }
+    },
+
+    async markReplyRead(replyId, userId) {
+        await repliesCollection().doc(replyId).update({
+            readBy: admin.firestore.FieldValue.arrayUnion(userId),
+        });
+    },
+
+    async bulkMarkRepliesRead(replyIds, userId) {
+        if (replyIds.length === 0) return;
+        for (let i = 0; i < replyIds.length; i += FIRESTORE_BATCH_LIMIT) {
+            const chunk = replyIds.slice(i, i + FIRESTORE_BATCH_LIMIT);
+            const batch = getAdminDb().batch();
+            for (const id of chunk) {
+                batch.update(repliesCollection().doc(id), {
+                    readBy: admin.firestore.FieldValue.arrayUnion(userId),
+                });
+            }
+            await batch.commit();
+        }
+    },
+
+    // --- Stubbed — fill in when POST /replies ports (Batch A4.2) ---
 
     newReplyId() {
         return notYetPorted('newReplyId');
-    },
-
-    async updateReply(_replyId, _updates) {
-        return notYetPorted('updateReply');
-    },
-
-    async bulkUpdateReplies(_replyIds, _updates) {
-        return notYetPorted('bulkUpdateReplies');
-    },
-
-    async markReplyRead(_replyId, _userId) {
-        return notYetPorted('markReplyRead');
-    },
-
-    async bulkMarkRepliesRead(_replyIds, _userId) {
-        return notYetPorted('bulkMarkRepliesRead');
     },
 
     newActivityId() {

@@ -8,6 +8,7 @@ import { promptsRepliesRoute } from './routes/prompts-replies.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
 import { peopleRepliesRoute } from './routes/people-replies.js';
 import { repliesSearchRoute } from './routes/replies-search.js';
+import { repliesRoute } from './routes/replies.js';
 import { usersRoute } from './routes/users.js';
 import { usersMeRoute } from './routes/users-me.js';
 import { usersProfileRoute } from './routes/users-profile.js';
@@ -78,6 +79,7 @@ export function app(): Hono {
     a.route('/api/v1/organizations', organizationsRoute);
     a.route('/api/v1/people', peopleRepliesRoute);
     a.route('/api/v1/replies', repliesSearchRoute);
+    a.route('/api/v1/replies', repliesRoute);
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/utils/parse-rss', parseRssRoute);
