@@ -2,24 +2,27 @@ import { UserService } from '@vox-pop/core/services/users';
 import { OrganizationService } from '@vox-pop/core/services/organizations';
 import { HydrationService } from '@vox-pop/core/services/hydration';
 import { FeedService } from '@vox-pop/core/services/feeds';
+import { PromptService } from '@vox-pop/core/services/prompts';
 import type { CoreServices } from '@vox-pop/core/services/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
+import { firebasePromptDependencies } from './prompts-dependencies.js';
 
 /**
  * Firebase-wired `CoreServices` binding for core-api.
  *
  * **Scope as of this PR**:
- *   - `UserService` — fully constructed (getUserData path implemented in deps).
- *   - `HydrationService` — constructed; only `hydrateOrganization` + its
- *     transitive `countOrgMembers` dep is implemented. Other hydrate methods
+ *   - `UserService` — fully constructed (getUserData path).
+ *   - `PromptService` — constructed; `getPromptData` (direct singleton call)
+ *     and `getPromptsForUser` (via CoreServices) are reachable. Binding
+ *     impls of `getDocumentById` + `queryByAuthor` back them.
+ *   - `HydrationService` — constructed; `hydrateOrganization` (count members)
+ *     and `hydratePrompt` (load user) are reachable. Other hydrate methods
  *     throw until their endpoints port.
- *   - `OrganizationService` — constructed; only `getOrganizationBySlug` is
- *     reachable (the `resolve` endpoint's org fallback).
- *   - `PromptService`, `ReplyService`, `RssService` — not wired yet; the
- *     CoreServices binding for each is a throwing stub. Wiring happens as
- *     endpoints need them (prompts endpoints in PR #4).
+ *   - `OrganizationService` — constructed; `getOrganizationBySlug` reachable.
+ *   - `FeedService` — constructed; `resolveHandle` reachable.
+ *   - `ReplyService`, `RssService` — not wired yet; CoreServices stubs throw.
  *
  * Note: no React `cache()` wrappers (unlike apps/web's binding). Core-api
  * isn't an RSC runtime.
@@ -62,7 +65,8 @@ export const firebaseCoreServices: CoreServices = {
             hydrationService.hydrateInvite(...args),
     },
     prompts: {
-        getPromptsForUser: () => notYetPorted('prompts.getPromptsForUser'),
+        getPromptsForUser: (...args: Parameters<CoreServices['prompts']['getPromptsForUser']>) =>
+            promptService.getPromptsForUser(...args),
         getPromptsForOrgContext: () => notYetPorted('prompts.getPromptsForOrgContext'),
         getPromptRecord: () => notYetPorted('prompts.getPromptRecord'),
         getPromptRecordsByIds: () => notYetPorted('prompts.getPromptRecordsByIds'),
@@ -98,4 +102,5 @@ export const organizationService = new OrganizationService(
     firebaseOrganizationDependencies,
     firebaseCoreServices,
 );
+export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices);
 export const feedService = new FeedService(firebaseCoreServices);
