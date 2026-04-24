@@ -18,6 +18,10 @@ import { build } from 'esbuild';
  *     present at runtime; keeping it external avoids bundling ~50MB.
  *   - `pino` — imports platform-specific worker scripts via `require()`
  *     which don't bundle cleanly.
+ *   - `rss-parser` — pulls in `xml2js` + a surprisingly large parsing dep
+ *     chain (~300KB bundled). Pure JS; no runtime issue keeping it
+ *     external. Declared in core-api's package.json so npm resolves it
+ *     at runtime from node_modules.
  *
  * Everything else (Hono, @hono/node-server, zod, @vox-pop/core,
  * @vox-pop/shared) bundles. Bundled output is ~500KB-1MB; cold start is
@@ -34,7 +38,7 @@ await build({
     target: 'node22',
     format: 'esm',
     outfile: 'dist/index.js',
-    external: ['firebase-admin', 'pino', 'pino-pretty'],
+    external: ['firebase-admin', 'pino', 'pino-pretty', 'rss-parser'],
     // esbuild needs the tsconfig to honor the path aliases (shared/*, @vox-pop/core/*).
     tsconfig: 'tsconfig.json',
     sourcemap: true,

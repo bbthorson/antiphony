@@ -4,11 +4,13 @@ import { HydrationService } from '@vox-pop/core/services/hydration';
 import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
 import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
+import { makeStorageService } from '@vox-pop/core/services/storage';
 import type { CoreServices } from '@vox-pop/core/services/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
+import { firebaseBlobStore } from './storage-dependencies.js';
 
 /**
  * Firebase-wired `CoreServices` binding for core-api.
@@ -112,3 +114,11 @@ export const feedService = new FeedService(firebaseCoreServices);
 // class and the singleton (it's a genuinely standalone service, no Firebase
 // bindings). Routes that need it can import directly from here.
 export const rssService = rssServiceSingleton;
+
+/**
+ * Firebase-wired StorageService. Not part of CoreServices (none of the core
+ * services call it as a peer), so constructed directly via the factory.
+ * Shape mirrors apps/web's StorageService export — `StorageService.uploadFile(...)`,
+ * `StorageService.getSignedUrl(...)`, `StorageService.extractObjectPath(...)`.
+ */
+export const StorageService = makeStorageService(firebaseBlobStore);
