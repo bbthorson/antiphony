@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import globals from "globals";
 
 /**
  * ESLint config for `@vox-pop/core-api`.
@@ -20,6 +21,11 @@ export default [
     js.configs.recommended,
     ...tseslint.configs.recommended,
     {
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+        },
         rules: {
             "no-restricted-imports": ["error", {
                 patterns: [
@@ -36,7 +42,14 @@ export default [
                 ],
             }],
             "@typescript-eslint/no-explicit-any": "warn",
-            "@typescript-eslint/no-unused-vars": "warn",
+            "@typescript-eslint/no-unused-vars": [
+                "warn",
+                {
+                    argsIgnorePattern: "^_",
+                    varsIgnorePattern: "^_",
+                    caughtErrorsIgnorePattern: "^_",
+                },
+            ],
         },
     },
 ];

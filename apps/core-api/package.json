@@ -7,22 +7,31 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "node esbuild.config.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "hono": "^4.6.0"
+    "@vox-pop/core": "*",
+    "@vox-pop/shared": "*",
+    "firebase-admin": "^13.6.0",
+    "hono": "^4.6.0",
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
     "eslint": "^9.39.2",
+    "globals": "^15.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.0"
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8"
   },
   "engines": {
     "node": ">=22"

@@ -1,13 +1,8 @@
 # Firebase App Hosting config for the core-api backend (Phase 4a).
 #
-# Scope: this file configures the second App Hosting backend that will serve
-# the `/api/v1/*` surface. At PR #1 (scaffold), the backend serves only
-# `GET /` and `GET /health` — route migration, secrets wiring, and auth
-# bridge land in subsequent PRs.
-#
-# App Hosting discovers a framework adapter automatically; the Hono template
-# here matches the adapter's expectations (Node >= 22, `build` + `start`
-# npm scripts, PORT env var).
+# App Hosting discovers a framework adapter automatically; the Hono +
+# @hono/node-server template here matches the adapter's expectations
+# (Node >= 22, `build` + `start` npm scripts, `PORT` env var).
 #
 # See https://firebase.blog/posts/2025/06/app-hosting-frameworks/
 # and specs/decoupling-migration.md § Phase 4.
@@ -17,9 +12,7 @@ runConfig:
     minInstances: 0
     # Cloud Run requires startupProbe.timeoutSeconds <= periodSeconds. Total
     # startup window = failureThreshold × periodSeconds = 300s (5 min), which
-    # is plenty for Node + Hono + Firebase Admin (added in PR #2) cold starts.
-    # NOTE: the existing apps/web apphosting.yaml has timeoutSeconds: 240 >
-    # periodSeconds: 30 — latent misconfig to clean up in a separate PR.
+    # is plenty for Node + Hono + Firebase Admin cold starts.
     startupProbe:
         timeoutSeconds: 10
         periodSeconds: 30
@@ -27,10 +20,40 @@ runConfig:
     livenessProbe:
         failureThreshold: 10
 
-# Secrets wiring lands in PR #2 alongside the Firebase-admin bootstrap.
-# Mirror what apps/web's apphosting.yaml at repo root already references:
-#   NEXT_PUBLIC_FIREBASE_PROJECT_ID, NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-#   ADMIN_SERVICE_ACCOUNT_JSON (or Application Default Credentials).
-# Kept out of PR #1 because the scaffold doesn't touch Firebase yet — a
-# secrets-free config proves the deploy pipeline works in isolation.
-env: []
+# Environment + secrets.
+#
+# Sharing credentials with apps/web for now per specs/decoupling-migration.md
+# § Post-4a Follow-ups ("Split service accounts"). When that follow-up lands,
+# core-api gets its own secrets with narrower IAM scopes.
+#
+# Naming convention: no `NEXT_PUBLIC_*` prefix here — that's a Next.js thing;
+# core-api is a plain Node service. Variables pull from the same Secret
+# Manager entries apps/web uses.
+env:
+    - variable: FIREBASE_PROJECT_ID
+      secret: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+      availability:
+          - BUILD
+          - RUNTIME
+    - variable: FIREBASE_STORAGE_BUCKET
+      secret: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      availability:
+          - BUILD
+          - RUNTIME
+    - variable: ADMIN_SERVICE_ACCOUNT_JSON
+      secret: ADMIN_SERVICE_ACCOUNT_JSON
+      availability:
+          - BUILD
+          - RUNTIME
+    - variable: GCLOUD_PROJECT
+      value: "vox-pop-simple"
+      availability:
+          - RUNTIME
+    - variable: NODE_ENV
+      value: "production"
+      availability:
+          - RUNTIME
+    - variable: LOG_LEVEL
+      value: "info"
+      availability:
+          - RUNTIME
