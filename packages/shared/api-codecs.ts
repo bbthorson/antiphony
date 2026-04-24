@@ -48,6 +48,15 @@ export const BadgeResetRequestSchema = z.object({
 });
 
 // Organization management
+export const CreateOrgRequestSchema = z.object({
+  name: z.string().min(3).max(50),
+  slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/),
+  avatarUrl: z.string().url().optional(),
+  rssFeedUrl: z.string().url().optional(),
+  websiteUrl: z.string().url().optional(),
+  description: z.string().optional(),
+});
+
 export const UpdateOrgRequestSchema = z.object({
   name: z.string().min(3).max(50).optional(),
   slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/).optional(),

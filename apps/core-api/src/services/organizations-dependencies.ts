@@ -2,6 +2,7 @@ import { getAdminDb } from '../lib/firebase-admin.js';
 import {
     OrganizationRecordSchema,
     OrganizationMemberRecordSchema,
+    OrgInviteRecordSchema,
 } from 'shared/types/records';
 import type {
     OrganizationRecord,
@@ -39,11 +40,9 @@ function membersCollection(orgId: string) {
     return orgsCollection().doc(orgId).collection('members');
 }
 
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api organizations-dependencies] ${method} is not yet ported. See apps/core-api/src/services/organizations-dependencies.ts and apps/web/src/services/organizations-dependencies.ts for the binding to mirror.`,
-    );
-};
+function invitesCollection(orgId: string) {
+    return orgsCollection().doc(orgId).collection('invites');
+}
 
 export const firebaseOrganizationDependencies: OrganizationDependencies = {
     // --- Implemented: resolve-handle org fallback path ---
@@ -74,18 +73,41 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
         return null;
     },
 
-    // --- Stubbed — fill in as each endpoint ports ---
-
     newOrganizationId(): string {
-        return notYetPorted('newOrganizationId');
+        return orgsCollection().doc().id;
     },
 
-    async saveOrganization(_record: OrganizationRecord) {
-        return notYetPorted('saveOrganization');
+    async saveOrganization(record: OrganizationRecord) {
+        await orgsCollection().doc(record.id).set(record);
     },
 
-    async createOrganizationWithOwner(_org: OrganizationRecord, _owner: OrganizationMemberRecord) {
-        return notYetPorted('createOrganizationWithOwner');
+    async createOrganizationWithOwner(org: OrganizationRecord, owner: OrganizationMemberRecord) {
+        const db = getAdminDb();
+        // Transactional so the slug reservation in `handles` is atomic with
+        // the org + member writes. Apps/web's parity binding does batch-set
+        // (not transactional) and omits the `handles` reservation — this
+        // closes the shared-namespace race where a user could claim the
+        // same slug via POST /handles/claim between the check and the
+        // create. The reservation uses `system` as the uid so it can't be
+        // confused with a user handle; POST /handles/claim refuses to
+        // claim a handle owned by anyone other than the current viewer.
+        await db.runTransaction(async (t) => {
+            // Re-verify the slug is free inside the transaction. If another
+            // writer beat us to it (either an org or a user handle), bail.
+            const handleRef = db.collection('handles').doc(org.slug);
+            const existingHandle = await t.get(handleRef);
+            if (existingHandle.exists) {
+                throw new Error('Handle already taken');
+            }
+
+            t.set(orgsCollection().doc(org.id), org);
+            t.set(membersCollection(org.id).doc(owner.userId), owner);
+            t.set(handleRef, {
+                uid: 'system',
+                orgId: org.id,
+                createdAt: org.createdAt,
+            });
+        });
     },
 
     async getOrganizationById(orgId: string) {
@@ -129,8 +151,8 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
             .map((doc) => OrganizationRecordSchema.parse({ id: doc.id, ...doc.data() }));
     },
 
-    async updateOrganization(_orgId: string, _updates: Partial<OrganizationRecord>) {
-        return notYetPorted('updateOrganization');
+    async updateOrganization(orgId: string, updates: Partial<OrganizationRecord>) {
+        await orgsCollection().doc(orgId).update(updates);
     },
 
     async listMembers(orgId: string) {
@@ -148,32 +170,34 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
         );
     },
 
-    async saveMember(_record: OrganizationMemberRecord) {
-        return notYetPorted('saveMember');
+    async saveMember(record: OrganizationMemberRecord) {
+        await membersCollection(record.orgId).doc(record.userId).set(record);
     },
 
-    async updateMemberRole(_orgId: string, _userId: string, _role: 'admin' | 'member') {
-        return notYetPorted('updateMemberRole');
+    async updateMemberRole(orgId: string, userId: string, role: 'admin' | 'member') {
+        await membersCollection(orgId).doc(userId).update({ role });
     },
 
-    async deleteMember(_orgId: string, _userId: string) {
-        return notYetPorted('deleteMember');
+    async deleteMember(orgId: string, userId: string) {
+        await membersCollection(orgId).doc(userId).delete();
     },
 
-    newInviteId(_orgId: string): string {
-        return notYetPorted('newInviteId');
+    newInviteId(orgId: string): string {
+        return invitesCollection(orgId).doc().id;
     },
 
-    async saveInvite(_record: OrgInviteRecord) {
-        return notYetPorted('saveInvite');
+    async saveInvite(record: OrgInviteRecord) {
+        await invitesCollection(record.orgId).doc(record.id).set(record);
     },
 
-    async getInviteById(_orgId: string, _inviteId: string) {
-        return notYetPorted('getInviteById');
+    async getInviteById(orgId: string, inviteId: string) {
+        const doc = await invitesCollection(orgId).doc(inviteId).get();
+        if (!doc.exists) return null;
+        return OrgInviteRecordSchema.parse({ id: doc.id, ...doc.data() });
     },
 
-    async updateInviteStatus(_orgId: string, _inviteId: string, _status: OrgInviteRecord['status']) {
-        return notYetPorted('updateInviteStatus');
+    async updateInviteStatus(orgId: string, inviteId: string, status: OrgInviteRecord['status']) {
+        await invitesCollection(orgId).doc(inviteId).update({ status });
     },
 
     now(): Date {

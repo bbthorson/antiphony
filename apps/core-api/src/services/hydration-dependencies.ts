@@ -84,13 +84,16 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         return firebaseCoreServices.users.getUsersByIds(ids, options);
     },
 
-    // --- Stubbed — fill in as org invite + reply-write endpoints port ---
+    async getOrgName(orgId: string) {
+        if (!orgId || !orgId.trim()) return null;
+        const doc = await getAdminDb().collection('organizations').doc(orgId).get();
+        if (!doc.exists) return null;
+        return (doc.data()?.name as string) || null;
+    },
+
+    // --- Stubbed — fill in when prompt hydration needs cross-doc prompt loads ---
 
     async loadPrompt(_id: string) {
         return notYetPorted('loadPrompt');
-    },
-
-    async getOrgName(_orgId: string) {
-        return notYetPorted('getOrgName');
     },
 };
