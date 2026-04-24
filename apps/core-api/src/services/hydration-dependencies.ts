@@ -7,11 +7,10 @@ export type { HydrationDependencies };
 /**
  * Firebase-wired `HydrationDependencies` binding for core-api.
  *
- * **Scope as of this PR**: implements the methods needed by
- * `hydrateOrganization` (the org fallback in `FeedService.resolveHandle`):
- * `countOrgMembers`. Other methods (`loadUser`, `loadPrompt`,
- * `getOrgMemberRole`, `getOrgName`, `getUsersByIds`) are stubbed and will
- * fill in as prompts/replies endpoints land.
+ * **Scope as of this PR**: implements `countOrgMembers` (for
+ * `hydrateOrganization`) and `loadUser` (for `hydratePrompt`). Other
+ * methods (`loadPrompt`, `getOrgMemberRole`, `getOrgName`, `getUsersByIds`)
+ * stay stubbed and fill in as reply endpoints port.
  *
  * **Key difference vs. apps/web's binding**: no `DataLoader` wrapping.
  * Apps/web uses `DataLoader` inside React's `cache()` for per-render batch
@@ -41,16 +40,18 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         return snapshot.data().count;
     },
 
-    // --- Stubbed — fill in as prompts/replies endpoints port ---
-
     async loadUser(id: string) {
-        // When prompts/replies endpoints port (PR #4+), this should delegate
-        // to `firebaseUserDependencies.getProfileByUid(id)` for a naive
-        // single-read impl. Wrap in a request-scoped DataLoader if/when an
-        // endpoint shows an N+1 problem.
-        void firebaseUserDependencies; // silence unused-import until loadUser ports
-        return notYetPorted(`loadUser(${id})`);
+        // Naive single-read: delegate to `firebaseUserDependencies.getProfileByUid`.
+        // Apps/web wraps this in a DataLoader inside React's `cache()` for
+        // per-render batching — that's an RSC concern. Core-api is
+        // per-request atomic; if a specific endpoint surfaces an N+1 (many
+        // loadUser calls in one request), reintroduce request-scoped
+        // batching via Hono context storage at that point.
+        if (!id || !id.trim()) return null;
+        return firebaseUserDependencies.getProfileByUid(id);
     },
+
+    // --- Stubbed — fill in as reply endpoints port ---
 
     async loadPrompt(_id: string) {
         return notYetPorted('loadPrompt');

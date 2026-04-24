@@ -3,6 +3,8 @@ import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { handlesRoute } from './routes/handles.js';
 import { resolveRoute } from './routes/resolve.js';
+import { promptsRoute } from './routes/prompts.js';
+import { usersPromptsRoute } from './routes/users-prompts.js';
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -42,6 +44,9 @@ export function app(): Hono {
     // 3. API routes.
     a.route('/api/v1/handles', handlesRoute);
     a.route('/api/v1/resolve', resolveRoute);
+    a.route('/api/v1/prompts', promptsRoute);
+    // Nested under /api/v1/users — the route file owns `/:handle/prompts`.
+    a.route('/api/v1/users', usersPromptsRoute);
 
     // 4. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
