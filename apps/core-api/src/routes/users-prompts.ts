@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { userService, promptService } from '../services/core-services-firebase.js';
 
 /**
@@ -21,9 +22,9 @@ import { userService, promptService } from '../services/core-services-firebase.j
  *
  * Parity with: apps/web/src/app/api/v1/users/[handle]/prompts/route.ts
  *
- * **Auth status**: pre-bearer-bridge, `viewerUid = null`, so `isOwner`
- * is always false and `publicOnly` is always true. Matches apps/web's
- * un-authenticated behavior. Flip when auth bridge lands.
+ * **Auth**: `optionalAuth` attaches the viewer's uid from a bearer token
+ * if present. The owner (viewer === target user) sees live + archived;
+ * everyone else (including anonymous) sees live only.
  */
 
 const QuerySchema = z.object({
@@ -33,7 +34,7 @@ const QuerySchema = z.object({
 
 const app = new Hono();
 
-app.get('/:handle/prompts', rateLimit(RATE_LIMITS.read), async (c) => {
+app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const handle = c.req.param('handle');
 
     const queryResult = QuerySchema.safeParse({
@@ -53,8 +54,7 @@ app.get('/:handle/prompts', rateLimit(RATE_LIMITS.read), async (c) => {
         return c.json({ success: false, error: 'User not found' }, 404);
     }
 
-    // TODO(auth-bridge): read viewer from Authorization header.
-    const requesterId: string | null = null;
+    const requesterId = c.get('viewerUid');
     const isOwner = requesterId !== null && requesterId === targetUser.id;
 
     const prompts = await promptService.getPromptsForUser(

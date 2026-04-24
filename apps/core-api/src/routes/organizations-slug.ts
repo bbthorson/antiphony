@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { organizationService } from '../services/core-services-firebase.js';
 
 /**
@@ -15,20 +16,19 @@ import { organizationService } from '../services/core-services-firebase.js';
  *
  * Parity with: apps/web/src/app/api/v1/organizations/slug/[slug]/route.ts
  *
- * **Auth status**: pre-bearer-bridge, `viewerUid` is `undefined`, so
- * `currentUserRole` is never enriched. Matches apps/web's un-authenticated
- * behavior. When the auth bridge lands, pass the viewer uid into
- * `getOrganizationBySlug` to activate role enrichment.
+ * **Auth**: `optionalAuth` attaches the viewer uid if a bearer token is
+ * present. Forwarded to `getOrganizationBySlug` so the service can
+ * enrich `currentUserRole` for members of the org.
  */
 
 const app = new Hono();
 
-app.get('/:slug', rateLimit(RATE_LIMITS.read), async (c) => {
+app.get('/:slug', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const slug = c.req.param('slug');
 
-    // TODO(auth-bridge): read viewer from Authorization header and pass
-    // to getOrganizationBySlug to enable currentUserRole enrichment.
-    const viewerUid: string | undefined = undefined;
+    // `viewerUid` is string | null from the middleware; the service's
+    // second arg is `currentUserId?: string`, so `null → undefined`.
+    const viewerUid = c.get('viewerUid') ?? undefined;
     const org = await organizationService.getOrganizationBySlug(slug, viewerUid);
 
     if (!org) {

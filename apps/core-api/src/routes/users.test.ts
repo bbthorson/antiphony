@@ -19,6 +19,10 @@ vi.mock('../services/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
+vi.mock('../lib/auth/session-verifier.js', () => ({
+    sessionVerifier: { verifyToken: vi.fn() },
+}));
+
 vi.mock('../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: () => ({ doc: () => ({}) }),
@@ -41,6 +45,7 @@ process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
 const { userService } = await import('../services/core-services-firebase.js');
+const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
 type MockProfile = ReturnType<typeof mkProfile>;
 
@@ -120,6 +125,35 @@ describe('GET /api/v1/users/:handle', () => {
         });
 
         expect(res.headers.get('x-request-id')).toBe('trace-users');
+    });
+
+    it('returns the FULL profile (PII + settings) when viewer is the target user', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(userService.getUserData).mockResolvedValue(asProfile(mkProfile()));
+
+        const res = await app().request('/api/v1/users/alice', {
+            headers: { authorization: 'Bearer self-token' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        // PII + admin fields present (not stripped) — full view.
+        expect(body.data.email).toBe('leak@example.com');
+        expect(body.data.phoneNumber).toBe('+15555550123');
+        expect(body.data.settings).toEqual({ notifications: true });
+        expect(body.data.unreadReplyCount).toBe(5);
+    });
+
+    it('strips PII when viewer is authenticated but NOT self', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'other-user' });
+        vi.mocked(userService.getUserData).mockResolvedValue(asProfile(mkProfile()));
+
+        const res = await app().request('/api/v1/users/alice', {
+            headers: { authorization: 'Bearer other-token' },
+        });
+
+        const body = await res.json();
+        expect(body.data.email).toBeUndefined();
     });
 
     it('maps service errors to a 500 with requestId', async () => {

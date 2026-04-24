@@ -15,6 +15,10 @@ vi.mock('../services/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
+vi.mock('../lib/auth/session-verifier.js', () => ({
+    sessionVerifier: { verifyToken: vi.fn() },
+}));
+
 vi.mock('../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: () => ({ doc: () => ({}) }),
@@ -37,6 +41,7 @@ process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
 const { organizationService } = await import('../services/core-services-firebase.js');
+const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
 type MockOrgView = ReturnType<typeof mkOrg>;
 
@@ -76,12 +81,23 @@ describe('GET /api/v1/organizations/slug/:slug', () => {
         expect(body.data.memberCount).toBe(7);
     });
 
-    it('passes viewerUid=undefined to the service (pre-auth-bridge)', async () => {
+    it('passes viewerUid=undefined to the service when anonymous', async () => {
         vi.mocked(organizationService.getOrganizationBySlug).mockResolvedValue(asOrgView(mkOrg()));
 
         await app().request('/api/v1/organizations/slug/alpha');
 
         expect(organizationService.getOrganizationBySlug).toHaveBeenCalledWith('alpha', undefined);
+    });
+
+    it('forwards the viewer uid when a bearer token is present', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-viewer' });
+        vi.mocked(organizationService.getOrganizationBySlug).mockResolvedValue(asOrgView(mkOrg()));
+
+        await app().request('/api/v1/organizations/slug/beta', {
+            headers: { authorization: 'Bearer token-v1' },
+        });
+
+        expect(organizationService.getOrganizationBySlug).toHaveBeenCalledWith('beta', 'u-viewer');
     });
 
     it('returns 404 when the slug does not match any org', async () => {

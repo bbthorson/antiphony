@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { toPromptViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { promptService } from '../services/core-services-firebase.js';
 
 /**
@@ -18,24 +19,21 @@ import { promptService } from '../services/core-services-firebase.js';
  *
  * Parity with: apps/web/src/app/api/v1/prompts/[promptId]/route.ts
  *
- * **Auth status**: this PR pre-dates the bearer-token bridge, so
- * `viewerUid` is `null` (anonymous viewer) — the owner-aware branch is
- * dead code for now. Matches apps/web's behavior on an un-authenticated
- * request today. When the auth bridge PR lands, read the bearer token
- * and flip `viewerUid`.
+ * **Auth**: `optionalAuth` middleware attaches `viewerUid` from a bearer
+ * token if one is present. Anonymous requests get the public projection;
+ * authenticated requests from the prompt owner get the full view.
  */
 
 const app = new Hono();
 
-app.get('/:promptId', rateLimit(RATE_LIMITS.read), async (c) => {
+app.get('/:promptId', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const promptId = c.req.param('promptId');
     const prompt = await promptService.getPromptData(promptId);
     if (!prompt) {
         return c.json({ success: false, error: 'Prompt not found' }, 404);
     }
 
-    // TODO(auth-bridge): read viewer from Authorization header.
-    const viewerUid: string | null = null;
+    const viewerUid = c.get('viewerUid');
     const isOwner = viewerUid !== null && viewerUid === prompt.record.authorId;
 
     // Hide existence of non-live/private prompts from non-owners.
