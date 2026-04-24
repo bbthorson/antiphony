@@ -42,10 +42,21 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
     async getOrganizationBySlug(slug: string) {
         const snapshot = await orgsCollection().where('slug', '==', slug).limit(1).get();
         if (snapshot.empty) return null;
-        return OrganizationRecordSchema.parse(snapshot.docs[0].data());
+        // `OrganizationRecordSchema` requires `id`. Organization docs embed
+        // the id in the payload at write time (via `saveOrganization`), so
+        // this works today — but merging `doc.id` explicitly makes the bind
+        // robust to legacy docs or any future write path that skips embedding.
+        const doc = snapshot.docs[0];
+        return OrganizationRecordSchema.parse({ id: doc.id, ...doc.data() });
     },
 
     async getMemberRole(orgId: string, userId: string) {
+        // Defensive guard: TypeScript signature says `string`, and the upstream
+        // caller (`OrganizationService.getOrganizationBySlug`) only invokes this
+        // when `currentUserId` is truthy. But an empty string would still blow
+        // up Firestore (`doc('')` throws on build). Treat empty/whitespace as
+        // "not a member" rather than letting it surface as a 500.
+        if (!userId || !userId.trim()) return null;
         const doc = await membersCollection(orgId).doc(userId).get();
         if (!doc.exists) return null;
         const data = doc.data();
