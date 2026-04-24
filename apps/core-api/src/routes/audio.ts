@@ -26,6 +26,18 @@ import { logger } from '../lib/logger.js';
 const prefixedPath = (p: string): boolean =>
     p.startsWith('audio/') || p.startsWith('prompts/') || p.startsWith('replies/');
 
+/**
+ * Defense-in-depth against path-traversal bypasses. GCS uses a flat
+ * namespace so `..` has no special meaning to the storage layer, but a
+ * `..`-containing path that passes the prefix check could escape the
+ * allowlist in a hypothetical future storage backend that interprets
+ * path segments (local filesystem, S3 with simulated directories, etc.).
+ * Reject anywhere on the path — `audio/../../secrets` should fail even
+ * though it starts with `audio/`.
+ */
+const hasTraversalSegment = (p: string): boolean =>
+    p.split('/').some((seg) => seg === '..');
+
 const app = new Hono();
 
 app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
@@ -39,7 +51,7 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
         return c.json({ status: 'error', message: 'Invalid audio URL' }, 400);
     }
 
-    if (!prefixedPath(objectPath)) {
+    if (!prefixedPath(objectPath) || hasTraversalSegment(objectPath)) {
         return c.json({ status: 'error', message: 'Forbidden path' }, 403);
     }
 

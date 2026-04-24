@@ -84,6 +84,20 @@ describe('GET /api/v1/audio', () => {
         expect(body).toEqual({ status: 'error', message: 'Forbidden path' });
     });
 
+    it('returns 403 for path-traversal attempts even when the prefix matches', async () => {
+        // `audio/..` passes the `startsWith('audio/')` check but escapes
+        // the allowlist conceptually. Defense-in-depth — GCS's flat
+        // namespace makes this non-exploitable, but a future storage
+        // backend that interprets path segments (filesystem, etc.)
+        // shouldn't be able to bypass the allowlist.
+        extractObjectPath.mockReturnValue('audio/../secrets/keys.json');
+        const res = await app().request(
+            '/api/v1/audio?url=' +
+                encodeURIComponent('https://storage.googleapis.com/bucket/audio/../secrets/keys.json'),
+        );
+        expect(res.status).toBe(403);
+    });
+
     it('redirects to a signed URL for a valid audio/ path', async () => {
         extractObjectPath.mockReturnValue('audio/user-1/file.webm');
         getSignedUrl.mockResolvedValue('https://signed.example.com/audio/user-1/file.webm?sig=xyz');

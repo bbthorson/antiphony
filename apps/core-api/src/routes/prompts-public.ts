@@ -24,12 +24,14 @@ import { userService, promptService } from '../services/core-services-firebase.j
 const app = new Hono();
 
 app.get('/:handle/:promptId', rateLimit(RATE_LIMITS.read), async (c) => {
+    // `c.req.param()` already URL-decodes the path segment (unlike Next.js's
+    // raw `params` object). Double-decoding would throw on literal `%`
+    // characters and corrupt anything that happens to look like an encoded
+    // sequence. Trust Hono's decode.
     const rawHandle = c.req.param('handle');
     const promptId = c.req.param('promptId');
 
-    const handle = rawHandle
-        ? decodeURIComponent(rawHandle).toLowerCase().replace(/^@/, '')
-        : '';
+    const handle = rawHandle ? rawHandle.toLowerCase().replace(/^@/, '') : '';
 
     if (!handle || !promptId) {
         return c.json({ status: 'error', message: 'Missing handle or promptId' }, 400);
