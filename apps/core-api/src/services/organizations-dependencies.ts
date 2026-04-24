@@ -1,5 +1,8 @@
 import { getAdminDb } from '../lib/firebase-admin.js';
-import { OrganizationRecordSchema } from 'shared/types/records';
+import {
+    OrganizationRecordSchema,
+    OrganizationMemberRecordSchema,
+} from 'shared/types/records';
 import type {
     OrganizationRecord,
     OrganizationMemberRecord,
@@ -12,13 +15,12 @@ export type { OrganizationDependencies };
 /**
  * Firebase-wired `OrganizationDependencies` binding for core-api.
  *
- * **Scope as of this PR**: `getOrganizationBySlug`, `getMemberRole`, and
- * `getOrganizationsForMember` are implemented. The `getOrganizationsForMember`
- * method backs `GET /api/v1/users/me/organizations` — it does a collectionGroup
- * query across every org's `members` subcollection to find every org the user
- * belongs to. Every other method is stubbed and throws on call; each
- * subsequent PR that ports an org-related endpoint fills in the specific
- * methods its endpoint reaches.
+ * **Scope as of this PR**: `getOrganizationBySlug`, `getMemberRole`,
+ * `getOrganizationsForMember`, `getOrganizationById`, and `listMembers` are
+ * implemented. `getOrganizationById` + `listMembers` back `GET
+ * /api/v1/organizations/:orgId` and `.../members` (Batch A3). Every other
+ * method is stubbed and throws on call; each subsequent PR that ports an
+ * org-related endpoint fills in the specific methods its endpoint reaches.
  *
  * Parity source: `apps/web/src/services/organizations-dependencies.ts`.
  */
@@ -86,8 +88,11 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
         return notYetPorted('createOrganizationWithOwner');
     },
 
-    async getOrganizationById(_orgId: string) {
-        return notYetPorted('getOrganizationById');
+    async getOrganizationById(orgId: string) {
+        if (!orgId || !orgId.trim()) return null;
+        const doc = await orgsCollection().doc(orgId).get();
+        if (!doc.exists) return null;
+        return OrganizationRecordSchema.parse({ id: doc.id, ...doc.data() });
     },
 
     async getOrganizationsForMember(userId: string) {
@@ -128,8 +133,19 @@ export const firebaseOrganizationDependencies: OrganizationDependencies = {
         return notYetPorted('updateOrganization');
     },
 
-    async listMembers(_orgId: string) {
-        return notYetPorted('listMembers');
+    async listMembers(orgId: string) {
+        if (!orgId || !orgId.trim()) return [];
+        const snapshot = await membersCollection(orgId).get();
+        // Member doc IDs are userIds; records embed `userId` + `orgId` at write
+        // time. Merge the path-derived ids anyway to be robust to legacy docs
+        // that predate the embed — same pattern as `getOrganizationById`.
+        return snapshot.docs.map((doc) =>
+            OrganizationMemberRecordSchema.parse({
+                orgId,
+                userId: doc.id,
+                ...doc.data(),
+            }),
+        );
     },
 
     async saveMember(_record: OrganizationMemberRecord) {

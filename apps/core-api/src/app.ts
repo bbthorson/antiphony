@@ -13,6 +13,7 @@ import { usersMeRoute } from './routes/users-me.js';
 import { usersProfileRoute } from './routes/users-profile.js';
 import { organizationsSlugRoute } from './routes/organizations-slug.js';
 import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
+import { organizationsRoute } from './routes/organizations.js';
 import { audioRoute } from './routes/audio.js';
 import { promptsPublicRoute } from './routes/prompts-public.js';
 import { parseRssRoute } from './routes/parse-rss.js';
@@ -68,9 +69,13 @@ export function app(): Hono {
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);
-    // Same pattern for organizations slug routes.
+    // Same pattern for organizations slug routes — more specific `/slug/*`
+    // prefix MUST register first so a request like `/organizations/slug/abc`
+    // lands on the slug handler rather than the `/:orgId` catch-all in
+    // organizationsRoute.
     a.route('/api/v1/organizations/slug', organizationsSlugRoute);
     a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
+    a.route('/api/v1/organizations', organizationsRoute);
     a.route('/api/v1/people', peopleRepliesRoute);
     a.route('/api/v1/replies', repliesSearchRoute);
     a.route('/api/v1/audio', audioRoute);
