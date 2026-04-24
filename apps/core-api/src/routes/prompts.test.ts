@@ -19,6 +19,10 @@ vi.mock('../services/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
+vi.mock('../lib/auth/session-verifier.js', () => ({
+    sessionVerifier: { verifyToken: vi.fn() },
+}));
+
 vi.mock('../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: () => ({ doc: () => ({}) }),
@@ -41,6 +45,7 @@ process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
 const { promptService } = await import('../services/core-services-firebase.js');
+const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
 type MockPromptView = ReturnType<typeof mkPrompt>;
 
@@ -141,6 +146,50 @@ describe('GET /api/v1/prompts/:promptId', () => {
         });
 
         expect(res.headers.get('x-request-id')).toBe('trace-xyz');
+    });
+
+    it('returns the FULL view (owner-only fields) when viewer is the author', async () => {
+        // `mkPrompt` default authorId is 'author-1'. Viewer uid matches.
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'author-1' });
+        vi.mocked(promptService.getPromptData).mockResolvedValue(asPromptView(mkPrompt()));
+
+        const res = await app().request('/api/v1/prompts/p-1', {
+            headers: { authorization: 'Bearer owner-token' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        // Owner-only fields present (not stripped).
+        expect(body.data.analytics).toEqual({ listens: 42 });
+        expect(body.data.moderation).toEqual({ flagged: false });
+        expect(body.data.aiSummary).toBe('owner-only summary');
+    });
+
+    it('still strips owner-only fields when viewer is authenticated but NOT the author', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'different-user' });
+        vi.mocked(promptService.getPromptData).mockResolvedValue(asPromptView(mkPrompt()));
+
+        const res = await app().request('/api/v1/prompts/p-not-mine', {
+            headers: { authorization: 'Bearer other-user-token' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data.analytics).toBeUndefined();
+    });
+
+    it('treats an invalid token as anonymous (still public projection, not 401)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockRejectedValue(new Error('expired'));
+        vi.mocked(promptService.getPromptData).mockResolvedValue(asPromptView(mkPrompt()));
+
+        const res = await app().request('/api/v1/prompts/p-expired', {
+            headers: { authorization: 'Bearer expired-token' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data.analytics).toBeUndefined();
     });
 
     it('maps service errors to a 500 with requestId', async () => {

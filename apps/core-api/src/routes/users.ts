@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { toProfileViewBasic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
+import { optionalAuth } from '../middleware/auth.js';
 import { userService } from '../services/core-services-firebase.js';
 
 /**
@@ -19,15 +20,14 @@ import { userService } from '../services/core-services-firebase.js';
  *
  * Parity with: apps/web/src/app/api/v1/users/[handle]/route.ts
  *
- * **Auth status**: pre-bearer-bridge, `viewerUid = null`, so `isSelf` is
- * always false and all responses go through `toProfileViewBasic`. Matches
- * apps/web's behavior on an un-authenticated request. When the auth
- * bridge PR lands, flip `viewerUid` to activate the self-view branch.
+ * **Auth**: `optionalAuth` attaches the viewer uid from a bearer token
+ * if present. Self viewer (`viewer.uid === targetUser.id`) gets the full
+ * profile; anyone else (including anonymous) gets `ProfileViewBasic`.
  */
 
 const app = new Hono();
 
-app.get('/:handle', rateLimit(RATE_LIMITS.read), async (c) => {
+app.get('/:handle', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const handle = c.req.param('handle');
 
     const targetUser = await userService.getUserData(handle);
@@ -35,8 +35,7 @@ app.get('/:handle', rateLimit(RATE_LIMITS.read), async (c) => {
         return c.json({ success: false, error: 'User not found' }, 404);
     }
 
-    // TODO(auth-bridge): read viewer from Authorization header.
-    const viewerUid: string | null = null;
+    const viewerUid = c.get('viewerUid');
     const isSelf = viewerUid !== null && viewerUid === targetUser.id;
 
     return c.json({

@@ -17,6 +17,10 @@ vi.mock('../services/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
+vi.mock('../lib/auth/session-verifier.js', () => ({
+    sessionVerifier: { verifyToken: vi.fn() },
+}));
+
 vi.mock('../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: () => ({ doc: () => ({}) }),
@@ -39,6 +43,7 @@ process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
 const { userService, promptService } = await import('../services/core-services-firebase.js');
+const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
 type MockPromptView = ReturnType<typeof mkPromptView>;
 
@@ -123,6 +128,31 @@ describe('GET /api/v1/users/:handle/prompts', () => {
         // Signature: (userId, limit, cursor, publicOnly)
         // Anonymous viewer → isOwner=false → publicOnly=true.
         expect(promptService.getPromptsForUser).toHaveBeenCalledWith('u-4', 5, undefined, true);
+    });
+
+    it('passes publicOnly=false when the viewer IS the target user', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(userService.getUserData).mockResolvedValue(asProfileView({ id: 'u-self', handle: 'self' }));
+        vi.mocked(promptService.getPromptsForUser).mockResolvedValue(asPromptViews([]));
+
+        await app().request('/api/v1/users/self/prompts?limit=5', {
+            headers: { authorization: 'Bearer self-token' },
+        });
+
+        // Viewer is owner → publicOnly=false (returns live + archived).
+        expect(promptService.getPromptsForUser).toHaveBeenCalledWith('u-self', 5, undefined, false);
+    });
+
+    it('passes publicOnly=true for authenticated-but-not-owner viewers', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'other-user' });
+        vi.mocked(userService.getUserData).mockResolvedValue(asProfileView({ id: 'u-target', handle: 'target' }));
+        vi.mocked(promptService.getPromptsForUser).mockResolvedValue(asPromptViews([]));
+
+        await app().request('/api/v1/users/target/prompts?limit=5', {
+            headers: { authorization: 'Bearer other-token' },
+        });
+
+        expect(promptService.getPromptsForUser).toHaveBeenCalledWith('u-target', 5, undefined, true);
     });
 
     it('returns 404 when the user does not exist', async () => {
