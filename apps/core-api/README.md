@@ -1,57 +1,78 @@
 # @vox-pop/core-api
 
-Hono HTTP service that hosts Vox Pop's `/api/v1/*` surface as a standalone deployment. Phase 4a of the decoupling migration — see [`specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 4.
+> **Open-source core of [Vox Pop](https://voxpop.com).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — identity, prompts, replies, organizations, inbox, and notifications. Pairs with a Firestore backend and any Firebase-compatible auth provider.
+>
+> **Hosted version:** [voxpop.com](https://voxpop.com). The hosted product adds IVR / call-forwarding / Twilio integration and embed-widget distribution. This repo contains only the open-core tier.
 
 ## Status
 
-**PR #1 scaffold.** Minimum viable Hono app: `GET /` returns service identity, `GET /health` returns `{ ok: true }`. No `/api/v1/*` handlers yet, no Firebase, no auth.
+**Phase 4a complete (2026-04-24).** Every non-hosted-tier endpoint in `/api/v1/*` is live:
 
-Subsequent PRs:
+- 22 JSON endpoints across prompts, replies, users, organizations, handles, onboarding, uploads, inbox, and notifications.
+- Firebase-wired service bindings (`UserService`, `PromptService`, `ReplyService`, `OrganizationService`, `HydrationService`, `FeedService`, `StorageService`, `RssService`).
+- Bearer-token auth bridge — accepts either Firebase ID tokens or session cookie values.
+- Idempotency-key support on write endpoints.
+- pino structured logging + X-Request-ID correlation.
 
-- **PR #2** — Firebase Admin bootstrap, middleware ports (`withErrorHandler`, `rateLimit`, `X-Request-ID`), first real endpoint (`GET /api/v1/handles`), Firebase-wired `CoreServices` binding.
-- **PR #3+** — remaining 65 route handlers, ported incrementally from `apps/web/src/app/api/v1/*`.
-- **PR #N** — auth bridge: `apps/web`'s RSC transport sends `Authorization: Bearer <sessionCookie>`, core-api verifies via `SessionVerifier`.
-- **PR #N+1** — `CORE_API_BASE_URL` env var in `apps/web`; production flip routes RSC-side fetches to this backend.
+**Phase 4b (in progress):** open-source carve-out. See [`../../specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 4b.
+
+## Intentionally NOT here
+
+These live in the closed-source `apps/web` tier and stay there:
+
+- **IVR / call-forwarding** — Twilio integration, phone-lookup, dedicated numbers, carrier detection.
+- **AT Protocol OAuth callback + client-metadata** — redirect_uri baked into PDS registrations; origin-bound.
+- **CSP violation reporter** — browser sends to the `report-uri` in the page's CSP header.
+- **Twilio SIP webhooks** — third-party webhook URLs are configured in Twilio's console.
+
+## Architecture
+
+Hono + firebase-admin, two layers:
+
+- **`src/routes/`** — one file per endpoint. Each route validates with Zod, authenticates via the bearer middleware, and delegates to a service method.
+- **`src/services/core-services-firebase.ts`** — composition root. Wires the Firebase-backed `CoreServices` binding with the `*-dependencies.ts` implementations in this package. Swappable for non-Firebase backends (Postgres, in-memory for tests) without touching `packages/core`.
+
+No React, no Next.js, no framework magic. Just Hono handlers talking to typed services.
 
 ## Local development
 
 ```bash
-# From the monorepo root:
-npm install                            # installs core-api's deps via workspaces
+npm install
 npm run dev -w @vox-pop/core-api       # tsx watch; listens on :8080
 
-# Smoke-test:
-curl http://localhost:8080/            # → {"service":"vox-pop-core-api",…}
+# Smoke:
+curl http://localhost:8080/            # → {"service":"vox-pop-core-api",...}
 curl http://localhost:8080/health      # → {"ok":true}
 ```
 
-## Build
+With the Firebase emulators:
 
 ```bash
-npm run build -w @vox-pop/core-api     # tsc → dist/
-npm run start -w @vox-pop/core-api     # node dist/index.js
+npx firebase emulators:start --only auth,firestore,functions,storage --project demo-vox-pop
+VOXPOP_USE_EMULATOR=true npm run dev -w @vox-pop/core-api
+```
+
+## Verification
+
+```bash
+npm run typecheck -w @vox-pop/core-api
+npm run build -w @vox-pop/core-api     # esbuild; bundle stays < 500kb
+npm run lint -w @vox-pop/core-api
+npm run test -w @vox-pop/core-api -- --run
 ```
 
 ## Deployment
 
-Firebase App Hosting, second backend (alongside the existing `apps/web` backend). [`apphosting.yaml`](./apphosting.yaml) lives inside this directory and mirrors the runtime config of the web backend. The App Hosting framework adapter auto-detects Hono (see the [June 2025 announcement](https://firebase.blog/posts/2025/06/app-hosting-frameworks/)).
+Firebase App Hosting. [`apphosting.yaml`](./apphosting.yaml) mirrors the runtime config of the apps/web backend. Provision the backend in the Firebase console, wire secrets, and map a domain (or use the default `*.run.app` URL).
 
-Backend provisioning on the Firebase side (creating the second App Hosting backend, wiring secrets, mapping a domain) is manual setup, not in-tree. Config lives here; operational wiring happens outside the repo.
+Once the backend is up, flip traffic in apps/web by setting `CORE_API_BASE_URL` in apps/web's apphosting.yaml. Rollback = unset the var.
 
 ## Why Hono, not Next.js
 
 Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and App Hosting supports it natively. See [`specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 4 for the full trade-off.
 
-## Structure
+## License
 
-```
-apps/core-api/
-  apphosting.yaml         # Firebase App Hosting config (second backend)
-  package.json            # Hono + @hono/node-server; no Firebase yet
-  tsconfig.json           # ESM NodeNext; strict mode
-  eslint.config.mjs       # Dependency-arrow enforcement
-  src/
-    index.ts              # Hono app entry + serve()
-```
+MIT. See [LICENSE](./LICENSE).
 
-PR #2 expands into `src/middleware/`, `src/routes/`, and `src/services/` (Firebase-wired `CoreServices` binding).
+Copyright © 2025-2026 Brad Thorson.
