@@ -285,27 +285,24 @@ describe('POST /api/v1/replies/:replyId/read', () => {
     });
 });
 
-describe('POST /api/v1/replies/:replyId/notes', () => {
+describe('PATCH /api/v1/replies/:replyId/notes', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
     it('401s without auth', async () => {
-        const res = await app().request('/api/v1/replies/r-1/notes', jsonInit({ notes: 'hi' }, {}));
-        // Re-run without authorization — override defaults.
-        const res2 = await app().request('/api/v1/replies/r-1/notes', {
-            method: 'POST',
+        const res = await app().request('/api/v1/replies/r-1/notes', {
+            method: 'PATCH',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ notes: 'hi' }),
         });
-        expect(res2.status).toBe(401);
-        void res; // unused; keeping the explicit headerless case distinct
+        expect(res.status).toBe(401);
     });
 
     it('404s when reply is missing', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-n' });
         vi.mocked(replyService.getReplyRecord).mockResolvedValue(null);
-        const res = await app().request('/api/v1/replies/r-miss/notes', jsonInit({ notes: 'hi' }));
+        const res = await app().request('/api/v1/replies/r-miss/notes', jsonPatch({ notes: 'hi' }));
         expect(res.status).toBe(404);
         expect((await res.json()).message).toBe('Reply not found');
     });
@@ -314,7 +311,7 @@ describe('POST /api/v1/replies/:replyId/notes', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-n' });
         vi.mocked(replyService.getReplyRecord).mockResolvedValue(asReply({ id: 'r-1', promptId: 'p-gone', authorId: 'x' }));
         vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
-        const res = await app().request('/api/v1/replies/r-1/notes', jsonInit({ notes: 'hi' }));
+        const res = await app().request('/api/v1/replies/r-1/notes', jsonPatch({ notes: 'hi' }));
         expect(res.status).toBe(404);
         expect((await res.json()).message).toBe('Prompt not found');
     });
@@ -323,7 +320,7 @@ describe('POST /api/v1/replies/:replyId/notes', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-author' });
         vi.mocked(replyService.getReplyRecord).mockResolvedValue(asReply({ id: 'r-1', promptId: 'p-1', authorId: 'x' }));
         vi.mocked(promptService.getPromptRecord).mockResolvedValue(asPrompt({ id: 'p-1', authorId: 'owner' }));
-        const res = await app().request('/api/v1/replies/r-1/notes', jsonInit({ notes: 'hi' }));
+        const res = await app().request('/api/v1/replies/r-1/notes', jsonPatch({ notes: 'hi' }));
         expect(res.status).toBe(403);
     });
 
@@ -333,41 +330,18 @@ describe('POST /api/v1/replies/:replyId/notes', () => {
         vi.mocked(promptService.getPromptRecord).mockResolvedValue(asPrompt({ id: 'p-1', authorId: 'owner' }));
         vi.mocked(replyService.updateReplyNotes).mockResolvedValue(undefined);
 
-        const res = await app().request('/api/v1/replies/r-1/notes', jsonInit({ notes: 'updated' }));
+        const res = await app().request('/api/v1/replies/r-1/notes', jsonPatch({ notes: 'updated' }));
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ success: true });
         expect(replyService.updateReplyNotes).toHaveBeenCalledWith('r-1', 'updated');
     });
-});
 
-describe('PATCH /api/v1/replies/:replyId/notes (verb alias for POST)', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
-
-    it('routes the PATCH verb to the same handler as POST and writes notes', async () => {
-        // apps/web's parity route uses PATCH; core-api keeps both POST and
-        // PATCH wired to the same handler so serverProxy callers work.
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner-pa' });
-        vi.mocked(replyService.getReplyRecord).mockResolvedValue({
-            id: 'r-pa',
-            promptId: 'p-pa',
-        } as unknown as Awaited<ReturnType<typeof replyService.getReplyRecord>>);
-        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
-            id: 'p-pa',
-            authorId: 'owner-pa',
-        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
-
-        const res = await app().request('/api/v1/replies/r-pa/notes', {
-            method: 'PATCH',
-            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
-            body: JSON.stringify({ notes: 'patched-via-PATCH' }),
-        });
-
-        expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true });
-        expect(replyService.updateReplyNotes).toHaveBeenCalledWith('r-pa', 'patched-via-PATCH');
+    it('rejects POST verb with 404 (only PATCH is registered)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        const res = await app().request('/api/v1/replies/r-1/notes', jsonInit({ notes: 'hi' }));
+        expect(res.status).toBe(404);
+        expect(replyService.updateReplyNotes).not.toHaveBeenCalled();
     });
 });
 

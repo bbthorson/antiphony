@@ -296,19 +296,16 @@ app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
 });
 
 // ---------------------------------------------------------------------------
-// POST + PATCH /api/v1/replies/:replyId/notes
+// PATCH /api/v1/replies/:replyId/notes
 // ---------------------------------------------------------------------------
 //
-// apps/web's parity route uses PATCH (verb chosen at the time the endpoint
-// was added). Original core-api batch landed POST per the migration plan's
-// path spec. Both verbs share one handler so apps/web's serverProxy callers
-// (PATCH) and any direct API consumers using the documented POST both work.
+// PATCH matches apps/web's parity route. Originally core-api also exposed a
+// POST verb alias for parity with an earlier migration spec, but no caller
+// ever used it; removed 2026-04-26 to reduce surface (audit finding from
+// specs/api-ledger.md).
 
 const handleNotesUpdate = async (c: Context) => {
     const uid = c.get('viewerUid')!;
-    // Routes are mounted at `/:replyId/notes` for both POST and PATCH, so the
-    // param is always present at runtime — TS sees `string | undefined`
-    // because the standalone handler isn't typed with the param schema.
     const replyId = c.req.param('replyId')!;
 
     let body: unknown;
@@ -378,7 +375,6 @@ const handleNotesUpdate = async (c: Context) => {
     return c.json({ success: true });
 };
 
-app.post('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);
 app.patch('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);
 
 // ---------------------------------------------------------------------------
