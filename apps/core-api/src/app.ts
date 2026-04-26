@@ -6,6 +6,7 @@ import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
 import { promptsRepliesRoute } from './routes/prompts-replies.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
+import { peopleRoute } from './routes/people.js';
 import { peopleListRoute } from './routes/people-list.js';
 import { peopleRepliesRoute } from './routes/people-replies.js';
 import { repliesSearchRoute } from './routes/replies-search.js';
@@ -84,6 +85,10 @@ export function app(): Hono {
     a.route('/api/v1/organizations/slug', organizationsSlugRoute);
     a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
     a.route('/api/v1/organizations', organizationsRoute);
+    // peopleRoute owns `/` (top-level) + `/:handle/notes`. Sibling routes
+    // (peopleListRoute → /list, peopleRepliesRoute → /:handle/replies)
+    // share the same prefix; Hono dispatches by path tail.
+    a.route('/api/v1/people', peopleRoute);
     a.route('/api/v1/people', peopleListRoute);
     a.route('/api/v1/people', peopleRepliesRoute);
     a.route('/api/v1/replies', repliesSearchRoute);

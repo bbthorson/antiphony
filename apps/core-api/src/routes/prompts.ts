@@ -19,6 +19,7 @@ import { logger } from '../lib/logger.js';
 /**
  * Prompt endpoints mounted at `/api/v1/prompts`.
  *
+ *   GET    /                     — list authenticated viewer's prompts (paginated)
  *   GET    /:promptId            — owner-aware PromptView (optional auth)
  *   POST   /                     — create prompt (idempotency-capable)
  *   PATCH  /:promptId/status     — update status (live/archived)
@@ -26,8 +27,8 @@ import { logger } from '../lib/logger.js';
  *   POST   /:promptId/read       — mark all replies for the prompt as read
  *
  * Parity sources:
+ *   apps/web/src/app/api/v1/prompts/route.ts (GET list + POST create)
  *   apps/web/src/app/api/v1/prompts/[promptId]/route.ts (GET + DELETE)
- *   apps/web/src/app/api/v1/prompts/route.ts (POST)
  *   apps/web/src/app/api/v1/prompts/[promptId]/status/route.ts (PATCH)
  *   apps/web/src/app/api/v1/prompts/[promptId]/read/route.ts (POST)
  *
@@ -39,7 +40,53 @@ import { logger } from '../lib/logger.js';
 
 const StatusUpdateSchema = z.object({ status: z.enum(['live', 'archived']) });
 
+const ListQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().min(1).optional(),
+});
+
 const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// GET / — list viewer's prompts (paginated)
+// ---------------------------------------------------------------------------
+//
+// Mirrors apps/web's GET /api/v1/prompts: auth-required, returns
+// `{ success: true, data: PromptView[], nextCursor }`. Cursor is the last
+// prompt's id when the page is full, null otherwise.
+
+app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const uid = c.get('viewerUid')!;
+
+    const queryResult = ListQuerySchema.safeParse({
+        limit: c.req.query('limit'),
+        cursor: c.req.query('cursor'),
+    });
+    if (!queryResult.success) {
+        return c.json(
+            {
+                success: false,
+                error: 'Invalid query parameters',
+                issues: queryResult.error.issues,
+            },
+            400,
+        );
+    }
+    const { limit, cursor } = queryResult.data;
+
+    const prompts = await promptService.getPromptsForUser(uid, limit, cursor);
+
+    return c.json({
+        success: true,
+        data: prompts,
+        // Only set a cursor when the page is full AND non-empty — guards
+        // against `prompts[-1]` on empty pages.
+        nextCursor:
+            prompts.length > 0 && prompts.length === limit
+                ? prompts[prompts.length - 1].record.id
+                : null,
+    });
+});
 
 // ---------------------------------------------------------------------------
 // GET /:promptId

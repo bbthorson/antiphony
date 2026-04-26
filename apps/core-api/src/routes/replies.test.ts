@@ -22,9 +22,11 @@ vi.mock('../services/core-services-firebase.js', () => ({
         bulkMarkRead: vi.fn(),
         bulkUpdateStatus: vi.fn(),
         createReplyTransaction: vi.fn(),
+        getRepliesForPrompt: vi.fn(),
     },
     promptService: {
         getPromptRecord: vi.fn(),
+        getPromptData: vi.fn(),
     },
     userService: {},
     organizationService: {},
@@ -465,5 +467,134 @@ describe('POST /api/v1/replies/update-author-data', () => {
             authorTags: ['thoughtful'],
             isVerified: true,
         });
+    });
+});
+
+describe('GET /api/v1/replies (list by prompt)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('400s without promptId', async () => {
+        const res = await app().request('/api/v1/replies');
+        expect(res.status).toBe(400);
+    });
+
+    it('404s when the prompt does not exist', async () => {
+        vi.mocked(promptService.getPromptData).mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/replies?promptId=missing');
+
+        expect(res.status).toBe(404);
+    });
+
+    it('returns replies projected through toReplyViewPublic for an anonymous viewer', async () => {
+        const fakePrompt = {
+            record: { id: 'p-1', authorId: 'author-1', status: 'live' },
+            author: { id: 'author-1', handle: 'host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+        const fakeReply = {
+            record: {
+                id: 'r-1',
+                promptId: 'p-1',
+                authorId: 'them',
+                createdAt: new Date().toISOString(),
+                status: 'live',
+                audioUrl: 'https://x',
+                notes: 'private',
+            },
+            author: { id: 'them' },
+            recipient: { id: 'author-1' },
+            isRead: false,
+            isDeleted: false,
+            isVerified: false,
+            readBy: [],
+            authorRating: 5,
+            listenerPhoneNumber: '+15555555555',
+        };
+        vi.mocked(replyService.getRepliesForPrompt).mockResolvedValue([
+            fakeReply,
+        ] as unknown as Awaited<ReturnType<typeof replyService.getRepliesForPrompt>>);
+
+        const res = await app().request('/api/v1/replies?promptId=p-1');
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        expect(body.replies).toHaveLength(1);
+        // Public projection strips CRM-only fields.
+        expect(body.replies[0].authorRating).toBeUndefined();
+        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.replies[0].record.notes).toBeUndefined();
+        // Anonymous viewer → uid is empty string.
+        expect(vi.mocked(replyService.getRepliesForPrompt)).toHaveBeenCalledWith(
+            '',
+            { id: 'p-1', authorId: 'author-1', status: 'live' },
+            fakePrompt.author,
+            { includeArchived: false },
+        );
+    });
+
+    it('forwards includeArchived=true and uses prompt.record.status (not visibility)', async () => {
+        // Owner viewing their own archived prompt — passes the visibility gate
+        // because isOwner=true. status carries through to ReplyService.
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'author-2' });
+        const fakePrompt = {
+            record: { id: 'p-2', authorId: 'author-2', status: 'archived' },
+            author: { id: 'author-2', handle: 'host2' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+        vi.mocked(replyService.getRepliesForPrompt).mockResolvedValue([]);
+
+        await app().request('/api/v1/replies?promptId=p-2&includeArchived=true', {
+            headers: { authorization: 'Bearer owner-token' },
+        });
+
+        expect(vi.mocked(replyService.getRepliesForPrompt)).toHaveBeenCalledWith(
+            'author-2',
+            { id: 'p-2', authorId: 'author-2', status: 'archived' },
+            fakePrompt.author,
+            { includeArchived: true },
+        );
+    });
+
+    it('404s when the prompt is private and viewer is not owner (visibility gate)', async () => {
+        const fakePrompt = {
+            record: { id: 'p-priv', authorId: 'someone-else', status: 'live' },
+            author: { id: 'someone-else', handle: 'priv-host' },
+            visibility: 'private',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+
+        const res = await app().request('/api/v1/replies?promptId=p-priv');
+
+        expect(res.status).toBe(404);
+        // ReplyService should never be called when the visibility gate fires.
+        expect(vi.mocked(replyService.getRepliesForPrompt)).not.toHaveBeenCalled();
+    });
+
+    it('404s when the prompt is non-live and viewer is anonymous', async () => {
+        const fakePrompt = {
+            record: { id: 'p-arch', authorId: 'someone-else', status: 'archived' },
+            author: { id: 'someone-else', handle: 'arch-host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+
+        const res = await app().request('/api/v1/replies?promptId=p-arch');
+
+        expect(res.status).toBe(404);
+        expect(vi.mocked(replyService.getRepliesForPrompt)).not.toHaveBeenCalled();
     });
 });

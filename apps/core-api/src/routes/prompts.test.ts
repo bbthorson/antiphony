@@ -16,6 +16,7 @@ vi.mock('../services/core-services-firebase.js', () => ({
         getPromptRecord: vi.fn(),
         updatePromptStatus: vi.fn(),
         deletePrompt: vi.fn(),
+        getPromptsForUser: vi.fn(),
     },
     organizationService: {
         isMember: vi.fn(),
@@ -494,5 +495,92 @@ describe('POST /api/v1/prompts/:promptId/read', () => {
             ['r-1', 'r-2'],
             'u-r',
         );
+    });
+});
+
+describe('GET /api/v1/prompts (list)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without Authorization', async () => {
+        const res = await app().request('/api/v1/prompts');
+        expect(res.status).toBe(401);
+    });
+
+    it('returns the viewer\'s prompts with default pagination', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pl' });
+        const fakePrompts = [
+            { record: { id: 'p-a', title: 'A' } },
+            { record: { id: 'p-b', title: 'B' } },
+        ];
+        vi.mocked(promptService.getPromptsForUser).mockResolvedValue(
+            fakePrompts as unknown as Awaited<ReturnType<typeof promptService.getPromptsForUser>>,
+        );
+
+        const res = await app().request('/api/v1/prompts', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        expect(body.data).toEqual(fakePrompts);
+        // Page (2) less than default limit (20) → no nextCursor.
+        expect(body.nextCursor).toBeNull();
+        // Default limit, no cursor.
+        expect(vi.mocked(promptService.getPromptsForUser)).toHaveBeenCalledWith(
+            'viewer-pl',
+            20,
+            undefined,
+        );
+    });
+
+    it('returns nextCursor when the page is full', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pl-full' });
+        const fakePrompts = Array.from({ length: 5 }, (_, i) => ({
+            record: { id: `p-${i}`, title: `T${i}` },
+        }));
+        vi.mocked(promptService.getPromptsForUser).mockResolvedValue(
+            fakePrompts as unknown as Awaited<ReturnType<typeof promptService.getPromptsForUser>>,
+        );
+
+        const res = await app().request('/api/v1/prompts?limit=5', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.nextCursor).toBe('p-4');
+        expect(vi.mocked(promptService.getPromptsForUser)).toHaveBeenCalledWith(
+            'viewer-pl-full',
+            5,
+            undefined,
+        );
+    });
+
+    it('forwards cursor when provided', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pl-cur' });
+        vi.mocked(promptService.getPromptsForUser).mockResolvedValue([]);
+
+        await app().request('/api/v1/prompts?limit=10&cursor=p-x', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(vi.mocked(promptService.getPromptsForUser)).toHaveBeenCalledWith(
+            'viewer-pl-cur',
+            10,
+            'p-x',
+        );
+    });
+
+    it('400s on invalid limit (non-numeric)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pl-bad' });
+
+        const res = await app().request('/api/v1/prompts?limit=banana', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(400);
     });
 });

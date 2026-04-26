@@ -7,7 +7,7 @@ import {
     UpdateAuthorDataRequestSchema,
 } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
-import { requireAuth } from '../middleware/auth.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { replyService, promptService } from '../services/core-services-firebase.js';
 import { firebaseReplyDependencies } from '../services/replies-dependencies.js';
 import {
@@ -17,10 +17,11 @@ import {
 import { logger } from '../lib/logger.js';
 
 /**
- * Reply-write endpoints mounted at `/api/v1/replies`. Auth-gated across the
- * board; ownership enforced via the reply's parent prompt.
+ * Reply endpoints mounted at `/api/v1/replies`.
  *
- * Coverage (Batch A4 + A4.2):
+ *   GET   /                         — fetch replies for a prompt (?promptId=).
+ *                                     Public; non-author callers get archived
+ *                                     prompts' replies hidden.
  *   POST  /                         — create reply; accepts either a direct
  *                                     audioUrl (on-domain) or a pendingUploadId
  *                                     (embed-redirect flow)
@@ -31,12 +32,21 @@ import { logger } from '../lib/logger.js';
  *   POST  /update-author-data       — update author annotations (rating/tags/notes)
  *
  * Parity sources:
+ *   apps/web/src/app/api/v1/replies/route.ts (GET + POST)
  *   apps/web/src/app/api/v1/replies/[replyId]/status/route.ts
  *   apps/web/src/app/api/v1/replies/[replyId]/read/route.ts
  *   apps/web/src/app/api/v1/replies/[replyId]/notes/route.ts
  *   apps/web/src/app/api/v1/replies/bulk-action/route.ts
  *   apps/web/src/app/api/v1/replies/update-author-data/route.ts
  */
+
+const ListQuerySchema = z.object({
+    promptId: z.string().min(1, 'promptId is required'),
+    includeArchived: z
+        .string()
+        .optional()
+        .transform((v) => v === 'true'),
+});
 
 const NoteSchema = z.object({ notes: z.string().max(5000) });
 
@@ -57,6 +67,85 @@ const CreateReplyRequestSchema = z
     });
 
 const app = new Hono();
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/replies?promptId=… — fetch replies for a prompt
+// ---------------------------------------------------------------------------
+//
+// Public endpoint (no requireAuth). Viewer is read via optionalAuth so the
+// hydration layer can apply isAuthor-aware projection. Archived prompts'
+// replies are hidden from non-authors per ReplyService.getRepliesForPrompt.
+
+app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const queryResult = ListQuerySchema.safeParse({
+        promptId: c.req.query('promptId'),
+        includeArchived: c.req.query('includeArchived'),
+    });
+    if (!queryResult.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: queryResult.error.issues[0]?.message ?? 'Invalid query parameters',
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+    const { promptId, includeArchived } = queryResult.data;
+
+    const prompt = await promptService.getPromptData(promptId);
+    if (!prompt) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Prompt not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    const viewerUid = c.get('viewerUid');
+    const isOwner = !!viewerUid && viewerUid === prompt.record.authorId;
+
+    // Visibility gate. apps/web's parity route relies entirely on
+    // ReplyService to filter, but its `visibility === 'archived' ? ... : live`
+    // mapping never sees `visibility: 'private'` — so private prompts leak
+    // their replies to anonymous callers. Mirror prompts.ts:58 instead, which
+    // is the correct shape: 404 unless owner OR (status='live' AND public).
+    if (!isOwner && (prompt.record.status !== 'live' || prompt.visibility === 'private')) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Prompt not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    // ReplyService.getRepliesForPrompt expects a (record-shape, recipient)
+    // pair — extracted from the hydrated PromptView. Use the actual status
+    // field directly; `visibility` is a separate concept (public/private)
+    // and shouldn't be conflated with status (live/archived/deleted).
+    const promptForReplyService = {
+        id: prompt.record.id,
+        authorId: prompt.author.id,
+        status: prompt.record.status,
+    };
+
+    const replies = await replyService.getRepliesForPrompt(
+        viewerUid ?? '',
+        promptForReplyService,
+        prompt.author,
+        { includeArchived },
+    );
+
+    return c.json({
+        success: true,
+        replies: replies.map(toReplyViewPublic),
+    });
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/replies
