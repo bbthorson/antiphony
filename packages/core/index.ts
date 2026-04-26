@@ -14,5 +14,7 @@
 //     precedent). The Firebase-backed implementation stays in `apps/web/` or
 //     moves to `packages/hosted/` — never here.
 //
-// Until Phase 2 begins in earnest, this file is a placeholder.
-export {};
+// The Phase 4c AT Protocol lexicon transformation is the first real export
+// from this package — pure record-to-lexicon mapping with no Firebase or
+// SDK dependency. See `lexicons/README.md` at the repo root.
+export * from './services/atproto-lexicon';

@@ -99,6 +99,15 @@ export const PromptRecordSchema = z.object({
     audioUrl: z.string().url().or(z.literal('')),
     /** AT Protocol blob reference (future replacement for audioUrl) */
     audio: BlobRefSchema.optional(),
+    /**
+     * AT Protocol URI returned by the publisher after a successful
+     * `repo.putRecord` against the author's PDS — e.g.
+     * `at://did:plc:abc123/com.voxpop.audio.prompt/3kj4...`. Optional,
+     * no migration: existing rows leave it unset. Format-validated so
+     * malformed strings surface at the schema-parse boundary rather than
+     * being silently stored.
+     */
+    atprotoUri: z.string().regex(/^at:\/\/.+/).optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
     /**
