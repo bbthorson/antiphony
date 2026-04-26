@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { handlesRoute } from './routes/handles.js';
@@ -28,6 +29,27 @@ import { inboxRoute } from './routes/inbox.js';
 import { notificationsRoute } from './routes/notifications.js';
 
 /**
+ * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
+ *
+ * Format: comma-separated list of full origins (with scheme), e.g.
+ *   `https://example.com,https://app.example.com,http://localhost:9002`
+ *
+ * Whitespace around entries is trimmed; empty entries are dropped. If the
+ * env var is unset or all entries are empty, falls back to a single
+ * `http://localhost:9002` entry — the apps/web dev port per `CLAUDE.md` §
+ * Quick Start. Production deployments MUST set the env var explicitly via
+ * apphosting.yaml; the localhost-only default exists so a self-hoster's
+ * first `npm run dev` works without manual configuration.
+ *
+ * Exported for unit tests.
+ */
+export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWED_ORIGINS): string[] {
+    if (!raw) return ['http://localhost:9002'];
+    const entries = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    return entries.length > 0 ? entries : ['http://localhost:9002'];
+}
+
+/**
  * Construct the Hono app with all middleware and routes wired.
  *
  * Exported as a factory (not a module-level `new Hono()`) so tests can
@@ -38,9 +60,12 @@ import { notificationsRoute } from './routes/notifications.js';
  *
  *   1. request-id — sets `c.var.requestId`; must run before anything that
  *      reads it (error-handler, rate-limit, handlers).
- *   2. routes — each route opts into rate-limit per-endpoint via the
+ *   2. CORS — scoped to `/api/v1/*`; runs before route handlers so preflight
+ *      OPTIONS requests are answered immediately. Allowlist comes from
+ *      ALLOWED_ORIGINS env var. See specs/client-caller-split.md.
+ *   3. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit.
- *   3. error-handler — installed via `app.onError` so it catches throws
+ *   4. error-handler — installed via `app.onError` so it catches throws
  *      from handlers AND from middleware (rate-limit, request-id).
  */
 
@@ -51,7 +76,30 @@ export function app(): Hono {
     //    the error handler can bind it to log lines.
     a.use('*', requestId());
 
-    // 2. Health + service identity. No rate limit (probes hit these).
+    // 2. CORS — allowlist for browser-direct calls. Allowlist comes from the
+    //    ALLOWED_ORIGINS env var (comma-separated). See parseAllowedOrigins
+    //    above and apps/core-api/apphosting.yaml. Phase 1 of the
+    //    client-caller-split flip (specs/client-caller-split.md). Server-side
+    //    RSC traffic via CORE_API_BASE_URL is same-process and unaffected by
+    //    CORS. Scoped to /api/v1/* so health probes don't get the headers.
+    a.use(
+        '/api/v1/*',
+        cors({
+            origin: parseAllowedOrigins(),
+            allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowHeaders: [
+                'Authorization',
+                'Content-Type',
+                'X-Request-ID',
+                'Idempotency-Key',
+            ],
+            exposeHeaders: ['X-Request-ID'],
+            credentials: true,
+            maxAge: 7200,
+        }),
+    );
+
+    // 3. Health + service identity. No rate limit (probes hit these).
     a.get('/', (c) =>
         c.json({
             service: 'vox-pop-core-api',
@@ -62,7 +110,7 @@ export function app(): Hono {
     );
     a.get('/health', (c) => c.json({ ok: true }));
 
-    // 3. API routes.
+    // 4. API routes.
     a.route('/api/v1/handles', handlesRoute);
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
@@ -103,7 +151,7 @@ export function app(): Hono {
     a.route('/api/v1/inbox', inboxRoute);
     a.route('/api/v1/notifications', notificationsRoute);
 
-    // 4. Error handler — last, via `onError` so it catches throws from
+    // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
     a.onError(errorHandler);
 

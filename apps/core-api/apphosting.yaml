@@ -57,3 +57,12 @@ env:
       value: "info"
       availability:
           - RUNTIME
+    # CORS allowlist for browser-direct calls. Comma-separated full origins
+    # (with scheme). The Vox Pop production origins are listed here; self-
+    # hosters fork or override this file with their own deployment's origins.
+    # See apps/core-api/src/app.ts:parseAllowedOrigins +
+    # specs/client-caller-split.md.
+    - variable: ALLOWED_ORIGINS
+      value: "https://voxpop.phonicfactory.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app,http://localhost:9002"
+      availability:
+          - RUNTIME
