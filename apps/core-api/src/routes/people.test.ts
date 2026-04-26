@@ -27,16 +27,26 @@ vi.mock('../lib/auth/session-verifier.js', () => ({
     sessionVerifier: { verifyToken: vi.fn() },
 }));
 
+// Records the last set() call from the POST /:handle/notes path so tests can
+// assert what was written.
+const lastNotesSet: { update: unknown; options: unknown } = {
+    update: undefined,
+    options: undefined,
+};
+
 vi.mock('../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: (name: string) => {
             if (name === 'users') {
                 return {
                     doc: () => ({
-                        // For the per-user CRM read.
                         collection: () => ({
                             doc: () => ({
                                 get: async () => fakeNotesDoc,
+                                set: async (update: unknown, options: unknown) => {
+                                    lastNotesSet.update = update;
+                                    lastNotesSet.options = options;
+                                },
                             }),
                         }),
                     }),
@@ -53,7 +63,15 @@ vi.mock('../lib/firebase-admin.js', () => ({
             }),
     }),
     getAdmin: () => ({
-        firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
+        firestore: {
+            Timestamp: {
+                fromMillis: (ms: number) => ({ _ms: ms }),
+                now: () => ({ _now: true }),
+            },
+            FieldValue: {
+                serverTimestamp: () => ({ _serverTimestamp: true }),
+            },
+        },
     }),
     getAdminAuth: () => ({}),
     getAdminStorage: () => ({}),
@@ -172,5 +190,77 @@ describe('GET /api/v1/people/:handle/notes', () => {
             notes: 'great voice',
             tags: ['favorite', 'recurring'],
         });
+    });
+});
+
+describe('POST /api/v1/people/:handle/notes', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        lastNotesSet.update = undefined;
+        lastNotesSet.options = undefined;
+    });
+
+    it('401s without Authorization', async () => {
+        const res = await app().request('/api/v1/people/somehandle/notes', {
+            method: 'POST',
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s on invalid JSON body', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pnp1' });
+
+        const res = await app().request('/api/v1/people/handle-x/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: 'not-json',
+        });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('400s when body fails schema validation', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pnp2' });
+
+        const res = await app().request('/api/v1/people/handle-x/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 12345 }), // wrong type
+        });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('writes notes + tags via merge:true with a server timestamp', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pnp3' });
+
+        const res = await app().request('/api/v1/people/known-person/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'updated', tags: ['vip'] }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true });
+        expect(lastNotesSet.update).toEqual({
+            notes: 'updated',
+            tags: ['vip'],
+            lastUpdated: { _serverTimestamp: true },
+        });
+        expect(lastNotesSet.options).toEqual({ merge: true });
+    });
+
+    it('omits unprovided fields from the merge update (only lastUpdated)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'viewer-pnp4' });
+
+        const res = await app().request('/api/v1/people/handle-y/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({}), // no notes, no tags
+        });
+
+        expect(res.status).toBe(200);
+        // Only lastUpdated set — merge:true preserves existing notes/tags.
+        expect(lastNotesSet.update).toEqual({ lastUpdated: { _serverTimestamp: true } });
     });
 });

@@ -341,6 +341,36 @@ describe('POST /api/v1/replies/:replyId/notes', () => {
     });
 });
 
+describe('PATCH /api/v1/replies/:replyId/notes (verb alias for POST)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('routes the PATCH verb to the same handler as POST and writes notes', async () => {
+        // apps/web's parity route uses PATCH; core-api keeps both POST and
+        // PATCH wired to the same handler so serverProxy callers work.
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner-pa' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue({
+            id: 'r-pa',
+            promptId: 'p-pa',
+        } as unknown as Awaited<ReturnType<typeof replyService.getReplyRecord>>);
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-pa',
+            authorId: 'owner-pa',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+
+        const res = await app().request('/api/v1/replies/r-pa/notes', {
+            method: 'PATCH',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'patched-via-PATCH' }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true });
+        expect(replyService.updateReplyNotes).toHaveBeenCalledWith('r-pa', 'patched-via-PATCH');
+    });
+});
+
 describe('POST /api/v1/replies/bulk-action', () => {
     beforeEach(() => {
         vi.resetAllMocks();

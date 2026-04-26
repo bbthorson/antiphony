@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { toReplyViewPublic } from 'shared/types';
 import {
@@ -295,16 +296,20 @@ app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/replies/:replyId/notes
+// POST + PATCH /api/v1/replies/:replyId/notes
 // ---------------------------------------------------------------------------
 //
-// apps/web's parity route uses PATCH; keeping POST here for consistency with
-// the path spec in the migration plan ("POST /replies/:id/notes"). Both verbs
-// are acceptable per REST conventions for an update-or-set operation.
+// apps/web's parity route uses PATCH (verb chosen at the time the endpoint
+// was added). Original core-api batch landed POST per the migration plan's
+// path spec. Both verbs share one handler so apps/web's serverProxy callers
+// (PATCH) and any direct API consumers using the documented POST both work.
 
-app.post('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
+const handleNotesUpdate = async (c: Context) => {
     const uid = c.get('viewerUid')!;
-    const replyId = c.req.param('replyId');
+    // Routes are mounted at `/:replyId/notes` for both POST and PATCH, so the
+    // param is always present at runtime — TS sees `string | undefined`
+    // because the standalone handler isn't typed with the param schema.
+    const replyId = c.req.param('replyId')!;
 
     let body: unknown;
     try {
@@ -371,7 +376,10 @@ app.post('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), async 
     await replyService.updateReplyNotes(replyId, validation.data.notes);
 
     return c.json({ success: true });
-});
+};
+
+app.post('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);
+app.patch('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/replies/bulk-action

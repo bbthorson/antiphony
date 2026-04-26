@@ -23,6 +23,7 @@ vi.mock('../services/core-services-firebase.js', () => ({
         acceptInvite: vi.fn(),
         updateMemberRole: vi.fn(),
         removeMember: vi.fn(),
+        addMember: vi.fn(),
     },
     hydrationService: {
         hydrateOrganization: vi.fn(),
@@ -449,6 +450,71 @@ describe('Org invites + member writes', () => {
         });
         expect(res.status).toBe(200);
         // Verify the admin role was asserted (not the broader member role).
+        expect(
+            vi.mocked(organizationService.assertOrgRole).mock.calls[0][2],
+        ).toEqual(['owner', 'admin']);
+    });
+});
+
+describe('POST /api/v1/organizations/:orgId/members (direct add)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without Authorization', async () => {
+        const res = await app().request('/api/v1/organizations/org-am/members', {
+            method: 'POST',
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s on invalid body', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'admin-1' });
+        vi.mocked(organizationService.assertOrgRole).mockResolvedValue('admin');
+
+        const res = await app().request('/api/v1/organizations/org-am/members', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ userId: '', role: 'member' }), // empty userId fails min(1)
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it('400s on invalid role', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'admin-2' });
+        vi.mocked(organizationService.assertOrgRole).mockResolvedValue('admin');
+
+        const res = await app().request('/api/v1/organizations/org-am/members', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ userId: 'u-2', role: 'owner' }), // owner not allowed via direct-add
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it('addMember on success and returns the hydrated member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'admin-3' });
+        vi.mocked(organizationService.assertOrgRole).mockResolvedValue('admin');
+        const fakeMember = { userId: 'u-add', orgId: 'org-am', role: 'member' };
+        vi.mocked(organizationService.addMember).mockResolvedValue(
+            fakeMember as unknown as Awaited<ReturnType<typeof organizationService.addMember>>,
+        );
+
+        const res = await app().request('/api/v1/organizations/org-am/members', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ok', 'content-type': 'application/json' },
+            body: JSON.stringify({ userId: 'u-add', role: 'member' }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true, data: fakeMember });
+        expect(vi.mocked(organizationService.addMember)).toHaveBeenCalledWith(
+            'org-am',
+            'u-add',
+            'member',
+            'admin-3',
+        );
+        // Asserts admin+ role for the caller.
         expect(
             vi.mocked(organizationService.assertOrgRole).mock.calls[0][2],
         ).toEqual(['owner', 'admin']);

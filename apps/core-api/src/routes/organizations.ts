@@ -347,6 +347,51 @@ app.post(
 );
 
 /**
+ * POST /api/v1/organizations/:orgId/members
+ *
+ * Direct add — admin+ only. The invite-flow path is `/invites` →
+ * `/invites/:inviteId` (accept). This bypass is for cases like admin
+ * adding a known user without an email round-trip.
+ */
+const AddMemberSchema = z.object({
+    userId: z.string().min(1, 'userId is required'),
+    role: z.enum(['admin', 'member'], { message: 'role must be admin or member' }),
+});
+
+app.post('/:orgId/members', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const orgId = c.req.param('orgId');
+
+    await organizationService.assertOrgRole(orgId, uid, ['owner', 'admin']);
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(
+            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
+            400,
+        );
+    }
+    const validation = AddMemberSchema.safeParse(body);
+    if (!validation.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Validation error',
+                issues: validation.error.issues,
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const { userId, role } = validation.data;
+    const member = await organizationService.addMember(orgId, userId, role, uid);
+    return c.json({ success: true, data: member });
+});
+
+/**
  * PATCH /api/v1/organizations/:orgId/members/:userId
  *
  * Update a member's role. Admin+ only. The service throws on
