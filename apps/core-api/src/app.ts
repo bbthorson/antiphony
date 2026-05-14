@@ -25,7 +25,6 @@ import { parseRssRoute } from './routes/parse-rss.js';
 import { onboardingRoute } from './routes/onboarding.js';
 import { uploadsAudioRoute } from './routes/uploads-audio.js';
 import { uploadsPendingRoute } from './routes/uploads-pending.js';
-import { inboxRoute } from './routes/inbox.js';
 import { notificationsRoute } from './routes/notifications.js';
 
 /**
@@ -148,7 +147,6 @@ export function app(): Hono {
     a.route('/api/v1/onboarding', onboardingRoute);
     a.route('/api/v1/uploads/audio', uploadsAudioRoute);
     a.route('/api/v1/uploads/pending', uploadsPendingRoute);
-    a.route('/api/v1/inbox', inboxRoute);
     a.route('/api/v1/notifications', notificationsRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
