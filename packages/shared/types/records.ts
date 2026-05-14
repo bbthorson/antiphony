@@ -158,8 +158,6 @@ export const ReplyRecordSchema = z.object({
      * - `deleted`: Soft deleted.
      */
     status: z.enum(['live', 'archived', 'deleted']).default('live'),
-    /** @deprecated AT Protocol migration field (Optional) */
-    replyToUri: z.string().optional(),
     /** Private notes by the Prompt author about this reply */
     notes: z.string().optional(),
     /** AI Enrichment Fields */

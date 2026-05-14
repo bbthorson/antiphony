@@ -8,4 +8,3 @@ export * from './types/records';
 export * from './types/views';
 export * from './types/blob';
 export * from './types/api';
-export * from './types/identity';
