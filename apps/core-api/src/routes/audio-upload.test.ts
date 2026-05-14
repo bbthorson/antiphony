@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * Tests for `POST /api/v1/uploads/audio`.
+ * Tests for `POST /api/v1/audio/upload`.
  *
  * Auth-gated. Multipart upload → StorageService.uploadFile → returns
  * `{ audioUrl }`. Validates mime type allowlist and size cap.
@@ -51,13 +51,13 @@ function makeFormData(file: File | null): FormData {
     return fd;
 }
 
-describe('POST /api/v1/uploads/audio', () => {
+describe('POST /api/v1/audio/upload', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
     it('401s without Authorization', async () => {
-        const res = await app().request('/api/v1/uploads/audio', {
+        const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             body: makeFormData(new File([new Uint8Array(10)], 'a.m4a', { type: 'audio/m4a' })),
         });
@@ -67,7 +67,7 @@ describe('POST /api/v1/uploads/audio', () => {
     it('400s when no "file" field is present', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-1' });
 
-        const res = await app().request('/api/v1/uploads/audio', {
+        const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             headers: { authorization: 'Bearer ok' },
             body: makeFormData(null),
@@ -81,7 +81,7 @@ describe('POST /api/v1/uploads/audio', () => {
     it('400s when mime type is not in the allowlist', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-2' });
 
-        const res = await app().request('/api/v1/uploads/audio', {
+        const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             headers: { authorization: 'Bearer ok' },
             body: makeFormData(
@@ -99,7 +99,7 @@ describe('POST /api/v1/uploads/audio', () => {
         // 26 MB of zeros — over the 25 MB cap.
         const big = new Uint8Array(26 * 1024 * 1024);
 
-        const res = await app().request('/api/v1/uploads/audio', {
+        const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             headers: { authorization: 'Bearer ok' },
             body: makeFormData(new File([big], 'big.m4a', { type: 'audio/m4a' })),
@@ -114,7 +114,7 @@ describe('POST /api/v1/uploads/audio', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-4' });
         vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example.m4a');
 
-        const res = await app().request('/api/v1/uploads/audio', {
+        const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             headers: { authorization: 'Bearer ok' },
             body: makeFormData(

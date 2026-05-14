@@ -15,8 +15,8 @@ import { usersProfileRoute } from './routes/users-profile.js';
 import { audioRoute } from './routes/audio.js';
 import { promptsPublicRoute } from './routes/prompts-public.js';
 import { rssParseRoute } from './routes/rss-parse.js';
-import { uploadsAudioRoute } from './routes/uploads-audio.js';
-import { uploadsPendingRoute } from './routes/uploads-pending.js';
+import { audioUploadRoute } from './routes/audio-upload.js';
+import { audioUploadPendingRoute } from './routes/audio-upload-pending.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -118,11 +118,14 @@ export function app(): Hono {
     a.route('/api/v1/users', usersProfileRoute);
     a.route('/api/v1/replies', repliesSearchRoute);
     a.route('/api/v1/replies', repliesRoute);
+    // All audio storage operations live under /api/v1/audio. Mount the
+    // more-specific upload sub-routes BEFORE the proxy so they take
+    // precedence — Hono dispatches by registration order.
+    a.route('/api/v1/audio/upload-pending', audioUploadPendingRoute);
+    a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/rss', rssParseRoute);
-    a.route('/api/v1/uploads/audio', uploadsAudioRoute);
-    a.route('/api/v1/uploads/pending', uploadsPendingRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

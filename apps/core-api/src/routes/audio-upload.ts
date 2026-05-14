@@ -5,17 +5,22 @@ import { requireAuth } from '../middleware/auth.js';
 import { StorageService } from '../services/core-services-firebase.js';
 
 /**
- * POST /api/v1/uploads/audio
+ * POST /api/v1/audio/upload
  *
  * Authenticated audio upload — used by the on-domain reply flow (where
  * the client is already in apps/web's session). The embed-redirect flow
- * uses the separate `/api/v1/uploads/pending` endpoint (anonymous,
+ * uses the separate `/api/v1/audio/upload-pending` endpoint (anonymous,
  * prompt-scoped, TTL-swept).
  *
  * Accepts multipart/form-data with a `file` field. Returns
  * `{ audioUrl: string }`.
  *
- * Parity with: apps/web/src/app/api/v1/uploads/audio/route.ts
+ * Replaces the legacy `POST /api/v1/uploads/audio`. Folded under
+ * `/api/v1/audio/*` so audio storage operations share one namespace
+ * with the signed-URL proxy at `/api/v1/audio` — uploads are transport,
+ * not /replies sub-resources.
+ *
+ * Parity with: apps/web/src/app/api/v1/audio/upload/route.ts
  */
 
 const ALLOWED_TYPES = new Set([
@@ -102,4 +107,4 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
     return c.json({ audioUrl });
 });
 
-export { app as uploadsAudioRoute };
+export { app as audioUploadRoute };

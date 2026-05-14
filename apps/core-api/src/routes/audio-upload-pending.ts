@@ -4,7 +4,7 @@ import { promptService } from '../services/core-services-firebase.js';
 import { createPendingUpload, hashIp, extractClientIp } from '../lib/pending-uploads.js';
 
 /**
- * POST /api/v1/uploads/pending
+ * POST /api/v1/audio/upload-pending
  *
  * Anonymous audio upload endpoint for the embed-redirect flow: an iframe
  * records audio and POSTs here with `promptId` + `file` (multipart). We
@@ -17,12 +17,16 @@ import { createPendingUpload, hashIp, extractClientIp } from '../lib/pending-upl
  *
  * Abuse surface:
  *   - Unauthenticated → `RATE_LIMITS.sensitive` (5 per hour per IP).
- *   - Content-type allowlist mirrors the authenticated `/uploads/audio`.
+ *   - Content-type allowlist mirrors the authenticated `/audio/upload`.
  *   - `promptId` must resolve to a live prompt (no dangling pendings).
  *   - Pending rows are prompt-scoped at write time; reply-bind refuses
  *     mismatch.
  *
- * Parity with: apps/web/src/app/api/v1/uploads/pending/route.ts
+ * Replaces the legacy `POST /api/v1/uploads/pending`. Folded under
+ * `/api/v1/audio/*` so all audio storage operations live under one
+ * namespace.
+ *
+ * Parity with: apps/web/src/app/api/v1/audio/upload-pending/route.ts
  */
 
 const ALLOWED_TYPES = new Set([
@@ -138,4 +142,4 @@ app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
     return c.json({ pendingId });
 });
 
-export { app as uploadsPendingRoute };
+export { app as audioUploadPendingRoute };
