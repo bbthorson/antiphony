@@ -7,9 +7,12 @@ import { logger } from '../lib/logger.js';
  * Rate-limit middleware. Hono port of `apps/web/src/lib/api/rate-limit.ts`.
  *
  * Firestore-backed, IP-keyed, with a circuit breaker that fails open after
- * 5 consecutive Firestore errors (30s cooldown). Writes to the same
- * `rate_limits` collection apps/web uses — per spec Post-4a Follow-ups,
- * we'll split collections per backend after 4a stabilizes.
+ * 5 consecutive *systemic* Firestore errors (30s cooldown). Per-bucket
+ * transaction contention (ABORTED / FAILED_PRECONDITION) fails CLOSED:
+ * returns 429 rather than letting the request through. See the catch block
+ * below for the rationale. Writes to the same `rate_limits` collection
+ * apps/web uses — per spec Post-4a Follow-ups, we'll split collections per
+ * backend after 4a stabilizes.
  *
  * Presets match apps/web for contract parity:
  *   write / read / auth / hourly / sensitive / burst / standard
@@ -129,24 +132,46 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
             const isPerRequest = code === 10 || code === 'ABORTED' || code === 9 || code === 'FAILED_PRECONDITION';
 
             if (isPerRequest) {
+                // Per-bucket contention: the Firestore Admin SDK already retried
+                // the transaction internally before this error bubbled up. Getting
+                // ABORTED here means many concurrent writers on the SAME bucket
+                // — which is exactly what the rate limit is supposed to catch.
+                // Fail CLOSED: return 429 rather than letting the request through.
+                //
+                // Trade-off: legitimate bursts from shared-NAT IPs (corporate VPNs)
+                // will get 429s under contention. That's acceptable — they ARE
+                // exceeding the per-IP rate, and the alternative is letting
+                // attackers bypass the limiter by simply hammering one bucket.
+                //
+                // Not counted toward the systemic circuit breaker, since this is
+                // expected per-bucket behavior, not a Firestore-wide failure.
                 logger.warn(
                     { error, requestId: c.get('requestId'), key },
-                    '[rate-limit] transaction contention on bucket — not counted toward circuit breaker',
+                    '[rate-limit] transaction contention on bucket — failing closed (429)',
+                );
+                return c.json(
+                    {
+                        status: 'error',
+                        message: options.message || 'Too many requests',
+                        requestId: c.get('requestId'),
+                    },
+                    429,
+                );
+            }
+
+            consecutiveFailures++;
+            if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+                circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+                logger.error(
+                    { error, cooldownMs: CIRCUIT_COOLDOWN_MS },
+                    `[rate-limit] circuit opened after ${CIRCUIT_FAILURE_THRESHOLD} systemic failures`,
                 );
             } else {
-                consecutiveFailures++;
-                if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
-                    circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
-                    logger.error(
-                        { error, cooldownMs: CIRCUIT_COOLDOWN_MS },
-                        `[rate-limit] circuit opened after ${CIRCUIT_FAILURE_THRESHOLD} systemic failures`,
-                    );
-                } else {
-                    logger.error({ error }, '[rate-limit] firestore systemic error');
-                }
+                logger.error({ error }, '[rate-limit] firestore systemic error');
             }
-            // Fail-open on all errors — don't block legitimate traffic on a
-            // Firestore hiccup or a contention blip.
+            // Fail-OPEN on systemic Firestore errors — a Firestore outage
+            // shouldn't take the whole API down. Per-bucket contention is
+            // handled above and fails closed.
         }
 
         return next();
