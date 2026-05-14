@@ -2,30 +2,21 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
-import { handlesRoute } from './routes/handles.js';
 import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
 import { promptsRepliesRoute } from './routes/prompts-replies.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
-import { peopleRoute } from './routes/people.js';
-import { peopleListRoute } from './routes/people-list.js';
-import { peopleRepliesRoute } from './routes/people-replies.js';
 import { repliesSearchRoute } from './routes/replies-search.js';
 import { repliesRoute } from './routes/replies.js';
 import { usersRoute } from './routes/users.js';
 import { usersMeRoute } from './routes/users-me.js';
 import { usersActionsRoute } from './routes/users-actions.js';
 import { usersProfileRoute } from './routes/users-profile.js';
-import { organizationsSlugRoute } from './routes/organizations-slug.js';
-import { organizationsSlugProfileRoute } from './routes/organizations-slug-profile.js';
-import { organizationsRoute } from './routes/organizations.js';
 import { audioRoute } from './routes/audio.js';
 import { promptsPublicRoute } from './routes/prompts-public.js';
-import { parseRssRoute } from './routes/parse-rss.js';
-import { onboardingRoute } from './routes/onboarding.js';
+import { rssParseRoute } from './routes/rss-parse.js';
 import { uploadsAudioRoute } from './routes/uploads-audio.js';
 import { uploadsPendingRoute } from './routes/uploads-pending.js';
-import { notificationsRoute } from './routes/notifications.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -110,7 +101,6 @@ export function app(): Hono {
     a.get('/health', (c) => c.json({ ok: true }));
 
     // 4. API routes.
-    a.route('/api/v1/handles', handlesRoute);
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
     // Mount the replies sub-route on /api/v1/prompts so `/:promptId/replies`
@@ -126,28 +116,13 @@ export function app(): Hono {
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);
-    // Same pattern for organizations slug routes — more specific `/slug/*`
-    // prefix MUST register first so a request like `/organizations/slug/abc`
-    // lands on the slug handler rather than the `/:orgId` catch-all in
-    // organizationsRoute.
-    a.route('/api/v1/organizations/slug', organizationsSlugRoute);
-    a.route('/api/v1/organizations/slug', organizationsSlugProfileRoute);
-    a.route('/api/v1/organizations', organizationsRoute);
-    // peopleRoute owns `/` (top-level) + `/:handle/notes`. Sibling routes
-    // (peopleListRoute → /list, peopleRepliesRoute → /:handle/replies)
-    // share the same prefix; Hono dispatches by path tail.
-    a.route('/api/v1/people', peopleRoute);
-    a.route('/api/v1/people', peopleListRoute);
-    a.route('/api/v1/people', peopleRepliesRoute);
     a.route('/api/v1/replies', repliesSearchRoute);
     a.route('/api/v1/replies', repliesRoute);
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
-    a.route('/api/v1/utils/parse-rss', parseRssRoute);
-    a.route('/api/v1/onboarding', onboardingRoute);
+    a.route('/api/v1/rss', rssParseRoute);
     a.route('/api/v1/uploads/audio', uploadsAudioRoute);
     a.route('/api/v1/uploads/pending', uploadsPendingRoute);
-    a.route('/api/v1/notifications', notificationsRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

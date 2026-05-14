@@ -4,29 +4,27 @@ import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
 import { rssService } from '../services/core-services-firebase.js';
 
 /**
- * POST /api/v1/utils/parse-rss
+ * POST /api/v1/rss/parse
  *
- * Utility endpoint — parses an RSS/Atom feed URL and returns a
- * normalized summary. Body: `{ url: string }`. Public; no auth.
+ * Open-core utility — parses an RSS/Atom feed URL and returns a
+ * normalized summary plus the first 3 items (preview). Body:
+ * `{ url: string }`. Public; no auth.
  *
- * Technically a POST (body-carried URL), not a GET. Porting pre-auth-bridge
- * because it's a stateless RPC — no state mutation, no auth requirement.
- * The skill's GET-only rule exists to gate mutation endpoints on the auth
- * bridge; parse-rss is neither.
+ * Stateless RPC: server-side fetch is the value (CORS-friendly,
+ * consistent parser, no client-side dependency on rss-parser bundles).
  *
- * Parity with: apps/web/src/app/api/v1/utils/parse-rss/route.ts
+ * Replaces the older `/api/v1/utils/parse-rss` and the auth-gated
+ * `/api/v1/onboarding/import-rss` — both did the same thing under
+ * different paths.
  *
- * ## Response shape parity (including the legacy `status: 'success'`)
+ * ## Response shape
+ * Uses `{ status: 'success', data }` envelope (kept for backwards
+ * compatibility with the older /utils/parse-rss handler). Not the
+ * `{ success: true, data }` shape used elsewhere — a separate
+ * error-shape standardization pass would fix this.
  *
- * Apps/web's handler returns `{ status: 'success', data: {...} }` on OK —
- * NOT the `{ success: true, data }` shape used elsewhere. That's a
- * pre-existing inconsistency in the codebase, not a new one. Matching
- * it here exactly so the wire contract doesn't drift during the port.
- * Worth a separate "error-shape standardization" pass later; not this PR.
- *
- * Rate-limit: `RATE_LIMITS.hourly` with a fixed `parse_rss_<ip>` custom
- * key, matching apps/web — one bucket per IP shared across all
- * parse-rss callers.
+ * Rate-limit: `RATE_LIMITS.hourly` with a fixed `rss_parse_<ip>`
+ * custom key (one bucket per IP).
  */
 
 const ParseSchema = z.object({
@@ -36,13 +34,11 @@ const ParseSchema = z.object({
 const app = new Hono();
 
 app.post(
-    '/',
+    '/parse',
     async (c, next) => {
-        // Use a custom key to scope the rate-limit bucket specifically
-        // to parse-rss (not the general read/write IP bucket).
         const forwarded = c.req.header('x-forwarded-for') || 'unknown';
         const ip = forwarded.split(',').map((s) => s.trim()).filter(Boolean).pop() || 'unknown';
-        const customKey = `parse_rss_${ip}`;
+        const customKey = `rss_parse_${ip}`;
         return rateLimit(RATE_LIMITS.hourly, customKey)(c, next);
     },
     async (c) => {
@@ -68,8 +64,6 @@ app.post(
             );
         }
 
-        // Match apps/web's idiosyncratic `status: 'success'` envelope here
-        // — see file-header note. NOT the `success: true` shape.
         return c.json({
             status: 'success',
             data: {
@@ -77,9 +71,12 @@ app.post(
                 description: summary.description,
                 image: summary.image,
                 link: summary.link,
+                // Preview the 3 most recent items — matches the old
+                // onboarding/import-rss flow used by apps/web onboarding.
+                items: summary.items?.slice(0, 3),
             },
         });
     },
 );
 
-export { app as parseRssRoute };
+export { app as rssParseRoute };

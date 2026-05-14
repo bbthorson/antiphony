@@ -8,6 +8,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { userService, organizationService } from '../services/core-services-firebase.js';
 import { firebaseUserDependencies } from '../services/users-dependencies.js';
 import { getAdminDb, getAdminAuth } from '../lib/firebase-admin.js';
+import { APP_CONFIG } from '../lib/app-config.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -129,6 +130,206 @@ app.get('/organizations', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) 
         data: orgs,
     });
 });
+
+// -----------------------------------------------------------------------------
+// Handle endpoints — folded in from the deprecated `/api/v1/handles/*` surface.
+// The actor (user) owns its handle; the read+write surface for a user's own
+// handle naturally lives under /users/me/handle/*.
+// -----------------------------------------------------------------------------
+
+// Reserved handles that would shadow top-level routes mounted under
+// `/api/v1/users/*`. A user claiming `me` or `handles` would, depending on
+// route registration order, either hide their own profile lookup or hide the
+// sitemap-enumeration endpoint. Block at the validation layer.
+const RESERVED_HANDLES = new Set(['me', 'handle', 'handles']);
+
+const ClaimHandleSchema = z.object({
+    handle: z
+        .string()
+        .min(3)
+        .max(20)
+        .toLowerCase()
+        .regex(/^[a-z0-9_]+$/, 'Handle must be alphanumeric')
+        .refine((h) => !RESERVED_HANDLES.has(h), {
+            message: 'Handle is reserved',
+        }),
+});
+
+/**
+ * GET /api/v1/users/me/handle/available?candidate=xyz
+ *
+ * Handle availability for the authenticated viewer. Returns:
+ *   - `{ available: true }` — free
+ *   - `{ available: true, owned: true }` — already owned by viewer
+ *   - `{ available: false, reason: 'invalid' | 'taken' }` — unusable
+ *
+ * Auth required so we can flag owned-by-self distinctly from owned-by-other.
+ */
+app.get('/handle/available', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const viewerUid = c.get('viewerUid');
+    // Reuse ClaimHandleSchema so availability + claim apply identical rules
+    // (length, charset, reserved words). Without this the two checks drift —
+    // a 25-char candidate would have passed availability but failed at claim.
+    const parsed = ClaimHandleSchema.safeParse({ handle: c.req.query('candidate') });
+    if (!parsed.success) {
+        return c.json({ available: false, reason: 'invalid' });
+    }
+    const candidate = parsed.data.handle;
+
+    const ownerUid = await firebaseUserDependencies.resolveHandle(candidate);
+    if (!ownerUid) {
+        return c.json({ available: true });
+    }
+    if (ownerUid === viewerUid) {
+        return c.json({ available: true, owned: true });
+    }
+    return c.json({ available: false, reason: 'taken' });
+});
+
+/**
+ * POST /api/v1/users/me/handle
+ *
+ * Claim or re-affirm the authenticated viewer's handle. Atomic:
+ *   - Cross-checks the organizations.slug space (slug != handle conflict)
+ *   - Reserves the `handles/{handle}` doc inside a transaction
+ *   - Updates the user-doc pointer to the new handle
+ *   - Best-effort: ensures membership in the default org after commit
+ *
+ * Body: `{ handle: string }` (3-20 chars, lowercased, alphanumeric + _).
+ *
+ * Response: `{ success: true, handle, domain }` on success;
+ * 409 with `{ status: 'error', message: 'This handle is taken.' }`
+ * on conflict.
+ */
+app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(
+            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
+            400,
+        );
+    }
+    const validation = ClaimHandleSchema.safeParse(body);
+    if (!validation.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid handle format',
+                issues: validation.error.issues,
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    const { handle } = validation.data;
+    const db = getAdminDb();
+
+    try {
+        // Pre-transaction: collectionGroup/where queries can't run inside a
+        // Firestore Admin SDK transaction, so check the org-slug space here
+        // first. Narrow race acceptable — an org getting created with this
+        // slug between check and commit is rare.
+        const orgQuery = await db
+            .collection('organizations')
+            .where('slug', '==', handle)
+            .limit(1)
+            .get();
+        if (!orgQuery.empty) {
+            throw new Error('Handle is already taken');
+        }
+
+        await db.runTransaction(async (t) => {
+            const handleRef = db.collection('handles').doc(handle);
+            const userRef = db.collection('users').doc(uid);
+            const handleDoc = await t.get(handleRef);
+
+            if (handleDoc.exists) {
+                const ownerUid = handleDoc.data()?.uid;
+                if (ownerUid !== uid) {
+                    throw new Error('Handle is already taken');
+                }
+                // Owned by viewer already — skip the handle-doc write so we
+                // preserve the original createdAt.
+            } else {
+                t.set(handleRef, {
+                    uid,
+                    createdAt: admin.firestore.Timestamp.now(),
+                });
+            }
+
+            t.set(
+                userRef,
+                {
+                    handle,
+                    domain: APP_CONFIG.DOMAIN,
+                    updatedAt: admin.firestore.Timestamp.now(),
+                },
+                { merge: true },
+            );
+        });
+
+        ensureDefaultOrgMembership(uid, c.get('requestId')).catch((err) => {
+            logger.error(
+                { err, uid, requestId: c.get('requestId') },
+                '[users/me/handle] default-org membership failed',
+            );
+        });
+
+        return c.json({ success: true, handle, domain: APP_CONFIG.DOMAIN });
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Handle is already taken') {
+            return c.json(
+                {
+                    status: 'error',
+                    message: 'This handle is taken.',
+                    requestId: c.get('requestId'),
+                },
+                409,
+            );
+        }
+        throw err;
+    }
+});
+
+async function ensureDefaultOrgMembership(userId: string, requestId: string): Promise<void> {
+    const db = getAdminDb();
+    const orgId = APP_CONFIG.DEFAULT_ORG_ID;
+    const orgRef = db.collection('organizations').doc(orgId);
+    const memberRef = orgRef.collection('members').doc(userId);
+
+    const memberDoc = await memberRef.get();
+    if (memberDoc.exists) return;
+
+    const orgDoc = await orgRef.get();
+    if (!orgDoc.exists) {
+        await orgRef.set({
+            id: orgId,
+            name: APP_CONFIG.DEFAULT_ORG_NAME,
+            slug: APP_CONFIG.DEFAULT_ORG_SLUG,
+            description: `The default ${APP_CONFIG.NAME} community.`,
+            ownerId: 'system',
+            createdAt: admin.firestore.Timestamp.now(),
+            tier: 'free',
+            domainVerified: false,
+        });
+        logger.info(
+            { orgId, requestId },
+            '[users/me/handle] created default org',
+        );
+    }
+
+    await memberRef.set({
+        orgId,
+        userId,
+        role: 'member',
+        joinedAt: admin.firestore.Timestamp.now(),
+    });
+}
 
 /**
  * POST /users/me/delete

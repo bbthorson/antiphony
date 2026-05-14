@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * Tests for `POST /api/v1/utils/parse-rss`.
+ * Tests for `POST /api/v1/rss/parse`.
  *
  * Matches apps/web's idiosyncratic success envelope (`{status: 'success', data}`).
  */
@@ -40,7 +40,7 @@ process.env.LOG_LEVEL = 'silent';
 const { app } = await import('../app.js');
 const { rssService } = await import('../services/core-services-firebase.js');
 
-describe('POST /api/v1/utils/parse-rss', () => {
+describe('POST /api/v1/rss/parse', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
@@ -55,7 +55,7 @@ describe('POST /api/v1/utils/parse-rss', () => {
             lastFetchedAt: new Date(),
         });
 
-        const res = await app().request('/api/v1/utils/parse-rss', {
+        const res = await app().request('/api/v1/rss/parse', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url: 'https://example.com/feed.xml' }),
@@ -63,22 +63,20 @@ describe('POST /api/v1/utils/parse-rss', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        // NOT `success: true` — apps/web uses this shape, we mirror exactly.
+        // NOT `success: true` — legacy /utils/parse-rss envelope, kept for compat.
         expect(body.status).toBe('success');
-        expect(body.data).toEqual({
-            title: 'Example Feed',
-            description: 'About stuff',
-            image: 'https://example.com/image.png',
-            link: 'https://example.com',
-        });
-        // Items and lastFetchedAt are NOT returned — the handler projects
-        // down to title/description/image/link only.
-        expect(body.data.items).toBeUndefined();
+        expect(body.data.title).toBe('Example Feed');
+        expect(body.data.description).toBe('About stuff');
+        expect(body.data.image).toBe('https://example.com/image.png');
+        expect(body.data.link).toBe('https://example.com');
+        // First 3 items returned as a preview (subsumes the old
+        // /onboarding/import-rss behavior).
+        expect(body.data.items).toEqual([]);
         expect(body.data.lastFetchedAt).toBeUndefined();
     });
 
     it('returns 400 with Zod issues on invalid body', async () => {
-        const res = await app().request('/api/v1/utils/parse-rss', {
+        const res = await app().request('/api/v1/rss/parse', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url: 'not-a-url' }),
@@ -92,7 +90,7 @@ describe('POST /api/v1/utils/parse-rss', () => {
     });
 
     it('returns 400 on missing body', async () => {
-        const res = await app().request('/api/v1/utils/parse-rss', {
+        const res = await app().request('/api/v1/rss/parse', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: '',
@@ -104,7 +102,7 @@ describe('POST /api/v1/utils/parse-rss', () => {
     it('returns 400 when the feed cannot be parsed', async () => {
         vi.mocked(rssService.parseFeed).mockResolvedValue(null);
 
-        const res = await app().request('/api/v1/utils/parse-rss', {
+        const res = await app().request('/api/v1/rss/parse', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url: 'https://example.com/broken.xml' }),

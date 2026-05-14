@@ -95,6 +95,25 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/v1/users/handles — every public handle (sitemap enumeration)
+// ---------------------------------------------------------------------------
+//
+// Public; rate-limited by IP. Returned shape matches the legacy /handles
+// endpoint that this replaces: `{ success: true, data: string[] }`.
+//
+// Must register BEFORE `/:handle` below so a request to `/users/handles`
+// lands on this handler rather than being interpreted as a profile lookup
+// for the literal handle "handles".
+
+app.get('/handles', rateLimit(RATE_LIMITS.read), async (c) => {
+    const handles = await userService.getAllPublicHandles();
+    return c.json({
+        success: true,
+        data: handles,
+    });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/users/:handle — single profile (owner-aware projection)
 // ---------------------------------------------------------------------------
 
