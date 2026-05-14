@@ -242,8 +242,6 @@ export const ReplyViewSchema = z.object({
     authorRating: z.number().optional(),
     /** @private Author's tags for this reply (only visible to prompt author) */
     authorTags: z.array(z.string()).optional(),
-    /** @private Author's notes on this reply (only visible to prompt author) */
-    authorNotes: z.string().optional(),
 });
 export type ReplyView = z.infer<typeof ReplyViewSchema>;
 
@@ -258,7 +256,6 @@ export const ReplyViewPublicSchema = ReplyViewSchema.omit({
     listenerPhoneNumber: true,
     authorRating: true,
     authorTags: true,
-    authorNotes: true,
 });
 export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
 
@@ -271,7 +268,7 @@ export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
  */
 export function toReplyViewPublic(reply: ReplyView): ReplyViewPublic {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { listenerPhoneNumber, authorRating, authorTags, authorNotes, ...publicReply } = reply;
+    const { listenerPhoneNumber, authorRating, authorTags, ...publicReply } = reply;
     // Also strip notes from the nested record (private CRM field)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { notes: _notes, ...publicRecord } = publicReply.record;

@@ -89,7 +89,6 @@ function mkReply(authorId: string, overrides: Record<string, unknown> = {}) {
         readBy: [],
         authorRating: 5,
         authorTags: ['great'],
-        authorNotes: 'thoughtful',
         listenerPhoneNumber: '+15555551212',
         ...overrides,
     };
@@ -124,7 +123,6 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
         // ReplyViewPublic strips these fields:
         expect(body.data[0].authorRating).toBeUndefined();
         expect(body.data[0].authorTags).toBeUndefined();
-        expect(body.data[0].authorNotes).toBeUndefined();
         expect(body.data[0].listenerPhoneNumber).toBeUndefined();
         expect(body.data[0].record.notes).toBeUndefined();
     });
@@ -144,7 +142,6 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
         const body = await res.json();
         expect(body.data[0].authorRating).toBe(5);
         expect(body.data[0].authorTags).toEqual(['great']);
-        expect(body.data[0].authorNotes).toBe('thoughtful');
         expect(body.data[0].listenerPhoneNumber).toBe('+15555551212');
         expect(body.data[0].record.notes).toBe('private notes');
     });

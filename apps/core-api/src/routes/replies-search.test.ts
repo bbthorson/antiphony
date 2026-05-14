@@ -95,7 +95,6 @@ describe('GET /api/v1/replies/search', () => {
             isDeleted: false,
             isVerified: false,
             readBy: [],
-            authorNotes: 'my note',
             listenerPhoneNumber: '+15555554444',
         };
         vi.mocked(replyService.searchReplies).mockResolvedValue([fakeReply] as unknown as Awaited<
@@ -111,7 +110,6 @@ describe('GET /api/v1/replies/search', () => {
         const body = await res.json();
         expect(body.query).toBe('hello');
         expect(body.replies).toHaveLength(1);
-        expect(body.replies[0].authorNotes).toBeUndefined();
         expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
         expect(body.replies[0].record.notes).toBeUndefined();
 
