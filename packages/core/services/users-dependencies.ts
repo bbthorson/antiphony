@@ -14,8 +14,15 @@ import type { UserRecord, ProfileView } from 'shared/types';
 
 export interface UpdateProfileDto {
     handle?: string;
+    displayName?: string | null;
     bio?: string;
     avatarUrl?: string | null;
+    /** Personal website surfaced on the public profile. */
+    website?: string | null;
+    /** Up to 5 public links (label + URL) shown under the bio. */
+    links?: Array<{ label: string; url: string }>;
+    /** When true, surfaces a linked Bluesky identity on the public profile. */
+    showBlueskyPublicly?: boolean;
     updatedAt?: Date;
     id?: string;
     createdAt?: Date;

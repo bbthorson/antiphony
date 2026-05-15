@@ -20,6 +20,22 @@ export const ProfileViewBasicSchema = z.object({
     displayName: z.string().nullable().optional(),
     avatarUrl: z.string().nullable().optional(),
     bio: z.string().nullable().optional(),
+    /** Personal website link surfaced on the public profile. */
+    website: z.string().nullable().optional(),
+    /** Public links (label + URL) shown under the bio. */
+    links: z.array(z.object({
+        label: z.string(),
+        url: z.string(),
+    })).optional(),
+    /**
+     * AT Protocol identity, surfaced on the public profile only when the user
+     * opts in (`UserRecord.showBlueskyPublicly === true`). Projection happens
+     * in the user dependency layer; this schema simply allows the field.
+     */
+    bluesky: z.object({
+        handle: z.string(),
+        did: z.string(),
+    }).optional(),
     stats: z.object({
         followers: z.number().default(0),
         following: z.number().default(0),
@@ -47,13 +63,26 @@ export function toProfileViewBasic(profile: {
     displayName?: string | null;
     avatarUrl?: string | null;
     bio?: string | null;
+    website?: string | null;
+    links?: Array<{ label: string; url: string }>;
+    bluesky?: { handle: string; did: string };
+    /**
+     * When `false` or absent, `bluesky` is stripped from the public projection
+     * even if it's linked on the underlying record — surfacing the AT Protocol
+     * identity publicly is opt-in.
+     */
+    showBlueskyPublicly?: boolean;
     stats?: { followers: number; following: number; prompts: number };
     badges?: string[];
     isVerified?: boolean;
     createdAt?: unknown;
 }): ProfileViewBasic {
-    const { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } = profile;
-    return { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } as ProfileViewBasic;
+    const { id, handle, displayName, avatarUrl, bio, website, links, bluesky, showBlueskyPublicly, stats, badges, isVerified, createdAt } = profile;
+    return {
+        id, handle, displayName, avatarUrl, bio, website, links,
+        bluesky: showBlueskyPublicly ? bluesky : undefined,
+        stats, badges, isVerified, createdAt,
+    } as ProfileViewBasic;
 }
 
 /** Authenticated viewer — includes enrichment data visible to other users. */
@@ -93,6 +122,12 @@ export const ProfileViewSelfSchema = ProfileViewDetailedSchema.extend({
     lastActiveAt: FirestoreTimestampSchema.optional(),
     unreadReplyCount: z.number().default(0),
     newReplierCount: z.number().default(0),
+    /**
+     * Surfaces the linked Bluesky identity (handle + DID) on the public profile
+     * when true. Persisted on UserRecord; exposed in self/detailed views so the
+     * settings form can render the toggle's current state.
+     */
+    showBlueskyPublicly: z.boolean().optional(),
     settings: z.object({
         notifications: z.boolean().optional(),
         theme: z.string().optional(),
@@ -196,11 +231,14 @@ export type PromptViewPublic = z.infer<typeof PromptViewPublicSchema>;
 export function toPromptViewPublic(prompt: PromptView): PromptViewPublic {
     /* eslint-disable @typescript-eslint/no-unused-vars */
     const { analytics, moderation, aiScore, aiLabels, aiSummary, aiStatus, aiError, transcription, ...rest } = prompt;
-    const { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt } = rest.author;
     /* eslint-enable @typescript-eslint/no-unused-vars */
+    // Delegate author projection to `toProfileViewBasic` — it owns the
+    // public-vs-private gates (notably `showBlueskyPublicly`). Manual
+    // destructuring drifts out of sync and leaks fields the helper would have
+    // stripped.
     return {
         ...rest,
-        author: { id, handle, displayName, avatarUrl, bio, stats, badges, isVerified, createdAt },
+        author: toProfileViewBasic(rest.author),
     };
 }
 

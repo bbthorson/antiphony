@@ -62,6 +62,15 @@ export const UserRecordSchema = z.object({
     bio: z.string().max(160).nullable().optional(),
     /** URL to avatar image — nullable for the same reason as displayName. */
     avatarUrl: z.string().url().nullable().optional(),
+    /** Optional personal website surfaced on the public profile. */
+    website: z.string().url().nullable().optional(),
+    /** Up to 5 additional public links (label + URL) shown under the bio. */
+    links: z.array(z.object({
+        label: z.string().min(1).max(40),
+        url: z.string().url(),
+    })).max(5).optional(),
+    /** When true and a Bluesky identity is linked, surfaces it on the public profile. */
+    showBlueskyPublicly: z.boolean().optional(),
     /** Server timestamp of creation */
     createdAt: FirestoreTimestampSchema,
     /** Individual account tier — free or creator_pro */

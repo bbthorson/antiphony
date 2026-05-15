@@ -37,6 +37,22 @@ export const UpdateProfileRequestSchema = z.object({
   bio: z.string().max(160).optional(),
   avatarUrl: z.string().url().nullable().optional(),
   usageIntent: z.string().nullable().optional(),
+  /**
+   * Personal website surfaced on the public profile. Accepts a URL, empty
+   * string, or null from the client; normalizes empty string → null so the
+   * value stored on `UserRecord` (which requires `.url() | null`) round-trips
+   * cleanly through `UserRecordSchema.parse` on subsequent reads.
+   */
+  website: z.union([z.string().url(), z.literal(''), z.null()])
+    .optional()
+    .transform((v) => (v === '' ? null : v)),
+  /** Up to 5 public links (label + URL) shown under the bio. */
+  links: z.array(z.object({
+    label: z.string().min(1).max(40),
+    url: z.string().url(),
+  })).max(5).optional(),
+  /** When true, surfaces the linked Bluesky identity on the public profile. */
+  showBlueskyPublicly: z.boolean().optional(),
 });
 
 export const FcmTokenRequestSchema = z.object({
