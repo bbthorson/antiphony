@@ -28,6 +28,9 @@ vi.mock('../services/core-services-firebase.js', () => ({
         getPromptRecord: vi.fn(),
         getPromptData: vi.fn(),
     },
+    hydrationService: {
+        hydrateReply: vi.fn(),
+    },
     userService: {},
     organizationService: {},
     feedService: {},
@@ -73,7 +76,7 @@ vi.mock('../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../app.js');
-const { replyService, promptService } = await import('../services/core-services-firebase.js');
+const { replyService, promptService, hydrationService } = await import('../services/core-services-firebase.js');
 const { firebaseReplyDependencies } = await import('../services/replies-dependencies.js');
 const { sessionVerifier } = await import('../lib/auth/session-verifier.js');
 
@@ -600,5 +603,198 @@ describe('GET /api/v1/replies (list by prompt)', () => {
 
         expect(res.status).toBe(404);
         expect(vi.mocked(replyService.getRepliesForPrompt)).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/replies/r-1');
+        expect(res.status).toBe(401);
+    });
+
+    it('404s when the reply does not exist', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/replies/r-miss', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(404);
+        expect(promptService.getPromptData).not.toHaveBeenCalled();
+    });
+
+    it('404s when the parent prompt has vanished', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({ id: 'r-1', promptId: 'p-gone', authorId: 'replier' }),
+        );
+        vi.mocked(promptService.getPromptData).mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/replies/r-1', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(404);
+        expect(hydrationService.hydrateReply).not.toHaveBeenCalled();
+    });
+
+    it('404s when non-owner views a reply on an archived/deleted prompt', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-owner' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({ id: 'r-1', promptId: 'p-arch', authorId: 'replier' }),
+        );
+        const fakePrompt = {
+            record: { id: 'p-arch', authorId: 'owner', status: 'archived' },
+            author: { id: 'owner', handle: 'arch-host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+
+        const res = await app().request('/api/v1/replies/r-1', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(404);
+        // Hydration should never run when the visibility gate fires.
+        expect(hydrationService.hydrateReply).not.toHaveBeenCalled();
+    });
+
+    it('403s when non-owner views a reply on a private+live prompt', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-owner' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({ id: 'r-1', promptId: 'p-priv', authorId: 'replier' }),
+        );
+        const fakePrompt = {
+            record: { id: 'p-priv', authorId: 'owner', status: 'live' },
+            author: { id: 'owner', handle: 'priv-host' },
+            visibility: 'private',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+
+        const res = await app().request('/api/v1/replies/r-1', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(403);
+        expect(hydrationService.hydrateReply).not.toHaveBeenCalled();
+    });
+
+    it('200s when the viewer owns the parent prompt', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({
+                id: 'r-1',
+                promptId: 'p-1',
+                authorId: 'replier',
+                audioUrl: 'https://x',
+                createdAt: new Date().toISOString(),
+                status: 'live',
+                notes: 'private',
+            }),
+        );
+        const fakePrompt = {
+            record: { id: 'p-1', authorId: 'owner', status: 'live' },
+            author: { id: 'owner', handle: 'host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+        vi.mocked(hydrationService.hydrateReply).mockResolvedValue({
+            record: {
+                id: 'r-1',
+                promptId: 'p-1',
+                authorId: 'replier',
+                notes: 'private',
+            },
+            author: { id: 'replier' },
+            recipient: { id: 'owner' },
+            isRead: false,
+            isDeleted: false,
+            isVerified: false,
+            readBy: [],
+            authorRating: 5,
+            listenerPhoneNumber: '+15555555555',
+        } as unknown as Awaited<ReturnType<typeof hydrationService.hydrateReply>>);
+
+        const res = await app().request('/api/v1/replies/r-1', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        // Public projection strips CRM/PII fields and record.notes.
+        expect(body.reply.record.notes).toBeUndefined();
+        expect(body.reply.authorRating).toBeUndefined();
+        expect(body.reply.listenerPhoneNumber).toBeUndefined();
+        // hydrateReply was called with the resolved recipient — saves a
+        // redundant prompt lookup inside the loader.
+        expect(hydrationService.hydrateReply).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'r-1', promptId: 'p-1' }),
+            fakePrompt.author,
+        );
+    });
+
+    it('200s for a non-owner when the parent prompt is public+live', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'random-auth-user' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({ id: 'r-2', promptId: 'p-2', authorId: 'replier' }),
+        );
+        const fakePrompt = {
+            record: { id: 'p-2', authorId: 'owner', status: 'live' },
+            author: { id: 'owner', handle: 'pub-host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+        vi.mocked(hydrationService.hydrateReply).mockResolvedValue({
+            record: { id: 'r-2', promptId: 'p-2', authorId: 'replier' },
+            author: { id: 'replier' },
+            recipient: { id: 'owner' },
+            isRead: false,
+            isDeleted: false,
+            isVerified: false,
+            readBy: [],
+        } as unknown as Awaited<ReturnType<typeof hydrationService.hydrateReply>>);
+
+        const res = await app().request('/api/v1/replies/r-2', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(200);
+        expect(hydrationService.hydrateReply).toHaveBeenCalled();
+    });
+
+    it('404s when hydration returns null (orphaned reply)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        vi.mocked(replyService.getReplyRecord).mockResolvedValue(
+            asReply({ id: 'r-orph', promptId: 'p-orph', authorId: 'replier' }),
+        );
+        const fakePrompt = {
+            record: { id: 'p-orph', authorId: 'owner', status: 'live' },
+            author: { id: 'owner', handle: 'orph-host' },
+            visibility: 'public',
+        };
+        vi.mocked(promptService.getPromptData).mockResolvedValue(
+            fakePrompt as unknown as Awaited<ReturnType<typeof promptService.getPromptData>>,
+        );
+        vi.mocked(hydrationService.hydrateReply).mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/replies/r-orph', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(404);
     });
 });

@@ -9,7 +9,7 @@ import {
 } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
-import { replyService, promptService } from '../services/core-services-firebase.js';
+import { replyService, promptService, hydrationService } from '../services/core-services-firebase.js';
 import { firebaseReplyDependencies } from '../services/replies-dependencies.js';
 import {
     resolvePendingUpload,
@@ -23,6 +23,9 @@ import { logger } from '../lib/logger.js';
  *   GET   /                         — fetch replies for a prompt (?promptId=).
  *                                     Public; non-author callers get archived
  *                                     prompts' replies hidden.
+ *   GET   /:replyId                 — single reply lookup (auth required).
+ *                                     Returns ReplyViewPublic; gates parent
+ *                                     prompt visibility same as GET /.
  *   POST  /                         — create reply; accepts either a direct
  *                                     audioUrl (on-domain) or a pendingUploadId
  *                                     (embed-redirect flow)
@@ -146,6 +149,99 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
         success: true,
         replies: replies.map(toReplyViewPublic),
     });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/replies/:replyId — single-reply lookup
+// ---------------------------------------------------------------------------
+//
+// Powers deep-link recovery in the Replies tab: when the URL carries a
+// `?replyId=<id>` that lives past the currently loaded feed page(s), the UI
+// fetches the single reply via this endpoint and uses it as the detail-pane
+// fallback. Requires auth (the inbox is a logged-in surface), and gates
+// visibility with the same rules GET / uses:
+//
+//   - Owner of the parent prompt → 200.
+//   - Non-owner, prompt is live AND public → 200 (parity with GET / which
+//     exposes replies of public-live prompts to anonymous viewers; this
+//     endpoint stays consistent so embed-like flows can deep-link too).
+//   - Non-owner, prompt archived/deleted/draft → 404 (mask existence; matches
+//     the GET / handler's non-live → 404 branch).
+//   - Non-owner, prompt is live but private/unlisted → 403 (the prompt is
+//     visible-by-link to its author elsewhere; a clearer error than 404 here
+//     since the caller is auth'd and we can attribute the denial).
+
+app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const replyId = c.req.param('replyId');
+
+    const record = await replyService.getReplyRecord(replyId);
+    if (!record) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Reply not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    const prompt = await promptService.getPromptData(record.promptId);
+    if (!prompt) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Reply not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    const isOwner = uid === prompt.record.authorId;
+    if (!isOwner) {
+        // Archived/deleted/draft → mask existence with 404, same as GET /.
+        if (prompt.record.status !== 'live') {
+            return c.json(
+                {
+                    status: 'error',
+                    message: 'Reply not found',
+                    requestId: c.get('requestId'),
+                },
+                404,
+            );
+        }
+        // Live but private/unlisted — caller is auth'd, so 403 is the more
+        // honest answer.
+        if (prompt.visibility !== 'public') {
+            return c.json(
+                {
+                    status: 'error',
+                    message: 'Forbidden',
+                    requestId: c.get('requestId'),
+                },
+                403,
+            );
+        }
+    }
+
+    // Hydrate against the resolved recipient (parent prompt's author) so we
+    // skip the loader's prompt-lookup leg — we already have it.
+    const view = await hydrationService.hydrateReply(record, prompt.author);
+    if (!view) {
+        // Orphaned (missing recipient) — surfaces same as not-found.
+        return c.json(
+            {
+                status: 'error',
+                message: 'Reply not found',
+                requestId: c.get('requestId'),
+            },
+            404,
+        );
+    }
+
+    return c.json({ success: true, reply: toReplyViewPublic(view) });
 });
 
 // ---------------------------------------------------------------------------
