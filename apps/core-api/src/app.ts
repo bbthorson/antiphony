@@ -6,6 +6,7 @@ import { resolveRoute } from './routes/resolve.js';
 import { promptsRoute } from './routes/prompts.js';
 import { promptsRepliesRoute } from './routes/prompts-replies.js';
 import { usersPromptsRoute } from './routes/users-prompts.js';
+import { repliesFeedRoute } from './routes/replies-feed.js';
 import { repliesSearchRoute } from './routes/replies-search.js';
 import { repliesRoute } from './routes/replies.js';
 import { usersRoute } from './routes/users.js';
@@ -116,6 +117,7 @@ export function app(): Hono {
     a.route('/api/v1/users', usersRoute);
     a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);
+    a.route('/api/v1/replies', repliesFeedRoute);
     a.route('/api/v1/replies', repliesSearchRoute);
     a.route('/api/v1/replies', repliesRoute);
     // All audio storage operations live under /api/v1/audio. Mount the

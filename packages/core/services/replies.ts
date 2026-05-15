@@ -5,6 +5,50 @@ import type { CoreServices } from './core-services';
 import type { ReplyDependencies } from './replies-dependencies';
 
 /**
+ * Filter inputs shared by `searchReplies` and `listReplyFeed`. All fields are
+ * optional; callers default `status` to 'live' at the route boundary.
+ */
+export interface ReplyFeedFilters {
+    promptId?: string;
+    status?: 'live' | 'archived' | 'all';
+    dateFrom?: Date;
+    dateTo?: Date;
+    readStatus?: 'read' | 'unread' | 'all';
+}
+
+interface FeedCursor {
+    ts: number;
+    id: string;
+}
+
+function encodeFeedCursor(c: FeedCursor): string {
+    return Buffer.from(JSON.stringify(c), 'utf8').toString('base64url');
+}
+
+/**
+ * Tolerant cursor decode. Bad input → null (treated as "start from page 1")
+ * rather than 4xx; callers control whether to surface that distinction.
+ */
+function decodeFeedCursor(raw: string | null | undefined): FeedCursor | null {
+    if (!raw) return null;
+    try {
+        const json = Buffer.from(raw, 'base64url').toString('utf8');
+        const parsed = JSON.parse(json);
+        if (
+            parsed &&
+            typeof parsed === 'object' &&
+            typeof parsed.ts === 'number' &&
+            typeof parsed.id === 'string'
+        ) {
+            return { ts: parsed.ts, id: parsed.id };
+        }
+    } catch {
+        // ignore
+    }
+    return null;
+}
+
+/**
  * ReplyService is the business-logic layer for replies: validation, hydration,
  * ownership enforcement, search. Data access is delegated to an injected
  * `ReplyDependencies` binding; peer-service access flows through the
@@ -145,21 +189,96 @@ export class ReplyService {
     /**
      * Search replies by transcription text across all user's prompts.
      */
-    async searchReplies(userId: string, query: string, filters?: {
-        promptId?: string;
-        status?: 'live' | 'archived' | 'all';
-        dateFrom?: Date;
-        dateTo?: Date;
-        readStatus?: 'read' | 'unread' | 'all';
-    }): Promise<ReplyView[]> {
+    async searchReplies(userId: string, query: string, filters?: ReplyFeedFilters): Promise<ReplyView[]> {
+        const replies = await this.loadAndFilterReplies(userId, filters);
+        const lowerQuery = query.toLowerCase();
+        return replies.filter(r =>
+            r.transcription?.toLowerCase().includes(lowerQuery) ||
+            r.record.transcription?.toLowerCase().includes(lowerQuery)
+        );
+    }
+
+    /**
+     * Cross-prompt reply feed — paginated, reverse-chronological list of the
+     * authenticated viewer's replies. Same filters as `searchReplies` but
+     * without the text-query constraint, plus opaque cursor pagination so
+     * callers can stream large reply sets.
+     *
+     * Cursor is a base64-encoded `{ ts, id }` pair pointing at the last item
+     * returned. The next page is everything strictly older than `ts`, or
+     * equal `ts` with `id > cursorId` (id is the secondary sort key for
+     * stability across same-ms timestamps).
+     */
+    async listReplyFeed(
+        userId: string,
+        filters?: ReplyFeedFilters,
+        pagination?: { limit?: number; cursor?: string | null },
+    ): Promise<{ replies: ReplyView[]; nextCursor: string | null }> {
+        const requestedLimit = pagination?.limit ?? 20;
+        const limit = Math.max(1, Math.min(100, requestedLimit));
+
+        const all = await this.loadAndFilterReplies(userId, filters);
+        // `loadAndFilterReplies` already sorts by createdAt desc, but its
+        // secondary order isn't guaranteed (it comes from Map iteration over
+        // the `in` chunk results). Re-sort with a stable id tiebreaker so the
+        // cursor logic below is deterministic.
+        all.sort((a, b) => {
+            const tsDiff = b.record.createdAt.getTime() - a.record.createdAt.getTime();
+            if (tsDiff !== 0) return tsDiff;
+            return a.record.id < b.record.id ? -1 : a.record.id > b.record.id ? 1 : 0;
+        });
+
+        const cursor = decodeFeedCursor(pagination?.cursor);
+        const startIndex = cursor
+            ? all.findIndex(r => {
+                const ts = r.record.createdAt.getTime();
+                if (ts < cursor.ts) return true;
+                if (ts === cursor.ts && r.record.id > cursor.id) return true;
+                return false;
+            })
+            : 0;
+
+        if (startIndex < 0) {
+            return { replies: [], nextCursor: null };
+        }
+
+        const page = all.slice(startIndex, startIndex + limit);
+        const hasMore = all.length > startIndex + limit;
+        const nextCursor = hasMore && page.length > 0
+            ? encodeFeedCursor({
+                ts: page[page.length - 1].record.createdAt.getTime(),
+                id: page[page.length - 1].record.id,
+            })
+            : null;
+
+        return { replies: page, nextCursor };
+    }
+
+    /**
+     * Shared between `searchReplies` and `listReplyFeed`. Loads the viewer's
+     * replies across their prompts and applies the non-text filters (status,
+     * date range, read-state, optional single-prompt scope). Returns
+     * createdAt-desc.
+     */
+    private async loadAndFilterReplies(userId: string, filters?: ReplyFeedFilters): Promise<ReplyView[]> {
         const user = await this.services.users.getUserDataByUid(userId);
         if (!user) throw new NotFoundError('User not found.');
 
-        const prompts = await this.services.prompts.getPromptsForUser(userId, 100, undefined, false);
-        let promptIds = prompts.map(p => p.record.id);
-
+        // When a specific promptId is requested, verify ownership via a single
+        // doc read. Avoids the `getPromptsForUser(100)` truncation issue: a
+        // power user with >100 prompts asking for an older one would
+        // otherwise see the prompt drop out of the candidate set and get
+        // empty results despite owning it.
+        let promptIds: string[];
         if (filters?.promptId) {
-            promptIds = promptIds.filter(id => id === filters.promptId);
+            const prompt = await this.services.prompts.getPromptRecord(filters.promptId);
+            if (!prompt || prompt.authorId !== userId || prompt.status === 'deleted') {
+                return [];
+            }
+            promptIds = [filters.promptId];
+        } else {
+            const prompts = await this.services.prompts.getPromptsForUser(userId, 100, undefined, false);
+            promptIds = prompts.map(p => p.record.id);
         }
 
         if (promptIds.length === 0) return [];
@@ -171,12 +290,6 @@ export class ReplyService {
         if (filters?.status === 'archived') {
             allReplies = allReplies.filter(r => r.record.status === 'archived');
         }
-
-        const lowerQuery = query.toLowerCase();
-        allReplies = allReplies.filter(r =>
-            r.transcription?.toLowerCase().includes(lowerQuery) ||
-            r.record.transcription?.toLowerCase().includes(lowerQuery)
-        );
 
         if (filters?.dateFrom) {
             allReplies = allReplies.filter(r => r.record.createdAt >= filters.dateFrom!);
