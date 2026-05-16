@@ -23,9 +23,17 @@ import type {
     ReplyDependencies,
     ReplyQueryOptions,
     ReplyActivityRecord,
+    AggregateDeltaAccumulator,
+} from '@vox-pop/core/services/replies-dependencies';
+import {
+    sentimentKey,
+    promptAggregateUpdate,
+    computeAggregateDelta,
 } from '@vox-pop/core/services/replies-dependencies';
 
 export type { ReplyDependencies, ReplyQueryOptions, ReplyActivityRecord };
+
+const increment = (delta: number) => admin.firestore.FieldValue.increment(delta);
 
 /**
  * Firebase-wired `ReplyDependencies` binding for core-api.
@@ -181,6 +189,88 @@ export const firebaseReplyDependencies: ReplyDependencies = {
             }
             await batch.commit();
         }
+    },
+
+    async updateReplyStatusWithAggregates(prevReply, nextStatus) {
+        const db = getAdminDb();
+        await db.runTransaction(async (t) => {
+            const replyRef = repliesCollection().doc(prevReply.id);
+            const replyDoc = await t.get(replyRef);
+            if (!replyDoc.exists) {
+                throw new NotFoundError(`Reply ${prevReply.id} not found.`);
+            }
+            const currentReplyData = replyDoc.data() ?? {};
+            const currentStatus = (currentReplyData.status as string | undefined) ?? 'live';
+
+            t.update(replyRef, { status: nextStatus });
+
+            const aggregateDelta = computeAggregateDelta(
+                currentStatus,
+                nextStatus,
+                currentReplyData.aiStatus,
+                currentReplyData.sentiment,
+                currentReplyData.engagementScore,
+                increment,
+            );
+            if (!aggregateDelta) return;
+
+            const promptRef = promptsCollection().doc(prevReply.promptId);
+            t.update(promptRef, aggregateDelta);
+        });
+    },
+
+    async bulkUpdateRepliesStatusWithAggregates(prevReplies, nextStatus) {
+        if (prevReplies.length === 0) return;
+
+        // Per-prompt aggregate deltas, computed from the caller-supplied prev
+        // state. Skips replies that don't contribute (no AI enrichment, or
+        // archived ↔ deleted moves that don't cross the live boundary).
+        const deltasByPrompt = new Map<string, AggregateDeltaAccumulator>();
+        for (const prev of prevReplies) {
+            const wasLive = prev.status === 'live';
+            const isLive = nextStatus === 'live';
+            if (wasLive === isLive) continue;
+            if (prev.aiStatus !== 'complete') continue;
+            if (typeof prev.engagementScore !== 'number') continue;
+            const sk = sentimentKey(prev.sentiment);
+            if (!sk) continue;
+
+            const sign = isLive ? 1 : -1;
+            const acc = deltasByPrompt.get(prev.promptId) ?? {
+                sumDelta: 0,
+                countDelta: 0,
+                positive: 0,
+                neutral: 0,
+                negative: 0,
+            };
+            acc.sumDelta += sign * prev.engagementScore;
+            acc.countDelta += sign;
+            acc[sk] += sign;
+            deltasByPrompt.set(prev.promptId, acc);
+        }
+
+        const db = getAdminDb();
+        let writesInBatch = 0;
+        let batch = db.batch();
+        const commits: Promise<unknown>[] = [];
+        const flush = () => {
+            if (writesInBatch > 0) commits.push(batch.commit());
+            batch = db.batch();
+            writesInBatch = 0;
+        };
+
+        for (const prev of prevReplies) {
+            batch.update(repliesCollection().doc(prev.id), { status: nextStatus });
+            writesInBatch++;
+            if (writesInBatch >= FIRESTORE_BATCH_LIMIT) flush();
+        }
+        for (const [promptId, d] of deltasByPrompt) {
+            batch.update(promptsCollection().doc(promptId), promptAggregateUpdate(d, increment));
+            writesInBatch++;
+            if (writesInBatch >= FIRESTORE_BATCH_LIMIT) flush();
+        }
+        flush();
+        await Promise.all(commits);
     },
 
     async markReplyRead(replyId, userId) {

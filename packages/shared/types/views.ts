@@ -177,6 +177,23 @@ export const PromptViewSchema = z.object({
     analytics: z.object({
         views: z.number().default(0),
         listens: z.number().default(0),
+        /**
+         * Mean engagementScore (1–10) across this prompt's `status: 'live'`
+         * replies that completed AI enrichment. `null` when no such replies
+         * exist (0 would alias a valid bottom-of-range score). Derived in
+         * hydration from the prompt doc's `engagementScoreSum / Count`.
+         */
+        avgEngagementScore: z.number().nullable().optional(),
+        /**
+         * Counts of `status: 'live'` AI-enriched replies grouped by sentiment.
+         * Keys lowercase by convention; source enum
+         * (`Positive | Neutral | Negative`) is mapped at the write site.
+         */
+        sentimentBreakdown: z.object({
+            positive: z.number(),
+            neutral: z.number(),
+            negative: z.number(),
+        }).optional(),
     }).optional(),
     moderation: z.object({
         flagged: z.boolean().default(false),

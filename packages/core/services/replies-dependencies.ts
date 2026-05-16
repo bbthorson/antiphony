@@ -1,6 +1,83 @@
 import type { ReplyRecord } from 'shared/types';
 
 /**
+ * Maps a reply's `sentiment` enum value to the lowercase bucket key used in
+ * `PromptDocument.sentimentCounts`. Returns null if the input isn't a
+ * recognized sentiment string (missing, undefined, or unexpected value).
+ *
+ * Kept in this file so both Firebase-backed bindings (apps/core-api and
+ * apps/web) share the mapping verbatim, and tests can assert it directly.
+ */
+export function sentimentKey(s: unknown): 'positive' | 'neutral' | 'negative' | null {
+    if (s === 'Positive') return 'positive';
+    if (s === 'Neutral') return 'neutral';
+    if (s === 'Negative') return 'negative';
+    return null;
+}
+
+export interface AggregateDeltaAccumulator {
+    sumDelta: number;
+    countDelta: number;
+    positive: number;
+    neutral: number;
+    negative: number;
+}
+
+/**
+ * Builds the prompt-doc update object for an aggregate delta. Skips
+ * sentiment buckets with zero delta so the write stays minimal.
+ *
+ * Returns a `Record<string, unknown>` because the values are
+ * `FieldValue.increment(...)` instances at the Firestore layer; the helper
+ * takes a delta-to-increment factory so packages/core stays Firebase-free.
+ */
+export function promptAggregateUpdate(
+    d: AggregateDeltaAccumulator,
+    increment: (delta: number) => unknown,
+): Record<string, unknown> {
+    const update: Record<string, unknown> = {
+        engagementScoreSum: increment(d.sumDelta),
+        engagementScoreCount: increment(d.countDelta),
+    };
+    if (d.positive !== 0) update['sentimentCounts.positive'] = increment(d.positive);
+    if (d.neutral !== 0) update['sentimentCounts.neutral'] = increment(d.neutral);
+    if (d.negative !== 0) update['sentimentCounts.negative'] = increment(d.negative);
+    return update;
+}
+
+/**
+ * Computes the single-reply aggregate-delta update for a status flip.
+ * Returns null when the flip doesn't cross the live boundary OR when the
+ * reply lacks AI enrichment / sentiment / score.
+ *
+ * The single-reply path uses this; the bulk path uses
+ * `AggregateDeltaAccumulator` + `promptAggregateUpdate` because deltas across
+ * many replies share a target prompt.
+ */
+export function computeAggregateDelta(
+    currentStatus: string,
+    nextStatus: 'live' | 'archived' | 'deleted',
+    aiStatus: unknown,
+    sentiment: unknown,
+    engagementScore: unknown,
+    increment: (delta: number) => unknown,
+): Record<string, unknown> | null {
+    const wasLive = currentStatus === 'live';
+    const isLive = nextStatus === 'live';
+    if (wasLive === isLive) return null;
+    if (aiStatus !== 'complete') return null;
+    if (typeof engagementScore !== 'number') return null;
+    const sk = sentimentKey(sentiment);
+    if (!sk) return null;
+    const sign = isLive ? 1 : -1;
+    return {
+        engagementScoreSum: increment(sign * engagementScore),
+        engagementScoreCount: increment(sign),
+        [`sentimentCounts.${sk}`]: increment(sign),
+    };
+}
+
+/**
  * ReplyDependencies is the portable interface that ReplyService uses to access
  * the underlying data store. Lives in `packages/core/` alongside the class;
  * the Firestore-backed default implementation lives in
@@ -67,6 +144,36 @@ export interface ReplyDependencies {
 
     /** Apply the same partial update to many replies atomically where possible. */
     bulkUpdateReplies(replyIds: string[], updates: Partial<ReplyRecord>): Promise<void>;
+
+    /**
+     * Atomically: updates a reply's `status` AND, when the reply has completed
+     * AI enrichment with both `sentiment` + `engagementScore` set, applies the
+     * matching delta to the parent prompt's analytics aggregates
+     * (`engagementScoreSum`/`Count` and `sentimentCounts`). Aggregates count
+     * `status: 'live'` replies only, so:
+     *   `live → archived|deleted`: decrement.
+     *   `archived|deleted → live`: increment.
+     *   `archived ↔ deleted` or unchanged status: no aggregate write.
+     *
+     * Single source of truth for status-flip aggregate maintenance — callers
+     * should NOT combine `updateReply({status})` with manual aggregate writes.
+     */
+    updateReplyStatusWithAggregates(
+        prevReply: ReplyRecord,
+        nextStatus: 'live' | 'archived' | 'deleted',
+    ): Promise<void>;
+
+    /**
+     * Bulk variant of `updateReplyStatusWithAggregates`. Aggregates the deltas
+     * per `promptId` and emits one prompt update per affected prompt, then
+     * chunks the combined (reply + prompt) write set to stay under Firestore's
+     * 500-op batch limit. Trusts caller-supplied prev state — adequate for the
+     * UI-driven bulk archive flow; concurrent flips on the same set are rare.
+     */
+    bulkUpdateRepliesStatusWithAggregates(
+        prevReplies: ReplyRecord[],
+        nextStatus: 'live' | 'archived' | 'deleted',
+    ): Promise<void>;
 
     /** Add `userId` to the reply's `readBy` set (idempotent). Hides arrayUnion. */
     markReplyRead(replyId: string, userId: string): Promise<void>;

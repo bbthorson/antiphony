@@ -50,6 +50,11 @@ export class HydrationService {
         // Strip computed fields to get the pure Record
         const record = PromptRecordSchema.parse(document);
 
+        const sentimentCounts = document.sentimentCounts;
+        const avgEngagementScore = document.engagementScoreCount > 0
+            ? document.engagementScoreSum / document.engagementScoreCount
+            : null;
+
         return {
             record,
             author: authorView,
@@ -57,6 +62,12 @@ export class HydrationService {
             lastReplyAt: document.lastReplyAt,
             likeCount: 0,
             visibility: record.status === 'live' ? 'public' : 'archived',
+            analytics: {
+                views: 0,
+                listens: 0,
+                avgEngagementScore,
+                sentimentBreakdown: sentimentCounts,
+            },
             // AI Enrichment Fields
             aiStatus: record.aiStatus,
             aiError: record.aiError,

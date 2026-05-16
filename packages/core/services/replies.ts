@@ -135,6 +135,8 @@ export class ReplyService {
 
     /**
      * Updates the status of a reply. Only the prompt author can change reply status.
+     * Delegates to the aggregate-aware binding so the parent prompt's
+     * engagement/sentiment aggregates stay consistent with the live set.
      */
     async updateReplyStatus(replyId: string, status: 'live' | 'archived' | 'deleted', authenticatedUid: string): Promise<void> {
         const reply = await this.deps.getReplyById(replyId);
@@ -144,16 +146,17 @@ export class ReplyService {
         if (!prompt) throw new NotFoundError('Parent prompt not found.');
         if (prompt.authorId !== authenticatedUid) throw new ForbiddenError('You do not own the prompt for this reply.');
 
-        await this.deps.updateReply(replyId, { status });
+        await this.deps.updateReplyStatusWithAggregates(reply, status);
         console.info(`[ReplyService] Updated reply ${replyId} status to ${status}`);
     }
 
     /**
-     * Bulk update status for multiple replies. Verifies ownership for all.
+     * Bulk update status for multiple replies. Verifies ownership for all and
+     * delegates to the aggregate-aware bulk binding.
      */
     async bulkUpdateStatus(replyIds: string[], status: 'live' | 'archived' | 'deleted', authenticatedUid: string): Promise<void> {
-        await this.assertOwnsAllReplies(replyIds, authenticatedUid);
-        await this.deps.bulkUpdateReplies(replyIds, { status });
+        const replies = await this.assertOwnsAllReplies(replyIds, authenticatedUid);
+        await this.deps.bulkUpdateRepliesStatusWithAggregates(replies, status);
         console.info(`[ReplyService] Bulk updated ${replyIds.length} replies to status ${status}`);
     }
 
@@ -167,11 +170,11 @@ export class ReplyService {
     }
 
     /**
-     * Ownership check spanning reply → prompt → author. Used by both bulk
-     * status updates and bulk read-marking; kept in the service layer because
-     * it orchestrates across services.
+     * Ownership check spanning reply → prompt → author. Returns the loaded
+     * replies so callers (`bulkUpdateStatus`) can pass prev-state into the
+     * aggregate-aware binding without a second fetch.
      */
-    private async assertOwnsAllReplies(replyIds: string[], authenticatedUid: string): Promise<void> {
+    private async assertOwnsAllReplies(replyIds: string[], authenticatedUid: string): Promise<ReplyRecord[]> {
         const replies = await this.deps.getRepliesByIds(replyIds);
         const validReplies = replies.filter((r): r is ReplyRecord => r !== null);
         if (validReplies.length !== replyIds.length) {
@@ -184,6 +187,7 @@ export class ReplyService {
             if (!prompt) throw new NotFoundError('Parent prompt not found.');
             if (prompt.authorId !== authenticatedUid) throw new ForbiddenError('You do not own all prompts for these replies.');
         }
+        return validReplies;
     }
 
     /**

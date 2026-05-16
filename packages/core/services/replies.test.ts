@@ -75,6 +75,8 @@ function buildService(inputs: StubInputs) {
         getRepliesByIds: vi.fn(),
         updateReply: vi.fn(),
         bulkUpdateReplies: vi.fn(),
+        updateReplyStatusWithAggregates: vi.fn(),
+        bulkUpdateRepliesStatusWithAggregates: vi.fn(),
         markReplyRead: vi.fn(),
         bulkMarkRepliesRead: vi.fn(),
         newReplyId: vi.fn(() => 'new-id'),
@@ -313,5 +315,121 @@ describe('ReplyService.listReplyFeed', () => {
 
         const result = await svc.listReplyFeed(VIEWER_UID, { promptId: 'p-old-owned' });
         expect(result.replies.map((r) => r.record.id)).toEqual(['r-old-b', 'r-old-a']);
+    });
+});
+
+/**
+ * Delegation tests for status-flip aggregate maintenance.
+ *
+ * The aggregate-delta rules (signed sums, sentiment bucket mapping, archived
+ * ↔ deleted no-ops) live in `computeAggregateDelta` and are covered in
+ * `replies-dependencies.test.ts`. These tests pin the service-layer contract:
+ * `updateReplyStatus` / `bulkUpdateStatus` MUST delegate to the
+ * aggregate-aware binding methods (passing prev-state) — not the legacy
+ * `updateReply({ status })` / `bulkUpdateReplies({ status })` shortcut, which
+ * would skip the prompt-doc aggregate maintenance.
+ */
+describe('ReplyService status flips delegate to aggregate-aware bindings', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function buildSvcWithReplies(replies: ReplyRecord[]): {
+        svc: ReplyService;
+        deps: ReplyDependencies;
+    } {
+        const ownerUid = VIEWER_UID;
+        const replyById = new Map(replies.map((r) => [r.id, r]));
+        const deps: ReplyDependencies = {
+            queryByPromptId: vi.fn(),
+            queryByPromptIds: vi.fn(),
+            getReplyById: vi.fn(async (id: string) => replyById.get(id) ?? null),
+            getRepliesByIds: vi.fn(async (ids: string[]) =>
+                ids.map((id) => replyById.get(id) ?? null),
+            ),
+            updateReply: vi.fn(),
+            bulkUpdateReplies: vi.fn(),
+            updateReplyStatusWithAggregates: vi.fn(),
+            bulkUpdateRepliesStatusWithAggregates: vi.fn(),
+            markReplyRead: vi.fn(),
+            bulkMarkRepliesRead: vi.fn(),
+            newReplyId: vi.fn(),
+            newActivityId: vi.fn(),
+            createReplyWithCounterIncrement: vi.fn(),
+            now: vi.fn(() => new Date()),
+        };
+        // Owner of every prompt referenced by the supplied replies.
+        const promptOwnership = new Map<string, string>();
+        for (const r of replies) {
+            promptOwnership.set(r.promptId, ownerUid);
+        }
+        const services = {
+            users: { getUserDataByUid: vi.fn(async () => makeUserProfile()) },
+            prompts: {
+                getPromptRecord: vi.fn(async (id: string) => {
+                    const authorId = promptOwnership.get(id);
+                    return authorId ? { id, authorId } : null;
+                }),
+                getPromptRecordsByIds: vi.fn(async (ids: string[]) =>
+                    ids.map((id) => {
+                        const authorId = promptOwnership.get(id);
+                        return authorId ? { id, authorId } : null;
+                    }),
+                ),
+            },
+            hydration: {
+                hydrateRepliesWithRecipient: vi.fn(),
+            },
+        } as unknown as CoreServices;
+        return { svc: new ReplyService(deps, services), deps };
+    }
+
+    it('updateReplyStatus passes the loaded reply + new status to the aggregate-aware binding (not updateReply)', async () => {
+        const reply: ReplyRecord = makeReplyRecord({
+            id: 'r-x',
+            promptId: 'p-x',
+            createdAt: new Date(),
+            sentiment: 'Positive',
+            engagementScore: 8,
+            aiStatus: 'complete',
+        });
+        const { svc, deps } = buildSvcWithReplies([reply]);
+
+        await svc.updateReplyStatus('r-x', 'archived', VIEWER_UID);
+
+        expect(deps.updateReplyStatusWithAggregates).toHaveBeenCalledTimes(1);
+        expect(deps.updateReplyStatusWithAggregates).toHaveBeenCalledWith(reply, 'archived');
+        // Legacy non-aggregate path must NOT be invoked — its use would drop
+        // the parent prompt's aggregate sync.
+        expect(deps.updateReply).not.toHaveBeenCalled();
+    });
+
+    it('bulkUpdateStatus passes the loaded replies (with prev state) to the bulk aggregate-aware binding', async () => {
+        const r1 = makeReplyRecord({
+            id: 'r-1', promptId: 'p-1', createdAt: new Date(),
+            sentiment: 'Positive', engagementScore: 9, aiStatus: 'complete',
+        });
+        const r2 = makeReplyRecord({
+            id: 'r-2', promptId: 'p-1', createdAt: new Date(),
+            // No AI enrichment: binding skips this one's aggregate delta.
+            aiStatus: 'pending',
+        });
+        const r3 = makeReplyRecord({
+            id: 'r-3', promptId: 'p-2', createdAt: new Date(),
+            sentiment: 'Negative', engagementScore: 2, aiStatus: 'complete',
+        });
+        const { svc, deps } = buildSvcWithReplies([r1, r2, r3]);
+
+        await svc.bulkUpdateStatus(['r-1', 'r-2', 'r-3'], 'archived', VIEWER_UID);
+
+        expect(deps.bulkUpdateRepliesStatusWithAggregates).toHaveBeenCalledTimes(1);
+        const [passedReplies, passedStatus] =
+            (deps.bulkUpdateRepliesStatusWithAggregates as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(passedStatus).toBe('archived');
+        // Verify the binding receives the full prev records (not just IDs) so
+        // it can compute deltas — and that ALL fetched replies pass through,
+        // including those without enrichment (binding decides what counts).
+        expect((passedReplies as ReplyRecord[]).map((r) => r.id).sort()).toEqual(['r-1', 'r-2', 'r-3']);
+        expect(deps.bulkUpdateReplies).not.toHaveBeenCalled();
     });
 });
