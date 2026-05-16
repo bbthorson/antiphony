@@ -123,6 +123,13 @@ export const ProfileViewSelfSchema = ProfileViewDetailedSchema.extend({
     unreadReplyCount: z.number().default(0),
     newReplierCount: z.number().default(0),
     /**
+     * Account tier from UserRecord — surfaced on the self profile so the
+     * client can gate paid features (e.g. the Performance dashboard tab).
+     * Optional for legacy docs without the field; consumers should treat
+     * missing as `'free'`.
+     */
+    tier: z.enum(['free', 'creator_pro']).optional(),
+    /**
      * Surfaces the linked Bluesky identity (handle + DID) on the public profile
      * when true. Persisted on UserRecord; exposed in self/detailed views so the
      * settings form can render the toggle's current state.
