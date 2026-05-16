@@ -103,11 +103,18 @@ export class ReplyService {
     /**
      * Batch fetch replies for multiple prompts.
      * Useful for aggregated views (e.g. People/CRM) to avoid N+1 queries.
+     *
+     * `includePrivateData` controls whether the hydrator fetches the
+     * enrichments-namespace docs (top-level `notes`, etc.) and lifts them
+     * onto each ReplyView. Default true matches People/CRM expectations.
+     * Set false when the caller projects through `toReplyViewPublic`
+     * downstream (which strips top-level `notes` anyway) — avoids the
+     * wasted Firestore round-trip on the feed/search hot paths.
      */
     async getRepliesForPrompts(
         promptIds: string[],
         recipient: ProfileView,
-        options?: { includeArchived?: boolean },
+        options?: { includeArchived?: boolean; includePrivateData?: boolean },
     ): Promise<Map<string, ReplyView[]>> {
         if (promptIds.length === 0) return new Map();
 
@@ -115,8 +122,14 @@ export class ReplyService {
             includeArchived: options?.includeArchived,
         });
 
-        // In CRM context, the recipient IS the author of these prompts, so we include private data.
-        const hydrated = await this.services.hydration.hydrateRepliesWithRecipient(allRecords, recipient, { includePrivateData: true });
+        const includePrivateData = options?.includePrivateData ?? true;
+        // Note: `includePrivateData: false` also changes how authors are
+        // batch-loaded — the hydrator skips the explicit `getUsersByIds` call
+        // (which fetches private-data-tier profile rows) and falls back to
+        // per-record `loadUser`. That's still batched via DataLoader, but it
+        // returns public-only profiles. Intentional: the feed/search paths
+        // strip private user fields anyway via `toReplyViewPublic`.
+        const hydrated = await this.services.hydration.hydrateRepliesWithRecipient(allRecords, recipient, { includePrivateData });
 
         const map = new Map<string, ReplyView[]>();
         hydrated.forEach(reply => {
@@ -288,7 +301,13 @@ export class ReplyService {
         if (promptIds.length === 0) return [];
 
         const includeArchived = filters?.status === 'archived' || filters?.status === 'all';
-        const repliesMap = await this.getRepliesForPrompts(promptIds, user, { includeArchived });
+        // listReplyFeed / searchReplies both project through toReplyViewPublic
+        // downstream — top-level `notes` is stripped on the wire. Skip the
+        // enrichments fetch to avoid the wasted Firestore round-trip.
+        const repliesMap = await this.getRepliesForPrompts(promptIds, user, {
+            includeArchived,
+            includePrivateData: false,
+        });
         let allReplies = Array.from(repliesMap.values()).flat();
 
         if (filters?.status === 'archived') {
