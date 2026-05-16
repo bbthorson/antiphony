@@ -79,17 +79,14 @@ function mkReply(authorId: string, overrides: Record<string, unknown> = {}) {
             createdAt: new Date('2026-04-20').toISOString(),
             status: 'live',
             audioUrl: 'https://x',
-            notes: 'private notes',
         },
         author: { id: authorId, handle: `replier-${authorId}`, displayName: 'Replier' },
         recipient: { id: 'author-uid', handle: 'author' },
         isRead: false,
         isDeleted: false,
-        isVerified: false,
         readBy: [],
-        authorRating: 5,
-        authorTags: ['great'],
         listenerPhoneNumber: '+15555551212',
+        notes: 'private notes',
         ...overrides,
     };
 }
@@ -120,11 +117,8 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
         const body = await res.json();
         expect(body.success).toBe(true);
         expect(body.data).toHaveLength(1);
-        // ReplyViewPublic strips these fields:
-        expect(body.data[0].authorRating).toBeUndefined();
-        expect(body.data[0].authorTags).toBeUndefined();
-        expect(body.data[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.data[0].record.notes).toBeUndefined();
+        // ReplyViewPublic strips these fields:        expect(body.data[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.data[0].notes).toBeUndefined();
     });
 
     it('author viewer gets the FULL ReplyView[] (CRM fields preserved)', async () => {
@@ -139,11 +133,8 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.data[0].authorRating).toBe(5);
-        expect(body.data[0].authorTags).toEqual(['great']);
-        expect(body.data[0].listenerPhoneNumber).toBe('+15555551212');
-        expect(body.data[0].record.notes).toBe('private notes');
+        const body = await res.json();        expect(body.data[0].listenerPhoneNumber).toBe('+15555551212');
+        expect(body.data[0].notes).toBe('private notes');
     });
 
     it('non-author viewer gets [] when prompt is not live', async () => {
@@ -176,9 +167,7 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.data).toHaveLength(1);
-        expect(body.data[0].authorRating).toBe(5);
-    });
+        expect(body.data).toHaveLength(1);    });
 
     it('includeArchived=true flows through to the service', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'author-uid' });

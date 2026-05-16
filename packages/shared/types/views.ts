@@ -299,11 +299,13 @@ export const ReplyViewSchema = z.object({
     engagementScore: z.number().min(1).max(10).optional(),
     /** @private Confirmed listener phone number (never exposed publicly) */
     listenerPhoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/).optional(),
-    isVerified: z.boolean().default(false),
-    /** @private Author's rating of this reply (only visible to prompt author) */
-    authorRating: z.number().optional(),
-    /** @private Author's tags for this reply (only visible to prompt author) */
-    authorTags: z.array(z.string()).optional(),
+    /**
+     * @private Per-viewer private notes about this reply (CRM enrichment).
+     * Lifted into the view from `enrichments/replies/{id}.notes` by the
+     * hydrator when the viewer is the prompt author. Never populated for
+     * non-author viewers; defensively stripped by `toReplyViewPublic`.
+     */
+    notes: z.string().optional(),
 });
 export type ReplyView = z.infer<typeof ReplyViewSchema>;
 
@@ -316,8 +318,7 @@ export type ReplyView = z.infer<typeof ReplyViewSchema>;
  */
 export const ReplyViewPublicSchema = ReplyViewSchema.omit({
     listenerPhoneNumber: true,
-    authorRating: true,
-    authorTags: true,
+    notes: true,
 });
 export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
 
@@ -325,16 +326,14 @@ export type ReplyViewPublic = z.infer<typeof ReplyViewPublicSchema>;
  * Strips private fields from a ReplyView, returning a client-safe object.
  * Works on plain objects (does not re-validate with Zod for performance).
  *
- * Strips both top-level private fields AND `record.notes` (per-reply author notes
- * are private CRM data stored on the Firestore document as `notes`).
+ * Strips top-level CRM fields (listenerPhoneNumber, notes). `notes` is the
+ * prompt-author's private annotation lifted from the enrichments namespace
+ * — never visible to non-authors.
  */
 export function toReplyViewPublic(reply: ReplyView): ReplyViewPublic {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { listenerPhoneNumber, authorRating, authorTags, ...publicReply } = reply;
-    // Also strip notes from the nested record (private CRM field)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { notes: _notes, ...publicRecord } = publicReply.record;
-    return { ...publicReply, record: { ...publicRecord } } as ReplyViewPublic;
+    const { listenerPhoneNumber, notes, ...publicReply } = reply;
+    return publicReply as ReplyViewPublic;
 }
 
 

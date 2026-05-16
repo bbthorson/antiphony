@@ -2,6 +2,7 @@ import { getAdminDb } from '../lib/firebase-admin.js';
 import type { HydrationDependencies } from '@vox-pop/core/services/hydration-dependencies';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseCoreServices } from './core-services-firebase.js';
+import { firebaseReplyDependencies } from './replies-dependencies.js';
 
 export type { HydrationDependencies };
 
@@ -89,6 +90,14 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         const doc = await getAdminDb().collection('organizations').doc(orgId).get();
         if (!doc.exists) return null;
         return (doc.data()?.name as string) || null;
+    },
+
+    async getReplyEnrichmentsByIds(replyIds: string[]) {
+        // Delegate to the reply-deps binding which owns the enrichments
+        // namespace path (`enrichments/replies/items/{id}`) and the
+        // schema-validation envelope. Keeps the namespace concern in one
+        // place — the hydrator doesn't need to know where enrichments live.
+        return firebaseReplyDependencies.getReplyEnrichmentsByIds(replyIds);
     },
 
     // --- Stubbed — fill in when prompt hydration needs cross-doc prompt loads ---

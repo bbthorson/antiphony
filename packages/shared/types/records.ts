@@ -167,8 +167,6 @@ export const ReplyRecordSchema = z.object({
      * - `deleted`: Soft deleted.
      */
     status: z.enum(['live', 'archived', 'deleted']).default('live'),
-    /** Private notes by the Prompt author about this reply */
-    notes: z.string().optional(),
     /** AI Enrichment Fields */
     aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
     aiError: z.string().optional(),
@@ -206,7 +204,22 @@ export const ReplyRecordSchema = z.object({
 });
 export type ReplyRecord = z.infer<typeof ReplyRecordSchema>;
 
-
+/**
+ * Reply Enrichment Record. Per-reply CRM data owned by the prompt-author
+ * (the "viewer" with read/write access). Stored at
+ * `enrichments/replies/{replyId}` — a separate namespace from the canonical
+ * `replies/{replyId}` so self-hosters running just core-api see clean
+ * records without phantom CRM fields. See specs/data-separation.md § 3.
+ *
+ * `id` matches the parent reply's id by convention (same doc id, sibling
+ * collection space).
+ */
+export const ReplyEnrichmentRecordSchema = z.object({
+    id: z.string(),
+    /** Private notes by the prompt author about this reply. */
+    notes: z.string().optional(),
+});
+export type ReplyEnrichmentRecord = z.infer<typeof ReplyEnrichmentRecordSchema>;
 
 /**
  * SIP Enrichment data stored in `users/{uid}/enrichment/sip`.

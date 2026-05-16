@@ -10,8 +10,8 @@ import { promptService, replyService } from '../services/core-services-firebase.
  *
  * Returns the replies for a prompt with owner-aware projection:
  *   - Prompt author (`viewer.uid === prompt.authorId`) → full `ReplyView[]`
- *     with CRM fields (authorRating, authorTags, record.notes,
- *     listenerPhoneNumber).
+ *     with CRM fields (top-level `notes` lifted from the enrichments
+ *     namespace, plus `listenerPhoneNumber`).
  *   - Everyone else → `ReplyViewPublic[]` (same shape stripped of those
  *     private fields via `toReplyViewPublic`).
  *

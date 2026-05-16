@@ -79,15 +79,14 @@ describe('GET /api/v1/replies/feed', () => {
                 createdAt: new Date('2026-04-15T12:00:00Z'),
                 status: 'live',
                 audioUrl: 'https://x',
-                notes: 'secret',
             },
             author: { id: 'them' },
             recipient: { id: 'v1' },
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
             listenerPhoneNumber: '+15555554444',
+            notes: 'secret',
         };
         vi.mocked(replyService.listReplyFeed).mockResolvedValue({
             replies: [fakeReply] as unknown as Awaited<ReturnType<typeof replyService.listReplyFeed>>['replies'],
@@ -104,7 +103,7 @@ describe('GET /api/v1/replies/feed', () => {
         expect(body.replies).toHaveLength(1);
         // Public projection strips owner-only fields
         expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].record.notes).toBeUndefined();
+        expect(body.replies[0].notes).toBeUndefined();
         expect(body.nextCursor).toBe('opaque-cursor-string');
 
         const call = vi.mocked(replyService.listReplyFeed).mock.calls[0];

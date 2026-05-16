@@ -5,7 +5,6 @@ import { toReplyViewPublic } from 'shared/types';
 import {
     UpdateReplyStatusRequestSchema,
     BulkReplyActionRequestSchema,
-    UpdateAuthorDataRequestSchema,
 } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../middleware/rate-limit.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
@@ -33,7 +32,6 @@ import { logger } from '../lib/logger.js';
  *   POST  /:replyId/read            — mark reply as read-by-viewer
  *   POST  /:replyId/notes           — update private notes on a reply
  *   POST  /bulk-action              — bulk status / bulk mark-read
- *   POST  /update-author-data       — update author annotations (rating/tags/notes)
  *
  * Parity sources:
  *   apps/web/src/app/api/v1/replies/route.ts (GET + POST)
@@ -41,7 +39,6 @@ import { logger } from '../lib/logger.js';
  *   apps/web/src/app/api/v1/replies/[replyId]/read/route.ts
  *   apps/web/src/app/api/v1/replies/[replyId]/notes/route.ts
  *   apps/web/src/app/api/v1/replies/bulk-action/route.ts
- *   apps/web/src/app/api/v1/replies/update-author-data/route.ts
  */
 
 const ListQuerySchema = z.object({
@@ -525,85 +522,6 @@ app.post('/bulk-action', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
     }
 
     return c.json({ status: 'success', count: replyIds.length });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/v1/replies/update-author-data
-// ---------------------------------------------------------------------------
-
-app.post('/update-author-data', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
-    const uid = c.get('viewerUid')!;
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
-    }
-
-    const validation = UpdateAuthorDataRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
-    }
-
-    const { replyId, data } = validation.data;
-
-    const replyRecord = await replyService.getReplyRecord(replyId);
-    if (!replyRecord) {
-        return c.json(
-            {
-                status: 'error',
-                message: `Reply with ID ${replyId} not found.`,
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
-    }
-
-    const promptRecord = await promptService.getPromptRecord(replyRecord.promptId);
-    if (!promptRecord) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Parent prompt not found.',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
-    }
-
-    if (promptRecord.authorId !== uid) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Forbidden: You do not own the prompt for this reply.',
-                requestId: c.get('requestId'),
-            },
-            403,
-        );
-    }
-
-    // Route through the deps layer rather than reaching for getAdminDb from
-    // the route handler (as apps/web does). The validated `data` is already a
-    // Partial<ReplyRecord> — no coercion needed.
-    await firebaseReplyDependencies.updateReply(replyId, data);
-
-    return c.json({ status: 'success' });
 });
 
 export { app as repliesRoute };

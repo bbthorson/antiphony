@@ -1,15 +1,5 @@
 import { z } from 'zod';
 
-export const UpdateAuthorDataRequestSchema = z.object({
-  replyId: z.string(),
-  data: z.object({
-    isVerified: z.boolean().optional(),
-    authorRating: z.number().optional(), // Renamed from creatorRating
-    authorTags: z.array(z.string().max(50)).max(20).optional(), // Renamed from creatorTags
-    notes: z.string().max(5000).optional(),
-  }),
-});
-
 export const CheckPhoneRequestSchema = z.object({
   phoneNumber: z.string().max(20),
 });

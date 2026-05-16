@@ -142,8 +142,9 @@ describe('POST /api/v1/replies', () => {
     it('creates via audioUrl branch and returns the hydrated reply', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-c' });
         vi.mocked(replyService.createReplyTransaction).mockResolvedValue({
-            record: { id: 'r-new', promptId: 'p-1', authorId: 'u-c', notes: 'secret' },
+            record: { id: 'r-new', promptId: 'p-1', authorId: 'u-c' },
             author: { id: 'u-c' },
+            notes: 'secret',
         } as unknown as Awaited<ReturnType<typeof replyService.createReplyTransaction>>);
 
         const res = await app().request(
@@ -154,8 +155,8 @@ describe('POST /api/v1/replies', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        // ReplyViewPublic strips `record.notes`.
-        expect(body.reply.record.notes).toBeUndefined();
+        // ReplyViewPublic strips top-level `notes`.
+        expect(body.reply.notes).toBeUndefined();
         expect(replyService.createReplyTransaction).toHaveBeenCalledWith('u-c', {
             promptId: 'p-1',
             audioUrl: 'https://audio/x.m4a',
@@ -407,76 +408,6 @@ describe('POST /api/v1/replies/bulk-action', () => {
     });
 });
 
-describe('POST /api/v1/replies/update-author-data', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
-
-    it('401s without auth', async () => {
-        const res = await app().request('/api/v1/replies/update-author-data', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ replyId: 'r-1', data: { authorRating: 5 } }),
-        });
-        expect(res.status).toBe(401);
-    });
-
-    it('404s when reply missing', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-u' });
-        vi.mocked(replyService.getReplyRecord).mockResolvedValue(null);
-        const res = await app().request(
-            '/api/v1/replies/update-author-data',
-            jsonInit({ replyId: 'r-miss', data: { authorRating: 5 } }),
-        );
-        expect(res.status).toBe(404);
-    });
-
-    it('404s when prompt missing', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-u' });
-        vi.mocked(replyService.getReplyRecord).mockResolvedValue(asReply({ id: 'r-1', promptId: 'p-gone', authorId: 'x' }));
-        vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
-        const res = await app().request(
-            '/api/v1/replies/update-author-data',
-            jsonInit({ replyId: 'r-1', data: { authorRating: 5 } }),
-        );
-        expect(res.status).toBe(404);
-        expect((await res.json()).message).toContain('prompt');
-    });
-
-    it('403s when viewer is not prompt author', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-me' });
-        vi.mocked(replyService.getReplyRecord).mockResolvedValue(asReply({ id: 'r-1', promptId: 'p-1', authorId: 'x' }));
-        vi.mocked(promptService.getPromptRecord).mockResolvedValue(asPrompt({ id: 'p-1', authorId: 'owner' }));
-        const res = await app().request(
-            '/api/v1/replies/update-author-data',
-            jsonInit({ replyId: 'r-1', data: { authorRating: 5 } }),
-        );
-        expect(res.status).toBe(403);
-    });
-
-    it('updates the reply via the deps layer when owner', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
-        vi.mocked(replyService.getReplyRecord).mockResolvedValue(asReply({ id: 'r-1', promptId: 'p-1', authorId: 'x' }));
-        vi.mocked(promptService.getPromptRecord).mockResolvedValue(asPrompt({ id: 'p-1', authorId: 'owner' }));
-        vi.mocked(firebaseReplyDependencies.updateReply).mockResolvedValue(undefined);
-
-        const res = await app().request(
-            '/api/v1/replies/update-author-data',
-            jsonInit({
-                replyId: 'r-1',
-                data: { authorRating: 4, authorTags: ['thoughtful'], isVerified: true },
-            }),
-        );
-
-        expect(res.status).toBe(200);
-        expect(firebaseReplyDependencies.updateReply).toHaveBeenCalledWith('r-1', {
-            authorRating: 4,
-            authorTags: ['thoughtful'],
-            isVerified: true,
-        });
-    });
-});
-
 describe('GET /api/v1/replies (list by prompt)', () => {
     beforeEach(() => {
         vi.resetAllMocks();
@@ -512,16 +443,14 @@ describe('GET /api/v1/replies (list by prompt)', () => {
                 createdAt: new Date().toISOString(),
                 status: 'live',
                 audioUrl: 'https://x',
-                notes: 'private',
             },
             author: { id: 'them' },
             recipient: { id: 'author-1' },
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
-            authorRating: 5,
             listenerPhoneNumber: '+15555555555',
+            notes: 'private',
         };
         vi.mocked(replyService.getRepliesForPrompt).mockResolvedValue([
             fakeReply,
@@ -533,10 +462,8 @@ describe('GET /api/v1/replies (list by prompt)', () => {
         const body = await res.json();
         expect(body.success).toBe(true);
         expect(body.replies).toHaveLength(1);
-        // Public projection strips CRM-only fields.
-        expect(body.replies[0].authorRating).toBeUndefined();
-        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].record.notes).toBeUndefined();
+        // Public projection strips CRM-only fields.        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.replies[0].notes).toBeUndefined();
         // Anonymous viewer → uid is empty string.
         expect(vi.mocked(replyService.getRepliesForPrompt)).toHaveBeenCalledWith(
             '',
@@ -698,7 +625,6 @@ describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
                 audioUrl: 'https://x',
                 createdAt: new Date().toISOString(),
                 status: 'live',
-                notes: 'private',
             }),
         );
         const fakePrompt = {
@@ -714,16 +640,14 @@ describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
                 id: 'r-1',
                 promptId: 'p-1',
                 authorId: 'replier',
-                notes: 'private',
             },
             author: { id: 'replier' },
             recipient: { id: 'owner' },
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
-            authorRating: 5,
             listenerPhoneNumber: '+15555555555',
+            notes: 'private',
         } as unknown as Awaited<ReturnType<typeof hydrationService.hydrateReply>>);
 
         const res = await app().request('/api/v1/replies/r-1', {
@@ -733,9 +657,8 @@ describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        // Public projection strips CRM/PII fields and record.notes.
-        expect(body.reply.record.notes).toBeUndefined();
-        expect(body.reply.authorRating).toBeUndefined();
+        // Public projection strips CRM/PII fields (top-level `notes` and `listenerPhoneNumber`).
+        expect(body.reply.notes).toBeUndefined();
         expect(body.reply.listenerPhoneNumber).toBeUndefined();
         // hydrateReply was called with the resolved recipient — saves a
         // redundant prompt lookup inside the loader.
@@ -764,7 +687,6 @@ describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
             recipient: { id: 'owner' },
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
         } as unknown as Awaited<ReturnType<typeof hydrationService.hydrateReply>>);
 

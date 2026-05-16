@@ -1,8 +1,8 @@
 import admin from 'firebase-admin';
 import { getAdminDb } from '../lib/firebase-admin.js';
-import { ReplyRecordSchema } from 'shared/types';
+import { ReplyRecordSchema, ReplyEnrichmentRecordSchema } from 'shared/types';
 import { NotFoundError } from 'shared/errors';
-import type { ReplyRecord } from 'shared/types';
+import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types';
 import { logger } from '../lib/logger.js';
 
 function promptsCollection() {
@@ -48,6 +48,33 @@ const increment = (delta: number) => admin.firestore.FieldValue.increment(delta)
 
 function repliesCollection() {
     return getAdminDb().collection('replies');
+}
+
+/**
+ * Enrichments live in a sibling namespace from canonical records — see
+ * specs/data-separation.md § 3. Path: `enrichments/replies/{replyId}`. The
+ * intermediate `replies` segment is the document id under `enrichments`
+ * (so the path resolves to a subcollection-style layout via a nested
+ * collection name).
+ */
+function replyEnrichmentsCollection() {
+    return getAdminDb().collection('enrichments').doc('replies').collection('items');
+}
+
+function parseReplyEnrichmentDoc(
+    doc: FirebaseFirestore.DocumentSnapshot,
+): ReplyEnrichmentRecord | null {
+    const data = doc.data();
+    if (!data) return null;
+    const parsed = ReplyEnrichmentRecordSchema.safeParse({ id: doc.id, ...data });
+    if (!parsed.success) {
+        logger.error(
+            { docId: doc.id, issues: parsed.error.format() },
+            '[replies-deps] schema validation failed for reply enrichment',
+        );
+        return null;
+    }
+    return parsed.data;
 }
 
 /**
@@ -326,5 +353,36 @@ export const firebaseReplyDependencies: ReplyDependencies = {
 
     now() {
         return new Date();
+    },
+
+    // --- Reply Enrichments (sibling namespace: enrichments/replies/items/{id}) ---
+
+    async getReplyEnrichmentById(replyId) {
+        const doc = await replyEnrichmentsCollection().doc(replyId).get();
+        if (!doc.exists) return null;
+        return parseReplyEnrichmentDoc(doc);
+    },
+
+    async getReplyEnrichmentsByIds(replyIds) {
+        const map = new Map<string, ReplyEnrichmentRecord>();
+        if (replyIds.length === 0) return map;
+
+        // Chunk by Firestore getAll's 1000-ref cap.
+        const refs = replyIds.map((id) => replyEnrichmentsCollection().doc(id));
+        for (let i = 0; i < refs.length; i += FIRESTORE_GETALL_LIMIT) {
+            const chunk = refs.slice(i, i + FIRESTORE_GETALL_LIMIT);
+            const docs = await getAdminDb().getAll(...chunk);
+            for (const doc of docs) {
+                if (!doc.exists) continue;
+                const parsed = parseReplyEnrichmentDoc(doc);
+                if (parsed) map.set(doc.id, parsed);
+            }
+        }
+        return map;
+    },
+
+    async updateReplyEnrichment(replyId, updates) {
+        // `set` with `merge: true` so the doc is created on first write.
+        await replyEnrichmentsCollection().doc(replyId).set(updates, { merge: true });
     },
 };

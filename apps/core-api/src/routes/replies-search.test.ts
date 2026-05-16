@@ -87,15 +87,14 @@ describe('GET /api/v1/replies/search', () => {
                 createdAt: new Date().toISOString(),
                 status: 'live',
                 audioUrl: 'https://x',
-                notes: 'secret',
             },
             author: { id: 'them' },
             recipient: { id: 'v3' },
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
             listenerPhoneNumber: '+15555554444',
+            notes: 'secret',
         };
         vi.mocked(replyService.searchReplies).mockResolvedValue([fakeReply] as unknown as Awaited<
             ReturnType<typeof replyService.searchReplies>
@@ -111,7 +110,7 @@ describe('GET /api/v1/replies/search', () => {
         expect(body.query).toBe('hello');
         expect(body.replies).toHaveLength(1);
         expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].record.notes).toBeUndefined();
+        expect(body.replies[0].notes).toBeUndefined();
 
         const call = vi.mocked(replyService.searchReplies).mock.calls[0];
         expect(call[0]).toBe('v3');

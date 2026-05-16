@@ -370,9 +370,11 @@ export class ReplyService {
     }
 
     /**
-     * Updates the private notes for a reply.
+     * Updates the private notes for a reply. Writes to the enrichments
+     * namespace (`enrichments/replies/{id}.notes`), NOT to the canonical
+     * `replies/{id}` document. See specs/data-separation.md § 3.
      */
     async updateReplyNotes(replyId: string, notes: string) {
-        await this.deps.updateReply(replyId, { notes });
+        await this.deps.updateReplyEnrichment(replyId, { notes });
     }
 }

@@ -90,8 +90,20 @@ export class HydrationService {
 
     /**
      * Hydrates a single ReplyRecord into a ReplyView using the injected loaders.
+     *
+     * `preloadedNotes` — viewer-private notes lifted from the
+     * `enrichments/replies/{id}` namespace. Pass when the caller has already
+     * batch-fetched enrichments (the list-hydration paths do this for the
+     * prompt author). Leave undefined for non-author viewers; the field
+     * stays undefined on the view and is also defensively stripped by
+     * `toReplyViewPublic`.
      */
-    async hydrateReply(record: ReplyRecord, knownRecipient?: ProfileView, preloadedAuthor?: ProfileView): Promise<ReplyView | null> {
+    async hydrateReply(
+        record: ReplyRecord,
+        knownRecipient?: ProfileView,
+        preloadedAuthor?: ProfileView,
+        preloadedNotes?: string,
+    ): Promise<ReplyView | null> {
         let author: ProfileView | null | undefined = preloadedAuthor;
         if (!author) {
             author = await this.deps.loadUser(record.authorId);
@@ -128,7 +140,6 @@ export class HydrationService {
             recipient,
             isRead: false,
             isDeleted: false,
-            isVerified: false,
             readBy: [],
             // Audio duration (seconds) — populated by the transcribeAndScore trigger
             duration: record.audioDurationSec,
@@ -141,7 +152,25 @@ export class HydrationService {
             aiError: record.aiError,
             aiSummary: record.aiSummary,
             aiLabels: record.aiLabels,
+            // CRM enrichment — populated only when the caller has author privileges
+            notes: preloadedNotes,
         };
+    }
+
+    /**
+     * Batch-loads CRM enrichment notes for a set of replies. Returns a Map
+     * keyed by replyId — replies with no enrichment doc (or no `notes`
+     * field) are simply absent. Shared by `hydrateReplies` and
+     * `hydrateRepliesWithRecipient`; caller guards on `includePrivateData`
+     * before invoking.
+     */
+    private async fetchEnrichmentNotes(records: ReplyRecord[]): Promise<Map<string, string>> {
+        const enrichments = await this.deps.getReplyEnrichmentsByIds(records.map(r => r.id));
+        const notesMap = new Map<string, string>();
+        for (const [replyId, enrichment] of enrichments) {
+            if (enrichment.notes !== undefined) notesMap.set(replyId, enrichment.notes);
+        }
+        return notesMap;
     }
 
     /**
@@ -151,15 +180,18 @@ export class HydrationService {
         if (!records.length) return [];
 
         let authorMap: Map<string, ProfileView> | undefined;
+        let notesMap: Map<string, string> | undefined;
         if (options?.includePrivateData) {
             const authorIds = records.map(r => r.authorId);
             const profiles = await this.deps.getUsersByIds(authorIds, { includePrivateData: true });
             authorMap = new Map(profiles.map(p => [p.id, p]));
+            notesMap = await this.fetchEnrichmentNotes(records);
         }
 
         const views = await Promise.all(records.map(r => {
             const author = authorMap?.get(r.authorId);
-            return this.hydrateReply(r, undefined, author);
+            const notes = notesMap?.get(r.id);
+            return this.hydrateReply(r, undefined, author, notes);
         }));
         return views.filter((v): v is ReplyView => v !== null);
     }
@@ -168,15 +200,18 @@ export class HydrationService {
         if (!records.length) return [];
 
         let authorMap: Map<string, ProfileView> | undefined;
+        let notesMap: Map<string, string> | undefined;
         if (options?.includePrivateData) {
             const authorIds = records.map(r => r.authorId);
             const profiles = await this.deps.getUsersByIds(authorIds, { includePrivateData: true });
             authorMap = new Map(profiles.map(p => [p.id, p]));
+            notesMap = await this.fetchEnrichmentNotes(records);
         }
 
         const views = await Promise.all(records.map(r => {
             const author = authorMap?.get(r.authorId);
-            return this.hydrateReply(r, recipient, author);
+            const notes = notesMap?.get(r.id);
+            return this.hydrateReply(r, recipient, author, notes);
         }));
         return views.filter((v): v is ReplyView => v !== null);
     }

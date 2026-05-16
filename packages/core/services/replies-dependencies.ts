@@ -1,4 +1,4 @@
-import type { ReplyRecord } from 'shared/types';
+import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types';
 
 /**
  * Maps a reply's `sentiment` enum value to the lowercase bucket key used in
@@ -133,6 +133,32 @@ export interface ReplyDependencies {
      * filter out nulls.
      */
     getRepliesByIds(replyIds: string[]): Promise<Array<ReplyRecord | null>>;
+
+    // --- Reply Enrichments (sibling namespace: enrichments/replies/{id}) ---
+    //
+    // Per-reply CRM data owned by the prompt author. Lives in a separate
+    // Firestore collection space from canonical reply records so self-hosters
+    // see clean records without phantom CRM fields. See
+    // specs/data-separation.md § 3.
+
+    /** Fetch a single reply enrichment record, or null if no enrichment doc exists. */
+    getReplyEnrichmentById(replyId: string): Promise<ReplyEnrichmentRecord | null>;
+
+    /**
+     * Batch fetch enrichment records. Returns a Map keyed by replyId so the
+     * caller can zip with the source replies (some may have no enrichment).
+     * Missing replies are simply absent from the Map.
+     */
+    getReplyEnrichmentsByIds(replyIds: string[]): Promise<Map<string, ReplyEnrichmentRecord>>;
+
+    /**
+     * Apply a partial update to a reply's enrichment doc. Creates the doc on
+     * first write (set with merge), so callers don't need to check existence.
+     */
+    updateReplyEnrichment(
+        replyId: string,
+        updates: Partial<Omit<ReplyEnrichmentRecord, 'id'>>,
+    ): Promise<void>;
 
     // --- Writes ---
 

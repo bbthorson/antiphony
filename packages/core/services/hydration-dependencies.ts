@@ -1,5 +1,5 @@
 import type { PromptDocument } from 'shared/types/storage';
-import type { ProfileView } from 'shared/types';
+import type { ProfileView, ReplyEnrichmentRecord } from 'shared/types';
 
 /**
  * HydrationDependencies is the portable interface that HydrationService
@@ -39,4 +39,12 @@ export interface HydrationDependencies {
      * public-data fetches.
      */
     getUsersByIds(ids: string[], options?: { includePrivateData?: boolean }): Promise<ProfileView[]>;
+
+    /**
+     * Batch-fetch reply enrichment records (notes, etc.). Only called when
+     * hydrating with `includePrivateData: true` — non-authors never see
+     * enrichment data. Missing replies are absent from the returned Map.
+     * See specs/data-separation.md § 3 for the namespace strategy.
+     */
+    getReplyEnrichmentsByIds(replyIds: string[]): Promise<Map<string, ReplyEnrichmentRecord>>;
 }
