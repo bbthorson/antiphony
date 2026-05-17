@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import admin from 'firebase-admin';
 import { getAdminDb } from './firebase-admin.js';
-import { StorageService } from '../services/core-services-firebase.js';
+import { StorageService } from '../adapters/outbound/firebase/core-services-firebase.js';
 import { logger } from './logger.js';
 
 /**

@@ -1,9 +1,9 @@
 import type { UserRecord, ProfileView } from 'shared/types';
 import { NotFoundError } from 'shared/errors';
-import type { CoreServices } from './core-services';
-import type { UpdateProfileDto, UserDependencies } from './users-dependencies';
+import type { CoreServices } from '../ports/core-services';
+import type { UpdateProfileDto, UserDependencies } from '../ports/users-dependencies';
 
-export type { UpdateProfileDto } from './users-dependencies';
+export type { UpdateProfileDto } from '../ports/users-dependencies';
 
 const DEFAULT_SYSTEM_GREETING_URL = 'https://storage.googleapis.com/voxpop-public/defaults/inbox-greeting.mp3';
 

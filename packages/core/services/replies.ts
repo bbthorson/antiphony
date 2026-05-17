@@ -1,8 +1,8 @@
 import { ReplyRecordSchema } from 'shared/types';
 import type { ReplyView, ReplyRecord, ProfileView } from 'shared/types';
 import { NotFoundError, ForbiddenError } from 'shared/errors';
-import type { CoreServices } from './core-services';
-import type { ReplyDependencies } from './replies-dependencies';
+import type { CoreServices } from '../ports/core-services';
+import type { ReplyDependencies } from '../ports/replies-dependencies';
 
 /**
  * Filter inputs shared by `searchReplies` and `listReplyFeed`. All fields are

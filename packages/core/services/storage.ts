@@ -1,4 +1,4 @@
-import type { BlobStore } from './storage-dependencies';
+import type { BlobStore } from '../ports/storage-dependencies';
 
 /**
  * Default signed-URL expiry: 1 hour. Callers can override per-call.

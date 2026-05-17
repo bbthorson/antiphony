@@ -9,7 +9,7 @@ import {
     type ReplyView,
     type HandleResolution,
 } from 'shared/types';
-import type { CoreServices, RssSummary } from './core-services';
+import type { CoreServices, RssSummary } from '../ports/core-services';
 
 /** Re-exported from shared/types so external callers can keep the existing import path. */
 export type { HandleResolution };

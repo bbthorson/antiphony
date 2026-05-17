@@ -3,7 +3,7 @@ import { OrganizationRecord, OrganizationMemberRecord, OrgInviteRecord } from 's
 import { OrganizationView, OrganizationMemberView, OrgInviteView } from 'shared/types/views';
 import { PromptDocument } from 'shared/types/storage';
 import { NotFoundError } from 'shared/errors';
-import type { HydrationDependencies } from './hydration-dependencies';
+import type { HydrationDependencies } from '../ports/hydration-dependencies';
 
 /**
  * HydrationService converts raw Records and Documents into hydrated Views

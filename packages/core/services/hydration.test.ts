@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HydrationService } from './hydration';
-import type { HydrationDependencies } from './hydration-dependencies';
+import type { HydrationDependencies } from '../ports/hydration-dependencies';
 import { PromptDocumentSchema } from 'shared/types/storage';
 import type { ProfileView } from 'shared/types';
 

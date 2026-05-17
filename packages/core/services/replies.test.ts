@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PromptView, ReplyRecord, ReplyView, ProfileView } from 'shared/types';
 import { ReplyService } from './replies';
-import type { ReplyDependencies } from './replies-dependencies';
-import type { CoreServices } from './core-services';
+import type { ReplyDependencies } from '../ports/replies-dependencies';
+import type { CoreServices } from '../ports/core-services';
 
 /**
  * Focused tests for the cross-prompt reply feed (`listReplyFeed`). The

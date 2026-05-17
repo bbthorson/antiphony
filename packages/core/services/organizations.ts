@@ -7,8 +7,8 @@ import {
     OrgInviteRecordSchema,
 } from 'shared/types/records';
 import type { OrganizationView, OrganizationMemberView, OrgInviteView } from 'shared/types/views';
-import type { CoreServices } from './core-services';
-import type { OrganizationDependencies } from './organizations-dependencies';
+import type { CoreServices } from '../ports/core-services';
+import type { OrganizationDependencies } from '../ports/organizations-dependencies';
 
 /**
  * OrganizationService is the business-logic layer for organizations, members,
