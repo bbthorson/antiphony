@@ -18,6 +18,8 @@ import { promptsPublicRoute } from './routes/prompts-public.js';
 import { rssParseRoute } from './routes/rss-parse.js';
 import { audioUploadRoute } from './routes/audio-upload.js';
 import { audioUploadPendingRoute } from './routes/audio-upload-pending.js';
+import { organizationsRoute } from './routes/organizations.js';
+import { peopleRoute } from './routes/people.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -128,6 +130,8 @@ export function app(): Hono {
     a.route('/api/v1/audio', audioRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/rss', rssParseRoute);
+    a.route('/api/v1/organizations', organizationsRoute);
+    a.route('/api/v1/people', peopleRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
