@@ -20,6 +20,7 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pending.js';
 import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
 import { peopleRoute } from './adapters/inbound/rest/people.js';
+import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -114,6 +115,12 @@ export function app(): Hono {
     // Register the more specific `/me` mount FIRST so Hono prefers it over the
     // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
     // and 404 on user lookup).
+    // Register the more-specific `/me/call-forwarding` mount BEFORE the
+    // `/users/me` mount so it takes precedence — handlers in usersMeRoute
+    // don't expect a `/call-forwarding/...` sub-path, but registering more
+    // specific first is the defensive pattern (and matches the precedent
+    // set by registering `/me` before `/:handle` below).
+    a.route('/api/v1/users/me/call-forwarding', callForwardingRoute);
     a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);

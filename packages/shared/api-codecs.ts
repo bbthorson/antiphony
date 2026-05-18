@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CallForwardingConfigSchema } from './types/records';
 
 export const CheckPhoneRequestSchema = z.object({
   phoneNumber: z.string().max(20),
@@ -87,6 +88,17 @@ export const SwitchOrgRequestSchema = z.object({
   /** orgId to switch to, or null to switch to personal context */
   orgId: z.string().nullable(),
 });
+
+// Call-forwarding data layer (canonical CRUD; Twilio orchestration lives in apps/telephony/).
+// Server stamps `createdAt` / `updatedAt`, so both shapes omit them. PR-E1 in
+// the Post-4a roadmap added the core-api endpoints; apps/telephony/ POSTs the
+// already-Twilio-resolved config and PATCHes verification-state transitions.
+export const CallForwardingConfigInputSchema = CallForwardingConfigSchema.omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const CallForwardingConfigUpdateSchema = CallForwardingConfigInputSchema.partial();
 
 // Reply lifecycle management
 export const UpdateReplyStatusRequestSchema = z.object({

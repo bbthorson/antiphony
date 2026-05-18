@@ -4,6 +4,7 @@ import { HydrationService } from '@vox-pop/core/services/hydration';
 import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
 import { ReplyService } from '@vox-pop/core/services/replies';
+import { CallForwardingService } from '@vox-pop/core/services/call-forwarding';
 import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
 import { makeStorageService } from '@vox-pop/core/services/storage';
 import type { CoreServices } from '@vox-pop/core/ports/core-services';
@@ -12,6 +13,7 @@ import { firebaseOrganizationDependencies } from './organizations-dependencies.j
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
+import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 
 /**
@@ -117,6 +119,10 @@ export const organizationService = new OrganizationService(
 export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices);
 export const replyService = new ReplyService(firebaseReplyDependencies, firebaseCoreServices);
 export const feedService = new FeedService(firebaseCoreServices);
+// CallForwardingService — pure data CRUD on users/{uid}/private_data/call_forwarding.
+// Not part of `CoreServices` because no other core service calls into it
+// today (apps/telephony/ will use it via the HTTP surface, not in-process).
+export const callForwardingService = new CallForwardingService(firebaseCallForwardingDependencies);
 // Re-export RssService's own singleton for completeness. Core owns both the
 // class and the singleton (it's a genuinely standalone service, no Firebase
 // bindings). Routes that need it can import directly from here.
