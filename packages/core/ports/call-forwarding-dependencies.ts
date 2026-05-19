@@ -55,4 +55,28 @@ export interface CallForwardingDependencies {
      * tests inject a deterministic clock.
      */
     now(): Date;
+
+    /**
+     * Find the uid of the user whose forwarding is configured for a
+     * given inbound free-tier phone number. Used by SIP webhook
+     * routing — the inbound caller's phone is matched against
+     * `phoneNumber` on the active config. Only returns a match when
+     * the config is `verificationStatus === 'verified'` AND
+     * `enabled === true`; otherwise the inbound call should fall
+     * through.
+     *
+     * Returns null when no match is found (the caller's number isn't
+     * registered for forwarding) — NOT an error.
+     */
+    findUidByPhoneNumber(phoneNumber: string): Promise<string | null>;
+
+    /**
+     * Find the uid of the user assigned a given paid-tier dedicated
+     * VoxPop number. The VoxPop number is the one Twilio routed the
+     * inbound call to; finding the uid maps it back to the human
+     * whose voicemail this is.
+     *
+     * Returns null when no match is found.
+     */
+    findUidByDedicatedNumber(voxpopNumber: string): Promise<string | null>;
 }

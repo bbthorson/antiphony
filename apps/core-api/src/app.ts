@@ -9,6 +9,7 @@ import { usersPromptsRoute } from './adapters/inbound/rest/users-prompts.js';
 import { repliesFeedRoute } from './adapters/inbound/rest/replies-feed.js';
 import { repliesSearchRoute } from './adapters/inbound/rest/replies-search.js';
 import { repliesRoute } from './adapters/inbound/rest/replies.js';
+import { systemRepliesRoute } from './adapters/inbound/rest/system-replies.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
 import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
 import { usersActionsRoute } from './adapters/inbound/rest/users-actions.js';
@@ -21,6 +22,7 @@ import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pe
 import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
 import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
+import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -139,6 +141,8 @@ export function app(): Hono {
     a.route('/api/v1/rss', rssParseRoute);
     a.route('/api/v1/organizations', organizationsRoute);
     a.route('/api/v1/people', peopleRoute);
+    a.route('/api/v1/call-forwarding', callForwardingLookupRoute);
+    a.route('/api/v1/system/replies', systemRepliesRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

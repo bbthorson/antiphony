@@ -66,3 +66,12 @@ env:
       value: "https://voxpop.phonicfactory.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app,http://localhost:9002"
       availability:
           - RUNTIME
+    # Shared secret used by apps/telephony to authenticate
+    # system-to-system requests against core-api (e.g.
+    # `/api/v1/call-forwarding/by-*`, `POST /api/v1/system/replies`).
+    # See apps/core-api/src/middleware/system-auth.ts. Same secret on
+    # both sides — pre-deploy ops step adds it to Secret Manager.
+    - variable: SYSTEM_AUTH_TOKEN
+      secret: SYSTEM_AUTH_TOKEN
+      availability:
+          - RUNTIME

@@ -96,4 +96,23 @@ export class CallForwardingService {
     async deleteConfig(uid: string): Promise<void> {
         await this.deps.deleteConfig(uid);
     }
+
+    /**
+     * SIP-routing lookup: find the uid behind a free-tier inbound
+     * phone number. Used by apps/telephony/ (or apps/web while SIP
+     * webhooks are still there pre-PR-E4) to route an incoming call
+     * to the correct user's voicemail. Returns null when no verified+
+     * enabled config matches the phone.
+     */
+    async findUidByPhoneNumber(phoneNumber: string): Promise<string | null> {
+        return this.deps.findUidByPhoneNumber(phoneNumber);
+    }
+
+    /**
+     * SIP-routing lookup: find the uid behind a paid-tier dedicated
+     * VoxPop number. Returns null when no verified config matches.
+     */
+    async findUidByDedicatedNumber(voxpopNumber: string): Promise<string | null> {
+        return this.deps.findUidByDedicatedNumber(voxpopNumber);
+    }
 }

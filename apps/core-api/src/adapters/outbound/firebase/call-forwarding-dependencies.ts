@@ -72,4 +72,54 @@ export const firebaseCallForwardingDependencies: CallForwardingDependencies = {
     now(): Date {
         return new Date();
     },
+
+    async findUidByPhoneNumber(phoneNumber: string): Promise<string | null> {
+        if (!phoneNumber || !phoneNumber.trim()) return null;
+
+        // Collection-group query across all `private_data` subcollections.
+        // Path is `users/{uid}/private_data/call_forwarding`; we only care
+        // about docs where phoneNumber matches AND the config is in a
+        // routable state (verified + enabled). Other private_data docs
+        // (none today, but the namespace is shared) would lack these
+        // fields and would naturally fall out of the predicate.
+        const snap = await getAdminDb()
+            .collectionGroup('private_data')
+            .where('phoneNumber', '==', phoneNumber)
+            .where('verificationStatus', '==', 'verified')
+            .where('enabled', '==', true)
+            .limit(1)
+            .get();
+
+        if (snap.empty) return null;
+
+        // Path is `users/{uid}/private_data/call_forwarding`; split out
+        // the uid segment. Matches the pattern used in the pre-PR-E3
+        // apps/web/src/services/ivr/forwarding.ts impl.
+        const parts = snap.docs[0].ref.path.split('/');
+        return parts[1] ?? null;
+    },
+
+    async findUidByDedicatedNumber(voxpopNumber: string): Promise<string | null> {
+        if (!voxpopNumber || !voxpopNumber.trim()) return null;
+
+        // Paid-tier dedicated numbers are 1:1 with users — voxpopNumber
+        // is unique per provisioned number. No `enabled` predicate
+        // here intentionally: a paid-tier user might temporarily
+        // disable forwarding but Twilio's still routing the call to
+        // their dedicated number; the IVR can still answer "you've
+        // reached <user>, leave a message" rather than route to a 404.
+        // Matches the pre-PR-E3 behavior in apps/web's
+        // ivr/forwarding.ts.
+        const snap = await getAdminDb()
+            .collectionGroup('private_data')
+            .where('voxpopNumber', '==', voxpopNumber)
+            .where('tier', '==', 'paid')
+            .where('verificationStatus', '==', 'verified')
+            .limit(1)
+            .get();
+
+        if (snap.empty) return null;
+        const parts = snap.docs[0].ref.path.split('/');
+        return parts[1] ?? null;
+    },
 };
