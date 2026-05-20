@@ -88,7 +88,7 @@ describe('POST /api/v1/system/replies', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(body.reply.record.id).toBe('r-789');
+        expect(body.data.record.id).toBe('r-789');
         expect(replyService.createReplyTransaction).toHaveBeenCalledWith('u-author', {
             promptId: 'p-123',
             audioUrl: validBody.audioUrl,

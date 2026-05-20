@@ -30,7 +30,7 @@ import { logger } from '../../../lib/logger.js';
  *                                     (embed-redirect flow)
  *   PATCH /:replyId/status          — update reply status (live/archived/deleted)
  *   POST  /:replyId/read            — mark reply as read-by-viewer
- *   POST  /:replyId/notes           — update private notes on a reply
+ *   PATCH /:replyId/notes           — update private notes on a reply
  *   POST  /bulk-action              — bulk status / bulk mark-read
  *
  * Parity sources:
@@ -144,7 +144,7 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     return c.json({
         success: true,
-        replies: replies.map(toReplyViewPublic),
+        data: replies.map(toReplyViewPublic),
     });
 });
 
@@ -238,7 +238,7 @@ app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
         );
     }
 
-    return c.json({ success: true, reply: toReplyViewPublic(view) });
+    return c.json({ success: true, data: toReplyViewPublic(view) });
 });
 
 // ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 
     return c.json({
         success: true,
-        reply: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
+        data: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
     });
 });
 
@@ -385,7 +385,10 @@ app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     // so the write stays behind the dep-layer seam.
     await firebaseReplyDependencies.markReplyRead(replyId, uid);
 
-    return c.json({ success: true });
+    // `data: null` — fire-and-forget op with no resource to return. The
+    // null keeps the response on the standard `{success, data}` envelope
+    // so callers (including `apiClient.postData`) can use the unwrap helper.
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -465,7 +468,8 @@ const handleNotesUpdate = async (c: Context) => {
 
     await replyService.updateReplyNotes(replyId, validation.data.notes);
 
-    return c.json({ success: true });
+    // `data: null` — see comment on /replies/:replyId/read above.
+    return c.json({ success: true, data: null });
 };
 
 app.patch('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);

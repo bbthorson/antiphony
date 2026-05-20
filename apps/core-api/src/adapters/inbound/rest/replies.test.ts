@@ -156,7 +156,7 @@ describe('POST /api/v1/replies', () => {
         const body = await res.json();
         expect(body.success).toBe(true);
         // ReplyViewPublic strips top-level `notes`.
-        expect(body.reply.notes).toBeUndefined();
+        expect(body.data.notes).toBeUndefined();
         expect(replyService.createReplyTransaction).toHaveBeenCalledWith('u-c', {
             promptId: 'p-1',
             audioUrl: 'https://audio/x.m4a',
@@ -284,7 +284,7 @@ describe('POST /api/v1/replies/:replyId/read', () => {
         });
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true });
+        expect(await res.json()).toEqual({ success: true, data: null });
         expect(firebaseReplyDependencies.markReplyRead).toHaveBeenCalledWith('r-read', 'u-read');
     });
 });
@@ -337,7 +337,7 @@ describe('PATCH /api/v1/replies/:replyId/notes', () => {
         const res = await app().request('/api/v1/replies/r-1/notes', jsonPatch({ notes: 'updated' }));
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true });
+        expect(await res.json()).toEqual({ success: true, data: null });
         expect(replyService.updateReplyNotes).toHaveBeenCalledWith('r-1', 'updated');
     });
 
@@ -461,9 +461,10 @@ describe('GET /api/v1/replies (list by prompt)', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(body.replies).toHaveLength(1);
-        // Public projection strips CRM-only fields.        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].notes).toBeUndefined();
+        expect(body.data).toHaveLength(1);
+        // Public projection strips CRM-only fields.
+        expect(body.data[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.data[0].notes).toBeUndefined();
         // Anonymous viewer → uid is empty string.
         expect(vi.mocked(replyService.getRepliesForPrompt)).toHaveBeenCalledWith(
             '',
@@ -658,8 +659,8 @@ describe('GET /api/v1/replies/:replyId (single-reply lookup)', () => {
         const body = await res.json();
         expect(body.success).toBe(true);
         // Public projection strips CRM/PII fields (top-level `notes` and `listenerPhoneNumber`).
-        expect(body.reply.notes).toBeUndefined();
-        expect(body.reply.listenerPhoneNumber).toBeUndefined();
+        expect(body.data.notes).toBeUndefined();
+        expect(body.data.listenerPhoneNumber).toBeUndefined();
         // hydrateReply was called with the resolved recipient — saves a
         // redundant prompt lookup inside the loader.
         expect(hydrationService.hydrateReply).toHaveBeenCalledWith(

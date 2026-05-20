@@ -73,7 +73,7 @@ app.post('/', requireSystemAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 
     return c.json({
         success: true,
-        reply: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
+        data: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
     });
 });
 
