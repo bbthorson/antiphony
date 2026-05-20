@@ -5,7 +5,21 @@ import { BlobRefSchema } from './blob';
 // =================================================================================================
 
 /**
- * Firestore Timestamp schema (strict)
+ * Firestore Timestamp schema (strict).
+ *
+ * Accepts the shapes Firestore-derived timestamps come back as across our
+ * transports (admin SDK Timestamp object, ISO string, epoch number, native
+ * Date), and produces a `Date`. **The Date is validated** — if the input
+ * coerces to an Invalid Date (e.g. `new Date("")` or a malformed string),
+ * the parse fails loudly via a `ZodIssue` rather than returning a
+ * downstream-crashing value.
+ *
+ * Why strict: PR #425 added defensive coercion in ReplyListItem after the
+ * dashboard was crashing on `formatDistanceToNow(invalid)` calls. The
+ * underlying issue was that `z.string()` here accepted any string and
+ * `new Date(badString)` produces Invalid Date, which Zod returned
+ * successfully. Rejecting at the schema boundary keeps downstream
+ * `formatDistanceToNow` / `.toISOString()` callers safe by construction.
  */
 export const FirestoreTimestampSchema = z.union([
     z.custom<unknown>((data: unknown) => {
@@ -18,15 +32,28 @@ export const FirestoreTimestampSchema = z.union([
     z.string(),
     z.number(),
     z.date()
-]).transform((data: unknown) => {
-    if (data instanceof Date) return data;
-    if (typeof data === 'string') return new Date(data);
-    if (typeof data === 'number') return new Date(data);
-    if (typeof (data as { toDate?: () => Date }).toDate === 'function') {
-        return (data as { toDate: () => Date }).toDate();
+]).transform((data: unknown, ctx) => {
+    let date: Date;
+    if (data instanceof Date) {
+        date = data;
+    } else if (typeof data === 'string') {
+        date = new Date(data);
+    } else if (typeof data === 'number') {
+        date = new Date(data);
+    } else if (typeof (data as { toDate?: () => Date }).toDate === 'function') {
+        date = (data as { toDate: () => Date }).toDate();
+    } else {
+        const timestamp = data as { seconds: number; nanoseconds: number };
+        date = new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
     }
-    const timestamp = data as { seconds: number; nanoseconds: number };
-    return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
+    if (Number.isNaN(date.getTime())) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'FirestoreTimestamp coerced to Invalid Date',
+        });
+        return z.NEVER;
+    }
+    return date;
 });
 export type FirestoreTimestamp = Date;
 

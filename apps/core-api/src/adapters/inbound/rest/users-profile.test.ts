@@ -46,7 +46,7 @@ function mkProfileData() {
         profileUser: { id: 'u-1', handle: 'alice', displayName: 'Alice' },
         allPromptsWithReplies: [
             {
-                record: { id: 'p-1', authorId: 'u-1', title: 'A', status: 'live', createdAt: '', audioUrl: '' },
+                record: { id: 'p-1', authorId: 'u-1', title: 'A', status: 'live', createdAt: '2026-04-01T00:00:00Z', audioUrl: '' },
                 author: { id: 'u-1', handle: 'alice' },
                 replyCount: 0,
                 lastReplyAt: null,
