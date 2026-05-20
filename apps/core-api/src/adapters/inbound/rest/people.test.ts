@@ -25,6 +25,11 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
+vi.mock('../../../lib/crm-notes-store.js', () => ({
+    getCrmNotes: vi.fn(),
+    setCrmNotes: vi.fn(),
+}));
+
 vi.mock('../../../lib/auth/session-verifier.js', () => ({
     sessionVerifier: { verifyToken: vi.fn() },
 }));
@@ -42,6 +47,7 @@ process.env.LOG_LEVEL = 'silent';
 const { app } = await import('../../../app.js');
 const { feedService } = await import('../../outbound/firebase/core-services-firebase.js');
 const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
+const { getCrmNotes, setCrmNotes } = await import('../../../lib/crm-notes-store.js');
 
 function mkReplier(id: string) {
     return {
@@ -261,5 +267,138 @@ describe('GET /api/v1/people/:handle/replies', () => {
     it('401s when no auth is provided', async () => {
         const res = await app().request('/api/v1/people/replier-handle/replies');
         expect(res.status).toBe(401);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/people/:handle/notes
+// ---------------------------------------------------------------------------
+
+describe('GET /api/v1/people/:handle/notes', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('returns the viewer\'s notes for the target handle', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(getCrmNotes).mockResolvedValue({
+            notes: 'Always asks great questions',
+            tags: ['regular', 'verified'],
+        });
+
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.notes).toBe('Always asks great questions');
+        expect(body.tags).toEqual(['regular', 'verified']);
+        expect(getCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle');
+    });
+
+    it('returns empty defaults when no notes exist', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(getCrmNotes).mockResolvedValue({ notes: '', tags: [] });
+
+        const res = await app().request('/api/v1/people/no-notes/notes', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.notes).toBe('');
+        expect(body.tags).toEqual([]);
+    });
+
+    it('401s when no auth is provided', async () => {
+        const res = await app().request('/api/v1/people/replier-handle/notes');
+        expect(res.status).toBe(401);
+        expect(getCrmNotes).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/people/:handle/notes
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/people/:handle/notes', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('writes notes + tags for the authenticated viewer', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(setCrmNotes).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'Got it', tags: ['vip'] }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle', {
+            notes: 'Got it',
+            tags: ['vip'],
+        });
+    });
+
+    it('accepts partial updates (notes only)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(setCrmNotes).mockResolvedValue(undefined);
+
+        await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'Got it' }),
+        });
+
+        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle', { notes: 'Got it' });
+    });
+
+    it('400s on invalid JSON body', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: 'not json',
+        });
+        expect(res.status).toBe(400);
+        expect(setCrmNotes).not.toHaveBeenCalled();
+    });
+
+    it('400s when notes exceeds max length', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'x'.repeat(10_001) }),
+        });
+        expect(res.status).toBe(400);
+        expect(setCrmNotes).not.toHaveBeenCalled();
+    });
+
+    it('400s when tags is not a string array', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: JSON.stringify({ tags: [1, 2, 3] }),
+        });
+        expect(res.status).toBe(400);
+        expect(setCrmNotes).not.toHaveBeenCalled();
+    });
+
+    it('401s when no auth is provided', async () => {
+        const res = await app().request('/api/v1/people/replier-handle/notes', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'x' }),
+        });
+        expect(res.status).toBe(401);
+        expect(setCrmNotes).not.toHaveBeenCalled();
     });
 });

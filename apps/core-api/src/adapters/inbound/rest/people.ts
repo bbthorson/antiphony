@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { toReplyViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { feedService } from '../../outbound/firebase/core-services-firebase.js';
+import { getCrmNotes, setCrmNotes } from '../../../lib/crm-notes-store.js';
 
 /**
  * People / CRM endpoints mounted at `/api/v1/people`.
@@ -115,6 +117,68 @@ app.get('/:handle/replies', requireAuth(), rateLimit(RATE_LIMITS.read), async (c
             promptTitles: result.promptTitles,
         },
     });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/people/:handle/notes
+// ---------------------------------------------------------------------------
+//
+// Read the authenticated viewer's CRM notes + tags about `:handle`.
+// Per-viewer storage: notes are private to the authenticated user,
+// not visible to anyone else (including the target). Returns
+// `{ notes: '', tags: [] }` when no entry exists — UI uses empty
+// defaults rather than treating 404 as "no notes".
+
+app.get('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const handle = c.req.param('handle');
+
+    const data = await getCrmNotes(uid, handle);
+    return c.json(data);
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/people/:handle/notes
+// ---------------------------------------------------------------------------
+//
+// Update the viewer's CRM notes + tags about `:handle`. Merge-write —
+// omit a field to leave it untouched. Both fields are optional in the
+// schema so callers can update just one.
+
+const NotesUpdateSchema = z.object({
+    notes: z.string().max(10_000).optional(),
+    tags: z.array(z.string().max(64)).max(50).optional(),
+});
+
+app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const handle = c.req.param('handle');
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(
+            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
+            400,
+        );
+    }
+
+    const parsed = NotesUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+        return c.json(
+            {
+                status: 'error',
+                message: 'Invalid request body',
+                issues: parsed.error.issues,
+                requestId: c.get('requestId'),
+            },
+            400,
+        );
+    }
+
+    await setCrmNotes(uid, handle, parsed.data);
+    return c.json({ success: true });
 });
 
 export { app as peopleRoute };
