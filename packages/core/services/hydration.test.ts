@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { HydrationService } from './hydration';
 import type { HydrationDependencies } from '../ports/hydration-dependencies';
 import { PromptDocumentSchema } from 'shared/types/storage';
-import type { ProfileView } from 'shared/types';
+import type { ProfileView, ReplyRecord } from 'shared/types';
 
 /**
  * Focused tests for the prompt-doc → PromptView derivation of analytics
@@ -48,6 +48,7 @@ function buildService(): HydrationService {
         getOrgMemberRole: vi.fn(),
         getOrgName: vi.fn(),
         getUsersByIds: vi.fn(),
+        getReplyEnrichmentsByIds: vi.fn(async () => new Map()),
     };
     return new HydrationService(deps);
 }
@@ -143,3 +144,173 @@ describe('HydrationService.hydratePrompt — analytics aggregates', () => {
         expect(view.analytics?.avgEngagementScore).toBeCloseTo(10 / 3, 10);
     });
 });
+
+describe('HydrationService.hydrateReplies — batch user loading', () => {
+    const makeReply = (overrides: Partial<ReplyRecord> = {}): ReplyRecord => {
+        return {
+            id: 'r-1',
+            promptId: 'p-1',
+            authorId: 'author-1',
+            audioUrl: 'https://example.com/r.mp3',
+            status: 'live',
+            createdAt: new Date(),
+            ...overrides,
+        } as ReplyRecord;
+    };
+
+    const makeRecipient = (): ProfileView => {
+        return {
+            id: 'recipient-1',
+            handle: 'bob',
+            username: 'bob',
+            displayName: 'Bob',
+            photoUrl: null,
+            bio: null,
+            stats: { followers: 0, following: 0, prompts: 0 },
+            unreadReplyCount: 0,
+            newReplierCount: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        } as unknown as ProfileView;
+    };
+
+    it('always batch-fetches user profiles via getUsersByIds even when includePrivateData is false', async () => {
+        const records = [
+            makeReply({ id: 'r-1', authorId: 'user-a' }),
+            makeReply({ id: 'r-2', authorId: 'user-b' }),
+        ];
+        const recipient = makeRecipient();
+
+        const mockUsers = [
+            { id: 'user-a', displayName: 'User A' } as ProfileView,
+            { id: 'user-b', displayName: 'User B' } as ProfileView,
+        ];
+
+        const loadUserSpy = vi.fn();
+        const getUsersByIdsSpy = vi.fn(async () => mockUsers);
+
+        const deps: HydrationDependencies = {
+            loadUser: loadUserSpy,
+            loadPrompt: vi.fn(),
+            countOrgMembers: vi.fn(),
+            getOrgMemberRole: vi.fn(),
+            getOrgName: vi.fn(),
+            getUsersByIds: getUsersByIdsSpy,
+            getReplyEnrichmentsByIds: vi.fn(async () => new Map()),
+        };
+        const svc = new HydrationService(deps);
+
+        const views = await svc.hydrateRepliesWithRecipient(records, recipient, { includePrivateData: false });
+
+        expect(views).toHaveLength(2);
+        expect(getUsersByIdsSpy).toHaveBeenCalledOnce();
+        expect(getUsersByIdsSpy).toHaveBeenCalledWith(['user-a', 'user-b'], { includePrivateData: false });
+        expect(loadUserSpy).not.toHaveBeenCalled(); // Ensuring loadUser N+1 loop was bypassed!
+        expect(views[0].author.displayName).toBe('User A');
+        expect(views[1].author.displayName).toBe('User B');
+    });
+
+    it('batch-fetches user profiles with includePrivateData: true and fetches enrichments', async () => {
+        const records = [
+            makeReply({ id: 'r-1', authorId: 'user-a' }),
+        ];
+        const recipient = makeRecipient();
+
+        const mockUsers = [
+            { id: 'user-a', displayName: 'User A' } as ProfileView,
+        ];
+
+        const loadUserSpy = vi.fn();
+        const getUsersByIdsSpy = vi.fn(async () => mockUsers);
+        const getReplyEnrichmentsByIdsSpy = vi.fn(async () => new Map([['r-1', { notes: 'Some private notes' }]]));
+
+        const deps: HydrationDependencies = {
+            loadUser: loadUserSpy,
+            loadPrompt: vi.fn(),
+            countOrgMembers: vi.fn(),
+            getOrgMemberRole: vi.fn(),
+            getOrgName: vi.fn(),
+            getUsersByIds: getUsersByIdsSpy,
+            getReplyEnrichmentsByIds: getReplyEnrichmentsByIdsSpy,
+        };
+        const svc = new HydrationService(deps);
+
+        const views = await svc.hydrateRepliesWithRecipient(records, recipient, { includePrivateData: true });
+
+        expect(views).toHaveLength(1);
+        expect(getUsersByIdsSpy).toHaveBeenCalledOnce();
+        expect(getUsersByIdsSpy).toHaveBeenCalledWith(['user-a'], { includePrivateData: true });
+        expect(getReplyEnrichmentsByIdsSpy).toHaveBeenCalledOnce();
+        expect(getReplyEnrichmentsByIdsSpy).toHaveBeenCalledWith(['r-1']);
+        expect(loadUserSpy).not.toHaveBeenCalled();
+        expect(views[0].notes).toBe('Some private notes');
+    });
+
+    it('deduplicates author IDs before calling getUsersByIds', async () => {
+        const records = [
+            makeReply({ id: 'r-1', authorId: 'user-a' }),
+            makeReply({ id: 'r-2', authorId: 'user-b' }),
+            makeReply({ id: 'r-3', authorId: 'user-a' }),
+        ];
+        const recipient = makeRecipient();
+
+        const mockUsers = [
+            { id: 'user-a', displayName: 'User A' } as ProfileView,
+            { id: 'user-b', displayName: 'User B' } as ProfileView,
+        ];
+
+        const loadUserSpy = vi.fn();
+        const getUsersByIdsSpy = vi.fn(async () => mockUsers);
+
+        const deps: HydrationDependencies = {
+            loadUser: loadUserSpy,
+            loadPrompt: vi.fn(),
+            countOrgMembers: vi.fn(),
+            getOrgMemberRole: vi.fn(),
+            getOrgName: vi.fn(),
+            getUsersByIds: getUsersByIdsSpy,
+            getReplyEnrichmentsByIds: vi.fn(async () => new Map()),
+        };
+        const svc = new HydrationService(deps);
+
+        const views = await svc.hydrateRepliesWithRecipient(records, recipient);
+
+        expect(views).toHaveLength(3);
+        expect(getUsersByIdsSpy).toHaveBeenCalledOnce();
+        const calledIds = getUsersByIdsSpy.mock.calls[0][0];
+        expect(calledIds).toHaveLength(2);
+        expect(calledIds).toContain('user-a');
+        expect(calledIds).toContain('user-b');
+        expect(loadUserSpy).not.toHaveBeenCalled();
+    });
+
+    it('prevents sequential fallback loadUser calls when preloaded author profile is missing (deleted user)', async () => {
+        const records = [
+            makeReply({ id: 'r-1', authorId: 'missing-user' }),
+        ];
+        const recipient = makeRecipient();
+
+        const loadUserSpy = vi.fn();
+        // Return an empty list, meaning preloaded author profile was not found
+        const getUsersByIdsSpy = vi.fn(async () => []);
+
+        const deps: HydrationDependencies = {
+            loadUser: loadUserSpy,
+            loadPrompt: vi.fn(),
+            countOrgMembers: vi.fn(),
+            getOrgMemberRole: vi.fn(),
+            getOrgName: vi.fn(),
+            getUsersByIds: getUsersByIdsSpy,
+            getReplyEnrichmentsByIds: vi.fn(async () => new Map()),
+        };
+        const svc = new HydrationService(deps);
+
+        const views = await svc.hydrateRepliesWithRecipient(records, recipient);
+
+        expect(views).toHaveLength(1);
+        expect(getUsersByIdsSpy).toHaveBeenCalledOnce();
+        expect(loadUserSpy).not.toHaveBeenCalled(); // Ensuring loadUser was NOT called for missing user!
+        expect(views[0].author.displayName).toBe('Unknown User'); // Bounced to fallback synthetic stub safely
+    });
+});
+

@@ -101,11 +101,11 @@ export class HydrationService {
     async hydrateReply(
         record: ReplyRecord,
         knownRecipient?: ProfileView,
-        preloadedAuthor?: ProfileView,
+        preloadedAuthor?: ProfileView | null,
         preloadedNotes?: string,
     ): Promise<ReplyView | null> {
         let author: ProfileView | null | undefined = preloadedAuthor;
-        if (!author) {
+        if (author === undefined) {
             author = await this.deps.loadUser(record.authorId);
         }
 
@@ -174,42 +174,61 @@ export class HydrationService {
     }
 
     /**
+     * Helper to preload resources needed for reply hydration.
+     * Deduplicates author IDs to prevent database limits.
+     */
+    private async preloadHydrationResources(
+        records: ReplyRecord[],
+        options?: { includePrivateData?: boolean },
+    ): Promise<{
+        authorMap: Map<string, ProfileView>;
+        notesMap?: Map<string, string>;
+    }> {
+        if (!records.length) {
+            return { authorMap: new Map() };
+        }
+
+        const uniqueAuthorIds = Array.from(new Set(records.map(r => r.authorId)));
+        const profiles = await this.deps.getUsersByIds(uniqueAuthorIds, {
+            includePrivateData: !!options?.includePrivateData,
+        });
+        const authorMap = new Map(profiles.map(p => [p.id, p]));
+
+        let notesMap: Map<string, string> | undefined;
+        if (options?.includePrivateData) {
+            notesMap = await this.fetchEnrichmentNotes(records);
+        }
+
+        return { authorMap, notesMap };
+    }
+
+    /**
      * Hydrates a list of ReplyRecords into ReplyViews.
      */
     async hydrateReplies(records: ReplyRecord[], options?: { includePrivateData?: boolean }): Promise<ReplyView[]> {
         if (!records.length) return [];
 
-        let authorMap: Map<string, ProfileView> | undefined;
-        let notesMap: Map<string, string> | undefined;
-        if (options?.includePrivateData) {
-            const authorIds = records.map(r => r.authorId);
-            const profiles = await this.deps.getUsersByIds(authorIds, { includePrivateData: true });
-            authorMap = new Map(profiles.map(p => [p.id, p]));
-            notesMap = await this.fetchEnrichmentNotes(records);
-        }
+        const { authorMap, notesMap } = await this.preloadHydrationResources(records, options);
 
         const views = await Promise.all(records.map(r => {
-            const author = authorMap?.get(r.authorId);
+            const author = authorMap.get(r.authorId) || null;
             const notes = notesMap?.get(r.id);
             return this.hydrateReply(r, undefined, author, notes);
         }));
         return views.filter((v): v is ReplyView => v !== null);
     }
 
-    async hydrateRepliesWithRecipient(records: ReplyRecord[], recipient: ProfileView, options?: { includePrivateData?: boolean }): Promise<ReplyView[]> {
+    async hydrateRepliesWithRecipient(
+        records: ReplyRecord[],
+        recipient: ProfileView,
+        options?: { includePrivateData?: boolean },
+    ): Promise<ReplyView[]> {
         if (!records.length) return [];
 
-        let authorMap: Map<string, ProfileView> | undefined;
-        let notesMap: Map<string, string> | undefined;
-        if (options?.includePrivateData) {
-            const authorIds = records.map(r => r.authorId);
-            const profiles = await this.deps.getUsersByIds(authorIds, { includePrivateData: true });
-            authorMap = new Map(profiles.map(p => [p.id, p]));
-            notesMap = await this.fetchEnrichmentNotes(records);
-        }
+        const { authorMap, notesMap } = await this.preloadHydrationResources(records, options);
 
         const views = await Promise.all(records.map(r => {
-            const author = authorMap?.get(r.authorId);
+            const author = authorMap.get(r.authorId) || null;
             const notes = notesMap?.get(r.id);
             return this.hydrateReply(r, recipient, author, notes);
         }));
