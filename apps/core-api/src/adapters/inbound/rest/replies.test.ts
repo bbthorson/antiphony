@@ -308,7 +308,7 @@ describe('PATCH /api/v1/replies/:replyId/notes', () => {
         vi.mocked(replyService.getReplyRecord).mockResolvedValue(null);
         const res = await app().request('/api/v1/replies/r-miss/notes', jsonPatch({ notes: 'hi' }));
         expect(res.status).toBe(404);
-        expect((await res.json()).message).toBe('Reply not found');
+        expect((await res.json()).error.message).toBe('Reply not found');
     });
 
     it('404s when parent prompt is missing', async () => {
@@ -317,7 +317,7 @@ describe('PATCH /api/v1/replies/:replyId/notes', () => {
         vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
         const res = await app().request('/api/v1/replies/r-1/notes', jsonPatch({ notes: 'hi' }));
         expect(res.status).toBe(404);
-        expect((await res.json()).message).toBe('Prompt not found');
+        expect((await res.json()).error.message).toBe('Prompt not found');
     });
 
     it('403s when viewer is not the prompt author', async () => {

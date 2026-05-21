@@ -5,6 +5,7 @@ import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { organizationService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Viewer-action endpoints mounted at `/api/v1/users`.
@@ -29,25 +30,13 @@ app.post('/switch-org', requireAuth(), rateLimit(RATE_LIMITS.burst), async (c) =
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = SwitchOrgRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid data',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid data', { issues: validation.error.issues }),
             400,
         );
     }
@@ -59,14 +48,7 @@ app.post('/switch-org', requireAuth(), rateLimit(RATE_LIMITS.burst), async (c) =
         // Verify membership before granting the active-org claim.
         const role = await organizationService.getMemberRole(orgId, uid);
         if (!role) {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Not a member of this organization',
-                    requestId: c.get('requestId'),
-                },
-                403,
-            );
+            return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
         }
     }
 
@@ -103,26 +85,12 @@ app.post('/badges/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = BadgeResetRequestSchema.safeParse(body);
     if (!validation.success) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid type',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid type'), 400);
     }
 
     const { type } = validation.data;

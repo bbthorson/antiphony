@@ -4,6 +4,7 @@ import { toReplyViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { promptService, replyService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * GET /api/v1/prompts/:promptId/replies
@@ -42,11 +43,7 @@ app.get('/:promptId/replies', optionalAuth(), rateLimit(RATE_LIMITS.read), async
     });
     if (!queryResult.success) {
         return c.json(
-            {
-                success: false,
-                error: 'Invalid query parameters',
-                issues: queryResult.error.issues,
-            },
+            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
             400,
         );
     }

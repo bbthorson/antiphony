@@ -4,6 +4,7 @@ import { toReplyViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { replyService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * GET /api/v1/replies/search?q=...&promptId=&status=&readStatus=&dateFrom=&dateTo=
@@ -61,11 +62,7 @@ app.get('/search', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     });
     if (!parsed.success) {
         return c.json(
-            {
-                status: 'error',
-                message: parsed.error.issues[0]?.message || 'Invalid query',
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, parsed.error.issues[0]?.message || 'Invalid query'),
             400,
         );
     }

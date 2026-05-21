@@ -15,6 +15,7 @@ import {
     consumePendingUpload,
 } from '../../../lib/pending-uploads.js';
 import { logger } from '../../../lib/logger.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Reply endpoints mounted at `/api/v1/replies`.
@@ -84,11 +85,7 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     });
     if (!queryResult.success) {
         return c.json(
-            {
-                status: 'error',
-                message: queryResult.error.issues[0]?.message ?? 'Invalid query parameters',
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, queryResult.error.issues[0]?.message ?? 'Invalid query parameters'),
             400,
         );
     }
@@ -96,14 +93,7 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const prompt = await promptService.getPromptData(promptId);
     if (!prompt) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     const viewerUid = c.get('viewerUid');
@@ -115,14 +105,7 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     // their replies to anonymous callers. Mirror prompts.ts:58 instead, which
     // is the correct shape: 404 unless owner OR (status='live' AND public).
     if (!isOwner && (prompt.record.status !== 'live' || prompt.visibility === 'private')) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     // ReplyService.getRepliesForPrompt expects a (record-shape, recipient)
@@ -174,52 +157,24 @@ app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const record = await replyService.getReplyRecord(replyId);
     if (!record) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Reply not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Reply not found'), 404);
     }
 
     const prompt = await promptService.getPromptData(record.promptId);
     if (!prompt) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Reply not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Reply not found'), 404);
     }
 
     const isOwner = uid === prompt.record.authorId;
     if (!isOwner) {
         // Archived/deleted/draft → mask existence with 404, same as GET /.
         if (prompt.record.status !== 'live') {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Reply not found',
-                    requestId: c.get('requestId'),
-                },
-                404,
-            );
+            return c.json(errorEnvelope(c, 'Reply not found'), 404);
         }
         // Live but private/unlisted — caller is auth'd, so 403 is the more
         // honest answer.
         if (prompt.visibility !== 'public') {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Forbidden',
-                    requestId: c.get('requestId'),
-                },
-                403,
-            );
+            return c.json(errorEnvelope(c, 'Forbidden'), 403);
         }
     }
 
@@ -228,14 +183,7 @@ app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const view = await hydrationService.hydrateReply(record, prompt.author);
     if (!view) {
         // Orphaned (missing recipient) — surfaces same as not-found.
-        return c.json(
-            {
-                status: 'error',
-                message: 'Reply not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Reply not found'), 404);
     }
 
     return c.json({ success: true, data: toReplyViewPublic(view) });
@@ -252,25 +200,13 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreateReplyRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -287,12 +223,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         const pending = await resolvePendingUpload(pendingUploadId, promptId);
         if (!pending) {
             return c.json(
-                {
-                    status: 'error',
-                    message:
-                        'Pending upload not found, expired, or does not match this prompt',
-                    requestId: c.get('requestId'),
-                },
+                errorEnvelope(c, 'Pending upload not found, expired, or does not match this prompt'),
                 404,
             );
         }
@@ -341,25 +272,13 @@ app.patch('/:replyId/status', requireAuth(), rateLimit(RATE_LIMITS.write), async
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = UpdateReplyStatusRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -408,62 +327,29 @@ const handleNotesUpdate = async (c: Context) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = NoteSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
 
     const reply = await replyService.getReplyRecord(replyId);
     if (!reply) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Reply not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Reply not found'), 404);
     }
 
     const prompt = await promptService.getPromptRecord(reply.promptId);
     if (!prompt) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     if (prompt.authorId !== uid) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Forbidden',
-                requestId: c.get('requestId'),
-            },
-            403,
-        );
+        return c.json(errorEnvelope(c, 'Forbidden'), 403);
     }
 
     await replyService.updateReplyNotes(replyId, validation.data.notes);
@@ -485,25 +371,13 @@ app.post('/bulk-action', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = BulkReplyActionRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }

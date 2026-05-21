@@ -131,8 +131,8 @@ describe('requireAuth', () => {
 
         expect(res.status).toBe(401);
         const body = await res.json();
-        expect(body.status).toBe('error');
-        expect(body.message).toBe('Authentication required');
+        expect(body.success).toBe(false);
+        expect(body.error.message).toBe('Authentication required');
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
         expect(verifyToken).not.toHaveBeenCalled();
     });
@@ -154,7 +154,7 @@ describe('requireAuth', () => {
 
         expect(res.status).toBe(401);
         const body = await res.json();
-        expect(body.message).toBe('Invalid or expired session');
+        expect(body.error.message).toBe('Invalid or expired session');
     });
 
     it('passes through when the token verifies', async () => {

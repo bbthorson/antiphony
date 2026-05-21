@@ -44,7 +44,7 @@ describe('requireSystemAuth', () => {
         const res = await makeApp().request('/protected');
         expect(res.status).toBe(401);
         const body = await res.json();
-        expect(body.message).toMatch(/System authentication required/);
+        expect(body.error.message).toMatch(/System authentication required/);
     });
 
     it('returns 401 when bearer token does not match', async () => {
@@ -53,7 +53,7 @@ describe('requireSystemAuth', () => {
         });
         expect(res.status).toBe(401);
         const body = await res.json();
-        expect(body.message).toMatch(/Invalid system credentials/);
+        expect(body.error.message).toMatch(/Invalid system credentials/);
     });
 
     it('returns 401 when authorization header is malformed (no Bearer prefix)', async () => {

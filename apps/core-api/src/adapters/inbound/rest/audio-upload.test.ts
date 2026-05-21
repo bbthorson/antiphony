@@ -75,7 +75,7 @@ describe('POST /api/v1/audio/upload', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.message).toContain('Missing "file"');
+        expect(body.error.message).toContain('Missing "file"');
     });
 
     it('400s when mime type is not in the allowlist', async () => {
@@ -91,7 +91,7 @@ describe('POST /api/v1/audio/upload', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.message).toContain('Unsupported audio type');
+        expect(body.error.message).toContain('Unsupported audio type');
     });
 
     it('400s when file exceeds 25MB', async () => {
@@ -107,7 +107,7 @@ describe('POST /api/v1/audio/upload', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.message).toContain('too large');
+        expect(body.error.message).toContain('too large');
     });
 
     it('uploads to a uid-scoped path and returns the audioUrl', async () => {

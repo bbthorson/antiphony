@@ -14,6 +14,7 @@ import {
     feedService,
     hydrationService,
 } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Organization endpoints mounted at `/api/v1/organizations`.
@@ -78,7 +79,7 @@ app.get('/slug/:slug/profile', rateLimit(RATE_LIMITS.read), async (c) => {
 
     const data = await feedService.getOrgProfileData(slug);
     if (!data) {
-        return c.json({ success: false, error: 'Organization not found' }, 404);
+        return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
 
     return c.json({ success: true, data });
@@ -97,7 +98,7 @@ app.get('/slug/:slug', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) =>
 
     const org = await organizationService.getOrganizationBySlug(slug, requesterId ?? undefined);
     if (!org) {
-        return c.json({ success: false, error: 'Organization not found' }, 404);
+        return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
 
     return c.json({ success: true, data: org });
@@ -115,7 +116,7 @@ app.get('/:orgId/members', requireAuth(), rateLimit(RATE_LIMITS.read), async (c)
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role) {
-        return c.json({ success: false, error: 'Not a member of this organization' }, 403);
+        return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
     const members = await organizationService.getMembers(orgId);
@@ -141,7 +142,7 @@ app.get('/:orgId/prompts', requireAuth(), rateLimit(RATE_LIMITS.read), async (c)
 
     const isMember = await organizationService.isMember(orgId, uid);
     if (!isMember) {
-        return c.json({ success: false, error: 'Not a member of this organization' }, 403);
+        return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
     const queryResult = PromptsQuerySchema.safeParse({
@@ -151,7 +152,7 @@ app.get('/:orgId/prompts', requireAuth(), rateLimit(RATE_LIMITS.read), async (c)
     });
     if (!queryResult.success) {
         return c.json(
-            { success: false, error: 'Invalid query parameters', issues: queryResult.error.issues },
+            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
             400,
         );
     }
@@ -187,12 +188,12 @@ app.get('/:orgId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role) {
-        return c.json({ success: false, error: 'Not a member of this organization' }, 403);
+        return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
     const org = await organizationService.getOrganization(orgId, uid);
     if (!org) {
-        return c.json({ success: false, error: 'Organization not found' }, 404);
+        return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
 
     return c.json({ success: true, data: org });
@@ -223,21 +224,13 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.sensitive), async (c) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreateOrgRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -246,10 +239,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.sensitive), async (c) => {
     // re-check inside `createOrganizationWithOwner` covers the race.
     const existing = await organizationService.getOrganizationBySlug(validation.data.slug);
     if (existing) {
-        return c.json(
-            { status: 'error', message: 'Handle already taken', requestId: c.get('requestId') },
-            409,
-        );
+        return c.json(errorEnvelope(c, 'Handle already taken'), 409);
     }
 
     const record = await organizationService.createOrganization(uid, validation.data);
@@ -272,28 +262,20 @@ app.patch('/:orgId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
-        return c.json({ success: false, error: 'Insufficient permissions' }, 403);
+        return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
     let body: unknown;
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = UpdateOrgRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -302,10 +284,7 @@ app.patch('/:orgId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     if (validation.data.slug) {
         const existing = await organizationService.getOrganizationBySlug(validation.data.slug);
         if (existing && existing.record.id !== orgId) {
-            return c.json(
-                { status: 'error', message: 'Slug already taken', requestId: c.get('requestId') },
-                409,
-            );
+            return c.json(errorEnvelope(c, 'Slug already taken'), 409);
         }
     }
 
@@ -329,28 +308,20 @@ app.post('/:orgId/members', requireAuth(), rateLimit(RATE_LIMITS.write), async (
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
-        return c.json({ success: false, error: 'Insufficient permissions' }, 403);
+        return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
     let body: unknown;
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = AddMemberSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -378,28 +349,20 @@ app.patch('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write)
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
-        return c.json({ success: false, error: 'Insufficient permissions' }, 403);
+        return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
     let body: unknown;
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = UpdateMemberRoleRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }
@@ -422,13 +385,13 @@ app.delete('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write
 
     const callerRole = await organizationService.getMemberRole(orgId, uid);
     if (!callerRole) {
-        return c.json({ success: false, error: 'Not a member of this organization' }, 403);
+        return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
     // Self-leave is OK for any member; otherwise admin+ required.
     const isSelf = uid === targetUserId;
     if (!isSelf && callerRole !== 'owner' && callerRole !== 'admin') {
-        return c.json({ success: false, error: 'Insufficient permissions' }, 403);
+        return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
     await organizationService.removeMember(orgId, targetUserId);
@@ -447,28 +410,20 @@ app.post('/:orgId/invites', requireAuth(), rateLimit(RATE_LIMITS.write), async (
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
-        return c.json({ success: false, error: 'Insufficient permissions' }, 403);
+        return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
     let body: unknown;
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreateOrgInviteRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }

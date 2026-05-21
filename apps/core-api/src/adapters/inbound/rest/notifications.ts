@@ -3,6 +3,7 @@ import { FcmTokenRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { registerFcmToken, disableFcmToken } from '../../../lib/fcm-token-store.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Notification endpoints mounted at `/api/v1/notifications`.
@@ -29,21 +30,13 @@ app.post('/register-token', requireAuth(), rateLimit(RATE_LIMITS.write), async (
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const parsed = FcmTokenRequestSchema.safeParse(body);
     if (!parsed.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid token',
-                issues: parsed.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid token', { issues: parsed.error.issues }),
             400,
         );
     }
@@ -59,21 +52,13 @@ app.post('/disable-token', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const parsed = FcmTokenRequestSchema.safeParse(body);
     if (!parsed.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid token',
-                issues: parsed.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid token', { issues: parsed.error.issues }),
             400,
         );
     }

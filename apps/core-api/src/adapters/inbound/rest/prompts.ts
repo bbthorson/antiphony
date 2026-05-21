@@ -15,6 +15,7 @@ import {
     IdempotencyInProgressError,
 } from '../../../lib/idempotency.js';
 import { logger } from '../../../lib/logger.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Prompt endpoints mounted at `/api/v1/prompts`.
@@ -65,11 +66,7 @@ app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     });
     if (!queryResult.success) {
         return c.json(
-            {
-                success: false,
-                error: 'Invalid query parameters',
-                issues: queryResult.error.issues,
-            },
+            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
             400,
         );
     }
@@ -103,14 +100,14 @@ app.get('/:promptId', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => 
     const promptId = c.req.param('promptId');
     const prompt = await promptService.getPromptData(promptId);
     if (!prompt) {
-        return c.json({ success: false, error: 'Prompt not found' }, 404);
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     const viewerUid = c.get('viewerUid');
     const isOwner = viewerUid !== null && viewerUid === prompt.record.authorId;
 
     if (!isOwner && (prompt.record.status !== 'live' || prompt.visibility === 'private')) {
-        return c.json({ success: false, error: 'Prompt not found' }, 404);
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     return c.json({
@@ -134,14 +131,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     if (currentOrg) {
         const isMember = await organizationService.isMember(currentOrg, uid);
         if (!isMember) {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Not a member of active organization',
-                    requestId: c.get('requestId'),
-                },
-                403,
-            );
+            return c.json(errorEnvelope(c, 'Not a member of active organization'), 403);
         }
     }
 
@@ -154,14 +144,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         }
     } catch (err) {
         if (err instanceof IdempotencyInProgressError) {
-            return c.json(
-                {
-                    status: 'error',
-                    message: err.message,
-                    requestId: c.get('requestId'),
-                },
-                409,
-            );
+            return c.json(errorEnvelope(c, err.message), 409);
         }
         throw err;
     }
@@ -173,25 +156,13 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     try {
         rawData = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreatePromptRequestSchema.safeParse(rawData);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Validation failed',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Validation failed', { issues: validation.error.issues }),
             400,
         );
     }
@@ -240,52 +211,24 @@ app.patch('/:promptId/status', requireAuth(), rateLimit(RATE_LIMITS.write), asyn
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = StatusUpdateSchema.safeParse(body);
     if (!validation.success) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid status',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid status'), 400);
     }
 
     const promptRecord = await promptService.getPromptRecord(promptId);
     if (!promptRecord) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     const isOwner = promptRecord.authorId === uid;
     const isOrgMember =
         !isOwner && (await organizationService.isMember(promptRecord.authorId, uid));
     if (!isOwner && !isOrgMember) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Forbidden',
-                requestId: c.get('requestId'),
-            },
-            403,
-        );
+        return c.json(errorEnvelope(c, 'Forbidden'), 403);
     }
 
     await promptService.updatePromptStatus(promptId, validation.data.status);
@@ -306,28 +249,14 @@ app.delete('/:promptId', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c)
 
     const promptRecord = await promptService.getPromptRecord(promptId);
     if (!promptRecord) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
     }
 
     const isOwner = promptRecord.authorId === uid;
     const isOrgMember =
         !isOwner && (await organizationService.isMember(promptRecord.authorId, uid));
     if (!isOwner && !isOrgMember) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Forbidden',
-                requestId: c.get('requestId'),
-            },
-            403,
-        );
+        return c.json(errorEnvelope(c, 'Forbidden'), 403);
     }
 
     await promptService.deletePrompt(promptId);

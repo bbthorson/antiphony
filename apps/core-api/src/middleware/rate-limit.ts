@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { getAdminDb, getAdmin } from '../lib/firebase-admin.js';
 import { extractClientIp } from '../lib/client-ip.js';
 import { logger } from '../lib/logger.js';
+import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * Rate-limit middleware. Hono port of `apps/web/src/lib/api/rate-limit.ts`.
@@ -101,11 +102,7 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
             if (isLimited) {
                 logger.warn({ requestId: c.get('requestId'), key, limit: options.limit }, '[rate-limit] exceeded');
                 return c.json(
-                    {
-                        status: 'error',
-                        message: options.message || 'Too many requests',
-                        requestId: c.get('requestId'),
-                    },
+                    errorEnvelope(c, options.message || 'Too many requests'),
                     429,
                 );
             }
@@ -150,11 +147,7 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
                     '[rate-limit] transaction contention on bucket — failing closed (429)',
                 );
                 return c.json(
-                    {
-                        status: 'error',
-                        message: options.message || 'Too many requests',
-                        requestId: c.get('requestId'),
-                    },
+                    errorEnvelope(c, options.message || 'Too many requests'),
                     429,
                 );
             }

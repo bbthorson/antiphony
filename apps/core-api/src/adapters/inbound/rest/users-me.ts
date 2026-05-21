@@ -10,6 +10,7 @@ import { firebaseUserDependencies } from '../../outbound/firebase/users-dependen
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
 import { APP_CONFIG } from '../../../lib/app-config.js';
 import { logger } from '../../../lib/logger.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Authenticated-viewer "me" endpoints mounted at `/api/v1/users/me`.
@@ -44,14 +45,7 @@ app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const uid = c.get('viewerUid')!;
     const profile = await userService.getUserDataByUid(uid);
     if (!profile) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Profile not found',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Profile not found'), 404);
     }
     return c.json({ success: true, data: profile });
 });
@@ -63,25 +57,13 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = UpdateUserSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request', { issues: validation.error.issues }),
             400,
         );
     }
@@ -107,14 +89,7 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         await firebaseUserDependencies.updateUserProfile(uid, cleanUpdates);
     } catch (err) {
         if (err instanceof ConflictError) {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Handle is already taken',
-                    requestId: c.get('requestId'),
-                },
-                409,
-            );
+            return c.json(errorEnvelope(c, 'Handle is already taken'), 409);
         }
         throw err;
     }
@@ -200,9 +175,8 @@ app.get('/handle/available', requireAuth(), rateLimit(RATE_LIMITS.read), async (
  *
  * Body: `{ handle: string }` (3-20 chars, lowercased, alphanumeric + _).
  *
- * Response: `{ success: true, handle, domain }` on success;
- * 409 with `{ status: 'error', message: 'This handle is taken.' }`
- * on conflict.
+ * Response: `{ success: true, data: { handle, domain } }` on success;
+ * 409 with the standard error envelope on conflict.
  */
 app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     const uid = c.get('viewerUid')!;
@@ -211,20 +185,12 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
     const validation = ClaimHandleSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid handle format',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid handle format', { issues: validation.error.issues }),
             400,
         );
     }
@@ -289,14 +255,7 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         return c.json({ success: true, data: { handle, domain: APP_CONFIG.DOMAIN } });
     } catch (err) {
         if (err instanceof Error && err.message === 'Handle is already taken') {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'This handle is taken.',
-                    requestId: c.get('requestId'),
-                },
-                409,
-            );
+            return c.json(errorEnvelope(c, 'This handle is taken.'), 409);
         }
         throw err;
     }
@@ -361,22 +320,14 @@ app.post('/delete', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         body = await c.req.json();
     } catch {
         return c.json(
-            {
-                status: 'error',
-                message: 'Must include { confirm: true } to delete account',
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Must include { confirm: true } to delete account'),
             400,
         );
     }
     const validation = DeleteSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Must include { confirm: true } to delete account',
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Must include { confirm: true } to delete account'),
             400,
         );
     }
@@ -415,14 +366,7 @@ app.post('/delete', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
             { err, requestId: c.get('requestId'), uid },
             '[users-me] delete failed',
         );
-        return c.json(
-            {
-                status: 'error',
-                message: 'Failed to deactivate account',
-                requestId: c.get('requestId'),
-            },
-            500,
-        );
+        return c.json(errorEnvelope(c, 'Failed to deactivate account'), 500);
     }
 });
 

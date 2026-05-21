@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
+import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * Hono error handler. Equivalent of `apps/web/src/lib/api/withErrorHandler.ts`,
@@ -21,9 +22,9 @@ import { logger } from '../lib/logger.js';
  * request-id middleware) so support can trace a single request across
  * core-api, apps/web, and any downstream Cloud Functions logs.
  *
- * Response shape matches apps/web's contract so clients don't have to
- * branch on origin:
- *   { status: 'error', message: string, requestId: string, ...details }
+ * Response shape (Phase 4 of envelope standardization — symmetric with the
+ * success envelope):
+ *   { success: false, error: { message, code? }, requestId, ... }
  */
 
 export const errorHandler: ErrorHandler = (error, c) => {
@@ -41,12 +42,9 @@ export const errorHandler: ErrorHandler = (error, c) => {
     if (error instanceof ServiceError) {
         logger.warn({ ...meta, status: error.status, message: error.message }, 'service error');
         return c.json(
-            {
-                status: 'error',
-                message: error.message,
-                requestId,
-                ...(error.details ? { details: error.details } : {}),
-            },
+            errorEnvelope(c, error.message, {
+                ...(error.details !== undefined ? { details: error.details } : {}),
+            }),
             // Hono's ContentfulStatusCode is the full set of status codes
             // valid for a JSON response body — covers 400/401/403/404/409/
             // 422/429/500 and anything else ServiceError subclasses carry.
@@ -58,12 +56,7 @@ export const errorHandler: ErrorHandler = (error, c) => {
     if (error instanceof z.ZodError) {
         logger.warn({ ...meta, issues: error.issues }, 'validation error');
         return c.json(
-            {
-                status: 'error',
-                message: 'Validation Error',
-                requestId,
-                issues: error.issues,
-            },
+            errorEnvelope(c, 'Validation Error', { issues: error.issues }),
             400,
         );
     }
@@ -73,12 +66,7 @@ export const errorHandler: ErrorHandler = (error, c) => {
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error({ ...meta, error: err.message, stack: err.stack }, 'unhandled api error');
     return c.json(
-        {
-            status: 'error',
-            message: 'Internal Server Error',
-            requestId,
-            ...(isDev ? { details: err.message } : {}),
-        },
+        errorEnvelope(c, 'Internal Server Error', isDev ? { details: err.message } : {}),
         500,
     );
 };

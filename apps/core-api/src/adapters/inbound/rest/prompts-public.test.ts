@@ -95,7 +95,10 @@ describe('GET /api/v1/prompts/public/:handle/:promptId', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Prompt not found' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Prompt not found' },
+        });
     });
 
     it('returns 404 when the prompt does not exist', async () => {

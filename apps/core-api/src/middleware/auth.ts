@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { sessionVerifier } from '../lib/auth/session-verifier.js';
 import { logger } from '../lib/logger.js';
+import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * Auth bridge middleware. Two variants:
@@ -96,23 +97,15 @@ export const optionalAuth = (): MiddlewareHandler => {
 
 /**
  * Required auth — 401 on missing header OR invalid token. Response shape
- * follows the error-handler middleware's format (`{status, message,
- * requestId}`) so clients can consume both transport-level and handler-
- * level auth failures the same way.
+ * follows the error-handler middleware's format so clients can consume
+ * both transport-level and handler-level auth failures the same way.
  */
 export const requireAuth = (): MiddlewareHandler => {
     return async (c, next) => {
         const token = extractBearer(c.req.header('authorization'));
         if (!token) {
             setAnonymous(c);
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Authentication required',
-                    requestId: c.get('requestId'),
-                },
-                401,
-            );
+            return c.json(errorEnvelope(c, 'Authentication required'), 401);
         }
 
         try {
@@ -125,14 +118,7 @@ export const requireAuth = (): MiddlewareHandler => {
                 { err, requestId: c.get('requestId') },
                 '[auth] required-auth token verification failed',
             );
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Invalid or expired session',
-                    requestId: c.get('requestId'),
-                },
-                401,
-            );
+            return c.json(errorEnvelope(c, 'Invalid or expired session'), 401);
         }
 
         return next();

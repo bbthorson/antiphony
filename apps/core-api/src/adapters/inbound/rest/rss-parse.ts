@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { rssService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * POST /api/v1/rss/parse
@@ -45,11 +46,7 @@ app.post(
         const parsed = ParseSchema.safeParse(body);
         if (!parsed.success) {
             return c.json(
-                {
-                    status: 'error',
-                    message: 'Invalid request body',
-                    issues: parsed.error.issues,
-                },
+                errorEnvelope(c, 'Invalid request body', { issues: parsed.error.issues }),
                 400,
             );
         }
@@ -57,10 +54,7 @@ app.post(
         const summary = await rssService.parseFeed(parsed.data.url);
 
         if (!summary) {
-            return c.json(
-                { status: 'error', message: 'Failed to parse RSS feed or invalid URL' },
-                400,
-            );
+            return c.json(errorEnvelope(c, 'Failed to parse RSS feed or invalid URL'), 400);
         }
 
         return c.json({

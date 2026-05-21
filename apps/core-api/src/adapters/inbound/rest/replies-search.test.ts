@@ -62,10 +62,10 @@ describe('GET /api/v1/replies/search', () => {
         });
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         // Zod surfaces "Required" for missing fields — the length-check
         // message is exercised by the "too short" case below.
-        expect(body.message).toBeTruthy();
+        expect(body.error.message).toBeTruthy();
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 

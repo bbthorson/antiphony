@@ -127,8 +127,8 @@ describe('GET /api/v1/resolve/:handle', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
-        expect(body.message).toBe('Internal Server Error');
+        expect(body.success).toBe(false);
+        expect(body.error.message).toBe('Internal Server Error');
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });

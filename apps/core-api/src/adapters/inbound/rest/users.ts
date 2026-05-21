@@ -6,6 +6,7 @@ import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { userService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Top-level user endpoints mounted at `/api/v1/users`.
@@ -42,12 +43,7 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
     });
     if (!queryResult.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid query parameters',
-                issues: queryResult.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
             400,
         );
     }
@@ -125,7 +121,7 @@ app.get('/:handle', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const targetUser = await userService.getUserData(handle);
     if (!targetUser) {
-        return c.json({ success: false, error: 'User not found' }, 404);
+        return c.json(errorEnvelope(c, 'User not found'), 404);
     }
 
     const viewerUid = c.get('viewerUid');

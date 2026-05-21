@@ -3,6 +3,7 @@ import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { logger } from '../../../lib/logger.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * GET /api/v1/audio?url={encodedAudioUrl}
@@ -15,12 +16,6 @@ import { logger } from '../../../lib/logger.js';
  *
  * Parity with: apps/web/src/app/api/v1/audio/route.ts. Phase 1 of the
  * signed-URL migration — see `specs/signed-url-migration.md`.
- *
- * ## Error shape
- * Uses the `{status: 'error', message}` route-return shape (NOT the
- * `{success: false, error}` shape used by the user/org endpoints).
- * Matches apps/web's audio handler exactly — both shapes coexist in
- * the codebase; parity-per-endpoint is the rule.
  */
 
 const prefixedPath = (p: string): boolean =>
@@ -43,16 +38,16 @@ const app = new Hono();
 app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
     const audioUrl = c.req.query('url');
     if (!audioUrl) {
-        return c.json({ status: 'error', message: 'Missing "url" query parameter' }, 400);
+        return c.json(errorEnvelope(c, 'Missing "url" query parameter'), 400);
     }
 
     const objectPath = StorageService.extractObjectPath(audioUrl);
     if (!objectPath) {
-        return c.json({ status: 'error', message: 'Invalid audio URL' }, 400);
+        return c.json(errorEnvelope(c, 'Invalid audio URL'), 400);
     }
 
     if (!prefixedPath(objectPath) || hasTraversalSegment(objectPath)) {
-        return c.json({ status: 'error', message: 'Forbidden path' }, 403);
+        return c.json(errorEnvelope(c, 'Forbidden path'), 403);
     }
 
     // For reply audio (`replies/{promptId}/{userId}_{timestamp}.ext`),
@@ -66,7 +61,7 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
             try {
                 const promptDoc = await getAdminDb().collection('prompts').doc(promptId).get();
                 if (!promptDoc.exists) {
-                    return c.json({ status: 'error', message: 'Not found' }, 404);
+                    return c.json(errorEnvelope(c, 'Not found'), 404);
                 }
             } catch (err) {
                 logger.error(
@@ -88,7 +83,7 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
             { err, objectPath, requestId: c.get('requestId') },
             '[audio-proxy] failed to generate signed URL',
         );
-        return c.json({ status: 'error', message: 'Audio not found' }, 404);
+        return c.json(errorEnvelope(c, 'Audio not found'), 404);
     }
 });
 

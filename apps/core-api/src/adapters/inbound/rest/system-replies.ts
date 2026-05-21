@@ -4,6 +4,7 @@ import { toReplyViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireSystemAuth } from '../../../middleware/system-auth.js';
 import { replyService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * System-auth reply creation endpoint mounted at `/api/v1/system/replies`.
@@ -41,25 +42,13 @@ app.post('/', requireSystemAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid JSON body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreateSystemReplyRequestSchema.safeParse(body);
     if (!validation.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: validation.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
             400,
         );
     }

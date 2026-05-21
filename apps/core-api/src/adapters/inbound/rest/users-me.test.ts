@@ -115,8 +115,8 @@ describe('GET /api/v1/users/me', () => {
         const res = await app().request('/api/v1/users/me');
         expect(res.status).toBe(401);
         const body = await res.json();
-        expect(body.status).toBe('error');
-        expect(body.message).toBe('Authentication required');
+        expect(body.success).toBe(false);
+        expect(body.error.message).toBe('Authentication required');
     });
 
     it('401s on invalid token', async () => {
@@ -154,8 +154,8 @@ describe('GET /api/v1/users/me', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body.status).toBe('error');
-        expect(body.message).toBe('Profile not found');
+        expect(body.success).toBe(false);
+        expect(body.error.message).toBe('Profile not found');
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 
@@ -182,7 +182,7 @@ describe('GET /api/v1/users/me', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });
@@ -240,7 +240,7 @@ describe('GET /api/v1/users/me/organizations', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });

@@ -5,6 +5,7 @@ import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { feedService } from '../../outbound/firebase/core-services-firebase.js';
 import { getCrmNotes, setCrmNotes } from '../../../lib/crm-notes-store.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * People / CRM endpoints mounted at `/api/v1/people`.
@@ -51,10 +52,7 @@ app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const peopleData = await feedService.getPeopleData(uid);
     if (!peopleData) {
-        return c.json(
-            { status: 'error', message: 'Not found', requestId: c.get('requestId') },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Not found'), 404);
     }
 
     const sanitizedPromptsWithReplies = peopleData.promptsWithReplies.map((pwr) => ({
@@ -158,21 +156,13 @@ app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     try {
         body = await c.req.json();
     } catch {
-        return c.json(
-            { status: 'error', message: 'Invalid JSON body', requestId: c.get('requestId') },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const parsed = NotesUpdateSchema.safeParse(body);
     if (!parsed.success) {
         return c.json(
-            {
-                status: 'error',
-                message: 'Invalid request body',
-                issues: parsed.error.issues,
-                requestId: c.get('requestId'),
-            },
+            errorEnvelope(c, 'Invalid request body', { issues: parsed.error.issues }),
             400,
         );
     }

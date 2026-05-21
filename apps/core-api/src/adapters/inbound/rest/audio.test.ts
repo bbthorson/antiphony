@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Tests for `GET /api/v1/audio?url=...`.
  *
- * Uses the `{status: 'error', message}` route-return shape (not the
- * `{success: false, error}` shape) per parity with apps/web.
+ * Uses the standard `{success: false, error: {message}, requestId}` error
+ * envelope (Phase 4 of envelope standardization).
  */
 
 // StorageService.extractObjectPath + getSignedUrl are what the route touches.
@@ -65,7 +65,10 @@ describe('GET /api/v1/audio', () => {
         const res = await app().request('/api/v1/audio');
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Missing "url" query parameter' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Missing "url" query parameter' },
+        });
     });
 
     it('returns 400 when the URL does not match a known storage format', async () => {
@@ -73,7 +76,10 @@ describe('GET /api/v1/audio', () => {
         const res = await app().request('/api/v1/audio?url=https://elsewhere.example.com/foo.mp3');
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Invalid audio URL' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Invalid audio URL' },
+        });
     });
 
     it('returns 403 when the extracted path is outside the allowlist prefixes', async () => {
@@ -81,7 +87,10 @@ describe('GET /api/v1/audio', () => {
         const res = await app().request('/api/v1/audio?url=https://example.com/secrets/keys.json');
         expect(res.status).toBe(403);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Forbidden path' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Forbidden path' },
+        });
     });
 
     it('returns 403 for path-traversal attempts even when the prefix matches', async () => {
@@ -125,7 +134,10 @@ describe('GET /api/v1/audio', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Not found' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Not found' },
+        });
     });
 
     it('redirects for replies/ paths whose parent prompt exists', async () => {
@@ -154,6 +166,9 @@ describe('GET /api/v1/audio', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body).toEqual({ status: 'error', message: 'Audio not found' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Audio not found' },
+        });
     });
 });

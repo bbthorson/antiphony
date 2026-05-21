@@ -88,7 +88,10 @@ describe('GET /api/v1/users/:handle/profile', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body).toEqual({ success: false, error: 'User not found' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'User not found' },
+        });
     });
 
     it('propagates the inbound X-Request-ID header', async () => {
@@ -108,7 +111,7 @@ describe('GET /api/v1/users/:handle/profile', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });

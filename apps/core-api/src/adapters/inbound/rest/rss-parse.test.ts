@@ -84,9 +84,9 @@ describe('POST /api/v1/rss/parse', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.status).toBe('error');
-        expect(body.message).toBe('Invalid request body');
-        expect(Array.isArray(body.issues)).toBe(true);
+        expect(body.success).toBe(false);
+        expect(body.error.message).toBe('Invalid request body');
+        expect(Array.isArray(body.error.issues)).toBe(true);
     });
 
     it('returns 400 on missing body', async () => {
@@ -110,9 +110,9 @@ describe('POST /api/v1/rss/parse', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body).toEqual({
-            status: 'error',
-            message: 'Failed to parse RSS feed or invalid URL',
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Failed to parse RSS feed or invalid URL' },
         });
     });
 });

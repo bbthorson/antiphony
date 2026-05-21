@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { userService, promptService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * GET /api/v1/users/:handle/prompts
@@ -18,7 +19,7 @@ import { userService, promptService } from '../../outbound/firebase/core-service
  *
  * Response shape:
  *   `{ success: true, data: { items: PromptView[], nextCursor: string | null } }`
- *   or `{ success: false, error: 'User not found' }` with status 404.
+ *   or 404 with the standard error envelope when the user isn't found.
  *
  * Parity with: apps/web/src/app/api/v1/users/[handle]/prompts/route.ts
  *
@@ -43,7 +44,7 @@ app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (
     });
     if (!queryResult.success) {
         return c.json(
-            { success: false, error: 'Invalid query parameters', issues: queryResult.error.issues },
+            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
             400,
         );
     }
@@ -51,7 +52,7 @@ app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (
 
     const targetUser = await userService.getUserData(handle);
     if (!targetUser) {
-        return c.json({ success: false, error: 'User not found' }, 404);
+        return c.json(errorEnvelope(c, 'User not found'), 404);
     }
 
     const requesterId = c.get('viewerUid');

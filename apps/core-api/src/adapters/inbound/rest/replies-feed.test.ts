@@ -157,7 +157,7 @@ describe('GET /api/v1/replies/feed', () => {
 
         expect(res.status).toBe(400);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
     });
 
     it('400s on malformed dateFrom', async () => {

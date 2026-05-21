@@ -199,7 +199,7 @@ describe('GET /api/v1/prompts/:promptId/replies', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });

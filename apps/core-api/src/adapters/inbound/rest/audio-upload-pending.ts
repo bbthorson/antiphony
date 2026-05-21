@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { createPendingUpload, hashIp, extractClientIp } from '../../../lib/pending-uploads.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * POST /api/v1/audio/upload-pending
@@ -49,71 +50,29 @@ app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
     try {
         formData = await c.req.formData();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Invalid multipart body',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Invalid multipart body'), 400);
     }
 
     const fileField = formData.get('file');
     const promptIdRaw = formData.get('promptId');
 
     if (!fileField || !(fileField instanceof File)) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Missing "file" field',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Missing "file" field'), 400);
     }
     if (typeof promptIdRaw !== 'string' || !promptIdRaw) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Missing "promptId" field',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Missing "promptId" field'), 400);
     }
 
     if (fileField.size > MAX_SIZE) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'File too large (max 25MB)',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'File too large (max 25MB)'), 400);
     }
     if (fileField.size < MIN_SIZE) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'File too small',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'File too small'), 400);
     }
 
     const mimeType = fileField.type || 'audio/mp4';
     if (!ALLOWED_TYPES.has(mimeType)) {
-        return c.json(
-            {
-                status: 'error',
-                message: `Unsupported audio type: ${mimeType}`,
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, `Unsupported audio type: ${mimeType}`), 400);
     }
 
     // Verify prompt is live before taking the upload — collapses the
@@ -121,14 +80,7 @@ app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
     // pending rows on nonexistent prompts.
     const prompt = await promptService.getPromptData(promptIdRaw);
     if (!prompt || prompt.record.status !== 'live') {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Prompt not found or not accepting replies',
-                requestId: c.get('requestId'),
-            },
-            404,
-        );
+        return c.json(errorEnvelope(c, 'Prompt not found or not accepting replies'), 404);
     }
 
     const buffer = Buffer.from(await fileField.arrayBuffer());

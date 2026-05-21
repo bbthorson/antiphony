@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
+import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * POST /api/v1/audio/upload
@@ -54,49 +55,21 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
     try {
         formData = await c.req.formData();
     } catch {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Expected multipart/form-data',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Expected multipart/form-data'), 400);
     }
 
     const file = formData.get('file');
     if (!file || !(file instanceof File)) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'Missing "file" field',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'Missing "file" field'), 400);
     }
 
     if (file.size > MAX_SIZE) {
-        return c.json(
-            {
-                status: 'error',
-                message: 'File too large (max 25MB)',
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, 'File too large (max 25MB)'), 400);
     }
 
     const mimeType = file.type || 'audio/mp4';
     if (!ALLOWED_TYPES.has(mimeType)) {
-        return c.json(
-            {
-                status: 'error',
-                message: `Unsupported audio type: ${mimeType}`,
-                requestId: c.get('requestId'),
-            },
-            400,
-        );
+        return c.json(errorEnvelope(c, `Unsupported audio type: ${mimeType}`), 400);
     }
 
     const ext = EXT_MAP[mimeType] || 'm4a';

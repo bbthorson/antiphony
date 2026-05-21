@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { logger } from '../lib/logger.js';
+import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * System-auth middleware — verifies that the request comes from a trusted
@@ -94,26 +95,12 @@ export const requireSystemAuth = (): MiddlewareHandler => {
                 { requestId: c.get('requestId') },
                 '[system-auth] SYSTEM_AUTH_TOKEN env var is unset; refusing',
             );
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'System auth not configured',
-                    requestId: c.get('requestId'),
-                },
-                503,
-            );
+            return c.json(errorEnvelope(c, 'System auth not configured'), 503);
         }
 
         const presented = extractBearer(c.req.header('authorization'));
         if (!presented) {
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'System authentication required',
-                    requestId: c.get('requestId'),
-                },
-                401,
-            );
+            return c.json(errorEnvelope(c, 'System authentication required'), 401);
         }
 
         if (!constantTimeEqual(presented, expected)) {
@@ -125,14 +112,7 @@ export const requireSystemAuth = (): MiddlewareHandler => {
                 },
                 '[system-auth] token mismatch',
             );
-            return c.json(
-                {
-                    status: 'error',
-                    message: 'Invalid system credentials',
-                    requestId: c.get('requestId'),
-                },
-                401,
-            );
+            return c.json(errorEnvelope(c, 'Invalid system credentials'), 401);
         }
 
         return next();

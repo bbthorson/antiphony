@@ -131,7 +131,10 @@ describe('GET /api/v1/prompts/:promptId', () => {
 
         expect(res.status).toBe(404);
         const body = await res.json();
-        expect(body).toEqual({ success: false, error: 'Prompt not found' });
+        expect(body).toMatchObject({
+            success: false,
+            error: { message: 'Prompt not found' },
+        });
     });
 
     it('returns 404 for non-live prompts (existence is hidden from non-owners)', async () => {
@@ -215,7 +218,7 @@ describe('GET /api/v1/prompts/:promptId', () => {
 
         expect(res.status).toBe(500);
         const body = await res.json();
-        expect(body.status).toBe('error');
+        expect(body.success).toBe(false);
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });
