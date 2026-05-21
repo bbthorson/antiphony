@@ -525,9 +525,9 @@ describe('GET /api/v1/prompts (list)', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(body.data).toEqual(fakePrompts);
+        expect(body.data.items).toEqual(fakePrompts);
         // Page (2) less than default limit (20) → no nextCursor.
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.nextCursor).toBeNull();
         // Default limit, no cursor.
         expect(vi.mocked(promptService.getPromptsForUser)).toHaveBeenCalledWith(
             'viewer-pl',
@@ -551,7 +551,7 @@ describe('GET /api/v1/prompts (list)', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.nextCursor).toBe('p-4');
+        expect(body.data.nextCursor).toBe('p-4');
         expect(vi.mocked(promptService.getPromptsForUser)).toHaveBeenCalledWith(
             'viewer-pl-full',
             5,

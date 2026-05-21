@@ -52,8 +52,9 @@ const app = new Hono();
 // ---------------------------------------------------------------------------
 //
 // Mirrors apps/web's GET /api/v1/prompts: auth-required, returns
-// `{ success: true, data: PromptView[], nextCursor }`. Cursor is the last
-// prompt's id when the page is full, null otherwise.
+// `{ success: true, data: { items: PromptView[], nextCursor } }` — cursor
+// is the last prompt's id when the page is full, null otherwise. Nested
+// cursor is the standard paginated shape post envelope-Phase-3.
 
 app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const uid = c.get('viewerUid')!;
@@ -76,15 +77,21 @@ app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const prompts = await promptService.getPromptsForUser(uid, limit, cursor);
 
+    // Paginated standard shape: cursor lives INSIDE `data` alongside
+    // `items`. Same `{ success, data: { items, nextCursor } }` envelope
+    // used by /replies/feed, /users, and the other paginated endpoints
+    // post envelope-Phase-3.
     return c.json({
         success: true,
-        data: prompts,
-        // Only set a cursor when the page is full AND non-empty — guards
-        // against `prompts[-1]` on empty pages.
-        nextCursor:
-            prompts.length > 0 && prompts.length === limit
-                ? prompts[prompts.length - 1].record.id
-                : null,
+        data: {
+            items: prompts,
+            // Only set a cursor when the page is full AND non-empty —
+            // guards against `prompts[-1]` on empty pages.
+            nextCursor:
+                prompts.length > 0 && prompts.length === limit
+                    ? prompts[prompts.length - 1].record.id
+                    : null,
+        },
     });
 });
 

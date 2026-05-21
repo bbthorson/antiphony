@@ -17,7 +17,7 @@ import { userService, promptService } from '../../outbound/firebase/core-service
  *   - Anyone else (including anonymous) → live only.
  *
  * Response shape:
- *   `{ success: true, data: PromptView[], nextCursor: string | null }`
+ *   `{ success: true, data: { items: PromptView[], nextCursor: string | null } }`
  *   or `{ success: false, error: 'User not found' }` with status 404.
  *
  * Parity with: apps/web/src/app/api/v1/users/[handle]/prompts/route.ts
@@ -64,15 +64,20 @@ app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (
         !isOwner,
     );
 
+    // Paginated standard shape: nested cursor inside `data` alongside
+    // `items`. See envelope-Phase-3.
     return c.json({
         success: true,
-        data: prompts,
-        // Only compute a cursor when the page is full AND there's at least
-        // one prompt — guards against `prompts[-1]` on empty results.
-        nextCursor:
-            prompts.length > 0 && prompts.length === limit
-                ? prompts[prompts.length - 1].record.id
-                : null,
+        data: {
+            items: prompts,
+            // Only compute a cursor when the page is full AND there's at
+            // least one prompt — guards against `prompts[-1]` on empty
+            // results.
+            nextCursor:
+                prompts.length > 0 && prompts.length === limit
+                    ? prompts[prompts.length - 1].record.id
+                    : null,
+        },
     });
 });
 

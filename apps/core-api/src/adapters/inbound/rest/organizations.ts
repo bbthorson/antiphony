@@ -159,15 +159,19 @@ app.get('/:orgId/prompts', requireAuth(), rateLimit(RATE_LIMITS.read), async (c)
 
     const prompts = await promptService.getPromptsForOrgContext(orgId, limit, cursor, publicOnly);
 
+    // Paginated standard shape: nested cursor inside `data` alongside
+    // `items`. See envelope-Phase-3.
     return c.json({
         success: true,
-        data: prompts,
-        // Guard against empty results: only compute a cursor when the page is
-        // full AND there's at least one prompt.
-        nextCursor:
-            prompts.length > 0 && prompts.length === limit
-                ? prompts[prompts.length - 1].record.id
-                : null,
+        data: {
+            items: prompts,
+            // Guard against empty results: only compute a cursor when the
+            // page is full AND there's at least one prompt.
+            nextCursor:
+                prompts.length > 0 && prompts.length === limit
+                    ? prompts[prompts.length - 1].record.id
+                    : null,
+        },
     });
 });
 

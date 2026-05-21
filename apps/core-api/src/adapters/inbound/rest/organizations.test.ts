@@ -270,8 +270,8 @@ describe('GET /api/v1/organizations/:orgId/prompts', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.data).toHaveLength(3);
-        expect(body.nextCursor).toBe('p-c');
+        expect(body.data.items).toHaveLength(3);
+        expect(body.data.nextCursor).toBe('p-c');
     });
 
     it('returns nextCursor: null on an empty result', async () => {
@@ -285,8 +285,8 @@ describe('GET /api/v1/organizations/:orgId/prompts', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.data).toEqual([]);
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.items).toEqual([]);
+        expect(body.data.nextCursor).toBeNull();
     });
 
     it('passes publicOnly through to the service when the query says so', async () => {

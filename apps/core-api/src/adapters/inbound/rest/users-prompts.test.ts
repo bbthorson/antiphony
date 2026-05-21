@@ -91,8 +91,8 @@ describe('GET /api/v1/users/:handle/prompts', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(body.data).toHaveLength(3);
-        expect(body.nextCursor).toBe('p-c');
+        expect(body.data.items).toHaveLength(3);
+        expect(body.data.nextCursor).toBe('p-c');
     });
 
     it('returns nextCursor: null when the page is not full', async () => {
@@ -103,8 +103,8 @@ describe('GET /api/v1/users/:handle/prompts', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.data).toHaveLength(1);
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.items).toHaveLength(1);
+        expect(body.data.nextCursor).toBeNull();
     });
 
     it('returns nextCursor: null on an empty result set', async () => {
@@ -115,8 +115,8 @@ describe('GET /api/v1/users/:handle/prompts', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.data).toEqual([]);
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.items).toEqual([]);
+        expect(body.data.nextCursor).toBeNull();
     });
 
     it('passes publicOnly=true for anonymous viewers (!isOwner)', async () => {
