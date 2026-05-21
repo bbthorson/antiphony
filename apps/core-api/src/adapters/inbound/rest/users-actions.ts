@@ -142,7 +142,8 @@ app.post('/badges/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
         });
     }
 
-    return c.json({ success: true });
+    // Fire-and-forget reset; `data: null` for the standard envelope.
+    return c.json({ success: true, data: null });
 });
 
 export { app as usersActionsRoute };

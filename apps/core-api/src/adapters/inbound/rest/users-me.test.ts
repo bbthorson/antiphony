@@ -270,8 +270,7 @@ describe('PATCH /api/v1/users/me', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.success).toBe(true);
-        expect(body.message).toContain('No changes');
+        expect(body).toEqual({ success: true, data: null });
         expect(updateUserProfileFn).not.toHaveBeenCalled();
     });
 

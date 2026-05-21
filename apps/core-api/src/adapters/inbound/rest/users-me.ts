@@ -92,7 +92,10 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     );
 
     if (Object.keys(cleanUpdates).length === 0) {
-        return c.json({ success: true, message: 'No changes' });
+        // No-op write — the message text was never read by callers
+        // (only logged client-side in dev). `data: null` keeps the
+        // response on the standard envelope.
+        return c.json({ success: true, data: null });
     }
 
     try {
@@ -116,10 +119,10 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         throw err;
     }
 
-    return c.json({
-        success: true,
-        updates: cleanUpdates,
-    });
+    // Drop the `updates` echo — caller already knows what it sent, no
+    // in-tree reader of this field. `data: null` keeps the standard
+    // envelope shape.
+    return c.json({ success: true, data: null });
 });
 
 app.get('/organizations', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
@@ -280,7 +283,10 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
             );
         });
 
-        return c.json({ success: true, handle, domain: APP_CONFIG.DOMAIN });
+        // Echo the claimed handle + the app domain so clients can construct
+        // the public URL without re-fetching. Both kept under `data` for the
+        // standard envelope.
+        return c.json({ success: true, data: { handle, domain: APP_CONFIG.DOMAIN } });
     } catch (err) {
         if (err instanceof Error && err.message === 'Handle is already taken') {
             return c.json(
@@ -401,11 +407,9 @@ app.post('/delete', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 
         await adminAuth.revokeRefreshTokens(uid);
 
-        return c.json({
-            success: true,
-            message:
-                'Account deactivated. Your data has been preserved but your account is no longer active.',
-        });
+        // Message text was UI-facing — toast wording is now constructed
+        // client-side. `data: null` for the standard envelope.
+        return c.json({ success: true, data: null });
     } catch (err) {
         logger.error(
             { err, requestId: c.get('requestId'), uid },
