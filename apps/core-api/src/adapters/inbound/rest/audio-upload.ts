@@ -104,7 +104,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
     const buffer = Buffer.from(await file.arrayBuffer());
     const audioUrl = await StorageService.uploadFile(buffer, path, mimeType);
 
-    return c.json({ audioUrl });
+    return c.json({ success: true, data: { audioUrl } });
 });
 
 export { app as audioUploadRoute };

@@ -123,7 +123,7 @@ describe('POST /api/v1/audio/upload', () => {
         });
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ audioUrl: 'https://cdn/example.m4a' });
+        expect(await res.json()).toEqual({ success: true, data: { audioUrl: 'https://cdn/example.m4a' } });
 
         expect(vi.mocked(StorageService.uploadFile)).toHaveBeenCalledTimes(1);
         const [bufferArg, pathArg, mimeArg] = vi.mocked(StorageService.uploadFile).mock.calls[0];

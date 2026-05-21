@@ -79,7 +79,12 @@ app.get('/feed', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
         { limit, cursor },
     );
 
-    return c.json({ replies: replies.map(toReplyViewPublic), nextCursor });
+    // Paginated standard shape: `data.items` is the array of replies,
+    // `data.nextCursor` is the pagination handle.
+    return c.json({
+        success: true,
+        data: { items: replies.map(toReplyViewPublic), nextCursor },
+    });
 });
 
 export { app as repliesFeedRoute };

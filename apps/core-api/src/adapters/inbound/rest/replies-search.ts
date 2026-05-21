@@ -81,7 +81,12 @@ app.get('/search', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
 
     const results = await replyService.searchReplies(uid, q, filters);
 
-    return c.json({ replies: results.map(toReplyViewPublic), query: q });
+    // Paginated/search standard shape: `data.items` is the matched replies;
+    // `data.query` echoes the search input (kept for debug/UI display).
+    return c.json({
+        success: true,
+        data: { items: results.map(toReplyViewPublic), query: q },
+    });
 });
 
 export { app as repliesSearchRoute };

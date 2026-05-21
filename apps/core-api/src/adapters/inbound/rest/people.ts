@@ -133,8 +133,8 @@ app.get('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) 
     const uid = c.get('viewerUid')!;
     const handle = c.req.param('handle');
 
-    const data = await getCrmNotes(uid, handle);
-    return c.json(data);
+    const notes = await getCrmNotes(uid, handle);
+    return c.json({ success: true, data: notes });
 });
 
 // ---------------------------------------------------------------------------

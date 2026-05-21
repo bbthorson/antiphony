@@ -91,7 +91,10 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
     const lastDoc = hasMore ? resultDocs[resultDocs.length - 1] : undefined;
     const nextCursor = lastDoc ? (lastDoc.data().handle as string) : null;
 
-    return c.json({ users, nextCursor });
+    // Paginated standard shape: `data.items` is the array, `data.nextCursor`
+    // holds the pagination handle. Field name `items` is generic so the same
+    // unwrap pattern works across paginated endpoints.
+    return c.json({ success: true, data: { items: users, nextCursor } });
 });
 
 // ---------------------------------------------------------------------------

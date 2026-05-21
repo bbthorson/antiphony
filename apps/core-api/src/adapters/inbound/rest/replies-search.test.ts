@@ -107,10 +107,10 @@ describe('GET /api/v1/replies/search', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.query).toBe('hello');
-        expect(body.replies).toHaveLength(1);
-        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].notes).toBeUndefined();
+        expect(body.data.query).toBe('hello');
+        expect(body.data.items).toHaveLength(1);
+        expect(body.data.items[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.data.items[0].notes).toBeUndefined();
 
         const call = vi.mocked(replyService.searchReplies).mock.calls[0];
         expect(call[0]).toBe('v3');

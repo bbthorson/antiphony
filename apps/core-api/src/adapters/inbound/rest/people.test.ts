@@ -292,8 +292,8 @@ describe('GET /api/v1/people/:handle/notes', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.notes).toBe('Always asks great questions');
-        expect(body.tags).toEqual(['regular', 'verified']);
+        expect(body.data.notes).toBe('Always asks great questions');
+        expect(body.data.tags).toEqual(['regular', 'verified']);
         expect(getCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle');
     });
 
@@ -307,8 +307,8 @@ describe('GET /api/v1/people/:handle/notes', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.notes).toBe('');
-        expect(body.tags).toEqual([]);
+        expect(body.data.notes).toBe('');
+        expect(body.data.tags).toEqual([]);
     });
 
     it('401s when no auth is provided', async () => {

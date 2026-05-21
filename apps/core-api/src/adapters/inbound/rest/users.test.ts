@@ -195,8 +195,8 @@ describe('GET /api/v1/users (public discovery list)', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.users).toEqual([]);
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.items).toEqual([]);
+        expect(body.data.nextCursor).toBeNull();
     });
 
     it('returns parsed users (page not full → no nextCursor)', async () => {
@@ -225,10 +225,10 @@ describe('GET /api/v1/users (public discovery list)', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.users).toHaveLength(2);
-        expect(body.users[0].handle).toBe('alice-pub');
-        expect(body.users[1].handle).toBe('bob-pub');
-        expect(body.nextCursor).toBeNull();
+        expect(body.data.items).toHaveLength(2);
+        expect(body.data.items[0].handle).toBe('alice-pub');
+        expect(body.data.items[1].handle).toBe('bob-pub');
+        expect(body.data.nextCursor).toBeNull();
     });
 
     it('returns nextCursor (last handle) when the page is full', async () => {
@@ -251,9 +251,9 @@ describe('GET /api/v1/users (public discovery list)', () => {
         const res = await app().request('/api/v1/users?limit=2');
 
         const body = await res.json();
-        expect(body.users).toHaveLength(2);
+        expect(body.data.items).toHaveLength(2);
         // Last returned doc's handle is the cursor — the +1 fetched doc is dropped.
-        expect(body.nextCursor).toBe('h-2');
+        expect(body.data.nextCursor).toBe('h-2');
     });
 
     it('falls back to a minimal projection when PublicProfileDtoSchema parse fails', async () => {
@@ -271,10 +271,10 @@ describe('GET /api/v1/users (public discovery list)', () => {
 
         const body = await res.json();
         // Fallback coerces handle/displayName to strings (Gemini #364 fix).
-        expect(body.users[0].handle).toBe('12345');
-        expect(body.users[0].displayName).toBe('12345');
-        expect(body.users[0].avatarUrl).toBeNull();
-        expect(body.users[0].bio).toBeNull();
+        expect(body.data.items[0].handle).toBe('12345');
+        expect(body.data.items[0].displayName).toBe('12345');
+        expect(body.data.items[0].avatarUrl).toBeNull();
+        expect(body.data.items[0].bio).toBeNull();
     });
 
     it('400s on invalid limit (non-numeric)', async () => {

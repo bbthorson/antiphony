@@ -137,10 +137,11 @@ describe('GET /api/v1/users/me', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.handle).toBe('viewer');
-        expect(body.email).toBe('viewer@example.com');
-        expect(body.phoneNumber).toBe('+15555550000');
-        expect(body.settings).toEqual({ notifications: true });
+        expect(body.success).toBe(true);
+        expect(body.data.handle).toBe('viewer');
+        expect(body.data.email).toBe('viewer@example.com');
+        expect(body.data.phoneNumber).toBe('+15555550000');
+        expect(body.data.settings).toEqual({ notifications: true });
     });
 
     it('returns 404 if the profile does not exist for the viewer uid', async () => {

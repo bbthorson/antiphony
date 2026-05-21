@@ -66,7 +66,7 @@ describe('GET /api/v1/replies/feed', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body).toEqual({ replies: [], nextCursor: null });
+        expect(body).toEqual({ success: true, data: { items: [], nextCursor: null } });
     });
 
     it('forwards filters + pagination, returns public projection', async () => {
@@ -100,11 +100,11 @@ describe('GET /api/v1/replies/feed', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.replies).toHaveLength(1);
+        expect(body.data.items).toHaveLength(1);
         // Public projection strips owner-only fields
-        expect(body.replies[0].listenerPhoneNumber).toBeUndefined();
-        expect(body.replies[0].notes).toBeUndefined();
-        expect(body.nextCursor).toBe('opaque-cursor-string');
+        expect(body.data.items[0].listenerPhoneNumber).toBeUndefined();
+        expect(body.data.items[0].notes).toBeUndefined();
+        expect(body.data.nextCursor).toBe('opaque-cursor-string');
 
         const call = vi.mocked(replyService.listReplyFeed).mock.calls[0];
         expect(call[0]).toBe('v1');

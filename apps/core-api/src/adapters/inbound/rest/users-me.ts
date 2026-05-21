@@ -53,7 +53,7 @@ app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
             404,
         );
     }
-    return c.json(profile);
+    return c.json({ success: true, data: profile });
 });
 
 app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
@@ -175,18 +175,18 @@ app.get('/handle/available', requireAuth(), rateLimit(RATE_LIMITS.read), async (
     // a 25-char candidate would have passed availability but failed at claim.
     const parsed = ClaimHandleSchema.safeParse({ handle: c.req.query('candidate') });
     if (!parsed.success) {
-        return c.json({ available: false, reason: 'invalid' });
+        return c.json({ success: true, data: { available: false, reason: 'invalid' } });
     }
     const candidate = parsed.data.handle;
 
     const ownerUid = await firebaseUserDependencies.resolveHandle(candidate);
     if (!ownerUid) {
-        return c.json({ available: true });
+        return c.json({ success: true, data: { available: true } });
     }
     if (ownerUid === viewerUid) {
-        return c.json({ available: true, owned: true });
+        return c.json({ success: true, data: { available: true, owned: true } });
     }
-    return c.json({ available: false, reason: 'taken' });
+    return c.json({ success: true, data: { available: false, reason: 'taken' } });
 });
 
 /**
