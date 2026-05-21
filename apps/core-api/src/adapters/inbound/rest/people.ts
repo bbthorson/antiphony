@@ -168,7 +168,7 @@ app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     }
 
     await setCrmNotes(uid, handle, parsed.data);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 export { app as peopleRoute };

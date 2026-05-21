@@ -127,7 +127,7 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 app.delete('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     const uid = c.get('viewerUid')!;
     await callForwardingService.deleteConfig(uid);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 export { app as callForwardingRoute };

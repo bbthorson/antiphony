@@ -42,7 +42,7 @@ app.post('/register-token', requireAuth(), rateLimit(RATE_LIMITS.write), async (
     }
 
     await registerFcmToken(uid, parsed.data.token);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 app.post('/disable-token', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
@@ -64,7 +64,7 @@ app.post('/disable-token', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     }
 
     await disableFcmToken(uid, parsed.data.token);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 export { app as notificationsRoute };
