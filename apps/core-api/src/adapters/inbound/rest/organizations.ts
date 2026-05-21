@@ -401,7 +401,7 @@ app.patch('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write)
     }
 
     await organizationService.updateMemberRole(orgId, targetUserId, validation.data.role);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -428,7 +428,7 @@ app.delete('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write
     }
 
     await organizationService.removeMember(orgId, targetUserId);
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------

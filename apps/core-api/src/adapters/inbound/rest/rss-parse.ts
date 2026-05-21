@@ -18,10 +18,9 @@ import { rssService } from '../../outbound/firebase/core-services-firebase.js';
  * different paths.
  *
  * ## Response shape
- * Uses `{ status: 'success', data }` envelope (kept for backwards
- * compatibility with the older /utils/parse-rss handler). Not the
- * `{ success: true, data }` shape used elsewhere — a separate
- * error-shape standardization pass would fix this.
+ * `{ success: true, data: RssSummary }` — the standard core-api
+ * envelope. Migrated from `{ status: 'success', data }` in envelope
+ * Phase 1d so the same `apiData` helper unwraps every endpoint.
  *
  * Rate-limit: `RATE_LIMITS.hourly` with a fixed `rss_parse_<ip>`
  * custom key (one bucket per IP).
@@ -65,7 +64,7 @@ app.post(
         }
 
         return c.json({
-            status: 'success',
+            success: true,
             data: {
                 title: summary.title,
                 description: summary.description,

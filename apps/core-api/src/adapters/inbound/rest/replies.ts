@@ -368,7 +368,7 @@ app.patch('/:replyId/status', requireAuth(), rateLimit(RATE_LIMITS.write), async
     // both ServiceError subclasses, mapped to 404/403 by the error-handler.
     await replyService.updateReplyStatus(replyId, validation.data.status, uid);
 
-    return c.json({ status: 'success' });
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -525,7 +525,9 @@ app.post('/bulk-action', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
             break;
     }
 
-    return c.json({ status: 'success', count: replyIds.length });
+    // Drop the `count` echo — caller computes it from request input.
+    // `data: null` keeps the standard envelope.
+    return c.json({ success: true, data: null });
 });
 
 export { app as repliesRoute };

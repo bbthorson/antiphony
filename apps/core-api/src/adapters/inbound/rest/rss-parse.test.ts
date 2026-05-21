@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Tests for `POST /api/v1/rss/parse`.
  *
- * Matches apps/web's idiosyncratic success envelope (`{status: 'success', data}`).
+ * Uses the standard `{ success: true, data }` envelope post Phase 1d
+ * (was `{ status: 'success', data }` legacy shape).
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
@@ -45,7 +46,7 @@ describe('POST /api/v1/rss/parse', () => {
         vi.resetAllMocks();
     });
 
-    it("returns the normalized summary (note legacy `status: 'success'` envelope)", async () => {
+    it('returns the normalized summary under the standard envelope', async () => {
         vi.mocked(rssService.parseFeed).mockResolvedValue({
             title: 'Example Feed',
             description: 'About stuff',
@@ -63,8 +64,7 @@ describe('POST /api/v1/rss/parse', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        // NOT `success: true` — legacy /utils/parse-rss envelope, kept for compat.
-        expect(body.status).toBe('success');
+        expect(body.success).toBe(true);
         expect(body.data.title).toBe('Example Feed');
         expect(body.data.description).toBe('About stuff');
         expect(body.data.image).toBe('https://example.com/image.png');

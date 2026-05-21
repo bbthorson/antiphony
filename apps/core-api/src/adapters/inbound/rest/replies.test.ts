@@ -243,7 +243,7 @@ describe('PATCH /api/v1/replies/:replyId/status', () => {
         const res = await app().request('/api/v1/replies/r-99/status', jsonPatch({ status: 'archived' }));
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ status: 'success' });
+        expect(await res.json()).toEqual({ success: true, data: null });
         expect(replyService.updateReplyStatus).toHaveBeenCalledWith('r-99', 'archived', 'u-1');
     });
 
@@ -380,7 +380,7 @@ describe('POST /api/v1/replies/bulk-action', () => {
             jsonInit({ replyIds: ['r-1', 'r-2'], action: 'markRead' }),
         );
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ status: 'success', count: 2 });
+        expect(await res.json()).toEqual({ success: true, data: null });
         expect(replyService.bulkMarkRead).toHaveBeenCalledWith(['r-1', 'r-2'], 'u-b');
     });
 
