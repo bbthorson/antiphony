@@ -215,7 +215,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         }
     }
 
-    const responseBody = { success: true, promptId: created.id };
+    const responseBody = { success: true, data: { promptId: created.id } };
     await saveIdempotencyResult(c, responseBody);
 
     return c.json(responseBody);
@@ -283,7 +283,10 @@ app.patch('/:promptId/status', requireAuth(), rateLimit(RATE_LIMITS.write), asyn
 
     await promptService.updatePromptStatus(promptId, validation.data.status);
 
-    return c.json({ success: true, status: validation.data.status });
+    // Status echo dropped — callers don't read it; they already know
+    // what they sent. `data: null` keeps the response on the standard
+    // envelope so callers can use `*Data` helpers.
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -322,7 +325,10 @@ app.delete('/:promptId', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c)
 
     await promptService.deletePrompt(promptId);
 
-    return c.json({ success: true, message: 'Prompt deleted' });
+    // Drop the human-readable message — it was never read by callers
+    // (toast text is constructed client-side). `data: null` for the
+    // standard envelope.
+    return c.json({ success: true, data: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -344,14 +350,14 @@ app.post('/:promptId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (
         includeArchived: true,
     });
     if (replies.length === 0) {
-        return c.json({ success: true });
+        return c.json({ success: true, data: null });
     }
     await firebaseReplyDependencies.bulkMarkRepliesRead(
         replies.map((r) => r.id),
         uid,
     );
 
-    return c.json({ success: true });
+    return c.json({ success: true, data: null });
 });
 
 export { app as promptsRoute };

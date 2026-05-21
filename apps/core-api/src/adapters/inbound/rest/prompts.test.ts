@@ -270,7 +270,7 @@ describe('POST /api/v1/prompts', () => {
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body).toEqual({ success: true, promptId: 'p-new' });
+        expect(body).toEqual({ success: true, data: { promptId: 'p-new' } });
         expect(promptService.validateAndCreatePrompt).toHaveBeenCalledWith({
             title: 'Hello prompt',
             description: '',
@@ -385,7 +385,7 @@ describe('PATCH /api/v1/prompts/:promptId/status', () => {
 
         const res = await app().request('/api/v1/prompts/p-1/status', jsonReq({ status: 'archived' }, 'PATCH'));
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true, status: 'archived' });
+        expect(await res.json()).toEqual({ success: true, data: null });
     });
 
     it('allows an org member (author treated as org id)', async () => {
@@ -473,7 +473,7 @@ describe('POST /api/v1/prompts/:promptId/read', () => {
             headers: { authorization: 'Bearer ok' },
         });
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true });
+        expect(await res.json()).toEqual({ success: true, data: null });
         expect(firebaseReplyDependencies.bulkMarkRepliesRead).not.toHaveBeenCalled();
     });
 
