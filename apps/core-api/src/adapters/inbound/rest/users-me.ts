@@ -215,7 +215,14 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         await db.runTransaction(async (t) => {
             const handleRef = db.collection('handles').doc(handle);
             const userRef = db.collection('users').doc(uid);
-            const handleDoc = await t.get(handleRef);
+
+            // All reads must happen before any writes inside a Firestore
+            // transaction. Parallel via Promise.all — two independent docs.
+            const [handleDoc, userDoc] = await Promise.all([
+                t.get(handleRef),
+                t.get(userRef),
+            ]);
+            const oldHandle = userDoc.data()?.handle as string | undefined;
 
             if (handleDoc.exists) {
                 const ownerUid = handleDoc.data()?.uid;
@@ -229,6 +236,17 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
                     uid,
                     createdAt: admin.firestore.Timestamp.now(),
                 });
+            }
+
+            // Rename case: delete the orphaned `handles/{oldHandle}` doc so
+            // it can be reclaimed (by this user or another). Pre-fix bug —
+            // flagged by Gemini on PR #380 and tracked in
+            // `memory/project_handle_rename_orphan_bug.md`. Skip when:
+            //   - First claim ever (no prior handle on the user doc).
+            //   - No-op affirmation (new handle equals old, e.g. a UI that
+            //     re-POSTs on focus).
+            if (oldHandle && oldHandle !== handle) {
+                t.delete(db.collection('handles').doc(oldHandle));
             }
 
             t.set(

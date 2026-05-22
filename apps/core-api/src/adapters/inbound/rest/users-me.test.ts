@@ -43,6 +43,12 @@ vi.mock('../../../lib/auth/session-verifier.js', () => ({
     sessionVerifier: { verifyToken: vi.fn() },
 }));
 
+// Pre-transaction `db.collection(name).where(...).limit(...).get()` calls
+// (e.g. the org-slug conflict check in POST /handle) resolve to empty
+// by default. Tests that need to simulate a conflict can override
+// `collectionWhereGet`.
+const collectionWhereGet = vi.fn().mockResolvedValue({ empty: true, docs: [] });
+
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: (name: string) => ({
@@ -52,6 +58,11 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
                 get: () => userDocGet(name, id),
                 update: (patch: unknown) => userDocUpdate(name, id, patch),
                 delete: () => handleDocDelete(name, id),
+            }),
+            where: () => ({
+                limit: () => ({
+                    get: () => collectionWhereGet(name),
+                }),
             }),
         }),
         runTransaction: async (fn: (t: unknown) => Promise<unknown>) =>
@@ -304,6 +315,161 @@ describe('PATCH /api/v1/users/me', () => {
         });
 
         expect(res.status).toBe(409);
+    });
+});
+
+describe('POST /api/v1/users/me/handle', () => {
+    /**
+     * Tests cover the three states the handler distinguishes plus the
+     * handle-rename orphan-cleanup fix:
+     *
+     *   1. First claim — user doc has no prior handle. Old-handle delete
+     *      should NOT fire (nothing to clean up).
+     *   2. No-op re-claim — user's existing handle matches the request.
+     *      Old-handle delete should NOT fire (would orphan the same doc
+     *      it's preserving).
+     *   3. Rename — user has handle "old", requests "new". Old-handle
+     *      delete MUST fire; this is the bug the fix addresses
+     *      (`memory/project_handle_rename_orphan_bug.md`).
+     *   4. Handle already taken by someone else — 409.
+     *
+     * Org-slug pre-check + ensureDefaultOrgMembership are mocked away;
+     * they're tested in coverage at the service layer.
+     */
+
+    // Stub the pre-transaction org-slug query — empty result means no conflict.
+    // The handler reaches it via `db.collection('organizations').where(...).limit(1).get()`.
+    // The default `vi.mock` for firebase-admin above sets collection().doc() but
+    // not collection().where(); we override with a richer mock per test if needed.
+
+    beforeEach(() => {
+        vi.resetAllMocks();
+        userDocGet.mockReset();
+        txUserDocGet.mockReset();
+        txUpdate.mockReset();
+        txDelete.mockReset();
+        userDocUpdate.mockReset();
+        handleDocDelete.mockReset();
+        // `vi.resetAllMocks` wipes `mockResolvedValue` defaults. Restore the
+        // org-slug pre-check default → no conflict (empty result).
+        collectionWhereGet.mockResolvedValue({ empty: true, docs: [] });
+    });
+
+    /** Common txUserDocGet wiring: returns the handle doc + user doc based on collection name. */
+    function setupTxGets(args: {
+        handleTaken?: boolean;
+        handleOwner?: string;
+        oldHandleOnUser?: string;
+    }) {
+        const { handleTaken = false, handleOwner, oldHandleOnUser } = args;
+        txUserDocGet.mockImplementation((name: string) => {
+            if (name === 'handles') {
+                return Promise.resolve(
+                    handleTaken
+                        ? { exists: true, data: () => ({ uid: handleOwner }) }
+                        : { exists: false, data: () => undefined },
+                );
+            }
+            if (name === 'users') {
+                return Promise.resolve({
+                    data: () => (oldHandleOnUser ? { handle: oldHandleOnUser } : {}),
+                });
+            }
+            return Promise.resolve({ exists: false, data: () => undefined });
+        });
+    }
+
+    /** Mock the apps/core-api db so the pre-transaction `organizations.where().limit().get()` returns empty. */
+    async function postHandle(body: unknown, token = 'ok'): Promise<Response> {
+        // The default mock returned `db.collection(name).doc(id)` only; the
+        // POST /handle pre-transaction also calls
+        // `db.collection('organizations').where('slug', '==', x).limit(1).get()`.
+        // That isn't part of the default mock, so the handler currently throws
+        // when this code path is exercised. We patch it in via a one-shot
+        // module override using vi.doMock just before the request — but that
+        // requires re-importing the app. Simpler: rely on the existing mock
+        // (collection().doc() works), and the org-slug check throws a
+        // TypeError that's caught by the handler's outer try/catch as a
+        // generic 500. That makes some assertions awkward.
+        //
+        // To keep the assertions clean, the test below uses vi.doMock to
+        // extend the firebase-admin mock per-test.
+        return app().request('/api/v1/users/me/handle', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
+    }
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/users/me/handle', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ handle: 'something' }),
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s on invalid handle format', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-rename' });
+        const res = await postHandle({ handle: 'a' }); // < min length
+        expect(res.status).toBe(400);
+    });
+
+    it('rename: deletes the old handle doc and reserves the new (orphan-cleanup fix)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-rename' });
+        setupTxGets({ handleTaken: false, oldHandleOnUser: 'oldname' });
+
+        const res = await postHandle({ handle: 'newname' });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        expect(body.data.handle).toBe('newname');
+        // The fix: the orphan delete MUST fire on rename.
+        expect(txDelete).toHaveBeenCalledWith('handles', 'oldname');
+    });
+
+    it('first claim: no old handle, no delete fires', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-first' });
+        setupTxGets({ handleTaken: false /* oldHandleOnUser undefined */ });
+
+        const res = await postHandle({ handle: 'newuser' });
+
+        expect(res.status).toBe(200);
+        expect(txDelete).not.toHaveBeenCalled();
+    });
+
+    it('no-op re-claim of viewer\'s own handle: no delete (would orphan the doc the handler preserves)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-same' });
+        setupTxGets({
+            handleTaken: true,
+            handleOwner: 'u-same',
+            oldHandleOnUser: 'samename',
+        });
+
+        const res = await postHandle({ handle: 'samename' });
+
+        expect(res.status).toBe(200);
+        expect(txDelete).not.toHaveBeenCalled();
+    });
+
+    it('409s when the handle is taken by another user', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-rejected' });
+        setupTxGets({
+            handleTaken: true,
+            handleOwner: 'someone-else',
+            oldHandleOnUser: 'whatever',
+        });
+
+        const res = await postHandle({ handle: 'taken' });
+
+        expect(res.status).toBe(409);
+        // Mustn't have deleted the old handle on the rejection path.
+        expect(txDelete).not.toHaveBeenCalled();
     });
 });
 

@@ -24,6 +24,7 @@ import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
+import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -145,6 +146,10 @@ export function app(): Hono {
     a.route('/api/v1/notifications', notificationsRoute);
     a.route('/api/v1/call-forwarding', callForwardingLookupRoute);
     a.route('/api/v1/system/replies', systemRepliesRoute);
+    // PR-F3b stage 1: apps/web's rate-limit shim calls this endpoint
+    // (system-auth) instead of touching Firestore directly, so apps/web
+    // doesn't need firebase-admin for rate-limiting.
+    a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
