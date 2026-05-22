@@ -63,7 +63,7 @@ env:
     # See apps/core-api/src/app.ts:parseAllowedOrigins +
     # specs/client-caller-split.md.
     - variable: ALLOWED_ORIGINS
-      value: "https://voxpop.phonicfactory.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app,http://localhost:9002"
+      value: "https://voxpop.phonicfactory.com,https://embed.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app,http://localhost:9002,http://localhost:5173"
       availability:
           - RUNTIME
     # Shared secret used by apps/telephony to authenticate
