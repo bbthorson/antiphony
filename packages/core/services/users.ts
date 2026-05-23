@@ -171,4 +171,13 @@ export class UserService {
     async disconnectAtproto(uid: string): Promise<void> {
         await this.deps.removeBlueskyIdentity(uid);
     }
+
+    /**
+     * Write the AT Protocol identity to a user's profile after a
+     * successful OAuth callback. Called by the system-auth endpoint
+     * that apps/web's `/api/v1/atproto/callback` route hits post-flow.
+     */
+    async setBlueskyIdentity(uid: string, identity: { handle: string; did: string }): Promise<void> {
+        await this.deps.setBlueskyIdentity(uid, identity);
+    }
 }

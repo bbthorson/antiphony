@@ -97,5 +97,14 @@ export interface UserDependencies {
      */
     removeBlueskyIdentity(uid: string): Promise<void>;
 
+    /**
+     * Write the AT Protocol identity to a user's profile post-OAuth-
+     * callback. `handle` is the user-supplied Bluesky handle (validated
+     * by the PDS during auth); `did` is the durable identifier the
+     * PDS returns. Last-write-wins: relinking from a different handle
+     * overwrites the previous binding.
+     */
+    setBlueskyIdentity(uid: string, identity: { handle: string; did: string }): Promise<void>;
+
     now(): Date;
 }
