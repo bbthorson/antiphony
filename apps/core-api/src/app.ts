@@ -25,6 +25,8 @@ import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
+import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
+import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
 
 /**
  * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
@@ -150,6 +152,8 @@ export function app(): Hono {
     // (system-auth) instead of touching Firestore directly, so apps/web
     // doesn't need firebase-admin for rate-limiting.
     a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
+    a.route('/api/v1/atproto', atprotoRoute);
+    a.route('/api/v1/system/atproto-state', systemAtprotoStateRoute);
 
     // 5. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

@@ -286,6 +286,17 @@ export const firebaseUserDependencies: UserDependencies = {
         }
     },
 
+    async removeBlueskyIdentity(uid: string) {
+        // FieldValue.delete() removes just the `bluesky` field rather
+        // than the whole doc. Idempotent — Firestore `update` with a
+        // delete-sentinel on a missing field is a no-op (the doc must
+        // exist; missing-doc throws NOT_FOUND, which the caller treats
+        // as "nothing to disconnect" via the same idempotency contract).
+        await usersCollection().doc(uid).update({
+            bluesky: admin.firestore.FieldValue.delete(),
+        });
+    },
+
     async updateUserProfile(uid: string, updates: UpdateProfileDto) {
         const db = getAdminDb();
         await db.runTransaction(async (t) => {

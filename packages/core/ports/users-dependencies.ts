@@ -88,5 +88,14 @@ export interface UserDependencies {
      */
     updateUserProfile(uid: string, updates: UpdateProfileDto): Promise<void>;
 
+    /**
+     * Remove the linked AT Protocol identity from a user's profile by
+     * deleting the `bluesky` field on the user record. Idempotent —
+     * calling on a user with no `bluesky` field is a no-op (Firestore
+     * `update` with a field-delete sentinel doesn't error on a missing
+     * field).
+     */
+    removeBlueskyIdentity(uid: string): Promise<void>;
+
     now(): Date;
 }
