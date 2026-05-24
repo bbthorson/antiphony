@@ -18,7 +18,7 @@
     "@vox-pop/core": "*",
     "@vox-pop/shared": "*",
     "firebase-admin": "^13.6.0",
-    "hono": "^4.6.0",
+    "hono": "^4.12.22",
     "pino": "^9.5.0",
     "rss-parser": "^3.13.0",
     "zod": "^3.24.1"
