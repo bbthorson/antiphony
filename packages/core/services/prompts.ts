@@ -37,15 +37,6 @@ export class PromptService {
     ) {}
 
     /**
-     * Fetches all prompts created by a specific user.
-     * @param userId - The ID of the user whose prompts to fetch.
-     * @returns A promise that resolves to an array of the user's prompts.
-     */
-    async getAllUserPrompts(userId: string): Promise<PromptView[]> {
-        return this.getPromptsForUser(userId, 100); // Default to 100 for backward compatibility
-    }
-
-    /**
      * Fetches prompts for a user with pagination.
      */
     async getPromptsForUser(userId: string, limit: number = 20, lastPromptId?: string, publicOnly: boolean = false): Promise<PromptView[]> {

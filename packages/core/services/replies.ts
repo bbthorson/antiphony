@@ -332,10 +332,6 @@ export class ReplyService {
         return allReplies;
     }
 
-    getNewId(): string {
-        return this.deps.newReplyId();
-    }
-
     /**
      * Orchestrates the creation of a reply: ensures user profile exists,
      * validates the candidate record, then delegates the atomic write
