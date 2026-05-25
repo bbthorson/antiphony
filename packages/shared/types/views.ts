@@ -351,7 +351,6 @@ export const ReplyViewPublicSchema = ReplyViewSchema.omit({
     listenerPhoneNumber: true,
     notes: true,
     // AI cluster — only `transcription` survives.
-    aiScore: true,
     aiStatus: true,
     aiError: true,
     aiSummary: true,
@@ -384,7 +383,6 @@ export function toReplyViewPublic(reply: ReplyView): ReplyViewPublic {
         listenerPhoneNumber,
         notes,
         // AI cluster (only transcription stays public)
-        aiScore,
         aiStatus,
         aiError,
         aiSummary,

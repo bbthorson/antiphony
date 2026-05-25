@@ -48,7 +48,6 @@ function fullReplyView(): ReplyView {
         isDeleted: false,
         readBy: [],
         // Lifted private fields (the strip targets)
-        aiScore: 0.7,
         aiStatus: 'complete',
         aiError: undefined,
         aiSummary: 'A summary',
@@ -80,7 +79,6 @@ describe('toReplyViewPublic', () => {
     it('strips the entire private AI cluster (everything except transcription)', () => {
         const out = toReplyViewPublic(fullReplyView()) as Record<string, unknown>;
         // Private AI fields — must all be absent.
-        expect(out.aiScore).toBeUndefined();
         expect(out.aiStatus).toBeUndefined();
         expect(out.aiError).toBeUndefined();
         expect(out.aiSummary).toBeUndefined();
