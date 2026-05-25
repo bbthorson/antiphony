@@ -207,7 +207,6 @@ export const PromptViewSchema = z.object({
         reason: z.string().optional(),
     }).optional(),
     // AI Enrichment Fields (Hydrated from Record but hidden from Record Schema)
-    aiScore: z.number().optional(),
     aiLabels: z.array(z.string()).optional(),
     aiSummary: z.string().optional(),
     aiStatus: z.enum(['pending', 'complete', 'error']).optional(),
@@ -230,7 +229,6 @@ export type PromptView = z.infer<typeof PromptViewSchema>;
 export const PromptViewPublicSchema = PromptViewSchema.omit({
     analytics: true,
     moderation: true,
-    aiScore: true,
     aiLabels: true,
     aiSummary: true,
     aiStatus: true,
@@ -254,7 +252,7 @@ export type PromptViewPublic = z.infer<typeof PromptViewPublicSchema>;
  */
 export function toPromptViewPublic(prompt: PromptView): PromptViewPublic {
     /* eslint-disable @typescript-eslint/no-unused-vars */
-    const { analytics, moderation, aiScore, aiLabels, aiSummary, aiStatus, aiError, transcription, ...rest } = prompt;
+    const { analytics, moderation, aiLabels, aiSummary, aiStatus, aiError, transcription, ...rest } = prompt;
     /* eslint-enable @typescript-eslint/no-unused-vars */
     // Delegate author projection to `toProfileViewBasic` — it owns the
     // public-vs-private gates (notably `showBlueskyPublicly`). Manual
@@ -287,7 +285,6 @@ export const ReplyViewSchema = z.object({
         reason: z.string().optional(),
     }).optional(),
     // AI Enrichment Fields (Hydrated from Record but hidden from Record Schema)
-    aiScore: z.number().optional(),
     aiLabels: z.array(z.string()).optional(),
     aiSummary: z.string().optional(),
     aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
