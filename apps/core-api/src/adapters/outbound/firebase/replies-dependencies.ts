@@ -38,12 +38,14 @@ const increment = (delta: number) => admin.firestore.FieldValue.increment(delta)
 /**
  * Firebase-wired `ReplyDependencies` binding for core-api.
  *
- * **Scope as of this PR**: all methods implemented. Reply create
+ * **Scope**: all methods implemented. Reply create
  * (`createReplyWithCounterIncrement` + `newReplyId` + `newActivityId`)
  * landed in A4.2 alongside `POST /api/v1/replies`.
  *
- * Parity source: `apps/web/src/services/replies-dependencies.ts`. Logic is
- * mirrored directly; only imports differ (no `server-only`; pino not Winston).
+ * Sole Firestore binding for replies as of Phase 4a — the apps/web copy
+ * was retired with the HTTP-transport flip (apps/web reads replies via
+ * HTTP from core-api, not in-process Firestore). This file is the source
+ * of truth for reply data-layer semantics.
  */
 
 function repliesCollection() {

@@ -1,4 +1,4 @@
-import { ReplyRecord, ReplyView, ProfileView, PromptView, PromptRecordSchema } from 'shared/types';
+import { ReplyRecord, ReplyView, ProfileView, PromptView, PromptRecordSchema, ReplyEnrichmentRecord } from 'shared/types';
 import { OrganizationRecord, OrganizationMemberRecord, OrgInviteRecord } from 'shared/types/records';
 import { OrganizationView, OrganizationMemberView, OrgInviteView } from 'shared/types/views';
 import { PromptDocument } from 'shared/types/storage';
@@ -91,18 +91,26 @@ export class HydrationService {
     /**
      * Hydrates a single ReplyRecord into a ReplyView using the injected loaders.
      *
-     * `preloadedNotes` — viewer-private notes lifted from the
-     * `enrichments/replies/{id}` namespace. Pass when the caller has already
-     * batch-fetched enrichments (the list-hydration paths do this for the
-     * prompt author). Leave undefined for non-author viewers; the field
-     * stays undefined on the view and is also defensively stripped by
-     * `toReplyViewPublic`.
+     * `preloadedEnrichment` — the reply's enrichment record from the
+     * `enrichments/replies/items/{id}` namespace. Pass when the caller
+     * has already batch-fetched enrichments (the list-hydration paths
+     * do this for the prompt author). Leave undefined for non-author
+     * viewers; the lifted private fields (notes, AI cluster,
+     * socialVideo*) stay undefined on the view and are also defensively
+     * stripped by `toReplyViewPublic`.
+     *
+     * AI-enrichment precedence: when both the enrichment doc and the
+     * canonical record carry the same field (during Stages 2–3 of the
+     * AI-enrichment split where functions/ dual-writes), the enrichment
+     * value wins. During Stage 1 the enrichment doc only has `notes`,
+     * so all AI fields fall through to canonical — unchanged behavior.
+     * See `specs/ai-enrichment-split.md` § 3.
      */
     async hydrateReply(
         record: ReplyRecord,
         knownRecipient?: ProfileView,
         preloadedAuthor?: ProfileView | null,
-        preloadedNotes?: string,
+        preloadedEnrichment?: ReplyEnrichmentRecord,
     ): Promise<ReplyView | null> {
         let author: ProfileView | null | undefined = preloadedAuthor;
         if (author === undefined) {
@@ -143,34 +151,47 @@ export class HydrationService {
             readBy: [],
             // Audio duration (seconds) — populated by the transcribeAndScore trigger
             duration: record.audioDurationSec,
-            // AI Enrichment — lift from record to view
-            transcription: record.transcription,
-            sentiment: record.sentiment,
-            energyLevel: record.energyLevel,
-            engagementScore: record.engagementScore,
-            aiStatus: record.aiStatus,
-            aiError: record.aiError,
-            aiSummary: record.aiSummary,
-            aiLabels: record.aiLabels,
+            // AI enrichment — enrichment doc wins where present (Stage 2+
+            // dual-write populates this; Stage 4 strips canonical). During
+            // Stage 1 the enrichment only has `notes`, so AI fields fall
+            // through to canonical — unchanged behavior.
+            transcription: preloadedEnrichment?.transcription ?? record.transcription,
+            sentiment: preloadedEnrichment?.sentiment ?? record.sentiment,
+            energyLevel: preloadedEnrichment?.energyLevel ?? record.energyLevel,
+            engagementScore: preloadedEnrichment?.engagementScore ?? record.engagementScore,
+            aiStatus: preloadedEnrichment?.aiStatus ?? record.aiStatus,
+            aiError: preloadedEnrichment?.aiError ?? record.aiError,
+            aiSummary: preloadedEnrichment?.aiSummary ?? record.aiSummary,
+            aiLabels: preloadedEnrichment?.aiLabels ?? record.aiLabels,
+            // Voice isolation (paid tier) — same precedence rule.
+            enhancedAudioUrl: preloadedEnrichment?.enhancedAudioUrl ?? record.enhancedAudioUrl,
+            enhancedStoragePath: preloadedEnrichment?.enhancedStoragePath ?? record.enhancedStoragePath,
+            // Social-share video (paid tier, creator-only) — same precedence rule.
+            socialVideoUrl: preloadedEnrichment?.socialVideoUrl ?? record.socialVideoUrl,
+            socialVideoStoragePath: preloadedEnrichment?.socialVideoStoragePath ?? record.socialVideoStoragePath,
+            socialVideoStatus: preloadedEnrichment?.socialVideoStatus ?? record.socialVideoStatus,
+            socialVideoError: preloadedEnrichment?.socialVideoError ?? record.socialVideoError,
+            socialVideoSourceAudio: preloadedEnrichment?.socialVideoSourceAudio ?? record.socialVideoSourceAudio,
             // CRM enrichment — populated only when the caller has author privileges
-            notes: preloadedNotes,
+            notes: preloadedEnrichment?.notes,
         };
     }
 
     /**
-     * Batch-loads CRM enrichment notes for a set of replies. Returns a Map
-     * keyed by replyId — replies with no enrichment doc (or no `notes`
-     * field) are simply absent. Shared by `hydrateReplies` and
-     * `hydrateRepliesWithRecipient`; caller guards on `includePrivateData`
-     * before invoking.
+     * Batch-loads full enrichment records for a set of replies. Returns a
+     * Map keyed by replyId — replies with no enrichment doc are simply
+     * absent. Shared by `hydrateReplies` and `hydrateRepliesWithRecipient`;
+     * caller guards on `includePrivateData` before invoking.
+     *
+     * Pulls the full enrichment record (not just `notes`) so the hydrator
+     * can apply enrichment-precedence to lifted AI / voice-isolation /
+     * social-video fields during Stages 2–4 of the AI-enrichment split.
+     * See `specs/ai-enrichment-split.md` § 3.
      */
-    private async fetchEnrichmentNotes(records: ReplyRecord[]): Promise<Map<string, string>> {
-        const enrichments = await this.deps.getReplyEnrichmentsByIds(records.map(r => r.id));
-        const notesMap = new Map<string, string>();
-        for (const [replyId, enrichment] of enrichments) {
-            if (enrichment.notes !== undefined) notesMap.set(replyId, enrichment.notes);
-        }
-        return notesMap;
+    private async fetchEnrichmentsForReplies(
+        records: ReplyRecord[],
+    ): Promise<Map<string, ReplyEnrichmentRecord>> {
+        return await this.deps.getReplyEnrichmentsByIds(records.map(r => r.id));
     }
 
     /**
@@ -182,7 +203,7 @@ export class HydrationService {
         options?: { includePrivateData?: boolean },
     ): Promise<{
         authorMap: Map<string, ProfileView>;
-        notesMap?: Map<string, string>;
+        enrichmentsMap?: Map<string, ReplyEnrichmentRecord>;
     }> {
         if (!records.length) {
             return { authorMap: new Map() };
@@ -194,12 +215,12 @@ export class HydrationService {
         });
         const authorMap = new Map(profiles.map(p => [p.id, p]));
 
-        let notesMap: Map<string, string> | undefined;
+        let enrichmentsMap: Map<string, ReplyEnrichmentRecord> | undefined;
         if (options?.includePrivateData) {
-            notesMap = await this.fetchEnrichmentNotes(records);
+            enrichmentsMap = await this.fetchEnrichmentsForReplies(records);
         }
 
-        return { authorMap, notesMap };
+        return { authorMap, enrichmentsMap };
     }
 
     /**
@@ -208,12 +229,12 @@ export class HydrationService {
     async hydrateReplies(records: ReplyRecord[], options?: { includePrivateData?: boolean }): Promise<ReplyView[]> {
         if (!records.length) return [];
 
-        const { authorMap, notesMap } = await this.preloadHydrationResources(records, options);
+        const { authorMap, enrichmentsMap } = await this.preloadHydrationResources(records, options);
 
         const views = await Promise.all(records.map(r => {
             const author = authorMap.get(r.authorId) || null;
-            const notes = notesMap?.get(r.id);
-            return this.hydrateReply(r, undefined, author, notes);
+            const enrichment = enrichmentsMap?.get(r.id);
+            return this.hydrateReply(r, undefined, author, enrichment);
         }));
         return views.filter((v): v is ReplyView => v !== null);
     }
@@ -225,12 +246,12 @@ export class HydrationService {
     ): Promise<ReplyView[]> {
         if (!records.length) return [];
 
-        const { authorMap, notesMap } = await this.preloadHydrationResources(records, options);
+        const { authorMap, enrichmentsMap } = await this.preloadHydrationResources(records, options);
 
         const views = await Promise.all(records.map(r => {
             const author = authorMap.get(r.authorId) || null;
-            const notes = notesMap?.get(r.id);
-            return this.hydrateReply(r, recipient, author, notes);
+            const enrichment = enrichmentsMap?.get(r.id);
+            return this.hydrateReply(r, recipient, author, enrichment);
         }));
         return views.filter((v): v is ReplyView => v !== null);
     }

@@ -81,7 +81,9 @@ export function computeAggregateDelta(
  * ReplyDependencies is the portable interface that ReplyService uses to access
  * the underlying data store. Lives in `packages/core/` alongside the class;
  * the Firestore-backed default implementation lives in
- * `apps/web/src/services/replies-dependencies.ts` as the binding.
+ * `apps/core-api/src/adapters/outbound/firebase/replies-dependencies.ts` as
+ * the binding. (Pre-Phase-4a there was also an apps/web binding; that's
+ * gone — apps/web is a pure HTTP client of core-api now.)
  *
  * Transactions: rather than exposing a generic `runTransaction(fn)` that
  * would leak Firestore-specific semantics into the service, the one atomic
