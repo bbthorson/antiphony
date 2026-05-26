@@ -209,9 +209,15 @@ export class ReplyService {
     async searchReplies(userId: string, query: string, filters?: ReplyFeedFilters): Promise<ReplyView[]> {
         const replies = await this.loadAndFilterReplies(userId, filters);
         const lowerQuery = query.toLowerCase();
+        // Stage 3 of `specs/ai-enrichment-split.md`: read transcription
+        // from the lifted top-level field only. The hydrator sources it
+        // from the enrichment doc (with fallback to canonical during
+        // Stages 2–3), so the previous canonical-fallback OR-check is
+        // redundant. Stage 4 will remove `transcription` from
+        // `ReplyRecord`, at which point the canonical access would have
+        // failed typecheck anyway.
         return replies.filter(r =>
-            r.transcription?.toLowerCase().includes(lowerQuery) ||
-            r.record.transcription?.toLowerCase().includes(lowerQuery)
+            r.transcription?.toLowerCase().includes(lowerQuery) ?? false,
         );
     }
 
