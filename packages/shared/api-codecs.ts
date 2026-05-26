@@ -1,18 +1,6 @@
 import { z } from 'zod';
 import { CallForwardingConfigSchema } from './types/records';
 
-export const CheckPhoneRequestSchema = z.object({
-  phoneNumber: z.string().max(20),
-});
-
-export const SubmitReplyRequestSchema = z.object({
-  phoneNumber: z.string().max(20),
-  otp: z.string().max(10),
-  audioUrl: z.string().url(),
-  promptId: z.string(),
-  userId: z.string(),
-});
-
 export const CreatePromptRequestSchema = z.object({
   title: z.string().min(3).max(100),
   description: z.string().max(1000).optional(),
