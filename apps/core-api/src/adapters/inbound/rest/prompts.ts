@@ -149,9 +149,12 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         throw err;
     }
 
-    // Body parsing. apps/web supports JSON + multipart; core-api accepts JSON
-    // only — apps/web is already a pure HTTP client at the post-flip point, so
-    // the multipart path (legacy hosted form) has no remaining callers.
+    // Body parsing. JSON-only — multipart was dropped in PR #413 (hexagonal
+    // refactor) on the assumption that apps/web had migrated to JSON. The
+    // dashboard's `use-prompt-creation.ts` was still sending FormData
+    // through 2026-05-26; that broke every prompt create with 400
+    // "Invalid JSON body" until the client switched to
+    // `authenticatedApi.postData` (this commit's companion fix).
     let rawData: unknown;
     try {
         rawData = await c.req.json();
