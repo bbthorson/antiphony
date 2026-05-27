@@ -80,6 +80,38 @@ function parseReplyEnrichmentDoc(
 }
 
 /**
+ * Batch-fetch reply enrichment records by id. Module-level so both the
+ * `getReplyEnrichmentsByIds` binding method and the aggregate-maintenance
+ * path (`bulkUpdateRepliesStatusWithAggregates`) can use it — the latter
+ * needs the AI fields (aiStatus / sentiment / engagementScore), which live
+ * in the enrichment namespace as of the AI-enrichment split. Chunks by
+ * Firestore getAll's 1000-ref cap; missing/invalid docs are simply absent.
+ */
+async function fetchReplyEnrichmentsByIds(
+    replyIds: string[],
+): Promise<Map<string, ReplyEnrichmentRecord>> {
+    const map = new Map<string, ReplyEnrichmentRecord>();
+    if (replyIds.length === 0) return map;
+
+    // Filter empty/whitespace ids (`doc('')` throws at ref construction) and
+    // dedupe before the getAll — matches the sanitization in `getRepliesByIds`.
+    const uniqueIds = Array.from(new Set(replyIds.filter((id) => id && id.trim())));
+    if (uniqueIds.length === 0) return map;
+
+    const refs = uniqueIds.map((id) => replyEnrichmentsCollection().doc(id));
+    for (let i = 0; i < refs.length; i += FIRESTORE_GETALL_LIMIT) {
+        const chunk = refs.slice(i, i + FIRESTORE_GETALL_LIMIT);
+        const docs = await getAdminDb().getAll(...chunk);
+        for (const doc of docs) {
+            if (!doc.exists) continue;
+            const parsed = parseReplyEnrichmentDoc(doc);
+            if (parsed) map.set(doc.id, parsed);
+        }
+    }
+    return map;
+}
+
+/**
  * Applies the data-layer filters used by all reply reads:
  *   - deleted replies are always excluded
  *   - archived replies are excluded unless explicitly requested
@@ -224,11 +256,22 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         const db = getAdminDb();
         await db.runTransaction(async (t) => {
             const replyRef = repliesCollection().doc(prevReply.id);
-            const replyDoc = await t.get(replyRef);
+            const enrichmentRef = replyEnrichmentsCollection().doc(prevReply.id);
+            // All reads before writes (Firestore txn rule). The AI fields the
+            // aggregate delta needs (aiStatus / sentiment / engagementScore)
+            // live in the enrichment doc as of the AI-enrichment split. Read
+            // enrichment-first with a canonical fallback so this stays
+            // behavior-preserving during the dual-write window (Stage 4b-i);
+            // Stage 4b-ii drops the canonical fallback once dual-write stops.
+            const [replyDoc, enrichmentDoc] = await Promise.all([
+                t.get(replyRef),
+                t.get(enrichmentRef),
+            ]);
             if (!replyDoc.exists) {
                 throw new NotFoundError(`Reply ${prevReply.id} not found.`);
             }
             const currentReplyData = replyDoc.data() ?? {};
+            const enrichmentData = enrichmentDoc.exists ? (enrichmentDoc.data() ?? {}) : {};
             const currentStatus = (currentReplyData.status as string | undefined) ?? 'live';
 
             t.update(replyRef, { status: nextStatus });
@@ -236,9 +279,9 @@ export const firebaseReplyDependencies: ReplyDependencies = {
             const aggregateDelta = computeAggregateDelta(
                 currentStatus,
                 nextStatus,
-                currentReplyData.aiStatus,
-                currentReplyData.sentiment,
-                currentReplyData.engagementScore,
+                enrichmentData.aiStatus ?? currentReplyData.aiStatus,
+                enrichmentData.sentiment ?? currentReplyData.sentiment,
+                enrichmentData.engagementScore ?? currentReplyData.engagementScore,
                 increment,
             );
             if (!aggregateDelta) return;
@@ -251,17 +294,31 @@ export const firebaseReplyDependencies: ReplyDependencies = {
     async bulkUpdateRepliesStatusWithAggregates(prevReplies, nextStatus) {
         if (prevReplies.length === 0) return;
 
+        // The AI fields the delta computation needs (aiStatus / sentiment /
+        // engagementScore) live in the enrichment docs as of the
+        // AI-enrichment split. Batch-fetch them so the delta reads from the
+        // right place — enrichment-first with a canonical fallback so this
+        // stays behavior-preserving during the dual-write window (Stage 4b-i).
+        // Stage 4b-ii drops the canonical fallback once dual-write stops (and
+        // the schema strip makes `prev.aiStatus` etc. unavailable anyway).
+        const enrichments = await fetchReplyEnrichmentsByIds(prevReplies.map((r) => r.id));
+
         // Per-prompt aggregate deltas, computed from the caller-supplied prev
         // state. Skips replies that don't contribute (no AI enrichment, or
         // archived ↔ deleted moves that don't cross the live boundary).
         const deltasByPrompt = new Map<string, AggregateDeltaAccumulator>();
         for (const prev of prevReplies) {
+            const e = enrichments.get(prev.id);
+            const aiStatus = e?.aiStatus ?? prev.aiStatus;
+            const engagementScore = e?.engagementScore ?? prev.engagementScore;
+            const sentiment = e?.sentiment ?? prev.sentiment;
+
             const wasLive = prev.status === 'live';
             const isLive = nextStatus === 'live';
             if (wasLive === isLive) continue;
-            if (prev.aiStatus !== 'complete') continue;
-            if (typeof prev.engagementScore !== 'number') continue;
-            const sk = sentimentKey(prev.sentiment);
+            if (aiStatus !== 'complete') continue;
+            if (typeof engagementScore !== 'number') continue;
+            const sk = sentimentKey(sentiment);
             if (!sk) continue;
 
             const sign = isLive ? 1 : -1;
@@ -272,7 +329,7 @@ export const firebaseReplyDependencies: ReplyDependencies = {
                 neutral: 0,
                 negative: 0,
             };
-            acc.sumDelta += sign * prev.engagementScore;
+            acc.sumDelta += sign * engagementScore;
             acc.countDelta += sign;
             acc[sk] += sign;
             deltasByPrompt.set(prev.promptId, acc);
@@ -366,21 +423,7 @@ export const firebaseReplyDependencies: ReplyDependencies = {
     },
 
     async getReplyEnrichmentsByIds(replyIds) {
-        const map = new Map<string, ReplyEnrichmentRecord>();
-        if (replyIds.length === 0) return map;
-
-        // Chunk by Firestore getAll's 1000-ref cap.
-        const refs = replyIds.map((id) => replyEnrichmentsCollection().doc(id));
-        for (let i = 0; i < refs.length; i += FIRESTORE_GETALL_LIMIT) {
-            const chunk = refs.slice(i, i + FIRESTORE_GETALL_LIMIT);
-            const docs = await getAdminDb().getAll(...chunk);
-            for (const doc of docs) {
-                if (!doc.exists) continue;
-                const parsed = parseReplyEnrichmentDoc(doc);
-                if (parsed) map.set(doc.id, parsed);
-            }
-        }
-        return map;
+        return fetchReplyEnrichmentsByIds(replyIds);
     },
 
     async updateReplyEnrichment(replyId, updates) {
