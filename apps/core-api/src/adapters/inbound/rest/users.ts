@@ -1,25 +1,27 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
-import { toProfileViewBasic } from 'shared/types';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { toProfileViewBasic, ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types';
 import { PublicProfileDtoSchema } from 'shared/types/api';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { userService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * Top-level user endpoints mounted at `/api/v1/users`.
  *
  *   GET /            — public discovery list, paginated by handle cursor.
  *                      Returns `PublicProfileDto[]` + nextCursor.
+ *   GET /handles     — every public handle (sitemap enumeration).
  *   GET /:handle     — single profile with owner-aware projection (self
  *                      viewer gets full profile; others get
  *                      `ProfileViewBasic`).
  *
- * Parity sources:
- *   apps/web/src/app/api/v1/users/route.ts (GET list)
- *   apps/web/src/app/api/v1/users/[handle]/route.ts (GET single)
+ * OpenAPI metadata declared on every route — first family converted as
+ * the toolchain pilot per `specs/drafts/openapi-generation.md`. Handler
+ * bodies preserve their existing manual validation; the `createRoute`
+ * wrapper is metadata-only here, no `request:` validators yet.
  */
 
 const ListQuerySchema = z.object({
@@ -27,16 +29,37 @@ const ListQuerySchema = z.object({
     cursor: z.string().min(1).optional(),
 });
 
-const app = new Hono();
+const ListResponseSchema = z.object({
+    items: z.array(PublicProfileDtoSchema),
+    nextCursor: z.string().nullable(),
+});
+
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/users — public user discovery list
 // ---------------------------------------------------------------------------
-//
-// Direct Firestore query (mirrors apps/web's pattern; no service layer
-// in either codebase for this read). Paginated by handle.
 
-app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
+const listRoute = createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Users'],
+    summary: 'List public user profiles',
+    description: 'Paginated discovery list of users with a public handle. Cursor-paginated by handle.',
+    middleware: [rateLimit(RATE_LIMITS.read)] as const,
+    request: {
+        query: z.object({
+            limit: z.coerce.number().int().min(1).max(50).optional().openapi({ description: '1–50 (default 20)' }),
+            cursor: z.string().optional().openapi({ description: 'Pagination cursor — the handle of the last user from the prior page' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(ListResponseSchema, 'Paginated list of public profiles'),
+        400: errorResponse('Invalid query parameters'),
+    },
+});
+
+app.openapi(listRoute, async (c) => {
     const queryResult = ListQuerySchema.safeParse({
         limit: c.req.query('limit'),
         cursor: c.req.query('cursor'),
@@ -90,33 +113,57 @@ app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
     // Paginated standard shape: `data.items` is the array, `data.nextCursor`
     // holds the pagination handle. Field name `items` is generic so the same
     // unwrap pattern works across paginated endpoints.
-    return c.json({ success: true, data: { items: users, nextCursor } });
+    return c.json({ success: true as const, data: { items: users, nextCursor } }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/users/handles — every public handle (sitemap enumeration)
 // ---------------------------------------------------------------------------
 //
-// Public; rate-limited by IP. Returned shape matches the legacy /handles
-// endpoint that this replaces: `{ success: true, data: string[] }`.
-//
 // Must register BEFORE `/:handle` below so a request to `/users/handles`
 // lands on this handler rather than being interpreted as a profile lookup
 // for the literal handle "handles".
 
-app.get('/handles', rateLimit(RATE_LIMITS.read), async (c) => {
+const handlesRoute = createRoute({
+    method: 'get',
+    path: '/handles',
+    tags: ['Users'],
+    summary: 'List every public handle',
+    description: 'Returns every claimed handle in the system. Used by the sitemap generator.',
+    middleware: [rateLimit(RATE_LIMITS.read)] as const,
+    responses: {
+        200: jsonResponse(z.array(z.string()), 'Array of public handles'),
+    },
+});
+
+app.openapi(handlesRoute, async (c) => {
     const handles = await userService.getAllPublicHandles();
-    return c.json({
-        success: true,
-        data: handles,
-    });
+    return c.json({ success: true as const, data: handles }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/users/:handle — single profile (owner-aware projection)
 // ---------------------------------------------------------------------------
 
-app.get('/:handle', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const getByHandleRoute = createRoute({
+    method: 'get',
+    path: '/{handle}',
+    tags: ['Users'],
+    summary: 'Get a user profile by handle',
+    description: 'Returns the full `ProfileView` when the authenticated viewer is the profile owner; otherwise returns `ProfileViewBasic` (handle, displayName, avatarUrl, bio).',
+    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: {
+        params: z.object({
+            handle: z.string().openapi({ description: 'The user handle (case-insensitive)' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(z.union([ProfileViewSchema, ProfileViewBasicSchema]), 'User profile (owner-aware projection)'),
+        404: errorResponse('User not found'),
+    },
+});
+
+app.openapi(getByHandleRoute, async (c) => {
     const handle = c.req.param('handle');
 
     const targetUser = await userService.getUserData(handle);
@@ -128,9 +175,9 @@ app.get('/:handle', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     const isSelf = viewerUid !== null && viewerUid === targetUser.id;
 
     return c.json({
-        success: true,
+        success: true as const,
         data: isSelf ? targetUser : toProfileViewBasic(targetUser),
-    });
+    }, 200);
 });
 
 export { app as usersRoute };

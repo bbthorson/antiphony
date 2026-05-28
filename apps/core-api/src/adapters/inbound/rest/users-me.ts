@@ -1,8 +1,8 @@
 import admin from 'firebase-admin';
-import { Hono } from 'hono';
-import { z } from 'zod';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { ConflictError } from 'shared/errors';
 import { UpdateProfileRequestSchema } from 'shared/api-codecs';
+import { ProfileViewSelfSchema } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { userService, organizationService } from '../../outbound/firebase/core-services-firebase.js';
@@ -11,14 +11,17 @@ import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
 import { APP_CONFIG } from '../../../lib/app-config.js';
 import { logger } from '../../../lib/logger.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * Authenticated-viewer "me" endpoints mounted at `/api/v1/users/me`.
  *
- *   GET    /                  — full profile (PII)
- *   PATCH  /                  — update profile (handle-swap + field merge)
- *   GET    /organizations     — hydrated orgs the viewer belongs to
- *   POST   /delete            — soft-delete (deactivate) account
+ *   GET    /                       — full profile (PII)
+ *   PATCH  /                       — update profile (handle-swap + field merge)
+ *   GET    /organizations          — hydrated orgs the viewer belongs to
+ *   GET    /handle/available       — check handle availability
+ *   POST   /handle                 — claim or re-affirm the viewer's handle
+ *   POST   /delete                 — soft-delete (deactivate) account
  *
  * Parity sources:
  *   apps/web/src/app/api/v1/users/me/route.ts (GET + PATCH)
@@ -39,18 +42,89 @@ const DeleteSchema = z.object({
     confirm: z.literal(true, { errorMap: () => ({ message: 'Confirmation required' }) }),
 });
 
-const app = new Hono();
+// Reserved handles that would shadow top-level routes mounted under
+// `/api/v1/users/*`. A user claiming `me` or `handles` would, depending on
+// route registration order, either hide their own profile lookup or hide the
+// sitemap-enumeration endpoint. Block at the validation layer.
+const RESERVED_HANDLES = new Set(['me', 'handle', 'handles']);
 
-app.get('/', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const ClaimHandleSchema = z.object({
+    handle: z
+        .string()
+        .min(3)
+        .max(20)
+        .toLowerCase()
+        .regex(/^[a-z0-9_]+$/, 'Handle must be alphanumeric')
+        .refine((h) => !RESERVED_HANDLES.has(h), {
+            message: 'Handle is reserved',
+        }),
+});
+
+const HandleAvailabilityResponseSchema = z.object({
+    available: z.boolean(),
+    reason: z.enum(['invalid', 'taken']).optional(),
+    owned: z.boolean().optional(),
+});
+
+const HandleClaimResponseSchema = z.object({
+    handle: z.string(),
+    domain: z.string(),
+});
+
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/users/me — full profile
+// ---------------------------------------------------------------------------
+
+const getMeRoute = createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Users'],
+    summary: 'Get the authenticated viewer\'s profile',
+    description: 'Returns the full `ProfileViewSelf` (PII-included) for the authenticated viewer.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    responses: {
+        200: jsonResponse(ProfileViewSelfSchema, 'Authenticated viewer\'s full profile'),
+        401: errorResponse('Not authenticated'),
+        404: errorResponse('Profile not found'),
+    },
+});
+
+app.openapi(getMeRoute, async (c) => {
     const uid = c.get('viewerUid')!;
     const profile = await userService.getUserDataByUid(uid);
     if (!profile) {
         return c.json(errorEnvelope(c, 'Profile not found'), 404);
     }
-    return c.json({ success: true, data: profile });
+    return c.json({ success: true as const, data: profile }, 200);
 });
 
-app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+// ---------------------------------------------------------------------------
+// PATCH /api/v1/users/me — update profile
+// ---------------------------------------------------------------------------
+
+const patchMeRoute = createRoute({
+    method: 'patch',
+    path: '/',
+    tags: ['Users'],
+    summary: 'Update the authenticated viewer\'s profile',
+    description: 'Partial-update profile fields (display name, bio, handle, email, rssFeedUrl, etc.). Handle-swap is transactional. Returns `data: null` on success.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: { 'application/json': { schema: UpdateUserSchema } },
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Profile updated'),
+        400: errorResponse('Invalid request'),
+        401: errorResponse('Not authenticated'),
+        409: errorResponse('Handle is already taken'),
+    },
+});
+
+app.openapi(patchMeRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let body: unknown;
@@ -77,7 +151,7 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         // No-op write — the message text was never read by callers
         // (only logged client-side in dev). `data: null` keeps the
         // response on the standard envelope.
-        return c.json({ success: true, data: null });
+        return c.json({ success: true as const, data: null }, 200);
     }
 
     try {
@@ -97,16 +171,30 @@ app.patch('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     // Drop the `updates` echo — caller already knows what it sent, no
     // in-tree reader of this field. `data: null` keeps the standard
     // envelope shape.
-    return c.json({ success: true, data: null });
+    return c.json({ success: true as const, data: null }, 200);
 });
 
-app.get('/organizations', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+// ---------------------------------------------------------------------------
+// GET /api/v1/users/me/organizations — hydrated org memberships
+// ---------------------------------------------------------------------------
+
+const getOrganizationsRoute = createRoute({
+    method: 'get',
+    path: '/organizations',
+    tags: ['Users'],
+    summary: 'List orgs the viewer belongs to',
+    description: 'Returns hydrated `OrganizationView[]` for every org the authenticated viewer is a member of.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    responses: {
+        200: jsonResponse(z.array(z.unknown()), 'Hydrated org memberships'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(getOrganizationsRoute, async (c) => {
     const uid = c.get('viewerUid')!;
     const orgs = await organizationService.getUserOrganizations(uid);
-    return c.json({
-        success: true,
-        data: orgs,
-    });
+    return c.json({ success: true as const, data: orgs }, 200);
 });
 
 // -----------------------------------------------------------------------------
@@ -114,24 +202,6 @@ app.get('/organizations', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) 
 // The actor (user) owns its handle; the read+write surface for a user's own
 // handle naturally lives under /users/me/handle/*.
 // -----------------------------------------------------------------------------
-
-// Reserved handles that would shadow top-level routes mounted under
-// `/api/v1/users/*`. A user claiming `me` or `handles` would, depending on
-// route registration order, either hide their own profile lookup or hide the
-// sitemap-enumeration endpoint. Block at the validation layer.
-const RESERVED_HANDLES = new Set(['me', 'handle', 'handles']);
-
-const ClaimHandleSchema = z.object({
-    handle: z
-        .string()
-        .min(3)
-        .max(20)
-        .toLowerCase()
-        .regex(/^[a-z0-9_]+$/, 'Handle must be alphanumeric')
-        .refine((h) => !RESERVED_HANDLES.has(h), {
-            message: 'Handle is reserved',
-        }),
-});
 
 /**
  * GET /api/v1/users/me/handle/available?candidate=xyz
@@ -143,25 +213,48 @@ const ClaimHandleSchema = z.object({
  *
  * Auth required so we can flag owned-by-self distinctly from owned-by-other.
  */
-app.get('/handle/available', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const handleAvailableRoute = createRoute({
+    method: 'get',
+    path: '/handle/available',
+    tags: ['Users'],
+    summary: 'Check handle availability',
+    description: 'Returns whether `candidate` is available, taken by another user, owned by the viewer, or invalid.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: {
+        // `candidate` is intentionally optional in the schema — the handler
+        // treats a missing or invalid value as `{ available: false,
+        // reason: 'invalid' }`, NOT a 400. If we declared it required here,
+        // the OpenAPI validator would short-circuit with 400 before the
+        // handler runs, breaking that contract.
+        query: z.object({
+            candidate: z.string().optional().openapi({ description: 'The candidate handle to check' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(HandleAvailabilityResponseSchema, 'Availability verdict'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(handleAvailableRoute, async (c) => {
     const viewerUid = c.get('viewerUid');
     // Reuse ClaimHandleSchema so availability + claim apply identical rules
     // (length, charset, reserved words). Without this the two checks drift —
     // a 25-char candidate would have passed availability but failed at claim.
     const parsed = ClaimHandleSchema.safeParse({ handle: c.req.query('candidate') });
     if (!parsed.success) {
-        return c.json({ success: true, data: { available: false, reason: 'invalid' } });
+        return c.json({ success: true as const, data: { available: false, reason: 'invalid' as const } }, 200);
     }
     const candidate = parsed.data.handle;
 
     const ownerUid = await firebaseUserDependencies.resolveHandle(candidate);
     if (!ownerUid) {
-        return c.json({ success: true, data: { available: true } });
+        return c.json({ success: true as const, data: { available: true } }, 200);
     }
     if (ownerUid === viewerUid) {
-        return c.json({ success: true, data: { available: true, owned: true } });
+        return c.json({ success: true as const, data: { available: true, owned: true } }, 200);
     }
-    return c.json({ success: true, data: { available: false, reason: 'taken' } });
+    return c.json({ success: true as const, data: { available: false, reason: 'taken' as const } }, 200);
 });
 
 /**
@@ -178,7 +271,27 @@ app.get('/handle/available', requireAuth(), rateLimit(RATE_LIMITS.read), async (
  * Response: `{ success: true, data: { handle, domain } }` on success;
  * 409 with the standard error envelope on conflict.
  */
-app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const claimHandleRoute = createRoute({
+    method: 'post',
+    path: '/handle',
+    tags: ['Users'],
+    summary: 'Claim or re-affirm the viewer\'s handle',
+    description: 'Reserves the candidate handle for the authenticated viewer in an atomic transaction. Echoes the claimed handle + app domain on success.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: { 'application/json': { schema: ClaimHandleSchema } },
+        },
+    },
+    responses: {
+        200: jsonResponse(HandleClaimResponseSchema, 'Handle claimed'),
+        400: errorResponse('Invalid handle format'),
+        401: errorResponse('Not authenticated'),
+        409: errorResponse('Handle is already taken'),
+    },
+});
+
+app.openapi(claimHandleRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let body: unknown;
@@ -270,7 +383,7 @@ app.post('/handle', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
         // Echo the claimed handle + the app domain so clients can construct
         // the public URL without re-fetching. Both kept under `data` for the
         // standard envelope.
-        return c.json({ success: true, data: { handle, domain: APP_CONFIG.DOMAIN } });
+        return c.json({ success: true as const, data: { handle, domain: APP_CONFIG.DOMAIN } }, 200);
     } catch (err) {
         if (err instanceof Error && err.message === 'Handle is already taken') {
             return c.json(errorEnvelope(c, 'This handle is taken.'), 409);
@@ -330,7 +443,27 @@ async function ensureDefaultOrgMembership(userId: string, requestId: string): Pr
  * pattern here for parity; can tighten into a binding method in a
  * future refactor once apps/web is gone.
  */
-app.post('/delete', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const deleteAccountRoute = createRoute({
+    method: 'post',
+    path: '/delete',
+    tags: ['Users'],
+    summary: 'Deactivate the viewer\'s account',
+    description: 'Soft-deletes (deactivates) the account: marks the user doc, releases the handle, and revokes refresh tokens. Does NOT remove prompts, replies, or org memberships.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: { 'application/json': { schema: DeleteSchema } },
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Account deactivated'),
+        400: errorResponse('Missing confirmation'),
+        401: errorResponse('Not authenticated'),
+        500: errorResponse('Internal error'),
+    },
+});
+
+app.openapi(deleteAccountRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let body: unknown;
@@ -378,7 +511,7 @@ app.post('/delete', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
 
         // Message text was UI-facing — toast wording is now constructed
         // client-side. `data: null` for the standard envelope.
-        return c.json({ success: true, data: null });
+        return c.json({ success: true as const, data: null }, 200);
     } catch (err) {
         logger.error(
             { err, requestId: c.get('requestId'), uid },

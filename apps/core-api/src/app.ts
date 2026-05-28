@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -71,8 +71,8 @@ export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWE
  *      from handlers AND from middleware (rate-limit, request-id).
  */
 
-export function app(): Hono {
-    const a = new Hono();
+export function app(): OpenAPIHono {
+    const a = new OpenAPIHono();
 
     // 1. Request ID — before everything so downstream middleware and
     //    the error handler can bind it to log lines.
@@ -159,7 +159,21 @@ export function app(): Hono {
     a.route('/api/v1/system/auth', systemAuthMintRoute);
     a.route('/api/v1/system/users', systemBlueskyIdentityRoute);
 
-    // 5. Error handler — last, via `onError` so it catches throws from
+    // 5. OpenAPI document — served at `/openapi.json`. Only routes
+    //    registered via `app.openapi(createRoute(...), handler)` appear
+    //    in the spec. The pilot covers `/users/*`; subsequent PRs will
+    //    instrument additional families per
+    //    `specs/drafts/openapi-generation.md`.
+    a.doc('/openapi.json', {
+        openapi: '3.0.0',
+        info: {
+            title: 'Vox Pop Core API',
+            version: '0.1.0',
+            description: 'Open-source REST surface for Vox Pop — actors, prompts, replies, audio.',
+        },
+    });
+
+    // 6. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
     a.onError(errorHandler);
 

@@ -1,11 +1,12 @@
 import admin from 'firebase-admin';
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { SwitchOrgRequestSchema, BadgeResetRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { organizationService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * Viewer-action endpoints mounted at `/api/v1/users`.
@@ -21,9 +22,36 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  *   apps/web/src/app/api/v1/users/badges/read/route.ts
  */
 
-const app = new Hono();
+const SwitchOrgResponseSchema = z.object({
+    currentOrg: z.string().nullable(),
+    orgs: z.record(z.string(), z.string()),
+});
 
-app.post('/switch-org', requireAuth(), rateLimit(RATE_LIMITS.burst), async (c) => {
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
+
+const switchOrgRoute = createRoute({
+    method: 'post',
+    path: '/switch-org',
+    tags: ['Users'],
+    summary: 'Switch active organization context',
+    description: 'Sets the active-org custom claim for the authenticated viewer. Verifies membership in the target org before granting the claim; re-denormalizes the full org map from membership docs.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.burst)] as const,
+    request: {
+        body: {
+            content: {
+                'application/json': { schema: SwitchOrgRequestSchema },
+            },
+        },
+    },
+    responses: {
+        200: jsonResponse(SwitchOrgResponseSchema, 'New custom-claim state'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not a member of the target organization'),
+    },
+});
+
+app.openapi(switchOrgRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let body: unknown;
@@ -73,12 +101,33 @@ app.post('/switch-org', requireAuth(), rateLimit(RATE_LIMITS.burst), async (c) =
     });
 
     return c.json({
-        success: true,
+        success: true as const,
         data: { currentOrg: orgId, orgs: orgsMap },
-    });
+    }, 200);
 });
 
-app.post('/badges/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const badgesReadRoute = createRoute({
+    method: 'post',
+    path: '/badges/read',
+    tags: ['Users'],
+    summary: 'Reset a notification badge counter',
+    description: 'Resets the `new_replier` or `unread_reply` badge for the authenticated viewer.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: {
+                'application/json': { schema: BadgeResetRequestSchema },
+            },
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Badge counter reset'),
+        400: errorResponse('Invalid type'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(badgesReadRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let body: unknown;
@@ -111,7 +160,7 @@ app.post('/badges/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
     }
 
     // Fire-and-forget reset; `data: null` for the standard envelope.
-    return c.json({ success: true, data: null });
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 export { app as usersActionsRoute };

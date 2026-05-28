@@ -1,0 +1,3122 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Vox Pop Core API",
+    "version": "0.1.0",
+    "description": "Open-source REST surface for Vox Pop — actors, prompts, replies, audio."
+  },
+  "components": {
+    "schemas": {},
+    "parameters": {}
+  },
+  "paths": {
+    "/api/v1/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get the authenticated viewer's profile",
+        "description": "Returns the full `ProfileViewSelf` (PII-included) for the authenticated viewer.",
+        "responses": {
+          "200": {
+            "description": "Authenticated viewer's full profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "avatarUrl": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "bio": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "website": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "url"
+                            ]
+                          }
+                        },
+                        "bluesky": {
+                          "type": "object",
+                          "properties": {
+                            "handle": {
+                              "type": "string"
+                            },
+                            "did": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "handle",
+                            "did"
+                          ]
+                        },
+                        "stats": {
+                          "type": "object",
+                          "properties": {
+                            "followers": {
+                              "type": "number",
+                              "default": 0
+                            },
+                            "following": {
+                              "type": "number",
+                              "default": 0
+                            },
+                            "prompts": {
+                              "type": "number",
+                              "default": 0
+                            }
+                          }
+                        },
+                        "badges": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "isVerified": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "usageIntent": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "rssSummary": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "link": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "pubDate": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "lastFetchedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "promptAudioUrl": {
+                          "type": "string"
+                        },
+                        "totalPrompts": {
+                          "type": "number"
+                        },
+                        "totalReplies": {
+                          "type": "number"
+                        },
+                        "favoritePromptId": {
+                          "type": "string"
+                        },
+                        "phoneNumber": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "lastSeenAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "lastActiveAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "unreadReplyCount": {
+                          "type": "number",
+                          "default": 0
+                        },
+                        "newReplierCount": {
+                          "type": "number",
+                          "default": 0
+                        },
+                        "tier": {
+                          "type": "string",
+                          "enum": [
+                            "free",
+                            "creator_pro"
+                          ]
+                        },
+                        "showBlueskyPublicly": {
+                          "type": "boolean"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "notifications": {
+                              "type": "boolean"
+                            },
+                            "theme": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update the authenticated viewer's profile",
+        "description": "Partial-update profile fields (display name, bio, handle, email, rssFeedUrl, etc.). Handle-swap is transactional. Returns `data: null` on success.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "handle": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 20,
+                    "pattern": "^[a-zA-Z0-9_]+$"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "bio": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "avatarUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri"
+                  },
+                  "usageIntent": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "website": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      },
+                      {
+                        "nullable": true
+                      },
+                      {
+                        "nullable": true
+                      }
+                    ]
+                  },
+                  "links": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "url"
+                      ]
+                    },
+                    "maxItems": 5
+                  },
+                  "showBlueskyPublicly": {
+                    "type": "boolean"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "rssFeedUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Handle is already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/organizations": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List orgs the viewer belongs to",
+        "description": "Returns hydrated `OrganizationView[]` for every org the authenticated viewer is a member of.",
+        "responses": {
+          "200": {
+            "description": "Hydrated org memberships",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "nullable": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/handle/available": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Check handle availability",
+        "description": "Returns whether `candidate` is available, taken by another user, owned by the viewer, or invalid.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The candidate handle to check"
+            },
+            "required": false,
+            "name": "candidate",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability verdict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "invalid",
+                            "taken"
+                          ]
+                        },
+                        "owned": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "available"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/handle": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Claim or re-affirm the viewer's handle",
+        "description": "Reserves the candidate handle for the authenticated viewer in an atomic transaction. Echoes the claimed handle + app domain on success.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "handle": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 20,
+                    "pattern": "^[a-z0-9_]+$"
+                  }
+                },
+                "required": [
+                  "handle"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Handle claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "handle": {
+                          "type": "string"
+                        },
+                        "domain": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "handle",
+                        "domain"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid handle format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Handle is already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/delete": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Deactivate the viewer's account",
+        "description": "Soft-deletes (deactivates) the account: marks the user doc, releases the handle, and revokes refresh tokens. Does NOT remove prompts, replies, or org memberships.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "confirm"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing confirmation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/switch-org": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Switch active organization context",
+        "description": "Sets the active-org custom claim for the authenticated viewer. Verifies membership in the target org before granting the claim; re-denormalizes the full org map from membership docs.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "orgId": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "orgId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New custom-claim state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "currentOrg": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "orgs": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "currentOrg",
+                        "orgs"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of the target organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/badges/read": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Reset a notification badge counter",
+        "description": "Resets the `new_replier` or `unread_reply` badge for the authenticated viewer.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "new_replier",
+                      "unread_reply"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Badge counter reset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List public user profiles",
+        "description": "Paginated discovery list of users with a public handle. Cursor-paginated by handle.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "1–50 (default 20)"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination cursor — the handle of the last user from the prior page"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of public profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "handle": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "displayName": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "avatarUrl": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "bio": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "website": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "links": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "url": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "url"
+                                  ]
+                                }
+                              },
+                              "bluesky": {
+                                "type": "object",
+                                "properties": {
+                                  "handle": {
+                                    "type": "string"
+                                  },
+                                  "did": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "handle",
+                                  "did"
+                                ]
+                              },
+                              "stats": {
+                                "type": "object",
+                                "properties": {
+                                  "followers": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "following": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "prompts": {
+                                    "type": "number",
+                                    "default": 0
+                                  }
+                                }
+                              },
+                              "badges": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "isVerified": {
+                                "type": "boolean"
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "rssFeedUrl": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ]
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/handles": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List every public handle",
+        "description": "Returns every claimed handle in the system. Used by the sitemap generator.",
+        "responses": {
+          "200": {
+            "description": "Array of public handles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{handle}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get a user profile by handle",
+        "description": "Returns the full `ProfileView` when the authenticated viewer is the profile owner; otherwise returns `ProfileViewBasic` (handle, displayName, avatarUrl, bio).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The user handle (case-insensitive)"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile (owner-aware projection)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "bio": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "website": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "links": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "url": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "url"
+                                ]
+                              }
+                            },
+                            "bluesky": {
+                              "type": "object",
+                              "properties": {
+                                "handle": {
+                                  "type": "string"
+                                },
+                                "did": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "handle",
+                                "did"
+                              ]
+                            },
+                            "stats": {
+                              "type": "object",
+                              "properties": {
+                                "followers": {
+                                  "type": "number",
+                                  "default": 0
+                                },
+                                "following": {
+                                  "type": "number",
+                                  "default": 0
+                                },
+                                "prompts": {
+                                  "type": "number",
+                                  "default": 0
+                                }
+                              }
+                            },
+                            "badges": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "isVerified": {
+                              "type": "boolean"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "usageIntent": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "rssSummary": {
+                              "type": "object",
+                              "properties": {
+                                "title": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "link": {
+                                        "type": "string"
+                                      },
+                                      "content": {
+                                        "type": "string"
+                                      },
+                                      "pubDate": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "lastFetchedAt": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "promptAudioUrl": {
+                              "type": "string"
+                            },
+                            "totalPrompts": {
+                              "type": "number"
+                            },
+                            "totalReplies": {
+                              "type": "number"
+                            },
+                            "favoritePromptId": {
+                              "type": "string"
+                            },
+                            "phoneNumber": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "lastSeenAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "lastActiveAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "unreadReplyCount": {
+                              "type": "number",
+                              "default": 0
+                            },
+                            "newReplierCount": {
+                              "type": "number",
+                              "default": 0
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "free",
+                                "creator_pro"
+                              ]
+                            },
+                            "showBlueskyPublicly": {
+                              "type": "boolean"
+                            },
+                            "settings": {
+                              "type": "object",
+                              "properties": {
+                                "notifications": {
+                                  "type": "boolean"
+                                },
+                                "theme": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "blockedUsers": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "followers": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "following": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reportCount": {
+                              "type": "number"
+                            },
+                            "isBanned": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "bio": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "website": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "links": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "url": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "url"
+                                ]
+                              }
+                            },
+                            "bluesky": {
+                              "type": "object",
+                              "properties": {
+                                "handle": {
+                                  "type": "string"
+                                },
+                                "did": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "handle",
+                                "did"
+                              ]
+                            },
+                            "stats": {
+                              "type": "object",
+                              "properties": {
+                                "followers": {
+                                  "type": "number",
+                                  "default": 0
+                                },
+                                "following": {
+                                  "type": "number",
+                                  "default": 0
+                                },
+                                "prompts": {
+                                  "type": "number",
+                                  "default": 0
+                                }
+                              }
+                            },
+                            "badges": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "isVerified": {
+                              "type": "boolean"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{handle}/prompts": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List a user's prompts",
+        "description": "Paginated list of prompts authored by the user identified by handle (or raw UID). The owner sees live + archived; everyone else sees live only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The user handle (case-insensitive) or raw UID"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "1–100 (default 20)"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination cursor — the last prompt id from the prior page"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string"
+                              },
+                              "cid": {
+                                "type": "string"
+                              },
+                              "record": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "authorId": {
+                                    "type": "string"
+                                  },
+                                  "orgId": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 3
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "createdBy": {
+                                    "type": "string"
+                                  },
+                                  "audioUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "uri"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "audio": {
+                                    "type": "object",
+                                    "properties": {
+                                      "$type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "blob"
+                                        ]
+                                      },
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "mimeType": {
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "$type",
+                                      "ref",
+                                      "mimeType",
+                                      "size"
+                                    ]
+                                  },
+                                  "atprotoUri": {
+                                    "type": "string",
+                                    "pattern": "^at:\\/\\/.+"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "live",
+                                      "archived",
+                                      "deleted"
+                                    ],
+                                    "default": "live"
+                                  },
+                                  "aiStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "aiError": {
+                                    "type": "string"
+                                  },
+                                  "aiSummary": {
+                                    "type": "string"
+                                  },
+                                  "aiLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "transcription": {
+                                    "type": "string"
+                                  },
+                                  "waveformPeaks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "socialVideoUrl": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  },
+                                  "socialVideoStoragePath": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "socialVideoError": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoSourceAudio": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "authorId",
+                                  "title",
+                                  "audioUrl",
+                                  "createdAt"
+                                ]
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "displayName": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "avatarUrl": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "bio": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "website": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "links": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "url": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "label",
+                                        "url"
+                                      ]
+                                    }
+                                  },
+                                  "bluesky": {
+                                    "type": "object",
+                                    "properties": {
+                                      "handle": {
+                                        "type": "string"
+                                      },
+                                      "did": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "handle",
+                                      "did"
+                                    ]
+                                  },
+                                  "stats": {
+                                    "type": "object",
+                                    "properties": {
+                                      "followers": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "following": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "prompts": {
+                                        "type": "number",
+                                        "default": 0
+                                      }
+                                    }
+                                  },
+                                  "badges": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "isVerified": {
+                                    "type": "boolean"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "usageIntent": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "rssSummary": {
+                                    "type": "object",
+                                    "properties": {
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "link": {
+                                              "type": "string"
+                                            },
+                                            "content": {
+                                              "type": "string"
+                                            },
+                                            "pubDate": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "lastFetchedAt": {
+                                        "anyOf": [
+                                          {},
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "promptAudioUrl": {
+                                    "type": "string"
+                                  },
+                                  "totalPrompts": {
+                                    "type": "number"
+                                  },
+                                  "totalReplies": {
+                                    "type": "number"
+                                  },
+                                  "favoritePromptId": {
+                                    "type": "string"
+                                  },
+                                  "phoneNumber": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "email": {
+                                    "type": "string"
+                                  },
+                                  "lastSeenAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "lastActiveAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "unreadReplyCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "newReplierCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "tier": {
+                                    "type": "string",
+                                    "enum": [
+                                      "free",
+                                      "creator_pro"
+                                    ]
+                                  },
+                                  "showBlueskyPublicly": {
+                                    "type": "boolean"
+                                  },
+                                  "settings": {
+                                    "type": "object",
+                                    "properties": {
+                                      "notifications": {
+                                        "type": "boolean"
+                                      },
+                                      "theme": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "blockedUsers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "followers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "following": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "reportCount": {
+                                    "type": "number"
+                                  },
+                                  "isBanned": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id"
+                                ]
+                              },
+                              "replyCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "likeCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "updatedAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "lastReplyAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "visibility": {
+                                "type": "string",
+                                "enum": [
+                                  "public",
+                                  "private",
+                                  "unlisted",
+                                  "archived"
+                                ],
+                                "default": "public"
+                              },
+                              "analytics": {
+                                "type": "object",
+                                "properties": {
+                                  "views": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "listens": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "avgEngagementScore": {
+                                    "type": "number",
+                                    "nullable": true
+                                  },
+                                  "sentimentBreakdown": {
+                                    "type": "object",
+                                    "properties": {
+                                      "positive": {
+                                        "type": "number"
+                                      },
+                                      "neutral": {
+                                        "type": "number"
+                                      },
+                                      "negative": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "positive",
+                                      "neutral",
+                                      "negative"
+                                    ]
+                                  }
+                                }
+                              },
+                              "moderation": {
+                                "type": "object",
+                                "properties": {
+                                  "flagged": {
+                                    "type": "boolean",
+                                    "default": false
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "aiLabels": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "aiSummary": {
+                                "type": "string"
+                              },
+                              "aiStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "complete",
+                                  "error"
+                                ]
+                              },
+                              "aiError": {
+                                "type": "string"
+                              },
+                              "transcription": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "record",
+                              "author"
+                            ]
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{handle}/profile": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get a user profile page payload",
+        "description": "Aggregated payload for the user-profile page: the profile, every public prompt with its replies, and the repliers list.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The user handle (case-insensitive) or raw UID"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile-page payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "profileUser": {
+                          "nullable": true
+                        },
+                        "allPromptsWithReplies": {
+                          "type": "array",
+                          "items": {
+                            "nullable": true
+                          }
+                        },
+                        "repliers": {
+                          "type": "array",
+                          "items": {
+                            "nullable": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "allPromptsWithReplies",
+                        "repliers"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

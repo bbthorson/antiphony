@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { PromptViewSchema } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { userService, promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * GET /api/v1/users/:handle/prompts
@@ -33,9 +34,37 @@ const QuerySchema = z.object({
     cursor: z.string().min(1).optional(),
 });
 
-const app = new Hono();
+const ListResponseSchema = z.object({
+    items: z.array(PromptViewSchema),
+    nextCursor: z.string().nullable(),
+});
 
-app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
+
+const listPromptsRoute = createRoute({
+    method: 'get',
+    path: '/{handle}/prompts',
+    tags: ['Users'],
+    summary: 'List a user\'s prompts',
+    description: 'Paginated list of prompts authored by the user identified by handle (or raw UID). The owner sees live + archived; everyone else sees live only.',
+    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: {
+        params: z.object({
+            handle: z.string().openapi({ description: 'The user handle (case-insensitive) or raw UID' }),
+        }),
+        query: z.object({
+            limit: z.coerce.number().int().min(1).max(100).optional().openapi({ description: '1–100 (default 20)' }),
+            cursor: z.string().optional().openapi({ description: 'Pagination cursor — the last prompt id from the prior page' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(ListResponseSchema, 'Paginated list of prompts'),
+        400: errorResponse('Invalid query parameters'),
+        404: errorResponse('User not found'),
+    },
+});
+
+app.openapi(listPromptsRoute, async (c) => {
     const handle = c.req.param('handle');
 
     const queryResult = QuerySchema.safeParse({
@@ -68,7 +97,7 @@ app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (
     // Paginated standard shape: nested cursor inside `data` alongside
     // `items`. See envelope-Phase-3.
     return c.json({
-        success: true,
+        success: true as const,
         data: {
             items: prompts,
             // Only compute a cursor when the page is full AND there's at
@@ -79,7 +108,7 @@ app.get('/:handle/prompts', optionalAuth(), rateLimit(RATE_LIMITS.read), async (
                     ? prompts[prompts.length - 1].record.id
                     : null,
         },
-    });
+    }, 200);
 });
 
 export { app as usersPromptsRoute };
