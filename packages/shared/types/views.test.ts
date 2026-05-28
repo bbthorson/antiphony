@@ -16,21 +16,7 @@ function fullReplyView(): ReplyView {
             audioUrl: 'https://example.com/audio.webm',
             createdAt: new Date('2026-05-25T00:00:00Z'),
             status: 'live',
-            readBy: [],
-            // Canonical-side AI fields (these will be lifted onto the view too)
-            aiStatus: 'complete',
-            aiSummary: 'A summary',
-            aiLabels: ['music'],
-            transcription: 'Hello world',
-            sentiment: 'Positive',
-            energyLevel: 'High',
-            engagementScore: 8,
-            enhancedAudioUrl: 'https://example.com/enhanced.webm',
-            enhancedStoragePath: '/audio/enhanced/r1.webm',
-            socialVideoUrl: 'https://example.com/r1.mp4',
-            socialVideoStoragePath: '/video/r1.mp4',
-            socialVideoStatus: 'complete',
-            socialVideoSourceAudio: 'https://example.com/audio.webm',
+            // Canonical-only fields (per spec § 5 — ingestion ffmpeg, not AI).
             waveformPeaks: [0.1, 0.5, 0.3],
             audioDurationSec: 12.5,
         },
@@ -108,16 +94,15 @@ describe('toReplyViewPublic', () => {
     });
 
     it('preserves the canonical record verbatim (no record-side stripping in this projection)', () => {
-        // The projection only strips top-level lifted fields, not fields on
-        // `record` itself. Stage 4 of the AI-enrichment split removes the
-        // duplicate fields from the canonical record; until then, callers
-        // that read `view.record.aiSummary` still see the value. This is
-        // intentional — the gradual migration relies on canonical staying
-        // intact through Stage 3.
+        // The projection strips lifted top-level fields; `record` is
+        // passed through. Post Stage 4 the canonical record carries only
+        // non-AI fields (audio refs + ffmpeg outputs), so verify those
+        // survive intact.
         const out = toReplyViewPublic(fullReplyView());
-        expect(out.record.aiSummary).toBe('A summary');
-        expect(out.record.transcription).toBe('Hello world');
-        expect(out.record.enhancedAudioUrl).toBe('https://example.com/enhanced.webm');
+        expect(out.record.id).toBe('r1');
+        expect(out.record.audioUrl).toBe('https://example.com/audio.webm');
+        expect(out.record.waveformPeaks).toEqual([0.1, 0.5, 0.3]);
+        expect(out.record.audioDurationSec).toBe(12.5);
     });
 
     it('preserves the public surface (record, author, recipient, transcription, enhancedAudioUrl)', () => {

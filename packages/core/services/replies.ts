@@ -308,8 +308,10 @@ export class ReplyService {
 
         const includeArchived = filters?.status === 'archived' || filters?.status === 'all';
         // listReplyFeed / searchReplies both project through toReplyViewPublic
-        // downstream — top-level `notes` is stripped on the wire. Skip the
-        // enrichments fetch to avoid the wasted Firestore round-trip.
+        // downstream — private enrichment fields are stripped on the wire.
+        // `includePrivateData: false` skips lite-user phone hydration for
+        // peer authors; enrichment is still fetched (it carries the public
+        // lifted fields like `transcription` post Stage 4).
         const repliesMap = await this.getRepliesForPrompts(promptIds, user, {
             includeArchived,
             includePrivateData: false,

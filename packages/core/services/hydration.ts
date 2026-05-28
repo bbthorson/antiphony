@@ -99,12 +99,11 @@ export class HydrationService {
      * socialVideo*) stay undefined on the view and are also defensively
      * stripped by `toReplyViewPublic`.
      *
-     * AI-enrichment precedence: when both the enrichment doc and the
-     * canonical record carry the same field (during Stages 2–3 of the
-     * AI-enrichment split where functions/ dual-writes), the enrichment
-     * value wins. During Stage 1 the enrichment doc only has `notes`,
-     * so all AI fields fall through to canonical — unchanged behavior.
-     * See `specs/ai-enrichment-split.md` § 3.
+     * AI-enrichment source: the lifted fields (transcription, sentiment,
+     * AI cluster, voice isolation, social video) come from the enrichment
+     * doc only — Stage 4 of the AI-enrichment split removed them from
+     * the canonical `ReplyRecord`. See `specs/ai-enrichment-split.md`
+     * § 3.
      */
     async hydrateReply(
         record: ReplyRecord,
@@ -151,27 +150,25 @@ export class HydrationService {
             readBy: [],
             // Audio duration (seconds) — populated by the transcribeAndScore trigger
             duration: record.audioDurationSec,
-            // AI enrichment — enrichment doc wins where present (Stage 2+
-            // dual-write populates this; Stage 4 strips canonical). During
-            // Stage 1 the enrichment only has `notes`, so AI fields fall
-            // through to canonical — unchanged behavior.
-            transcription: preloadedEnrichment?.transcription ?? record.transcription,
-            sentiment: preloadedEnrichment?.sentiment ?? record.sentiment,
-            energyLevel: preloadedEnrichment?.energyLevel ?? record.energyLevel,
-            engagementScore: preloadedEnrichment?.engagementScore ?? record.engagementScore,
-            aiStatus: preloadedEnrichment?.aiStatus ?? record.aiStatus,
-            aiError: preloadedEnrichment?.aiError ?? record.aiError,
-            aiSummary: preloadedEnrichment?.aiSummary ?? record.aiSummary,
-            aiLabels: preloadedEnrichment?.aiLabels ?? record.aiLabels,
-            // Voice isolation (paid tier) — same precedence rule.
-            enhancedAudioUrl: preloadedEnrichment?.enhancedAudioUrl ?? record.enhancedAudioUrl,
-            enhancedStoragePath: preloadedEnrichment?.enhancedStoragePath ?? record.enhancedStoragePath,
-            // Social-share video (paid tier, creator-only) — same precedence rule.
-            socialVideoUrl: preloadedEnrichment?.socialVideoUrl ?? record.socialVideoUrl,
-            socialVideoStoragePath: preloadedEnrichment?.socialVideoStoragePath ?? record.socialVideoStoragePath,
-            socialVideoStatus: preloadedEnrichment?.socialVideoStatus ?? record.socialVideoStatus,
-            socialVideoError: preloadedEnrichment?.socialVideoError ?? record.socialVideoError,
-            socialVideoSourceAudio: preloadedEnrichment?.socialVideoSourceAudio ?? record.socialVideoSourceAudio,
+            // AI enrichment — sole source is the enrichment doc since
+            // Stage 4 stripped these off the canonical ReplyRecord.
+            transcription: preloadedEnrichment?.transcription,
+            sentiment: preloadedEnrichment?.sentiment,
+            energyLevel: preloadedEnrichment?.energyLevel,
+            engagementScore: preloadedEnrichment?.engagementScore,
+            aiStatus: preloadedEnrichment?.aiStatus,
+            aiError: preloadedEnrichment?.aiError,
+            aiSummary: preloadedEnrichment?.aiSummary,
+            aiLabels: preloadedEnrichment?.aiLabels,
+            // Voice isolation (paid tier)
+            enhancedAudioUrl: preloadedEnrichment?.enhancedAudioUrl,
+            enhancedStoragePath: preloadedEnrichment?.enhancedStoragePath,
+            // Social-share video (paid tier, creator-only)
+            socialVideoUrl: preloadedEnrichment?.socialVideoUrl,
+            socialVideoStoragePath: preloadedEnrichment?.socialVideoStoragePath,
+            socialVideoStatus: preloadedEnrichment?.socialVideoStatus,
+            socialVideoError: preloadedEnrichment?.socialVideoError,
+            socialVideoSourceAudio: preloadedEnrichment?.socialVideoSourceAudio,
             // CRM enrichment — populated only when the caller has author privileges
             notes: preloadedEnrichment?.notes,
         };
@@ -180,13 +177,14 @@ export class HydrationService {
     /**
      * Batch-loads full enrichment records for a set of replies. Returns a
      * Map keyed by replyId — replies with no enrichment doc are simply
-     * absent. Shared by `hydrateReplies` and `hydrateRepliesWithRecipient`;
-     * caller guards on `includePrivateData` before invoking.
+     * absent. Shared by `hydrateReplies` and `hydrateRepliesWithRecipient`.
      *
-     * Pulls the full enrichment record (not just `notes`) so the hydrator
-     * can apply enrichment-precedence to lifted AI / voice-isolation /
-     * social-video fields during Stages 2–4 of the AI-enrichment split.
-     * See `specs/ai-enrichment-split.md` § 3.
+     * Pulls the full enrichment record (not just `notes`) because — post
+     * Stage 4 of the AI-enrichment split — the enrichment doc is the sole
+     * source for the lifted AI / voice-isolation / social-video fields,
+     * including the public ones (`transcription`, `enhancedAudioUrl`).
+     * `toReplyViewPublic` strips the private subset on projection. See
+     * `specs/ai-enrichment-split.md` § 3.
      */
     private async fetchEnrichmentsForReplies(
         records: ReplyRecord[],
@@ -197,6 +195,12 @@ export class HydrationService {
     /**
      * Helper to preload resources needed for reply hydration.
      * Deduplicates author IDs to prevent database limits.
+     *
+     * Enrichments are always fetched (regardless of `includePrivateData`)
+     * because the public lifted fields (`transcription`,
+     * `enhancedAudioUrl`) live there post Stage 4. The private subset
+     * (notes, sentiment, engagementScore, social-video URL, …) is
+     * stripped on projection by `toReplyViewPublic`.
      */
     private async preloadHydrationResources(
         records: ReplyRecord[],
@@ -210,15 +214,13 @@ export class HydrationService {
         }
 
         const uniqueAuthorIds = Array.from(new Set(records.map(r => r.authorId)));
-        const profiles = await this.deps.getUsersByIds(uniqueAuthorIds, {
-            includePrivateData: !!options?.includePrivateData,
-        });
+        const [profiles, enrichmentsMap] = await Promise.all([
+            this.deps.getUsersByIds(uniqueAuthorIds, {
+                includePrivateData: !!options?.includePrivateData,
+            }),
+            this.fetchEnrichmentsForReplies(records),
+        ]);
         const authorMap = new Map(profiles.map(p => [p.id, p]));
-
-        let enrichmentsMap: Map<string, ReplyEnrichmentRecord> | undefined;
-        if (options?.includePrivateData) {
-            enrichmentsMap = await this.fetchEnrichmentsForReplies(records);
-        }
 
         return { authorMap, enrichmentsMap };
     }

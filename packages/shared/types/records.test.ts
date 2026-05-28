@@ -67,39 +67,42 @@ describe('Record Schemas', () => {
         status: 'live' as const,
     };
 
-    describe('ReplyRecordSchema AI Enrichment', () => {
-        it('should allow valid AI fields on a reply', () => {
-            const replyWithAI = {
-                ...validReplyBase,
-                transcription: 'Hello world',
-                aiStatus: 'complete' as const,
-                aiSummary: 'A test summary',
-                aiLabels: ['test', 'audio'],
-                sentiment: 'Positive' as const,
-                energyLevel: 'High' as const,
-                engagementScore: 8,
-            };
+    describe('ReplyRecordSchema canonical shape', () => {
+        // Post Stage 4 of the AI-enrichment split, the canonical record no
+        // longer declares AI-cluster fields — those live on the enrichment
+        // doc (see `ReplyEnrichmentRecordSchema`). Old AI-validation tests
+        // here became no-ops because Zod silently strips undeclared keys.
 
-            const result = ReplyRecordSchema.safeParse(replyWithAI);
+        it('parses the minimal canonical shape', () => {
+            const result = ReplyRecordSchema.safeParse(validReplyBase);
             expect(result.success).toBe(true);
         });
 
-        it('should validate engagementScore range', () => {
-            const invalidReply = {
+        it('accepts waveformPeaks + audioDurationSec (ffmpeg outputs, stay canonical per spec § 5)', () => {
+            const result = ReplyRecordSchema.safeParse({
                 ...validReplyBase,
-                engagementScore: 11,
-            };
-            const result = ReplyRecordSchema.safeParse(invalidReply);
-            expect(result.success).toBe(false);
+                waveformPeaks: [0.1, 0.5, 0.3],
+                audioDurationSec: 12.5,
+            });
+            expect(result.success).toBe(true);
         });
 
-        it('should validate aiStatus enum', () => {
-            const invalidReply = {
+        it('strips AI-cluster fields silently — they live on the enrichment doc, not canonical', () => {
+            const result = ReplyRecordSchema.safeParse({
                 ...validReplyBase,
-                aiStatus: 'finished',
-            };
-            const result = ReplyRecordSchema.safeParse(invalidReply);
-            expect(result.success).toBe(false);
+                aiStatus: 'complete',
+                transcription: 'Hello world',
+                sentiment: 'Positive',
+                enhancedAudioUrl: 'https://example.com/enhanced.webm',
+                socialVideoUrl: 'https://example.com/video.mp4',
+            });
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect((result.data as Record<string, unknown>).aiStatus).toBeUndefined();
+                expect((result.data as Record<string, unknown>).transcription).toBeUndefined();
+                expect((result.data as Record<string, unknown>).enhancedAudioUrl).toBeUndefined();
+                expect((result.data as Record<string, unknown>).socialVideoUrl).toBeUndefined();
+            }
         });
     });
 

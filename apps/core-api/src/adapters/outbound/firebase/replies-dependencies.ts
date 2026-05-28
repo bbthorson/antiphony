@@ -257,12 +257,10 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         await db.runTransaction(async (t) => {
             const replyRef = repliesCollection().doc(prevReply.id);
             const enrichmentRef = replyEnrichmentsCollection().doc(prevReply.id);
-            // All reads before writes (Firestore txn rule). The AI fields the
-            // aggregate delta needs (aiStatus / sentiment / engagementScore)
-            // live in the enrichment doc as of the AI-enrichment split. Read
-            // enrichment-first with a canonical fallback so this stays
-            // behavior-preserving during the dual-write window (Stage 4b-i);
-            // Stage 4b-ii drops the canonical fallback once dual-write stops.
+            // All reads before writes (Firestore txn rule). The AI fields
+            // the aggregate delta needs (aiStatus / sentiment /
+            // engagementScore) live on the enrichment doc post Stage 4 of
+            // the AI-enrichment split.
             const [replyDoc, enrichmentDoc] = await Promise.all([
                 t.get(replyRef),
                 t.get(enrichmentRef),
@@ -279,9 +277,9 @@ export const firebaseReplyDependencies: ReplyDependencies = {
             const aggregateDelta = computeAggregateDelta(
                 currentStatus,
                 nextStatus,
-                enrichmentData.aiStatus ?? currentReplyData.aiStatus,
-                enrichmentData.sentiment ?? currentReplyData.sentiment,
-                enrichmentData.engagementScore ?? currentReplyData.engagementScore,
+                enrichmentData.aiStatus,
+                enrichmentData.sentiment,
+                enrichmentData.engagementScore,
                 increment,
             );
             if (!aggregateDelta) return;
@@ -295,12 +293,9 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         if (prevReplies.length === 0) return;
 
         // The AI fields the delta computation needs (aiStatus / sentiment /
-        // engagementScore) live in the enrichment docs as of the
-        // AI-enrichment split. Batch-fetch them so the delta reads from the
-        // right place — enrichment-first with a canonical fallback so this
-        // stays behavior-preserving during the dual-write window (Stage 4b-i).
-        // Stage 4b-ii drops the canonical fallback once dual-write stops (and
-        // the schema strip makes `prev.aiStatus` etc. unavailable anyway).
+        // engagementScore) live on the enrichment docs post Stage 4 of
+        // the AI-enrichment split. Batch-fetch them so the delta reads
+        // from the right place.
         const enrichments = await fetchReplyEnrichmentsByIds(prevReplies.map((r) => r.id));
 
         // Per-prompt aggregate deltas, computed from the caller-supplied prev
@@ -309,9 +304,9 @@ export const firebaseReplyDependencies: ReplyDependencies = {
         const deltasByPrompt = new Map<string, AggregateDeltaAccumulator>();
         for (const prev of prevReplies) {
             const e = enrichments.get(prev.id);
-            const aiStatus = e?.aiStatus ?? prev.aiStatus;
-            const engagementScore = e?.engagementScore ?? prev.engagementScore;
-            const sentiment = e?.sentiment ?? prev.sentiment;
+            const aiStatus = e?.aiStatus;
+            const engagementScore = e?.engagementScore;
+            const sentiment = e?.sentiment;
 
             const wasLive = prev.status === 'live';
             const isLive = nextStatus === 'live';

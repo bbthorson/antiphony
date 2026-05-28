@@ -173,6 +173,13 @@ export type PromptRecord = z.infer<typeof PromptRecordSchema>;
 
 /**
  * The raw reply data stored in Firestore.
+ *
+ * AI-derived fields (transcription, sentiment, engagement score, voice
+ * isolation, social-share video, etc.) live on `ReplyEnrichmentRecord`
+ * at `enrichments/replies/items/{id}` — see § 1 of
+ * `specs/ai-enrichment-split.md`. Only ingestion-time outputs that a
+ * self-hoster without paid AI still needs (waveform peaks + audio
+ * duration) remain on the canonical doc.
  */
 export const ReplyRecordSchema = z.object({
     /** Unique Reply ID */
@@ -194,36 +201,13 @@ export const ReplyRecordSchema = z.object({
      * - `deleted`: Soft deleted.
      */
     status: z.enum(['live', 'archived', 'deleted']).default('live'),
-    /** AI Enrichment Fields */
-    aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
-    aiError: z.string().optional(),
-    aiSummary: z.string().optional(),
-    aiLabels: z.array(z.string()).optional(),
-    transcription: z.string().optional(),
-    sentiment: z.enum(['Positive', 'Negative', 'Neutral']).optional(),
-    /**
-     * AI-assigned energy level. Spec says `High | Low`, but Gemini also
-     * returns `Neutral` for flat-affect replies (e.g. a short "Perfect.").
-     * Widened to three-way so `ReplyRecordSchema.safeParse` in
-     * [replies-dependencies.ts](../../apps/core-api/src/adapters/outbound/firebase/replies-dependencies.ts)
-     * stops silently dropping those replies out of the people list.
-     * Consumers (mobile + dashboard) already render anything-not-`High` as a
-     * neutral chip. Long-term: sanitize the AI output in
-     * `functions/src/services/aiService.ts` rather than widening further.
-     */
-    energyLevel: z.enum(['High', 'Low', 'Neutral']).optional(),
-    engagementScore: z.number().min(1).max(10).optional(),
-    /** URL to noise-reduced audio (ElevenLabs Voice Isolation, paid tiers only) */
-    enhancedAudioUrl: z.string().url().optional(),
-    /** Storage path for enhanced audio */
-    enhancedStoragePath: z.string().optional(),
     /**
      * Pre-computed waveform peaks (normalized 0–1) for instant audio
      * visualization. **Stays on canonical** (does NOT move to the
-     * enrichment doc during the AI-enrichment split) — produced by a
-     * plain ffmpeg pass at ingestion, not an AI step; a self-hoster
-     * without paid-tier AI still needs this on every reply for the
-     * audio player. See `specs/ai-enrichment-split.md` § 5.
+     * enrichment doc) — produced by a plain ffmpeg pass at ingestion,
+     * not an AI step; a self-hoster without paid-tier AI still needs
+     * this on every reply for the audio player. See
+     * `specs/ai-enrichment-split.md` § 5.
      */
     waveformPeaks: z.array(z.number()).optional(),
     /**
@@ -233,13 +217,6 @@ export const ReplyRecordSchema = z.object({
      * `specs/ai-enrichment-split.md` § 5.
      */
     audioDurationSec: z.number().optional(),
-    /** Social Share Video Fields */
-    socialVideoUrl: z.string().url().optional(),
-    socialVideoStoragePath: z.string().optional(),
-    socialVideoStatus: z.enum(['pending', 'complete', 'error']).optional(),
-    socialVideoError: z.string().optional(),
-    /** The audio URL/path used to generate the current video (for cache invalidation) */
-    socialVideoSourceAudio: z.string().optional(),
 });
 export type ReplyRecord = z.infer<typeof ReplyRecordSchema>;
 
@@ -258,21 +235,13 @@ export const ReplyEnrichmentRecordSchema = z.object({
     /** Private notes by the prompt author about this reply. */
     notes: z.string().optional(),
 
-    // === AI-enrichment fields (Stage 1 of `specs/ai-enrichment-split.md`) ===
+    // === AI-enrichment fields (sole source of truth post Stage 4) ===
     //
-    // Mirror the same fields on `ReplyRecordSchema`. As of Stage 1 these
-    // are pure schema scaffolding — no writers populate them yet. The
-    // staged migration:
-    //   - Stage 1 (this commit): schema scaffolding, hydrator reads from
-    //     enrichment if present, falls back to canonical.
-    //   - Stage 2: functions/ dual-writes to both canonical and enrichment.
-    //   - Stage 3: readers stop using `reply.record.<field>`, use the
-    //     lifted `reply.<field>` instead.
-    //   - Stage 4: canonical strip + one-shot migration script. Enrichment
-    //     becomes the sole source of truth for these fields.
-    //
-    // Shapes here MUST match `ReplyRecordSchema` exactly during the
-    // transition — divergence breaks the dual-write equivalence.
+    // These lifted off canonical in Stage 4 of `specs/ai-enrichment-split.md`.
+    // Writers (`functions/`) route AI updates here via the split-write
+    // helper in `functions/src/services/replyEnrichmentDualWrite.ts`;
+    // readers source them via the hydrator's enrichment branch (see
+    // `packages/core/services/hydration.ts`).
 
     // --- AI core (Gemini-generated) ---
     aiStatus: z.enum(['pending', 'complete', 'error', 'skipped_too_short']).optional(),
