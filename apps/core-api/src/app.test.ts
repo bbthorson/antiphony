@@ -57,6 +57,10 @@ describe('OpenAPI document', () => {
         expect(paths).toContain('/api/v1/users/{handle}');
         expect(paths).toContain('/api/v1/users/{handle}/prompts');
         expect(paths).toContain('/api/v1/users/switch-org');
-        expect(paths.length).toBeGreaterThanOrEqual(12);
+        expect(paths).toContain('/api/v1/prompts');
+        expect(paths).toContain('/api/v1/prompts/{promptId}');
+        expect(paths).toContain('/api/v1/prompts/{promptId}/replies');
+        expect(paths).toContain('/api/v1/prompts/public/{handle}/{promptId}');
+        expect(paths.length).toBeGreaterThanOrEqual(18);
     });
 });

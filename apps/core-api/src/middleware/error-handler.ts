@@ -61,7 +61,20 @@ export const errorHandler: ErrorHandler = (error, c) => {
         );
     }
 
-    // 3. Unknown errors — never leak internals in production.
+    // 3. Invalid JSON body. The OpenAPI body validator throws a plain
+    //    `Error` with the literal message `"Malformed JSON in request body"`
+    //    when `Content-Type: application/json` is set but the body fails
+    //    to parse. Native `c.req.json()` throws a `SyntaxError`. Either
+    //    way the client sent bad input — 400, not 500.
+    if (
+        error instanceof SyntaxError ||
+        (error instanceof Error && error.message === 'Malformed JSON in request body')
+    ) {
+        logger.warn({ ...meta, message: error.message }, 'invalid json body');
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
+    }
+
+    // 4. Unknown errors — never leak internals in production.
     const isDev = process.env.NODE_ENV === 'development';
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error({ ...meta, error: err.message, stack: err.stack }, 'unhandled api error');

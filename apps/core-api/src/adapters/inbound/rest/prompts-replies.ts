@@ -1,10 +1,10 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
-import { toReplyViewPublic } from 'shared/types';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { toReplyViewPublic, ReplyViewSchema, ReplyViewPublicSchema } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { promptService, replyService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * GET /api/v1/prompts/:promptId/replies
@@ -33,9 +33,30 @@ const QuerySchema = z.object({
         .default(false),
 });
 
-const app = new Hono();
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
-app.get('/:promptId/replies', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const listRepliesRoute = createRoute({
+    method: 'get',
+    path: '/{promptId}/replies',
+    tags: ['Prompts'],
+    summary: 'List replies on a prompt',
+    description: 'Returns every reply on the given prompt with owner-aware projection. The prompt author sees the full `ReplyView[]` (with CRM/PII state); everyone else sees `ReplyViewPublic[]`. Non-live prompts return `[]` for non-authors.',
+    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: {
+        params: z.object({
+            promptId: z.string().openapi({ description: 'The prompt id' }),
+        }),
+        query: z.object({
+            includeArchived: z.enum(['true', 'false']).optional().openapi({ description: 'When `true`, include replies whose status is `archived`. Default `false`.' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(z.union([z.array(ReplyViewSchema), z.array(ReplyViewPublicSchema)]), 'Replies on the prompt (owner-aware projection)'),
+        400: errorResponse('Invalid query parameters'),
+    },
+});
+
+app.openapi(listRepliesRoute, async (c) => {
     const promptId = c.req.param('promptId');
 
     const queryResult = QuerySchema.safeParse({
@@ -53,7 +74,7 @@ app.get('/:promptId/replies', optionalAuth(), rateLimit(RATE_LIMITS.read), async
 
     const prompt = await promptService.getPromptData(promptId);
     if (!prompt) {
-        return c.json({ success: true, data: [] });
+        return c.json({ success: true as const, data: [] }, 200);
     }
 
     const isAuthor = viewerUid !== null && viewerUid === prompt.record.authorId;
@@ -62,7 +83,7 @@ app.get('/:promptId/replies', optionalAuth(), rateLimit(RATE_LIMITS.read), async
     // endpoint doesn't reveal reply existence on archived / deleted / draft
     // prompts.
     if (!isAuthor && prompt.record.status !== 'live') {
-        return c.json({ success: true, data: [] });
+        return c.json({ success: true as const, data: [] }, 200);
     }
 
     const replies = await replyService.getRepliesForPrompt(
@@ -77,9 +98,9 @@ app.get('/:promptId/replies', optionalAuth(), rateLimit(RATE_LIMITS.read), async
     );
 
     return c.json({
-        success: true,
+        success: true as const,
         data: isAuthor ? replies : replies.map(toReplyViewPublic),
-    });
+    }, 200);
 });
 
 export { app as promptsRepliesRoute };
