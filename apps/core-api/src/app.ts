@@ -1,5 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
+import { OPENAPI_INFO } from './lib/openapi-info.js';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
@@ -161,17 +162,10 @@ export function app(): OpenAPIHono {
 
     // 5. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
-    //    in the spec. The pilot covers `/users/*`; subsequent PRs will
-    //    instrument additional families per
-    //    `specs/drafts/openapi-generation.md`.
-    a.doc('/openapi.json', {
-        openapi: '3.0.0',
-        info: {
-            title: 'Vox Pop Core API',
-            version: '0.1.0',
-            description: 'Open-source REST surface for Vox Pop — actors, prompts, replies, audio.',
-        },
-    });
+    //    in the spec. Public-doc scope: `/users`, `/prompts`, `/replies`,
+    //    `/auth`. Transport/utility/system routes intentionally stay
+    //    plain-Hono. See `specs/drafts/openapi-generation.md`.
+    a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO });
 
     // 6. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

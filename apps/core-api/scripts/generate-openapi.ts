@@ -38,16 +38,10 @@ writeFileSync(
     runnerEntry,
     `
 import { app } from './app.js';
+import { OPENAPI_INFO } from './lib/openapi-info.js';
 
 const a = app();
-const document = a.getOpenAPIDocument({
-    openapi: '3.0.0',
-    info: {
-        title: 'Vox Pop Core API',
-        version: '0.1.0',
-        description: 'Open-source REST surface for Vox Pop — actors, prompts, replies, audio.',
-    },
-});
+const document = a.getOpenAPIDocument({ openapi: '3.0.0', info: OPENAPI_INFO });
 
 process.stdout.write(JSON.stringify(document));
 `,

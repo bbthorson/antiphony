@@ -3,7 +3,7 @@
   "info": {
     "title": "Vox Pop Core API",
     "version": "0.1.0",
-    "description": "Open-source REST surface for Vox Pop — actors, prompts, replies, audio."
+    "description": "Open-source REST surface for Vox Pop — users, prompts, replies, and the auth surface that links them.\n\n## Authentication\n\nEvery authenticated endpoint accepts a bearer token via the `Authorization: Bearer <token>` header. Two token types are accepted interchangeably:\n\n- **Firebase ID token** — issued by the Firebase Auth client SDK. Short-lived (~1 hour); refresh client-side.\n- **Firebase session cookie** — issued by the hosted dashboard via `POST /api/v1/auth/session` (apps/web only; per-origin Set-Cookie semantics). Longer-lived; useful for server-rendered clients.\n\nBoth verify against the same Firebase project. Public endpoints accept missing/invalid tokens but project to the public view shape.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "components": {
     "schemas": {},
@@ -13054,6 +13054,88 @@
           },
           "404": {
             "description": "Prompt not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atproto/disconnect": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Disconnect the linked AT Protocol identity",
+        "description": "Removes the authenticated viewer's linked AT Protocol identity (DID + handle) from their profile. Does not revoke the PDS-side OAuth session — call your PDS's logout flow separately if needed.",
+        "responses": {
+          "200": {
+            "description": "AT Protocol identity disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
             "content": {
               "application/json": {
                 "schema": {

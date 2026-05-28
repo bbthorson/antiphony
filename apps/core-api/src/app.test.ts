@@ -66,6 +66,16 @@ describe('OpenAPI document', () => {
         expect(paths).toContain('/api/v1/replies/feed');
         expect(paths).toContain('/api/v1/replies/search');
         expect(paths).toContain('/api/v1/replies/bulk-action');
-        expect(paths.length).toBeGreaterThanOrEqual(26);
+        expect(paths).toContain('/api/v1/atproto/disconnect');
+        expect(paths.length).toBeGreaterThanOrEqual(27);
+    });
+
+    it('describes authentication in info.description', async () => {
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/openapi.json'));
+        const doc = await res.json();
+        expect(doc.info?.description).toMatch(/Authentication/);
+        expect(doc.info?.description).toMatch(/Authorization: Bearer/);
+        expect(doc.info?.description).toMatch(/Envelope/);
     });
 });
