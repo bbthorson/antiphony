@@ -1,7 +1,5 @@
-import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { z } from 'zod';
-import { toReplyViewPublic } from 'shared/types';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { toReplyViewPublic, ReplyViewPublicSchema } from 'shared/types';
 import {
     UpdateReplyStatusRequestSchema,
     BulkReplyActionRequestSchema,
@@ -16,6 +14,7 @@ import {
 } from '../../../lib/pending-uploads.js';
 import { logger } from '../../../lib/logger.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * Reply endpoints mounted at `/api/v1/replies`.
@@ -34,20 +33,20 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  *   PATCH /:replyId/notes           — update private notes on a reply
  *   POST  /bulk-action              — bulk status / bulk mark-read
  *
- * Parity sources:
- *   apps/web/src/app/api/v1/replies/route.ts (GET + POST)
- *   apps/web/src/app/api/v1/replies/[replyId]/status/route.ts
- *   apps/web/src/app/api/v1/replies/[replyId]/read/route.ts
- *   apps/web/src/app/api/v1/replies/[replyId]/notes/route.ts
- *   apps/web/src/app/api/v1/replies/bulk-action/route.ts
+ * Validation note: each route declares its full Zod request schema in
+ * `createRoute({ request })`. The OpenAPIHono validator parses inbound
+ * requests against the schema and the handler accesses validated data
+ * via `c.req.valid('query' | 'json' | 'param')`. No second `safeParse`
+ * in the handler.
  */
 
 const ListQuerySchema = z.object({
-    promptId: z.string().min(1, 'promptId is required'),
+    promptId: z.string().min(1, 'promptId is required').openapi({ description: 'The parent prompt id' }),
     includeArchived: z
         .string()
         .optional()
-        .transform((v) => v === 'true'),
+        .transform((v) => v === 'true')
+        .openapi({ description: 'When `"true"`, include archived replies (only honored for owner views)' }),
 });
 
 const NoteSchema = z.object({ notes: z.string().max(5000) });
@@ -68,28 +67,33 @@ const CreateReplyRequestSchema = z
         message: 'Provide exactly one of audioUrl or pendingUploadId',
     });
 
-const app = new Hono();
+const ReplyIdParamSchema = z.object({
+    replyId: z.string().openapi({ description: 'The reply id' }),
+});
+
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/replies?promptId=… — fetch replies for a prompt
 // ---------------------------------------------------------------------------
-//
-// Public endpoint (no requireAuth). Viewer is read via optionalAuth so the
-// hydration layer can apply isAuthor-aware projection. Archived prompts'
-// replies are hidden from non-authors per ReplyService.getRepliesForPrompt.
 
-app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
-    const queryResult = ListQuerySchema.safeParse({
-        promptId: c.req.query('promptId'),
-        includeArchived: c.req.query('includeArchived'),
-    });
-    if (!queryResult.success) {
-        return c.json(
-            errorEnvelope(c, queryResult.error.issues[0]?.message ?? 'Invalid query parameters'),
-            400,
-        );
-    }
-    const { promptId, includeArchived } = queryResult.data;
+const listRoute = createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Replies'],
+    summary: 'List replies for a prompt',
+    description: 'Returns the public projection (`ReplyViewPublic[]`) of replies for the given prompt. Anonymous-friendly; the parent prompt\'s visibility + status gates non-author access.',
+    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { query: ListQuerySchema },
+    responses: {
+        200: jsonResponse(z.array(ReplyViewPublicSchema), 'Replies on the prompt'),
+        400: errorResponse('Invalid query parameters'),
+        404: errorResponse('Prompt not found'),
+    },
+});
+
+app.openapi(listRoute, async (c) => {
+    const { promptId, includeArchived } = c.req.valid('query');
 
     const prompt = await promptService.getPromptData(promptId);
     if (!prompt) {
@@ -126,34 +130,34 @@ app.get('/', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     );
 
     return c.json({
-        success: true,
+        success: true as const,
         data: replies.map(toReplyViewPublic),
-    });
+    }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/replies/:replyId — single-reply lookup
 // ---------------------------------------------------------------------------
-//
-// Powers deep-link recovery in the Replies tab: when the URL carries a
-// `?replyId=<id>` that lives past the currently loaded feed page(s), the UI
-// fetches the single reply via this endpoint and uses it as the detail-pane
-// fallback. Requires auth (the inbox is a logged-in surface), and gates
-// visibility with the same rules GET / uses:
-//
-//   - Owner of the parent prompt → 200.
-//   - Non-owner, prompt is live AND public → 200 (parity with GET / which
-//     exposes replies of public-live prompts to anonymous viewers; this
-//     endpoint stays consistent so embed-like flows can deep-link too).
-//   - Non-owner, prompt archived/deleted/draft → 404 (mask existence; matches
-//     the GET / handler's non-live → 404 branch).
-//   - Non-owner, prompt is live but private/unlisted → 403 (the prompt is
-//     visible-by-link to its author elsewhere; a clearer error than 404 here
-//     since the caller is auth'd and we can attribute the denial).
 
-app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const getByIdRoute = createRoute({
+    method: 'get',
+    path: '/{replyId}',
+    tags: ['Replies'],
+    summary: 'Get a reply by id',
+    description: 'Returns the public projection of a single reply. Owners see their own replies regardless of parent-prompt status; non-owners see only replies on live + public prompts (404 for archived/draft, 403 for live + private).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: ReplyIdParamSchema },
+    responses: {
+        200: jsonResponse(ReplyViewPublicSchema, 'Reply'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Parent prompt is private'),
+        404: errorResponse('Reply not found'),
+    },
+});
+
+app.openapi(getByIdRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const replyId = c.req.param('replyId');
+    const { replyId } = c.req.valid('param');
 
     const record = await replyService.getReplyRecord(replyId);
     if (!record) {
@@ -186,32 +190,37 @@ app.get('/:replyId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
         return c.json(errorEnvelope(c, 'Reply not found'), 404);
     }
 
-    return c.json({ success: true, data: toReplyViewPublic(view) });
+    return c.json({ success: true as const, data: toReplyViewPublic(view) }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/replies
 // ---------------------------------------------------------------------------
 
-app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const createRouteDef = createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['Replies'],
+    summary: 'Create a reply',
+    description: 'Creates a reply on a prompt. The audio source is either a pre-uploaded `audioUrl` (authenticated upload flow) or a `pendingUploadId` (embed-redirect flow). Exactly one is required.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: { 'application/json': { schema: CreateReplyRequestSchema } },
+            required: true,
+        },
+    },
+    responses: {
+        200: jsonResponse(ReplyViewPublicSchema.nullable(), 'The hydrated reply (null if hydration failed)'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        404: errorResponse('Pending upload not found or expired'),
+    },
+});
+
+app.openapi(createRouteDef, async (c) => {
     const uid = c.get('viewerUid')!;
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = CreateReplyRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    const { promptId, audioUrl: directAudioUrl, pendingUploadId } = validation.data;
+    const { promptId, audioUrl: directAudioUrl, pendingUploadId } = c.req.valid('json');
 
     let audioUrl: string;
     if (pendingUploadId) {
@@ -255,48 +264,71 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     }
 
     return c.json({
-        success: true,
+        success: true as const,
         data: hydratedReply ? toReplyViewPublic(hydratedReply) : null,
-    });
+    }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // PATCH /api/v1/replies/:replyId/status
 // ---------------------------------------------------------------------------
 
-app.patch('/:replyId/status', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const updateStatusRoute = createRoute({
+    method: 'patch',
+    path: '/{replyId}/status',
+    tags: ['Replies'],
+    summary: 'Update a reply\'s status',
+    description: 'Flips a reply\'s status (`live` / `archived` / `deleted`). Author of the parent prompt only.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        params: ReplyIdParamSchema,
+        body: {
+            content: { 'application/json': { schema: UpdateReplyStatusRequestSchema } },
+            required: true,
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Status updated'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not authorized'),
+        404: errorResponse('Reply not found'),
+    },
+});
+
+app.openapi(updateStatusRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const replyId = c.req.param('replyId');
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = UpdateReplyStatusRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
+    const { replyId } = c.req.valid('param');
+    const { status } = c.req.valid('json');
 
     // ReplyService.updateReplyStatus throws NotFoundError / ForbiddenError —
     // both ServiceError subclasses, mapped to 404/403 by the error-handler.
-    await replyService.updateReplyStatus(replyId, validation.data.status, uid);
+    await replyService.updateReplyStatus(replyId, status, uid);
 
-    return c.json({ success: true, data: null });
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/replies/:replyId/read
 // ---------------------------------------------------------------------------
 
-app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const markReadRoute = createRoute({
+    method: 'post',
+    path: '/{replyId}/read',
+    tags: ['Replies'],
+    summary: 'Mark a reply as read by the viewer',
+    description: 'Adds the viewer\'s uid to the reply\'s `readBy` set. Idempotent; no ownership check (matches `POST /prompts/:id/read`).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: ReplyIdParamSchema },
+    responses: {
+        200: jsonResponse(z.null(), 'Reply marked read'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(markReadRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const replyId = c.req.param('replyId');
+    const { replyId } = c.req.valid('param');
 
     // Parity with apps/web: no ownership check — `readBy` is a non-sensitive
     // tracking field and the direct Firestore update is idempotent
@@ -307,7 +339,7 @@ app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
     // `data: null` — fire-and-forget op with no resource to return. The
     // null keeps the response on the standard `{success, data}` envelope
     // so callers (including `apiClient.postData`) can use the unwrap helper.
-    return c.json({ success: true, data: null });
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 // ---------------------------------------------------------------------------
@@ -319,24 +351,33 @@ app.post('/:replyId/read', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
 // ever used it; removed 2026-04-26 to reduce surface (audit finding from
 // specs/api-ledger.md).
 
-const handleNotesUpdate = async (c: Context) => {
+const updateNotesRoute = createRoute({
+    method: 'patch',
+    path: '/{replyId}/notes',
+    tags: ['Replies'],
+    summary: 'Update private CRM notes on a reply',
+    description: 'Author-of-parent-prompt only. The notes live on the enrichments doc (`enrichments/replies/items/{id}`) and never appear in the public projection.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.hourly)] as const,
+    request: {
+        params: ReplyIdParamSchema,
+        body: {
+            content: { 'application/json': { schema: NoteSchema } },
+            required: true,
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Notes updated'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not authorized'),
+        404: errorResponse('Reply or prompt not found'),
+    },
+});
+
+app.openapi(updateNotesRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const replyId = c.req.param('replyId')!;
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = NoteSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
+    const { replyId } = c.req.valid('param');
+    const { notes } = c.req.valid('json');
 
     const reply = await replyService.getReplyRecord(replyId);
     if (!reply) {
@@ -352,37 +393,40 @@ const handleNotesUpdate = async (c: Context) => {
         return c.json(errorEnvelope(c, 'Forbidden'), 403);
     }
 
-    await replyService.updateReplyNotes(replyId, validation.data.notes);
+    await replyService.updateReplyNotes(replyId, notes);
 
     // `data: null` — see comment on /replies/:replyId/read above.
-    return c.json({ success: true, data: null });
-};
-
-app.patch('/:replyId/notes', requireAuth(), rateLimit(RATE_LIMITS.hourly), handleNotesUpdate);
+    return c.json({ success: true as const, data: null }, 200);
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/replies/bulk-action
 // ---------------------------------------------------------------------------
 
-app.post('/bulk-action', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const bulkActionRoute = createRoute({
+    method: 'post',
+    path: '/bulk-action',
+    tags: ['Replies'],
+    summary: 'Bulk-apply an action to a list of replies',
+    description: 'Apply `markRead`, `archive`, `delete`, or `restore` to a batch of reply ids. Status mutations require ownership of the parent prompt; `markRead` is idempotent and unowned.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        body: {
+            content: { 'application/json': { schema: BulkReplyActionRequestSchema } },
+            required: true,
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'Bulk action completed'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not authorized'),
+    },
+});
+
+app.openapi(bulkActionRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = BulkReplyActionRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    const { replyIds, action } = validation.data;
+    const { replyIds, action } = c.req.valid('json');
 
     switch (action) {
         case 'markRead':
@@ -401,7 +445,7 @@ app.post('/bulk-action', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) 
 
     // Drop the `count` echo — caller computes it from request input.
     // `data: null` keeps the standard envelope.
-    return c.json({ success: true, data: null });
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 export { app as repliesRoute };

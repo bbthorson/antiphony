@@ -96,16 +96,28 @@ const VALIDATION_MESSAGES: Record<string, string> = {
  * for `defaultHook`) so it can be reused across route families with
  * different Variables types without per-instance casting.
  */
+interface ZodIssueLike {
+    message?: string;
+}
 type ValidationResult =
-    | { success: false; error: { issues: unknown }; target?: string }
+    | { success: false; error: { issues: ZodIssueLike[] }; target?: string }
     | { success: true; data: unknown; target?: string };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const envelopeValidationHook = (result: ValidationResult, c: Context): any => {
     if (!result.success) {
-        const message = (result.target && VALIDATION_MESSAGES[result.target]) || 'Invalid request';
+        // Prefer the specific Zod issue message when there's exactly one
+        // failure (e.g., "Search query must be at least 2 characters") —
+        // it's almost always more useful than the category label.
+        // Multi-issue failures fall back to the category since picking
+        // one would be misleading; clients can still inspect
+        // `error.issues` for the full list.
+        const issues = result.error.issues;
+        const single = issues.length === 1 ? issues[0]?.message : undefined;
+        const category = (result.target && VALIDATION_MESSAGES[result.target]) || 'Invalid request';
+        const message = single || category;
         return c.json(
-            errorEnvelope(c, message, { issues: result.error.issues }),
+            errorEnvelope(c, message, { issues }),
             400,
         );
     }

@@ -174,7 +174,11 @@ describe('GET /api/v1/users/:handle/prompts', () => {
         expect(res.status).toBe(400);
         const body = await res.json();
         expect(body.success).toBe(false);
-        expect(body.error.message).toBe('Invalid query parameters');
+        // Default-hook surfaces the specific Zod issue's message when
+        // there's exactly one failure — clearer than the "Invalid query
+        // parameters" category label. See `envelopeValidationHook`.
+        expect(body.error.message).toMatch(/less than or equal to 100/);
+        expect(body.error.issues).toHaveLength(1);
     });
 
     it('propagates the inbound X-Request-ID header', async () => {

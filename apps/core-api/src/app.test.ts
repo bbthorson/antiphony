@@ -61,6 +61,11 @@ describe('OpenAPI document', () => {
         expect(paths).toContain('/api/v1/prompts/{promptId}');
         expect(paths).toContain('/api/v1/prompts/{promptId}/replies');
         expect(paths).toContain('/api/v1/prompts/public/{handle}/{promptId}');
-        expect(paths.length).toBeGreaterThanOrEqual(18);
+        expect(paths).toContain('/api/v1/replies');
+        expect(paths).toContain('/api/v1/replies/{replyId}');
+        expect(paths).toContain('/api/v1/replies/feed');
+        expect(paths).toContain('/api/v1/replies/search');
+        expect(paths).toContain('/api/v1/replies/bulk-action');
+        expect(paths.length).toBeGreaterThanOrEqual(26);
     });
 });
