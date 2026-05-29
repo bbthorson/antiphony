@@ -28,6 +28,7 @@ import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwardi
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
 import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
+import { systemAtprotoSessionRoute } from './adapters/inbound/rest/system-atproto-session.js';
 import { systemAuthMintRoute } from './adapters/inbound/rest/system-auth-mint.js';
 import { systemBlueskyIdentityRoute } from './adapters/inbound/rest/system-bluesky-identity.js';
 
@@ -157,6 +158,7 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
     a.route('/api/v1/atproto', atprotoRoute);
     a.route('/api/v1/system/atproto-state', systemAtprotoStateRoute);
+    a.route('/api/v1/system/atproto-session', systemAtprotoSessionRoute);
     a.route('/api/v1/system/auth', systemAuthMintRoute);
     a.route('/api/v1/system/users', systemBlueskyIdentityRoute);
 
