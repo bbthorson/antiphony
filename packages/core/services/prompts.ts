@@ -214,6 +214,16 @@ export class PromptService {
     }
 
     /**
+     * Records the AT Protocol URI returned by the publisher onto the
+     * prompt. Narrow wrapper around `updatePrompt` so the calling
+     * endpoint exposes only this single field — matches the
+     * `updatePromptStatus` shape.
+     */
+    async setPromptAtprotoUri(promptId: string, atprotoUri: string) {
+        await this.deps.updatePrompt(promptId, { atprotoUri });
+    }
+
+    /**
      * Soft-deletes a prompt (status -> 'deleted').
      */
     async deletePrompt(promptId: string) {

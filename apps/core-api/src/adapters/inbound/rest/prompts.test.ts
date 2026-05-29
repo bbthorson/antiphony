@@ -15,6 +15,7 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
         updatePrompt: vi.fn(),
         getPromptRecord: vi.fn(),
         updatePromptStatus: vi.fn(),
+        setPromptAtprotoUri: vi.fn(),
         deletePrompt: vi.fn(),
         getPromptsForUser: vi.fn(),
     },
@@ -402,6 +403,91 @@ describe('PATCH /api/v1/prompts/:promptId/status', () => {
 
         const res = await app().request('/api/v1/prompts/p-org/status', jsonReq({ status: 'live' }, 'PATCH'));
         expect(res.status).toBe(200);
+    });
+});
+
+describe('PATCH /api/v1/prompts/:promptId/atproto-uri', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    const VALID_URI = 'at://did:plc:abc123/com.voxpop.audio.prompt/3kj4xyz';
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/prompts/p-1/atproto-uri', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ atprotoUri: VALID_URI }),
+        });
+        expect(res.status).toBe(401);
+    });
+
+    it('400s when atprotoUri is malformed', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        const res = await app().request(
+            '/api/v1/prompts/p-1/atproto-uri',
+            jsonReq({ atprotoUri: 'not-a-uri' }, 'PATCH'),
+        );
+        expect(res.status).toBe(400);
+    });
+
+    it('404s when the prompt is missing', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue(null);
+        const res = await app().request(
+            '/api/v1/prompts/p-miss/atproto-uri',
+            jsonReq({ atprotoUri: VALID_URI }, 'PATCH'),
+        );
+        expect(res.status).toBe(404);
+    });
+
+    it('403s when viewer does not own and is not an org member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'not-owner' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-1',
+            authorId: 'owner',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(organizationService.isMember).mockResolvedValue(false);
+
+        const res = await app().request(
+            '/api/v1/prompts/p-1/atproto-uri',
+            jsonReq({ atprotoUri: VALID_URI }, 'PATCH'),
+        );
+        expect(res.status).toBe(403);
+    });
+
+    it('succeeds when viewer is the owner', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'owner' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-1',
+            authorId: 'owner',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(promptService.setPromptAtprotoUri).mockResolvedValue(undefined);
+
+        const res = await app().request(
+            '/api/v1/prompts/p-1/atproto-uri',
+            jsonReq({ atprotoUri: VALID_URI }, 'PATCH'),
+        );
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true, data: null });
+        expect(promptService.setPromptAtprotoUri).toHaveBeenCalledWith('p-1', VALID_URI);
+    });
+
+    it('allows an org member (author treated as org id)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'member' });
+        vi.mocked(promptService.getPromptRecord).mockResolvedValue({
+            id: 'p-org',
+            authorId: 'org-id',
+        } as unknown as Awaited<ReturnType<typeof promptService.getPromptRecord>>);
+        vi.mocked(organizationService.isMember).mockResolvedValue(true);
+        vi.mocked(promptService.setPromptAtprotoUri).mockResolvedValue(undefined);
+
+        const res = await app().request(
+            '/api/v1/prompts/p-org/atproto-uri',
+            jsonReq({ atprotoUri: VALID_URI }, 'PATCH'),
+        );
+        expect(res.status).toBe(200);
+        expect(promptService.setPromptAtprotoUri).toHaveBeenCalledWith('p-org', VALID_URI);
     });
 });
 

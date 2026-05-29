@@ -24,6 +24,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   GET    /:promptId            — owner-aware PromptView (optional auth)
  *   POST   /                     — create prompt (idempotency-capable)
  *   PATCH  /:promptId/status     — update status (live/archived)
+ *   PATCH  /:promptId/atproto-uri — record the at:// URI after publish
  *   DELETE /:promptId            — soft-delete (status -> deleted)
  *   POST   /:promptId/read       — mark all replies for the prompt as read
  *
@@ -39,6 +40,10 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  */
 
 const StatusUpdateSchema = z.object({ status: z.enum(['live', 'archived']) });
+
+const AtprotoUriUpdateSchema = z.object({
+    atprotoUri: z.string().regex(/^at:\/\/.+/, 'Must be an at:// URI'),
+});
 
 const ListQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -326,6 +331,70 @@ app.openapi(updateStatusRoute, async (c) => {
     // Status echo dropped — callers don't read it; they already know
     // what they sent. `data: null` keeps the response on the standard
     // envelope so callers can use `*Data` helpers.
+    return c.json({ success: true as const, data: null }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /:promptId/atproto-uri
+// ---------------------------------------------------------------------------
+
+const updateAtprotoUriRoute = createRoute({
+    method: 'patch',
+    path: '/{promptId}/atproto-uri',
+    tags: ['Prompts'],
+    summary: 'Set the AT Protocol URI of a published prompt',
+    description: 'Records the `at://` URI returned by the publisher after a successful `repo.putRecord` on the author\'s PDS. Owner or active-org member only. Narrow-scope endpoint — only `atprotoUri` can be set this way. Returns `data: null` on success.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        params: z.object({
+            promptId: z.string().openapi({ description: 'The prompt id' }),
+        }),
+        body: {
+            content: { 'application/json': { schema: AtprotoUriUpdateSchema } },
+        },
+    },
+    responses: {
+        200: jsonResponse(z.null(), 'AT Protocol URI recorded'),
+        400: errorResponse('Invalid atprotoUri'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not authorized'),
+        404: errorResponse('Prompt not found'),
+    },
+});
+
+app.openapi(updateAtprotoUriRoute, async (c) => {
+    const uid = c.get('viewerUid')!;
+    const promptId = c.req.param('promptId');
+
+    let body: unknown;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
+    }
+
+    const validation = AtprotoUriUpdateSchema.safeParse(body);
+    if (!validation.success) {
+        return c.json(
+            errorEnvelope(c, 'Invalid atprotoUri', { issues: validation.error.issues }),
+            400,
+        );
+    }
+
+    const promptRecord = await promptService.getPromptRecord(promptId);
+    if (!promptRecord) {
+        return c.json(errorEnvelope(c, 'Prompt not found'), 404);
+    }
+
+    const isOwner = promptRecord.authorId === uid;
+    const isOrgMember =
+        !isOwner && (await organizationService.isMember(promptRecord.authorId, uid));
+    if (!isOwner && !isOrgMember) {
+        return c.json(errorEnvelope(c, 'Forbidden'), 403);
+    }
+
+    await promptService.setPromptAtprotoUri(promptId, validation.data.atprotoUri);
+
     return c.json({ success: true as const, data: null }, 200);
 });
 
