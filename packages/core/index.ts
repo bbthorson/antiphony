@@ -18,3 +18,9 @@
 // from this package — pure record-to-lexicon mapping with no Firebase or
 // SDK dependency. See `lexicons/README.md` at the repo root.
 export * from './services/atproto-lexicon';
+
+// AuthPort — Step 1 of `specs/drafts/auth-hardening.md`. Pure contract
+// (Zod schemas + interface + Result type); no implementation, no
+// runtime dependency on any auth backend. Adapters (Firebase / Stub /
+// future DID) live in `apps/web/src/lib/auth/` and satisfy this port.
+export * from './ports/auth-port';
