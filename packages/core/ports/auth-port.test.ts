@@ -140,7 +140,7 @@ describe('AuthErrorSchema', () => {
     });
 
     it('accepts invalid-credential with each `which` enum value', () => {
-        for (const which of ['phone', 'code', 'token'] as const) {
+        for (const which of ['phone', 'code', 'token', 'email'] as const) {
             const input: AuthError = { code: 'invalid-credential', which };
             const parsed = AuthErrorSchema.parse(input);
             expect(parsed).toEqual(input);
