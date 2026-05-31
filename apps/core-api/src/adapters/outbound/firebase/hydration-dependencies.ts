@@ -3,19 +3,20 @@ import type { HydrationDependencies } from '@vox-pop/core/ports/hydration-depend
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseCoreServices } from './core-services-firebase.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
+import { firebasePromptDependencies } from './prompts-dependencies.js';
 
 export type { HydrationDependencies };
 
 /**
  * Firebase-wired `HydrationDependencies` binding for core-api.
  *
- * **Scope as of this PR**: implements `countOrgMembers` (for
- * `hydrateOrganization`), `loadUser` (for `hydratePrompt`),
- * `getOrgMemberRole` (for `hydrateOrganizations` when called with a
- * viewer — backs `GET /users/me/organizations`), and `getUsersByIds` (for
- * `hydrateRepliesWithRecipient` when `includePrivateData` is on — backs
- * the reply-read endpoints in Batch A2). Remaining methods (`loadPrompt`,
- * `getOrgName`) stay stubbed and fill in as org-admin + invite endpoints port.
+ * **Scope**: all `HydrationDependencies` methods are now implemented —
+ * `countOrgMembers` (`hydrateOrganization`), `loadUser` (`hydratePrompt`),
+ * `getOrgMemberRole` (`hydrateOrganizations` with a viewer — backs
+ * `GET /users/me/organizations`), `getUsersByIds`
+ * (`hydrateRepliesWithRecipient` when `includePrivateData` is on),
+ * `getOrgName`, `getReplyEnrichmentsByIds`, and `loadPrompt`
+ * (`hydrateReply` — backs `POST /replies`, which was 500ing on the stub).
  *
  * **Key difference vs. apps/web's binding**: no `DataLoader` wrapping.
  * Apps/web uses `DataLoader` inside React's `cache()` for per-render batch
@@ -27,12 +28,6 @@ export type { HydrationDependencies };
  *
  * Parity source: `apps/web/src/services/hydration-dependencies.ts`.
  */
-
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api hydration-dependencies] ${method} is not yet ported. See apps/core-api/src/services/hydration-dependencies.ts and apps/web/src/services/hydration-dependencies.ts for the binding to mirror.`,
-    );
-};
 
 export const firebaseHydrationDependencies: HydrationDependencies = {
     // --- Implemented: hydrateOrganization path ---
@@ -100,9 +95,16 @@ export const firebaseHydrationDependencies: HydrationDependencies = {
         return firebaseReplyDependencies.getReplyEnrichmentsByIds(replyIds);
     },
 
-    // --- Stubbed — fill in when prompt hydration needs cross-doc prompt loads ---
-
-    async loadPrompt(_id: string) {
-        return notYetPorted('loadPrompt');
+    async loadPrompt(id: string) {
+        // Delegate to the prompts binding's `getDocumentById`, which owns the
+        // `prompts/{id}` read, the empty-string guard, the existence check,
+        // and the robust `{ id: doc.id, ...data }` PromptDocumentSchema parse.
+        // Mirrors the delegation pattern used by `loadUser`/`getUsersByIds`/
+        // `getReplyEnrichmentsByIds` above — keeps the prompt-loading concern
+        // in one place rather than duplicating the Firestore read here.
+        // (Apps/web wraps prompt loads in a DataLoader inside React's
+        // `cache()` for per-render batching; core-api is per-request atomic,
+        // so a naive single read is correct — see the file header.)
+        return firebasePromptDependencies.getDocumentById(id);
     },
 };
