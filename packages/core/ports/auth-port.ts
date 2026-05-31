@@ -128,12 +128,10 @@ export const AuthErrorSchema = z.discriminatedUnion('code', [
         /**
          * Which credential the adapter rejected — `'phone'` for an
          * invalid phone number format, `'code'` for a wrong OTP,
-         * `'token'` for a malformed/expired auth token, `'email'` for a
-         * bad/expired magic-link (or an email-mismatch on completion).
-         * The message catalog uses this to pick the right user-facing
-         * copy.
+         * `'token'` for a malformed/expired auth token. The message
+         * catalog uses this to pick the right user-facing copy.
          */
-        which: z.enum(['phone', 'code', 'token', 'email']),
+        which: z.enum(['phone', 'code', 'token']),
     }),
     z.object({
         code: z.literal('rate-limited'),
@@ -268,25 +266,16 @@ export type SignInOptions =
           phoneNumber: string;
           verifier: RecaptchaVerifierLike;
       }
-    | {
-          // Email magic link — two-phase. `signIn` *sends* the link;
-          // `confirmSignIn` completes it on the landing page (the link's
-          // URL carries the one-time code, so there's no confirmation id).
-          method: 'firebase-email-link';
-          email: string;
-      }
     // Future: { method: 'did-oauth'; handle: string; redirectUri: string }
     ;
 
 /**
  * Result of `signIn` — for phone auth this is the confirmation handle
- * that `confirmSignIn` consumes. For magic link there's no handle (the
- * emailed URL carries it); the caller just tells the user to check their
- * inbox. For future DID flows this could be a redirect URL.
+ * that `confirmSignIn` consumes. For future DID flows this could be a
+ * redirect URL the caller navigates to.
  */
 export type SignInResult =
     | { method: 'firebase-phone'; confirmationId: string }
-    | { method: 'firebase-email-link' }
     // Future: { method: 'did-oauth'; redirectUrl: string }
     ;
 
@@ -295,14 +284,6 @@ export type SignInResult =
  */
 export type ConfirmSignInOptions =
     | { method: 'firebase-phone'; confirmationId: string; code: string }
-    | {
-          // Complete a magic-link sign-in from the landing page. `url` is
-          // the full current location (it embeds the one-time link code);
-          // `email` is the address the link was sent to.
-          method: 'firebase-email-link';
-          email: string;
-          url: string;
-      }
     // Future: { method: 'did-oauth'; ... }
     ;
 
@@ -418,11 +399,8 @@ export interface AuthPort {
 
     /**
      * Begin a sign-in. For Firebase phone auth, this sends the OTP and
-     * returns a confirmation handle. For magic link, it sends the email
-     * and returns `{ method: 'firebase-email-link' }` (no handle — the
-     * link carries the code). The caller then either prompts for the OTP
-     * and calls `confirmSignIn` (phone) or tells the user to check their
-     * inbox (email link).
+     * returns a confirmation handle. The caller then prompts the user
+     * for the code and calls `confirmSignIn`.
      */
     signIn(opts: SignInOptions): Promise<Result<SignInResult, AuthError>>;
 
@@ -431,17 +409,6 @@ export interface AuthPort {
      * transitions state to `signed-in` and emits via `subscribe`.
      */
     confirmSignIn(opts: ConfirmSignInOptions): Promise<Result<void, AuthError>>;
-
-    /**
-     * Whether `url` is a Firebase email-sign-in (magic) link. Pure check
-     * with no side effects — callers use it to gate magic-link completion
-     * (and avoid premature redirects) on the landing page. Synchronous
-     * because adapters answer it from the URL shape alone.
-     *
-     * Adapters without an email-link concept (stub, future DID) return
-     * `false`.
-     */
-    isEmailSignInLink(url: string): boolean;
 
     /**
      * Sign out. Transitions state to `signed-out`. Adapter-specific
