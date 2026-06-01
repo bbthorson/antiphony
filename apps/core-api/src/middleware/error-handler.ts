@@ -40,9 +40,10 @@ export const errorHandler: ErrorHandler = (error, c) => {
 
     // 1. Typed service errors — the preferred pattern.
     if (error instanceof ServiceError) {
-        logger.warn({ ...meta, status: error.status, message: error.message }, 'service error');
+        logger.warn({ ...meta, status: error.status, code: error.code, message: error.message }, 'service error');
         return c.json(
             errorEnvelope(c, error.message, {
+                ...(error.code !== undefined ? { code: error.code } : {}),
                 ...(error.details !== undefined ? { details: error.details } : {}),
             }),
             // Hono's ContentfulStatusCode is the full set of status codes

@@ -151,46 +151,6 @@ export class FeedService {
         };
     }
 
-    async getUserProfileDataByUid(uid: string) {
-        const feedData = await this.getUserFeed(uid, null, 100);
-        if (!feedData) return null;
-
-        return {
-            profileUser: feedData.user,
-            allPromptsWithReplies: feedData.promptsWithReplies,
-            repliers: feedData.repliers,
-        };
-    }
-
-    async getDashboardData(userOrId: string | ProfileView, limit: number = 20, lastPromptId?: string) {
-        let userId: string;
-        if (typeof userOrId === 'string') {
-            userId = userOrId;
-        } else {
-            userId = userOrId.id;
-        }
-
-        if (!userId) {
-            console.error('[FeedService] userId is required');
-            return null;
-        }
-
-        try {
-            const feedData = await this.getUserFeed(userOrId, userId, limit, lastPromptId);
-            if (!feedData) return null;
-
-            return {
-                user: feedData.user,
-                promptsWithReplies: feedData.promptsWithReplies,
-                repliers: feedData.repliers,
-                lastDocId: feedData.lastDocId
-            };
-        } catch (error) {
-            console.error(`[FeedService] Error fetching dashboard data for userId ${userId}:`, error);
-            throw error;
-        }
-    }
-
     /**
      * Calculates enriched repliers with full profile data from reply authors.
      */
@@ -303,8 +263,7 @@ export class FeedService {
 
     /**
      * Fetches data for the People/CRM page.
-     * Unlike getDashboardData, this eagerly fetches all replies to calculate repliers.
-     * Accepts N+1 queries for the CRM use case.
+     * Eagerly fetches all replies to calculate repliers (N+1 is acceptable for the CRM use case).
      * @param orgId - If provided, scopes to prompts in this org context.
      */
     async getPeopleData(userId: string, orgId?: string | null) {

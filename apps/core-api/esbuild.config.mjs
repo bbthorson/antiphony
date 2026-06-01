@@ -44,6 +44,14 @@ await build({
     sourcemap: true,
     minify: false,
     logLevel: 'info',
+    // Bake the git SHA and build timestamp into the bundle so /health can
+    // report them without a runtime env var. COMMIT_SHA is injected by
+    // Firebase App Hosting's Cloud Build environment; BUILD_TIME is stamped
+    // here at bundle time (close enough to deploy time for drift detection).
+    define: {
+        'process.env.COMMIT_SHA': JSON.stringify(process.env.COMMIT_SHA ?? 'dev'),
+        'process.env.BUILD_TIME': JSON.stringify(new Date().toISOString()),
+    },
     // ESM bundles need to hint to Node that __filename/__dirname don't exist.
     // Not using them ourselves, but some bundled deps might — banner injects
     // the createRequire shim so dynamic `require()` calls from bundled CJS

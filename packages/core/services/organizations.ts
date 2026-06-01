@@ -148,21 +148,6 @@ export class OrganizationService {
     }
 
     /**
-     * Asserts the user has one of the allowed roles. Throws if not.
-     */
-    async assertOrgRole(
-        orgId: string,
-        userId: string,
-        allowedRoles: ('owner' | 'admin' | 'member')[],
-    ): Promise<'owner' | 'admin' | 'member'> {
-        const role = await this.deps.getMemberRole(orgId, userId);
-        if (!role || !allowedRoles.includes(role)) {
-            throw new Error('Insufficient permissions');
-        }
-        return role;
-    }
-
-    /**
      * Lists all members of an organization, hydrated as Views.
      */
     async getMembers(orgId: string): Promise<OrganizationMemberView[]> {
@@ -293,14 +278,4 @@ export class OrganizationService {
         return validated;
     }
 
-    /**
-     * Revokes a pending invite.
-     */
-    async revokeInvite(orgId: string, inviteId: string): Promise<void> {
-        const invite = await this.deps.getInviteById(orgId, inviteId);
-        if (!invite) throw new Error('Invite not found');
-        if (invite.status !== 'pending') throw new Error('Can only revoke pending invites');
-
-        await this.deps.updateInviteStatus(orgId, inviteId, 'revoked');
-    }
 }

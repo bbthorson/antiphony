@@ -112,7 +112,13 @@ export function app(): OpenAPIHono {
             requestId: c.get('requestId'),
         }),
     );
-    a.get('/health', (c) => c.json({ ok: true }));
+    a.get('/health', (c) =>
+        c.json({
+            ok: true,
+            sha: process.env.COMMIT_SHA ?? 'dev',
+            deployedAt: process.env.BUILD_TIME ?? null,
+        }),
+    );
 
     // 4. API routes.
     a.route('/api/v1/resolve', resolveRoute);

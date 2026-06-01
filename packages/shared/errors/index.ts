@@ -14,19 +14,22 @@ export class ServiceError extends Error {
     readonly status: number;
     /** Optional structured details (e.g., Zod issues). */
     readonly details?: unknown;
+    /** Stable, machine-readable error identifier surfaced in the response envelope's `error.code`. */
+    readonly code?: string;
 
-    constructor(message: string, status: number, details?: unknown) {
+    constructor(message: string, status: number, details?: unknown, code?: string) {
         super(message);
         this.name = 'ServiceError';
         this.status = status;
         this.details = details;
+        this.code = code;
     }
 }
 
 /** 400 — Invalid input or Zod validation failure. */
 export class ValidationError extends ServiceError {
     constructor(message: string, details?: unknown) {
-        super(message, 400, details);
+        super(message, 400, details, 'VALIDATION_ERROR');
         this.name = 'ValidationError';
     }
 }
@@ -34,7 +37,7 @@ export class ValidationError extends ServiceError {
 /** 401 — Missing or invalid authentication credentials. */
 export class UnauthorizedError extends ServiceError {
     constructor(message = 'Unauthorized') {
-        super(message, 401);
+        super(message, 401, undefined, 'UNAUTHORIZED');
         this.name = 'UnauthorizedError';
     }
 }
@@ -42,7 +45,7 @@ export class UnauthorizedError extends ServiceError {
 /** 403 — Authenticated but insufficient permissions. */
 export class ForbiddenError extends ServiceError {
     constructor(message = 'Forbidden') {
-        super(message, 403);
+        super(message, 403, undefined, 'FORBIDDEN');
         this.name = 'ForbiddenError';
     }
 }
@@ -50,7 +53,7 @@ export class ForbiddenError extends ServiceError {
 /** 404 — Resource does not exist. */
 export class NotFoundError extends ServiceError {
     constructor(message = 'Resource not found') {
-        super(message, 404);
+        super(message, 404, undefined, 'NOT_FOUND');
         this.name = 'NotFoundError';
     }
 }
@@ -58,7 +61,7 @@ export class NotFoundError extends ServiceError {
 /** 409 — Conflict with existing state (e.g., handle already taken). */
 export class ConflictError extends ServiceError {
     constructor(message = 'Conflict') {
-        super(message, 409);
+        super(message, 409, undefined, 'CONFLICT');
         this.name = 'ConflictError';
     }
 }
@@ -66,7 +69,7 @@ export class ConflictError extends ServiceError {
 /** 429 — Client has sent too many requests. */
 export class RateLimitError extends ServiceError {
     constructor(message = 'Too many requests') {
-        super(message, 429);
+        super(message, 429, undefined, 'RATE_LIMIT');
         this.name = 'RateLimitError';
     }
 }

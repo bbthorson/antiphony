@@ -79,3 +79,16 @@ describe('OpenAPI document', () => {
         expect(doc.info?.description).toMatch(/Envelope/);
     });
 });
+
+describe('GET /health', () => {
+    it('returns ok:true with sha and deployedAt fields', async () => {
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/health'));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.ok).toBe(true);
+        expect(typeof body.sha).toBe('string');
+        // deployedAt is null in dev (esbuild define not applied by tsx)
+        expect('deployedAt' in body).toBe(true);
+    });
+});

@@ -77,15 +77,6 @@ export class HydrationService {
         };
     }
 
-    /**
-     * Hydrates multiple PromptDocuments into PromptViews.
-     * Batches author lookups via the dependency's loader for N+1 prevention.
-     */
-    async hydratePrompts(documents: PromptDocument[], prefetchedAuthor?: ProfileView): Promise<PromptView[]> {
-        if (!documents.length) return [];
-        return Promise.all(documents.map(doc => this.hydratePrompt(doc, prefetchedAuthor)));
-    }
-
     // --- Reply Hydration ---
 
     /**
@@ -315,7 +306,4 @@ export class HydrationService {
         };
     }
 
-    async hydrateInvites(records: OrgInviteRecord[], prefetchedOrgName?: string): Promise<OrgInviteView[]> {
-        return Promise.all(records.map(r => this.hydrateInvite(r, prefetchedOrgName)));
-    }
 }

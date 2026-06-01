@@ -144,6 +144,16 @@ export const AuthErrorSchema = z.discriminatedUnion('code', [
     }),
     z.object({
         /**
+         * The credential (phone number) is already linked to a different
+         * account. Thrown by `confirmLinkPhone` when the OTP is valid but
+         * the resulting credential belongs to a different Firebase user.
+         * Firebase error codes: `auth/credential-already-in-use`,
+         * `auth/provider-already-linked`.
+         */
+        code: z.literal('credential-in-use'),
+    }),
+    z.object({
+        /**
          * Catch-all for adapter errors that don't fit a more specific
          * code. Carries the underlying message for logs and diagnostic
          * display, but should be USED SPARINGLY — every recurring
