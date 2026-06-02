@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { FcmTokenRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
-import { registerFcmToken, disableFcmToken } from '../../../lib/fcm-token-store.js';
+import { registerFcmToken, disableFcmToken } from '../../outbound/firebase/fcm-token-store.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**

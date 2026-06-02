@@ -2,6 +2,7 @@ import { PromptView, PromptRecord } from 'shared/types';
 import { z } from 'zod';
 import type { CoreServices } from '../ports/core-services';
 import type { PromptDependencies, PromptQueryOptions } from '../ports/prompts-dependencies';
+import { type Logger, defaultLogger } from '../ports/logger';
 
 const CreatePromptSchema = z.object({
     title: z.string().min(3, 'Title must be at least 3 characters long.'),
@@ -27,20 +28,17 @@ export type CreatePromptInput = z.infer<typeof CreatePromptSchema>;
  * composition layer.
  */
 export class PromptService {
-    /**
-     * Both params required — core cannot import the Firebase-backed default
-     * bindings. Composition lives in `apps/web/`.
-     */
     constructor(
         private readonly deps: PromptDependencies,
         private readonly services: CoreServices,
+        private readonly logger: Logger = defaultLogger,
     ) {}
 
     /**
      * Fetches prompts for a user with pagination.
      */
     async getPromptsForUser(userId: string, limit: number = 20, lastPromptId?: string, publicOnly: boolean = false): Promise<PromptView[]> {
-        console.info(`[PromptService] Fetching prompts for user: ${userId}, limit: ${limit}, lastPromptId: ${lastPromptId}, publicOnly: ${publicOnly}`);
+        this.logger.info({ userId, limit, lastPromptId, publicOnly }, '[PromptService] Fetching prompts for user');
         try {
             const options: PromptQueryOptions = {
                 status: publicOnly ? 'live' : 'live-or-archived',
@@ -57,16 +55,16 @@ export class PromptService {
                     try {
                         return await this.services.hydration.hydratePrompt(doc, authorProfile || undefined);
                     } catch (error) {
-                        console.error(`[PromptService] Failed to hydrate prompt ${doc.id}:`, error);
+                        this.logger.error({ promptId: doc.id, err: error }, '[PromptService] Failed to hydrate prompt');
                         return null;
                     }
                 }),
             ).then(results => results.filter((p): p is PromptView => p !== null));
 
-            console.info(`[PromptService] Found ${prompts.length} prompts for user: ${userId}`);
+            this.logger.info({ userId, count: prompts.length }, '[PromptService] Found prompts for user');
             return prompts;
         } catch (error) {
-            console.error(`[PromptService] Error fetching prompts for user ${userId}:`, error);
+            this.logger.error({ userId, err: error }, '[PromptService] Error fetching prompts for user');
             throw error;
         }
     }
@@ -77,7 +75,7 @@ export class PromptService {
      * Instead, we rely on DataLoader batching in the hydration service for efficient author lookups.
      */
     async getPromptsForOrgContext(orgId: string, limit: number = 20, lastPromptId?: string, publicOnly: boolean = false): Promise<PromptView[]> {
-        console.info(`[PromptService] Fetching prompts for org context: ${orgId}, limit: ${limit}`);
+        this.logger.info({ orgId, limit }, '[PromptService] Fetching prompts for org context');
         try {
             const options: PromptQueryOptions = {
                 status: publicOnly ? 'live' : 'live-or-archived',
@@ -91,16 +89,16 @@ export class PromptService {
                     try {
                         return await this.services.hydration.hydratePrompt(doc);
                     } catch (error) {
-                        console.error(`[PromptService] Failed to hydrate prompt ${doc.id}:`, error);
+                        this.logger.error({ promptId: doc.id, err: error }, '[PromptService] Failed to hydrate prompt');
                         return null;
                     }
                 }),
             ).then(results => results.filter((p): p is PromptView => p !== null));
 
-            console.info(`[PromptService] Found ${prompts.length} prompts for org: ${orgId}`);
+            this.logger.info({ orgId, count: prompts.length }, '[PromptService] Found prompts for org');
             return prompts;
         } catch (error) {
-            console.error(`[PromptService] Error fetching prompts for org ${orgId}:`, error);
+            this.logger.error({ orgId, err: error }, '[PromptService] Error fetching prompts for org');
             throw error;
         }
     }
@@ -112,12 +110,12 @@ export class PromptService {
         try {
             const document = await this.deps.getDocumentById(promptId);
             if (!document) {
-                console.warn(`[PromptService] Prompt data not found at prompts/${promptId}`);
+                this.logger.warn({ promptId }, '[PromptService] Prompt data not found');
                 return null;
             }
             return await this.services.hydration.hydratePrompt(document);
         } catch (error) {
-            console.error(`[PromptService] Error fetching prompt data for prompts/${promptId}:`, error);
+            this.logger.error({ promptId, err: error }, '[PromptService] Error fetching prompt data');
             throw error;
         }
     }
@@ -129,12 +127,12 @@ export class PromptService {
         try {
             const record = await this.deps.getRecordById(promptId);
             if (!record) {
-                console.warn(`[PromptService] Prompt record not found with id: ${promptId}`);
+                this.logger.warn({ promptId }, '[PromptService] Prompt record not found');
                 return null;
             }
             return record;
         } catch (error) {
-            console.error(`[PromptService] Error fetching prompt record for id ${promptId}:`, error);
+            this.logger.error({ promptId, err: error }, '[PromptService] Error fetching prompt record');
             throw error;
         }
     }
@@ -149,7 +147,7 @@ export class PromptService {
         try {
             return await this.deps.getRecordsByIds(promptIds);
         } catch (error) {
-            console.error('[PromptService] Error in batch getPromptRecordsByIds:', error);
+            this.logger.error({ err: error }, '[PromptService] Error in batch getPromptRecordsByIds');
             throw error;
         }
     }

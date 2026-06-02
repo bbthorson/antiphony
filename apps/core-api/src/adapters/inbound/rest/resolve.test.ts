@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ProfileView, OrganizationView } from 'shared/types';
 
 /**
  * Tests for `GET /api/v1/resolve/:handle`.
@@ -62,8 +63,7 @@ describe('GET /api/v1/resolve/:handle', () => {
         const profile = { id: 'uid-123', handle: 'alice', displayName: 'Alice' };
         vi.mocked(feedService.resolveHandle).mockResolvedValue({
             type: 'user',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            profile: profile as any,
+            profile: profile as unknown as ProfileView,
         });
 
         const res = await app().request('/api/v1/resolve/alice');
@@ -83,8 +83,7 @@ describe('GET /api/v1/resolve/:handle', () => {
         const org = { record: { id: 'org-456', slug: 'acme', name: 'Acme Inc' }, memberCount: 7 };
         vi.mocked(feedService.resolveHandle).mockResolvedValue({
             type: 'org',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            org: org as any,
+            org: org as unknown as OrganizationView,
         });
 
         const res = await app().request('/api/v1/resolve/acme');

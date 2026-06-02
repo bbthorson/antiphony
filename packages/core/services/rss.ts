@@ -1,4 +1,5 @@
 import Parser from 'rss-parser';
+import { type Logger, defaultLogger } from '../ports/logger';
 
 /**
  * RssService parses external RSS/Atom feeds into a normalized summary.
@@ -7,9 +8,8 @@ import Parser from 'rss-parser';
  * peer-service calls, no Firebase, no data access. The singleton export
  * also lives here because it has no Firebase-wired composition.
  *
- * Logging uses `console` intentionally (core avoids Winston); the apps/web
- * composition layer can plug its own logger in once a `LoggerContract`
- * is threaded through `CoreServices`.
+ * Accepts an optional `Logger` (defaults to `defaultLogger` / console). The
+ * composition layer in `apps/core-api` passes the pino instance.
  */
 export interface RssItem {
     title?: string;
@@ -30,7 +30,7 @@ export interface RssSummary {
 export class RssService {
     private parser: Parser;
 
-    constructor() {
+    constructor(private readonly logger: Logger = defaultLogger) {
         this.parser = new Parser();
     }
 
@@ -40,7 +40,7 @@ export class RssService {
 
             // 1. Protocol check
             if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-                console.warn(`[RssService] Blocked unsafe protocol: ${parsedUrl.protocol}`);
+                this.logger.warn({ protocol: parsedUrl.protocol }, '[RssService] Blocked unsafe protocol');
                 return false;
             }
 
@@ -49,7 +49,7 @@ export class RssService {
 
             // Block localhost/loopback
             if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
-                console.warn(`[RssService] Blocked loopback address: ${hostname}`);
+                this.logger.warn({ hostname }, '[RssService] Blocked loopback address');
                 return false;
             }
 
@@ -63,14 +63,14 @@ export class RssService {
 
             return true;
         } catch (e) {
-            console.error(`[RssService] URL validation error:`, e);
+            this.logger.error({ err: e }, '[RssService] URL validation error');
             return false;
         }
     }
 
     async parseFeed(url: string, maxItems: number = 5): Promise<RssSummary | null> {
         if (!this.validateUrl(url)) {
-            console.error(`[RssService] Invalid or unsafe URL provided: ${url}`);
+            this.logger.error({ url }, '[RssService] Invalid or unsafe URL');
             return null;
         }
 
@@ -93,7 +93,7 @@ export class RssService {
                 lastFetchedAt: new Date(),
             };
         } catch (error) {
-            console.error(`[RssService] Error parsing feed ${url}:`, error);
+            this.logger.error({ url, err: error }, '[RssService] Error parsing feed');
             return null;
         }
     }

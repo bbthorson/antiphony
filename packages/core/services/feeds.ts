@@ -10,6 +10,7 @@ import {
     type HandleResolution,
 } from 'shared/types';
 import type { CoreServices, RssSummary } from '../ports/core-services';
+import { type Logger, defaultLogger } from '../ports/logger';
 
 /** Re-exported from shared/types so external callers can keep the existing import path. */
 export type { HandleResolution };
@@ -25,23 +26,16 @@ export type { HandleResolution };
  * composition: constructing the `feedService` singleton and wrapping hot
  * entry points with React `cache()` for RSC-level dedup.
  *
- * Logging: intentionally `console` rather than a structured Winston logger.
- * A portable `LoggerContract` can be threaded through `CoreServices` when
- * more than one core service needs opinionated logging — defer until that
- * pressure exists.
- *
  * See `specs/decoupling-migration.md` — Task E.1.
  */
 export class FeedService {
-    /**
-     * `services` is intentionally required (no default) — `packages/core/`
-     * cannot import `firebaseCoreServices` without violating the
-     * Firebase-free invariant. Composition lives in `apps/web/`.
-     */
-    constructor(private readonly services: CoreServices) {}
+    constructor(
+        private readonly services: CoreServices,
+        private readonly logger: Logger = defaultLogger,
+    ) {}
 
     calculateRepliersFromPrompts(promptsWithReplies: PromptWithReplies[]): Replier[] {
-        console.info(`[FeedService] Calculating repliers from ${promptsWithReplies.length} prompts.`);
+        this.logger.info({ count: promptsWithReplies.length }, '[FeedService] Calculating repliers from prompts');
         try {
             const repliersMap = new Map<string, { handle: string; lastReplyDate: Date; firstReplyAt: Date; totalReplies: number }>();
 
@@ -83,7 +77,7 @@ export class FeedService {
 
             return serializableRepliers;
         } catch (error) {
-            console.error('[FeedService] Error calculating repliers:', error);
+            this.logger.error({ err: error }, '[FeedService] Error calculating repliers');
             throw error;
         }
     }
@@ -132,7 +126,7 @@ export class FeedService {
 
     async getUserProfileData(handle: string) {
         if (!handle || typeof handle !== 'string' || handle.length < 1) {
-            console.error(`[FeedService] Invalid handle parameter: ${handle}`);
+            this.logger.error({ handle }, '[FeedService] Invalid handle parameter');
             return null;
         }
 

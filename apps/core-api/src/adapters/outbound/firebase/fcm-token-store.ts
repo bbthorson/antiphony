@@ -1,5 +1,5 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { getAdminDb } from './firebase-admin.js';
+import { getAdminDb } from '../../../lib/firebase-admin.js';
 
 /**
  * Per-user FCM device-token registry.

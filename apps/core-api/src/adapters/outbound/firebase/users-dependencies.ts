@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
-import { ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types';
+import { ProfileViewSchema, ProfileViewBasicSchema, UserRecordSchema } from 'shared/types';
 import type { ProfileView } from 'shared/types';
 import { ConflictError } from 'shared/errors';
 import { logger } from '../../../lib/logger.js';
@@ -117,12 +117,6 @@ async function parseProfileFromDoc(
     return fallbackProfile(userData, doc.id, fallbackExtras);
 }
 
-const notYetPorted = (method: string): never => {
-    throw new Error(
-        `[core-api users-dependencies] ${method} is not yet ported. See apps/core-api/src/services/users-dependencies.ts and apps/web/src/services/users-dependencies.ts for the binding to mirror.`,
-    );
-};
-
 export const firebaseUserDependencies: UserDependencies = {
     // --- Implemented: getUserData read path + sitemap ---
 
@@ -224,8 +218,20 @@ export const firebaseUserDependencies: UserDependencies = {
         return profiles;
     },
 
-    async getUserRecordByUid(_uid: string) {
-        return notYetPorted('getUserRecordByUid');
+    async getUserRecordByUid(uid: string) {
+        const doc = await usersCollection().doc(uid).get();
+        if (!doc.exists) return null;
+        const data = doc.data();
+        if (!data) return null;
+        const result = UserRecordSchema.safeParse({ ...data, id: doc.id });
+        if (!result.success) {
+            logger.error(
+                { uid, issues: result.error.issues },
+                '[users-deps] getUserRecordByUid: schema validation failed',
+            );
+            return null;
+        }
+        return result.data;
     },
 
     async getPhoneNumbersForUids(uids: string[]) {

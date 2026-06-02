@@ -3,6 +3,7 @@ import type { ReplyView, ReplyRecord, ProfileView } from 'shared/types';
 import { NotFoundError, ForbiddenError } from 'shared/errors';
 import type { CoreServices } from '../ports/core-services';
 import type { ReplyDependencies } from '../ports/replies-dependencies';
+import { type Logger, defaultLogger } from '../ports/logger';
 
 /**
  * Filter inputs shared by `searchReplies` and `listReplyFeed`. All fields are
@@ -59,13 +60,10 @@ function decodeFeedCursor(raw: string | null | undefined): FeedCursor | null {
  * composition layer.
  */
 export class ReplyService {
-    /**
-     * Both params required — core cannot import the Firebase-backed default
-     * bindings. Composition lives in `apps/web/`.
-     */
     constructor(
         private readonly deps: ReplyDependencies,
         private readonly services: CoreServices,
+        private readonly logger: Logger = defaultLogger,
     ) {}
 
     async getRepliesForPrompt(
@@ -74,12 +72,12 @@ export class ReplyService {
         recipient: ProfileView | null,
         options?: { includeArchived?: boolean },
     ): Promise<ReplyView[]> {
-        console.info(`[ReplyService] Fetching replies for prompt: ${prompt.id}`);
+        this.logger.info({ promptId: prompt.id }, '[ReplyService] Fetching replies for prompt');
 
         const isAuthor = prompt.authorId === userId;
 
         if (prompt.status && prompt.status !== 'live' && !isAuthor) {
-            console.info(`[ReplyService] Prompt ${prompt.id} is ${prompt.status}. Hiding replies from non-author.`);
+            this.logger.info({ promptId: prompt.id, status: prompt.status }, '[ReplyService] Prompt not live, hiding replies from non-author');
             return [];
         }
 
@@ -87,7 +85,7 @@ export class ReplyService {
         if (!authorId) return [];
 
         if (!recipient || recipient.id !== authorId) {
-            console.error('[ReplyService] Recipient provided does not match prompt author or is missing.');
+            this.logger.error('[ReplyService] Recipient provided does not match prompt author or is missing');
             return [];
         }
 
@@ -96,7 +94,7 @@ export class ReplyService {
         });
 
         const validReplies = await this.services.hydration.hydrateRepliesWithRecipient(records, recipient, { includePrivateData: isAuthor });
-        console.info(`[ReplyService] Found ${validReplies.length} replies for prompt: ${prompt.id}`);
+        this.logger.info({ promptId: prompt.id, count: validReplies.length }, '[ReplyService] Found replies for prompt');
         return validReplies;
     }
 
@@ -160,7 +158,7 @@ export class ReplyService {
         if (prompt.authorId !== authenticatedUid) throw new ForbiddenError('You do not own the prompt for this reply.');
 
         await this.deps.updateReplyStatusWithAggregates(reply, status);
-        console.info(`[ReplyService] Updated reply ${replyId} status to ${status}`);
+        this.logger.info({ replyId, status }, '[ReplyService] Updated reply status');
     }
 
     /**
@@ -170,7 +168,7 @@ export class ReplyService {
     async bulkUpdateStatus(replyIds: string[], status: 'live' | 'archived' | 'deleted', authenticatedUid: string): Promise<void> {
         const replies = await this.assertOwnsAllReplies(replyIds, authenticatedUid);
         await this.deps.bulkUpdateRepliesStatusWithAggregates(replies, status);
-        console.info(`[ReplyService] Bulk updated ${replyIds.length} replies to status ${status}`);
+        this.logger.info({ count: replyIds.length, status }, '[ReplyService] Bulk updated reply status');
     }
 
     /**
@@ -179,7 +177,7 @@ export class ReplyService {
     async bulkMarkRead(replyIds: string[], authenticatedUid: string): Promise<void> {
         await this.assertOwnsAllReplies(replyIds, authenticatedUid);
         await this.deps.bulkMarkRepliesRead(replyIds, authenticatedUid);
-        console.info(`[ReplyService] Bulk marked ${replyIds.length} replies as read`);
+        this.logger.info({ count: replyIds.length }, '[ReplyService] Bulk marked replies as read');
     }
 
     /**

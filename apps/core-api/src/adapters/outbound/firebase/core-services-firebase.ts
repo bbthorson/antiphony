@@ -15,6 +15,7 @@ import { firebasePromptDependencies } from './prompts-dependencies.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
 import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * Firebase-wired `CoreServices` binding for core-api.
@@ -111,14 +112,14 @@ export const firebaseCoreServices: CoreServices = {
  * functions that evaluate the identifiers at call time, not module-load).
  */
 export const hydrationService = new HydrationService(firebaseHydrationDependencies);
-export const userService = new UserService(firebaseUserDependencies, firebaseCoreServices);
+export const userService = new UserService(firebaseUserDependencies, firebaseCoreServices, logger);
 export const organizationService = new OrganizationService(
     firebaseOrganizationDependencies,
     firebaseCoreServices,
 );
-export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices);
-export const replyService = new ReplyService(firebaseReplyDependencies, firebaseCoreServices);
-export const feedService = new FeedService(firebaseCoreServices);
+export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices, logger);
+export const replyService = new ReplyService(firebaseReplyDependencies, firebaseCoreServices, logger);
+export const feedService = new FeedService(firebaseCoreServices, logger);
 // CallForwardingService — pure data CRUD on users/{uid}/private_data/call_forwarding.
 // Not part of `CoreServices` because no other core service calls into it
 // today (apps/telephony/ will use it via the HTTP surface, not in-process).

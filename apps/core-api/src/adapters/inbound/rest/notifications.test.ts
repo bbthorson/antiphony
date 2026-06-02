@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * (arrayUnion / arrayRemove).
  */
 
-vi.mock('../../../lib/fcm-token-store.js', () => ({
+vi.mock('../../outbound/firebase/fcm-token-store.js', () => ({
     registerFcmToken: vi.fn(),
     disableFcmToken: vi.fn(),
 }));
@@ -37,7 +37,7 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../../../app.js');
-const { registerFcmToken, disableFcmToken } = await import('../../../lib/fcm-token-store.js');
+const { registerFcmToken, disableFcmToken } = await import('../../outbound/firebase/fcm-token-store.js');
 const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
 
 const VALID_TOKEN = 'a'.repeat(140); // Real FCM tokens are ~150 chars

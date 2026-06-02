@@ -2,6 +2,7 @@ import type { UserRecord, ProfileView } from 'shared/types';
 import { NotFoundError } from 'shared/errors';
 import type { CoreServices } from '../ports/core-services';
 import type { UpdateProfileDto, UserDependencies } from '../ports/users-dependencies';
+import { type Logger, defaultLogger } from '../ports/logger';
 
 export type { UpdateProfileDto } from '../ports/users-dependencies';
 
@@ -19,13 +20,10 @@ const DEFAULT_SYSTEM_GREETING_URL = 'https://storage.googleapis.com/voxpop-publi
  * `apps/web/src/services/users.ts` as the composition layer.
  */
 export class UserService {
-    /**
-     * Both params required — core cannot import the Firebase-backed default
-     * bindings. Composition lives in `apps/web/`.
-     */
     constructor(
         private readonly deps: UserDependencies,
         private readonly services: CoreServices,
+        private readonly logger: Logger = defaultLogger,
     ) {}
 
     async getUserData(handle: string): Promise<ProfileView | null> {
@@ -35,42 +33,42 @@ export class UserService {
         const trimmedInput = handle ? handle.trim() : '';
         if (!trimmedInput) return null;
         const sanitizedHandle = trimmedInput.toLowerCase();
-        console.info(`[UserService] Fetching user data for handle: ${sanitizedHandle}`);
+        this.logger.info({ handle: sanitizedHandle }, '[UserService] Fetching user data for handle');
 
         try {
             // 1. Check `handles` collection first (source of truth).
             const uid = await this.deps.resolveHandle(sanitizedHandle);
             if (uid) {
-                console.info(`[UserService] Resolved handle ${sanitizedHandle} to UID ${uid}`);
+                this.logger.info({ handle: sanitizedHandle, uid }, '[UserService] Resolved handle to UID');
                 return this.getUserDataByUid(uid);
             }
 
             // 2. Legacy fallback: query `users` collection by handle/username field.
-            console.info(`[UserService] Handle ${sanitizedHandle} not found in 'handles' collection, trying legacy query...`);
+            this.logger.info({ handle: sanitizedHandle }, '[UserService] Handle not found in handles collection, trying legacy query');
             const byHandle = await this.deps.findProfileByHandleField(sanitizedHandle);
             if (byHandle) return byHandle;
 
-            console.info(`[UserService] No user found with handle: ${sanitizedHandle}, trying username fallback`);
+            this.logger.info({ handle: sanitizedHandle }, '[UserService] No user found with handle, trying username fallback');
             const byUsername = await this.deps.findProfileByUsernameField(sanitizedHandle);
             if (byUsername) return byUsername;
 
             // 3. Final fallback: direct UID lookup (handles URLs built with
             // userId). Pass the case-preserving `trimmedInput`, not the
             // lowercased `sanitizedHandle` — UIDs are case-sensitive.
-            console.info(`[UserService] No user found with handle/username: ${sanitizedHandle}, trying UID lookup`);
+            this.logger.info({ handle: sanitizedHandle }, '[UserService] No user found with handle/username, trying UID lookup');
             return await this.getUserDataByUid(trimmedInput);
         } catch (error) {
-            console.error(`[UserService] Error fetching user data for ${handle}:`, error);
+            this.logger.error({ handle, err: error }, '[UserService] Error fetching user data');
             throw error;
         }
     }
 
     async getUserDataByUid(uid: string): Promise<ProfileView | null> {
-        console.info(`[UserService] Fetching user data for UID: ${uid}`);
+        this.logger.info({ uid }, '[UserService] Fetching user data for UID');
         try {
             return await this.deps.getProfileByUid(uid);
         } catch (error) {
-            console.error(`[UserService] Error fetching user data for UID ${uid}:`, error);
+            this.logger.error({ uid, err: error }, '[UserService] Error fetching user data for UID');
             throw error;
         }
     }
@@ -100,7 +98,7 @@ export class UserService {
         try {
             return await this.deps.getUserRecordByUid(uid);
         } catch (error) {
-            console.error(`[UserService] Error fetching user record for UID ${uid}:`, error);
+            this.logger.error({ uid, err: error }, '[UserService] Error fetching user record for UID');
             throw error;
         }
     }
@@ -117,12 +115,12 @@ export class UserService {
         try {
             created = await this.deps.ensureUserStub(uid);
         } catch (error) {
-            console.error('[UserService] Error creating stub user:', error);
+            this.logger.error({ err: error }, '[UserService] Error creating stub user');
             throw new NotFoundError('Failed to create user profile');
         }
 
         if (!created) return;
-        console.info(`[UserService] Created Stub User for ${uid}`);
+        this.logger.info({ uid }, '[UserService] Created stub user');
 
         try {
             const inboxId = `inbox_${uid}`;
@@ -137,10 +135,10 @@ export class UserService {
                     authorId: uid,
                     createdAt: this.deps.now(),
                 });
-                console.info(`[UserService] Created General Inbox for ${uid}`);
+                this.logger.info({ uid }, '[UserService] Created General Inbox');
             }
         } catch (error) {
-            console.error('[UserService] Error creating General Inbox prompt:', error);
+            this.logger.error({ err: error }, '[UserService] Error creating General Inbox prompt');
             throw new NotFoundError('Failed to create user profile');
         }
     }
