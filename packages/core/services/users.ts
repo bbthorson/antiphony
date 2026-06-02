@@ -94,6 +94,10 @@ export class UserService {
         return profiles;
     }
 
+    async findUidByDid(did: string): Promise<string | null> {
+        return this.deps.findUserByDid(did);
+    }
+
     async getUserRecordByUid(uid: string): Promise<UserRecord | null> {
         try {
             return await this.deps.getUserRecordByUid(uid);

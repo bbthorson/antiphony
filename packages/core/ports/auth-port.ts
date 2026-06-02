@@ -276,8 +276,11 @@ export type SignInOptions =
           phoneNumber: string;
           verifier: RecaptchaVerifierLike;
       }
-    // Future: { method: 'did-oauth'; handle: string; redirectUri: string }
-    ;
+    | {
+          /** Initiates an AT Protocol OAuth redirect. Returns a `redirectUrl` to navigate to. */
+          method: 'did-oauth';
+          handle: string;
+      };
 
 /**
  * Result of `signIn` — for phone auth this is the confirmation handle
@@ -286,8 +289,7 @@ export type SignInOptions =
  */
 export type SignInResult =
     | { method: 'firebase-phone'; confirmationId: string }
-    // Future: { method: 'did-oauth'; redirectUrl: string }
-    ;
+    | { method: 'did-oauth'; redirectUrl: string };
 
 /**
  * Options for `confirmSignIn`. Discriminated to match `SignInResult`.

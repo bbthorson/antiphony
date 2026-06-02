@@ -234,6 +234,12 @@ export const firebaseUserDependencies: UserDependencies = {
         return result.data;
     },
 
+    async findUserByDid(did: string) {
+        const snap = await usersCollection().where('bluesky.did', '==', did).limit(1).get();
+        if (snap.empty) return null;
+        return snap.docs[0].id;
+    },
+
     async getPhoneNumbersForUids(uids: string[]) {
         const phoneMap = new Map<string, string>();
         if (uids.length === 0) return phoneMap;

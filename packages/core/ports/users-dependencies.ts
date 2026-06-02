@@ -56,6 +56,9 @@ export interface UserDependencies {
     /** Return every handle string (doc IDs of the `handles` collection). */
     listAllHandles(): Promise<string[]>;
 
+    /** Find a uid by linked AT Protocol DID (`bluesky.did` field). Returns null if no match. */
+    findUserByDid(did: string): Promise<string | null>;
+
     // --- Identity provider ---
 
     /**
