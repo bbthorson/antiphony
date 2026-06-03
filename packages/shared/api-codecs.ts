@@ -2,8 +2,13 @@ import { z } from 'zod';
 import { CallForwardingConfigSchema } from './types/records';
 
 export const CreatePromptRequestSchema = z.object({
-  title: z.string().min(3).max(100),
-  description: z.string().max(1000).optional(),
+  // Bounds chosen so the public prompt hero never needs to clip: title +
+  // description sit between the two dots inside an h-dvh, overflow-hidden
+  // layout. 80/200 keeps typical content to a few lines on short phones.
+  // (Record-level schema stays unbounded so any pre-existing longer values
+  // still read cleanly — this only gates new writes.)
+  title: z.string().min(3).max(80),
+  description: z.string().max(200).optional(),
   audioUrl: z.string().url().or(z.literal('')),
   setAsGreeting: z.union([z.boolean(), z.string().transform(val => val === 'true')]).optional(),
   /** Explicit org context override (normally inferred from auth.currentOrg) */
