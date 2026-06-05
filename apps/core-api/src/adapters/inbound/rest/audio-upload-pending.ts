@@ -3,6 +3,7 @@ import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { createPendingUpload, hashIp, extractClientIp } from '../../../lib/pending-uploads.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * POST /api/v1/audio/upload-pending
@@ -10,7 +11,8 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  * Anonymous audio upload endpoint for the embed-redirect flow: an iframe
  * records audio and POSTs here with `promptId` + `file` (multipart). We
  * rate-limit by IP, validate size / MIME / prompt existence, persist to
- * `pending/{id}.{ext}` + `pending_uploads/{id}`, and return `{ pendingId }`.
+ * `pending/{id}.{ext}` + `pending_uploads/{id}`, and return the standard
+ * envelope `{ success: true, data: { pendingId } }`.
  *
  * The iframe then redirects its top frame to the prompt page with
  * `?pending={pendingId}`; the authenticated `POST /replies` call binds the
@@ -84,14 +86,30 @@ app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
     }
 
     const buffer = Buffer.from(await fileField.arrayBuffer());
-    const { pendingId } = await createPendingUpload({
-        buffer,
-        mimeType,
-        promptId: promptIdRaw,
-        ipHash: hashIp(extractClientIp(c.req.header('x-forwarded-for'))),
-    });
+    let pendingId: string;
+    try {
+        ({ pendingId } = await createPendingUpload({
+            buffer,
+            mimeType,
+            promptId: promptIdRaw,
+            ipHash: hashIp(extractClientIp(c.req.header('x-forwarded-for'))),
+        }));
+    } catch (err) {
+        // Firebase Storage / Firestore write failure. Without this the
+        // throw bubbles to the generic error handler as an opaque 500 and
+        // the embed shows a bare "Upload failed" — log it with the
+        // requestId + promptId so the real cause is diagnosable.
+        logger.error(
+            { err, requestId: c.get('requestId'), promptId: promptIdRaw },
+            '[audio/upload-pending] createPendingUpload failed',
+        );
+        return c.json(errorEnvelope(c, 'Upload failed'), 500);
+    }
 
-    return c.json({ pendingId });
+    // Standard response envelope — the embed client unwraps `data.pendingId`
+    // (ReplyDot.submitPendingEmbed). Must mirror the sibling `/audio/upload`
+    // route's `{ success: true, data }` shape, not a bare `{ pendingId }`.
+    return c.json({ success: true, data: { pendingId } });
 });
 
 export { app as audioUploadPendingRoute };
