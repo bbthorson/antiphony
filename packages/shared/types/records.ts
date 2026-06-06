@@ -354,7 +354,13 @@ export const OrganizationRecordSchema = z.object({
     domainVerificationToken: z.string().optional(),
     /** Billing email — required for paid orgs, where invoices go */
     billingEmail: z.string().email().nullable().optional(),
-    /** Tier determines isolation and feature set. All orgs are paid (business or enterprise). */
+    /**
+     * Tier determines isolation and feature set. Orgs are meant to be paid
+     * (business or enterprise); free/pro exist on the enum for the individual track.
+     * Default is provisionally `business` (the entry paid tier) — it's assigned at
+     * creation with no subscription behind it yet, so it stays provisional until billing
+     * promotes/reconciles the org. See docs/tech-debt.md "Org tier billing reconciliation".
+     */
     tier: z.enum(['free', 'pro', 'business', 'enterprise']).default('business'),
     /** Stripe Customer ID */
     stripeCustomerId: z.string().optional(),

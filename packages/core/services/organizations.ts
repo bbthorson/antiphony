@@ -50,6 +50,12 @@ export class OrganizationService {
             ownerId,
             createdAt: now,
             domainVerified: false,
+            // Entry-level paid org tier, per the canonical two-track model (orgs are
+            // business→enterprise; free/pro on the enum are for individuals). Creation is
+            // currently ungated and there's no Stripe wiring, so a new org lands here with
+            // no stripeCustomerId/subscriptionStatus — i.e. it *looks* paid but isn't yet.
+            // When billing lands, reconcile which 'business' orgs actually paid vs. defaulted
+            // here. See docs/tech-debt.md "Org tier billing reconciliation".
             tier: 'business' as const,
             ...data,
         };
