@@ -2,16 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotFoundError, ForbiddenError } from 'shared/errors';
 
 /**
- * Tests for the reply-write endpoints (Batch A4).
+ * Tests for the reply endpoints (originally Batch A4).
  *
- * All five share:
+ * The write endpoints share:
  *   - requireAuth → 401 without bearer
  *   - invalid JSON / schema → 400
  *   - service/dep mock controls outcomes
  *
- * Ownership checks are verified at the boundary — for /notes and
- * /update-author-data (route-level checks), and for /status + bulk (service
- * throws ForbiddenError, mapped to 403 by the error-handler).
+ * Ownership checks are verified at the boundary — for /notes (route-level
+ * check) and for /status + bulk (service throws ForbiddenError, mapped to 403
+ * by the error-handler).
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
