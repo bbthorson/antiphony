@@ -317,6 +317,37 @@ export const CallForwardingConfigSchema = z.object({
 });
 export type CallForwardingConfig = z.infer<typeof CallForwardingConfigSchema>;
 
+/**
+ * A single screening (allowlist) rule — canonical user-authored config, NOT
+ * derived/enriched, so it's owned by core-api (tier 1) like call-forwarding.
+ * Stored per-user under `users/{uid}/private_data/screening/rules/{ruleId}`.
+ *
+ * "Who gets through": `allow` = ring through, `screen` = go async. A
+ * time-boxed exception is just an `allow` rule with `expiresAt` set (enforced
+ * at read/evaluation time — no scheduler). Under Phase-1 missed-call-only
+ * capture these rules are foundational/editable but not yet gating ring-
+ * through; they become behavioral at capture-all (Phase 2). See
+ * `specs/consumer-call-app.md` § 5.
+ */
+export const ScreeningRuleRecordSchema = z.object({
+    id: z.string(),
+    ownerId: z.string(),
+    /** The caller number this rule matches (E.164). Format-enforced at the
+     *  record level so any writer (API, future contact-sync/callback) can't
+     *  persist a malformed number. */
+    e164: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Must be an E.164 phone number'),
+    /** Display label, e.g. "Mom" / "Delta Airlines". null = unlabeled. */
+    label: z.string().nullable().optional(),
+    /** `allow` = ring through; `screen` = async voicemail. */
+    action: z.enum(['allow', 'screen']),
+    /** Provenance. `manual` = user-created; the others are future writers. */
+    source: z.enum(['manual', 'contact-sync', 'callback']),
+    /** null = permanent; a date = self-expiring exception. */
+    expiresAt: FirestoreTimestampSchema.nullable().optional(),
+    createdAt: FirestoreTimestampSchema,
+});
+export type ScreeningRuleRecord = z.infer<typeof ScreeningRuleRecordSchema>;
+
 // #endregion
 
 // #region Organization Schemas

@@ -5,6 +5,7 @@ import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
 import { ReplyService } from '@vox-pop/core/services/replies';
 import { CallForwardingService } from '@vox-pop/core/services/call-forwarding';
+import { ScreeningService } from '@vox-pop/core/services/screening';
 import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
 import { makeStorageService } from '@vox-pop/core/services/storage';
 import type { CoreServices } from '@vox-pop/core/ports/core-services';
@@ -14,6 +15,7 @@ import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
 import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
+import { firebaseScreeningDependencies } from './screening-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -124,6 +126,11 @@ export const feedService = new FeedService(firebaseCoreServices, logger);
 // Not part of `CoreServices` because no other core service calls into it
 // today (apps/telephony/ will use it via the HTTP surface, not in-process).
 export const callForwardingService = new CallForwardingService(firebaseCallForwardingDependencies);
+// ScreeningService — pure data CRUD on the screening allowlist at
+// users/{uid}/private_data/screening/rules/{ruleId}. Not part of `CoreServices`
+// (no other core service calls it). Phase-2 capture-all evaluation lives in
+// apps/telephony; this is the canonical config store. See consumer-call-app § 5.
+export const screeningService = new ScreeningService(firebaseScreeningDependencies);
 // Re-export RssService's own singleton for completeness. Core owns both the
 // class and the singleton (it's a genuinely standalone service, no Firebase
 // bindings). Routes that need it can import directly from here.

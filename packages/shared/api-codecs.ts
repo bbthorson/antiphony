@@ -93,6 +93,27 @@ export const CallForwardingConfigInputSchema = CallForwardingConfigSchema.omit({
 
 export const CallForwardingConfigUpdateSchema = CallForwardingConfigInputSchema.partial();
 
+// Screening allowlist (consumer-call-app § 5). Server stamps id/ownerId/
+// createdAt and sets source='manual' for API-created rules (contact-sync /
+// callback writers go through the service directly). `expiresAt` accepts an
+// ISO string or epoch-ms; null/omitted = permanent. The `.refine` rejects
+// unparseable dates at the request boundary (a clean 400 with a clear
+// message) rather than letting them surface as a generic Validation Error
+// from deep in FirestoreTimestampSchema when the service re-parses.
+export const ScreeningRuleInputSchema = z.object({
+  e164: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Must be an E.164 phone number'),
+  label: z.string().max(120).nullable().optional(),
+  action: z.enum(['allow', 'screen']),
+  expiresAt: z
+    .union([z.string(), z.number()])
+    .nullable()
+    .optional()
+    .refine((v) => v == null || !Number.isNaN(new Date(v).getTime()), {
+      message: 'Must be a valid ISO date string or epoch-ms timestamp',
+    }),
+});
+export const ScreeningRuleUpdateSchema = ScreeningRuleInputSchema.partial();
+
 // Reply lifecycle management
 export const UpdateReplyStatusRequestSchema = z.object({
   status: z.enum(['live', 'archived', 'deleted']),

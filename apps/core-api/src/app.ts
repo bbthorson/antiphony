@@ -25,6 +25,7 @@ import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
+import { screeningRoute } from './adapters/inbound/rest/screening.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
 import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
@@ -138,6 +139,9 @@ export function app(): OpenAPIHono {
     // specific first is the defensive pattern (and matches the precedent
     // set by registering `/me` before `/:handle` below).
     a.route('/api/v1/users/me/call-forwarding', callForwardingRoute);
+    // Same defensive ordering as call-forwarding: register the more-specific
+    // `/me/screening` mount before `/me` so it isn't shadowed by usersMeRoute.
+    a.route('/api/v1/users/me/screening', screeningRoute);
     a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);
