@@ -275,6 +275,49 @@ export const ReplyEnrichmentRecordSchema = z.object({
 export type ReplyEnrichmentRecord = z.infer<typeof ReplyEnrichmentRecordSchema>;
 
 /**
+ * Per-viewer CRM enrichment about a target person, owned by the viewing
+ * creator. Stored at `enrichments/people/items/{viewerUid}_{targetUid}` —
+ * the tier-2 enrichment namespace, served by the closed `apps/identity`
+ * deployable (NOT core-api), so self-hosters running core-api see clean
+ * canonical records without phantom CRM/identity fields. See
+ * `specs/data-separation.md` § 3 and `specs/people-enrichment-split.md`.
+ *
+ * `id` is the composite `${viewerUid}_${targetUid}` (Option D in the split
+ * spec): immutable across handle renames, and per-viewer scoped — Alice's
+ * notes about @bob and Charlie's notes about @bob live in different docs.
+ *
+ * Lifts/replaces the legacy per-handle `users/{viewerUid}/crm/{handle}`
+ * store (migrated by `scripts/migrate-crm-notes-to-enrichments.ts`).
+ */
+export const PersonEnrichmentRecordSchema = z.object({
+    /** Composite key `${viewerUid}_${targetUid}`. */
+    id: z.string(),
+
+    /** Per-viewer CRM notes about the target. */
+    notes: z.string().optional(),
+    /** Per-viewer freeform tags about the target. */
+    tags: z.array(z.string()).optional(),
+
+    // === Identity-merge: alias set ===
+    //
+    // Other identifiers the viewer has declared to be the SAME person as
+    // this entry's `targetUid`. vCard/URI-aligned: each entry is a
+    // scheme-prefixed identifier, so one field generalizes across networks
+    // AND across the future contact-sync import (which carries phone/email):
+    //   "uid:<firebaseUid>" | "did:plc:…" | "handle:bob.bsky.social"
+    //   | "tel:+15551234567" | "mailto:x@example.com"
+    // Mirrors vCard 4.0's `UID` + `CLIENTPIDMAP`/`PID` source-tracking
+    // (RFC 6350) — the standard answer to "the same person from multiple
+    // sources". See `specs/people-lexicon-prior-art.md`. The People
+    // read-path collapses any replier whose "uid:<uid>" appears here into
+    // this primary entry. Empty until the merge feature is used.
+    aliases: z.array(z.string()).optional(),
+
+    lastUpdated: FirestoreTimestampSchema.optional(),
+});
+export type PersonEnrichmentRecord = z.infer<typeof PersonEnrichmentRecordSchema>;
+
+/**
  * SIP Enrichment data stored in `users/{uid}/enrichment/sip`.
  */
 export const SipEnrichmentSchema = z.object({

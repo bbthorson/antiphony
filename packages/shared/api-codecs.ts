@@ -93,6 +93,22 @@ export const CallForwardingConfigInputSchema = CallForwardingConfigSchema.omit({
 
 export const CallForwardingConfigUpdateSchema = CallForwardingConfigInputSchema.partial();
 
+// People enrichment (apps/identity tier-2). Per-viewer CRM notes/tags + merge.
+// Bounds mirror the legacy inline schema in core-api's people.ts notes route
+// (notes ≤10K; ≤50 tags, each ≤64 chars). Both fields optional so partial
+// merge-writes don't clobber the other.
+export const PersonNotesUpdateSchema = z.object({
+  notes: z.string().max(10_000).optional(),
+  tags: z.array(z.string().max(64)).max(50).optional(),
+});
+
+// Identity-merge: declare `alternateUid` to be the same person as the target
+// uid in the path. Viewer-scoped; collapses the alternate into the primary in
+// the People read-path.
+export const PersonMergeRequestSchema = z.object({
+  alternateUid: z.string().min(1),
+});
+
 // Screening allowlist (consumer-call-app § 5). Server stamps id/ownerId/
 // createdAt and sets source='manual' for API-created rules (contact-sync /
 // callback writers go through the service directly). `expiresAt` accepts an
