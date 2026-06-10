@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { toReplyViewPublic } from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
-import { feedService } from '../../outbound/firebase/core-services-firebase.js';
+import { feedService, organizationService } from '../../outbound/firebase/core-services-firebase.js';
 import { getCrmNotes, setCrmNotes } from '../../../lib/crm-notes-store.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 
@@ -87,6 +87,24 @@ app.get('/list', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     // Treat missing or empty as null (personal context). Matches the service
     // signature's `orgId?: string | null`.
     const orgId = orgIdRaw && orgIdRaw.length > 0 ? orgIdRaw : null;
+
+    // IDOR guard: an `orgId` scopes the query to that org's prompts and their
+    // repliers (incl. lite-user phone numbers). Without a membership check any
+    // authenticated caller could enumerate any org's audience. Personal context
+    // (orgId === null) reads only the caller's own prompts, so no check needed.
+    if (orgId) {
+        // Validate the shape before it reaches a Firestore doc path. An orgId
+        // is a single path segment (UUID / Firestore auto-id); a value with `/`
+        // or other unexpected characters would throw an invalid-reference error
+        // deep in getMemberRole. Reject it at the boundary with a clean 400.
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(orgId)) {
+            return c.json(errorEnvelope(c, 'Invalid orgId'), 400);
+        }
+        const role = await organizationService.getMemberRole(orgId, uid);
+        if (!role) {
+            return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
+        }
+    }
 
     const enrichedRepliers = await feedService.getPeopleList(uid, orgId);
 

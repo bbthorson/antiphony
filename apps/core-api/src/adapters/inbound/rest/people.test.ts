@@ -18,7 +18,9 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
         getPersonReplies: vi.fn(),
     },
     userService: {},
-    organizationService: {},
+    organizationService: {
+        getMemberRole: vi.fn(),
+    },
     promptService: {},
     hydrationService: {},
     replyService: {},
@@ -45,7 +47,7 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../../../app.js');
-const { feedService } = await import('../../outbound/firebase/core-services-firebase.js');
+const { feedService, organizationService } = await import('../../outbound/firebase/core-services-firebase.js');
 const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
 const { getCrmNotes, setCrmNotes } = await import('../../../lib/crm-notes-store.js');
 
@@ -83,15 +85,56 @@ describe('GET /api/v1/people/list', () => {
         expect(res.status).toBe(401);
     });
 
-    it('passes orgId through to the service when set', async () => {
+    it('passes orgId through to the service when the caller is a member', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(organizationService.getMemberRole).mockResolvedValue('member');
         vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
 
         await app().request('/api/v1/people/list?orgId=org-1', {
             headers: { authorization: 'Bearer t' },
         });
 
+        expect(organizationService.getMemberRole).toHaveBeenCalledWith('org-1', 'u-self');
         expect(feedService.getPeopleList).toHaveBeenCalledWith('u-self', 'org-1');
+    });
+
+    it('403s on orgId when the caller is NOT a member (IDOR guard)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(organizationService.getMemberRole).mockResolvedValue(null);
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        const res = await app().request('/api/v1/people/list?orgId=someone-elses-org', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(403);
+        // The service — which would expose cross-org replier phone numbers —
+        // must never run for a non-member.
+        expect(feedService.getPeopleList).not.toHaveBeenCalled();
+    });
+
+    it('400s on a malformed orgId before touching the service', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+
+        const res = await app().request(`/api/v1/people/list?orgId=${encodeURIComponent('a/../../fcm')}`, {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(400);
+        expect(organizationService.getMemberRole).not.toHaveBeenCalled();
+        expect(feedService.getPeopleList).not.toHaveBeenCalled();
+    });
+
+    it('does not check membership in personal context (no orgId)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        await app().request('/api/v1/people/list', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(organizationService.getMemberRole).not.toHaveBeenCalled();
+        expect(feedService.getPeopleList).toHaveBeenCalledWith('u-self', null);
     });
 
     it('treats missing orgId as null (personal context)', async () => {

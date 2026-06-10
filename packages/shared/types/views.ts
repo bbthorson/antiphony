@@ -500,7 +500,10 @@ export type Replier = z.infer<typeof ReplierSchema>;
  * callers that need the null case should wrap this in `.nullable()`.
  */
 export const HandleResolutionSchema = z.discriminatedUnion('type', [
-    z.object({ type: z.literal('user'), profile: ProfileViewSchema }),
+    // Public endpoint (`GET /resolve/:handle`) — project to the basic shape so
+    // PII/admin fields (email, phoneNumber, settings, blockedUsers, …) never
+    // cross the public API boundary. See `toProfileViewBasic`.
+    z.object({ type: z.literal('user'), profile: ProfileViewBasicSchema }),
     z.object({ type: z.literal('org'), org: OrganizationViewSchema }),
 ]);
 export type HandleResolution = z.infer<typeof HandleResolutionSchema>;
@@ -510,8 +513,16 @@ export type HandleResolution = z.infer<typeof HandleResolutionSchema>;
  * profile + their prompts (with empty replies arrays) + repliers summary.
  */
 export const UserProfileDataSchema = z.object({
-    profileUser: ProfileViewSchema,
-    allPromptsWithReplies: z.array(PromptWithRepliesSchema),
+    // Public endpoint (`GET /users/:handle/profile`) — basic shape only, so the
+    // owner's PII/admin fields never serialize to anonymous callers.
+    profileUser: ProfileViewBasicSchema,
+    // Each prompt's nested `author` is the profile owner, hydrated from the
+    // wide admin profile (`getPromptsForUser` prefetches via getUserDataByUid).
+    // Use the PUBLIC prompt/reply shapes so that nested author PII (email,
+    // phoneNumber, settings, …) and owner-only prompt enrichment never leak.
+    allPromptsWithReplies: z.array(PromptViewPublicSchema.extend({
+        replies: z.array(ReplyViewPublicSchema),
+    })),
     repliers: z.array(ReplierSchema),
 });
 export type UserProfileData = z.infer<typeof UserProfileDataSchema>;

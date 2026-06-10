@@ -4,6 +4,9 @@ import {
     type PromptWithReplies,
     type ProfileViewBasic,
     ProfileView,
+    toProfileViewBasic,
+    toPromptViewPublic,
+    toReplyViewPublic,
     type PromptView,
     type OrganizationView,
     type ReplyView,
@@ -139,8 +142,17 @@ export class FeedService {
         if (!feedData) return null;
 
         return {
-            profileUser: feedData.user,
-            allPromptsWithReplies: feedData.promptsWithReplies,
+            // Public profile page — strip PII/admin fields. `toProfileViewBasic`
+            // also enforces the `showBlueskyPublicly` opt-in for the AT Proto link.
+            profileUser: toProfileViewBasic(feedData.user),
+            // Each prompt's nested `author` is the wide admin profile (prefetched
+            // by getPromptsForUser via getUserDataByUid), so it carries the
+            // owner's PII. Project every prompt — and its replies — through the
+            // public projections before serializing to anonymous callers.
+            allPromptsWithReplies: feedData.promptsWithReplies.map((pwr) => ({
+                ...toPromptViewPublic(pwr),
+                replies: pwr.replies.map(toReplyViewPublic),
+            })),
             repliers: feedData.repliers,
         };
     }
@@ -295,7 +307,8 @@ export class FeedService {
     async resolveHandle(handle: string): Promise<HandleResolution | null> {
         const user = await this.services.users.getUserData(handle);
         if (user) {
-            return { type: 'user', profile: user };
+            // Public endpoint — project to the basic shape so PII never leaks.
+            return { type: 'user', profile: toProfileViewBasic(user) };
         }
 
         const org = await this.services.organizations.getOrganizationBySlug(handle);
