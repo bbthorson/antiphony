@@ -1,6 +1,34 @@
 import { z } from 'zod';
 import { BlobRefSchema } from './blob';
 
+// #region URL Helpers
+// =================================================================================================
+
+/**
+ * Reusable http/https scheme allowlist refinement.
+ *
+ * `z.string().url()` accepts any scheme including `javascript:`, `data:`, and
+ * `vbscript:`, which are stored-XSS vectors when values land in an `<a href>`.
+ * Wrap any user-supplied URL field with this helper instead of bare `.url()`.
+ *
+ * Usage:
+ *   website: httpsUrl().nullable().optional()
+ *   url:     httpsUrl()
+ *
+ * Audit ref: M7 — javascript: URLs in profile links.
+ */
+export function httpsUrl() {
+    return z
+        .string()
+        .trim() // normalize accidental copy/paste whitespace before validating
+        .url()
+        .refine((u) => /^https?:\/\//i.test(u), {
+            message: 'URL must use the http or https scheme',
+        });
+}
+
+// #endregion
+
 // #region Core Schemas
 // =================================================================================================
 
@@ -90,11 +118,11 @@ export const UserRecordSchema = z.object({
     /** URL to avatar image — nullable for the same reason as displayName. */
     avatarUrl: z.string().url().nullable().optional(),
     /** Optional personal website surfaced on the public profile. */
-    website: z.string().url().nullable().optional(),
+    website: httpsUrl().nullable().optional(),
     /** Up to 5 additional public links (label + URL) shown under the bio. */
     links: z.array(z.object({
         label: z.string().min(1).max(40),
-        url: z.string().url(),
+        url: httpsUrl(),
     })).max(5).optional(),
     /** When true and a Bluesky identity is linked, surfaces it on the public profile. */
     showBlueskyPublicly: z.boolean().optional(),
@@ -413,7 +441,7 @@ export const OrganizationRecordSchema = z.object({
     /** URL to the podcast RSS feed */
     rssFeedUrl: z.string().url().optional(),
     /** External website URL */
-    websiteUrl: z.string().url().optional(),
+    websiteUrl: httpsUrl().optional(),
     /** Description or tagline */
     description: z.string().optional(),
     /** Owner ID (User ID) */
