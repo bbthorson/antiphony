@@ -41,7 +41,7 @@ process.env.LOG_LEVEL = 'silent';
 const { app } = await import('../../../app.js');
 const { callForwardingService } = await import('../../outbound/firebase/core-services-firebase.js');
 
-const SYSTEM_TOKEN = 'test-system-token-1234567890';
+const SYSTEM_TOKEN = 'test-system-token-1234567890abcd'; // 32 chars
 const authHeader = { authorization: `Bearer ${SYSTEM_TOKEN}` };
 
 describe('GET /api/v1/call-forwarding/by-phone', () => {

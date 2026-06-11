@@ -36,12 +36,12 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 }));
 
 process.env.LOG_LEVEL = 'silent';
-process.env.SYSTEM_AUTH_TOKEN = 'test-system-token';
+process.env.SYSTEM_AUTH_TOKEN = 'test-system-token-abcdef-1234567'; // 32 chars
 
 const { app } = await import('../../../app.js');
 
 function withSystemAuth(headers: Record<string, string> = {}): Record<string, string> {
-    return { authorization: 'Bearer test-system-token', ...headers };
+    return { authorization: 'Bearer test-system-token-abcdef-1234567', ...headers };
 }
 
 describe('/api/v1/system/atproto-session/:key', () => {

@@ -67,6 +67,12 @@ const MintRequestSchema = z.object({
 
 const app = new Hono();
 
+// NOTE: deliberately NOT IP rate-limited. This is a system-to-system endpoint
+// called by apps/web's server during login (authenticated by the shared
+// SYSTEM_AUTH_TOKEN via requireSystemAuth). Every caller shares the web
+// server's / load-balancer's IP, so an IP-keyed limit would collapse ALL
+// logins into one bucket and throttle the whole system. Abuse is gated by the
+// shared secret; per-user login rate limiting belongs at the apps/web edge.
 app.post('/mint-session-cookie', requireSystemAuth(), async (c) => {
     let body: unknown;
     try {

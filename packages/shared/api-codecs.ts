@@ -20,7 +20,7 @@ export const UpdateProfileRequestSchema = z.object({
   displayName: z.string().max(50).optional(),
   bio: z.string().max(160).optional(),
   avatarUrl: z.string().url().nullable().optional(),
-  usageIntent: z.string().nullable().optional(),
+  usageIntent: z.string().max(200).nullable().optional(),
   /**
    * Personal website surfaced on the public profile. Accepts a URL, empty
    * string, or null from the client; normalizes empty string → null so the
@@ -40,7 +40,10 @@ export const UpdateProfileRequestSchema = z.object({
 });
 
 export const FcmTokenRequestSchema = z.object({
-  token: z.string().min(1)
+  // FCM registration tokens are typically ~163–200 chars; Google's docs
+  // don't publish a hard max but 4096 is a safe upper bound that prevents
+  // multi-MB payloads while accommodating any plausible FCM token format.
+  token: z.string().min(1).max(4096),
 });
 
 export const BadgeResetRequestSchema = z.object({
@@ -54,18 +57,21 @@ export const CreateOrgRequestSchema = z.object({
   avatarUrl: z.string().url().optional(),
   rssFeedUrl: z.string().url().optional(),
   websiteUrl: z.string().url().optional(),
-  description: z.string().optional(),
+  // 500 chars — enough for a multi-sentence blurb, prevents multi-MB writes.
+  description: z.string().max(500).optional(),
 });
 
 export const UpdateOrgRequestSchema = z.object({
   name: z.string().min(3).max(50).optional(),
   slug: z.string().min(3).max(30).regex(/^[a-z0-9-]+$/).optional(),
-  description: z.string().optional(),
+  // 500 chars — matches CreateOrgRequestSchema.description.
+  description: z.string().max(500).optional(),
   avatarUrl: z.string().url().nullable().optional(),
   rssFeedUrl: z.string().url().nullable().optional(),
   websiteUrl: z.string().url().nullable().optional(),
   billingEmail: z.string().email().nullable().optional(),
-  domain: z.string().nullable().optional(),
+  // 253 chars — the DNS spec maximum for a fully-qualified domain name.
+  domain: z.string().max(253).nullable().optional(),
 });
 
 export const CreateOrgInviteRequestSchema = z.object({

@@ -26,12 +26,15 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 }));
 
 process.env.LOG_LEVEL = 'silent';
-process.env.SYSTEM_AUTH_TOKEN = 'test-system-token';
+// 32-char token — meets the minimum length requirement enforced by system-auth
+// middleware (L1 security hardening). Tests that verify auth rejection use a
+// different or missing bearer, not a short configured token.
+process.env.SYSTEM_AUTH_TOKEN = 'test-system-token-abcdef-1234567'; // 32 chars
 
 const { app } = await import('../../../app.js');
 
 const withSystemAuth = (extra: Record<string, string> = {}) => ({
-    authorization: 'Bearer test-system-token',
+    authorization: 'Bearer test-system-token-abcdef-1234567',
     'content-type': 'application/json',
     ...extra,
 });

@@ -81,9 +81,20 @@ function extractBearer(authHeader: string | undefined): string | null {
 }
 
 /**
+ * Minimum acceptable length for SYSTEM_AUTH_TOKEN.
+ *
+ * A 32-character secret provides ~192 bits of entropy for a random
+ * hex/alphanumeric value and matches NIST SP 800-132 guidance for
+ * shared secrets used in bearer-token authentication. Shorter tokens
+ * are rejected at startup rather than silently accepted.
+ */
+const SYSTEM_AUTH_TOKEN_MIN_LENGTH = 32;
+
+/**
  * System-auth middleware. Verifies that the bearer token matches
  * `SYSTEM_AUTH_TOKEN`. On mismatch: 401. On missing token: 401. On
- * unset env var: 503 (fail-closed).
+ * unset env var: 503 (fail-closed). On token shorter than
+ * SYSTEM_AUTH_TOKEN_MIN_LENGTH: 503 (fail-closed).
  */
 export const requireSystemAuth = (): MiddlewareHandler => {
     return async (c, next) => {
@@ -96,6 +107,20 @@ export const requireSystemAuth = (): MiddlewareHandler => {
                 '[system-auth] SYSTEM_AUTH_TOKEN env var is unset; refusing',
             );
             return c.json(errorEnvelope(c, 'System auth not configured'), 503);
+        }
+
+        if (expected.trim().length < SYSTEM_AUTH_TOKEN_MIN_LENGTH) {
+            // Token is set but too short to provide adequate security.
+            // Fail-closed — refuse all requests until the secret is rotated.
+            logger.error(
+                {
+                    requestId: c.get('requestId'),
+                    minLength: SYSTEM_AUTH_TOKEN_MIN_LENGTH,
+                    actualLength: expected.trim().length,
+                },
+                '[system-auth] SYSTEM_AUTH_TOKEN is too short; refusing (rotate to ≥32 chars)',
+            );
+            return c.json(errorEnvelope(c, 'System auth misconfigured'), 503);
         }
 
         const presented = extractBearer(c.req.header('authorization'));

@@ -62,8 +62,15 @@ env:
     # hosters fork or override this file with their own deployment's origins.
     # See apps/core-api/src/app.ts:parseAllowedOrigins +
     # specs/client-caller-split.md.
+    #
+    # NOTE: localhost origins are intentionally absent here. Production
+    # should never accept credentialed requests from localhost. Local dev
+    # does NOT read this file — it relies on the code-level fallback in
+    # parseAllowedOrigins() (returns ['http://localhost:9002'] when
+    # ALLOWED_ORIGINS env var is unset), so removing localhost here does
+    # NOT break `npm run dev`. (Security audit Info finding.)
     - variable: ALLOWED_ORIGINS
-      value: "https://voxpop.phonicfactory.com,https://embed.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app,http://localhost:9002,http://localhost:5173"
+      value: "https://voxpop.phonicfactory.com,https://embed.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app"
       availability:
           - RUNTIME
     # Shared secret used by apps/telephony to authenticate

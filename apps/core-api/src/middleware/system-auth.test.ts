@@ -21,8 +21,12 @@ function makeApp() {
 describe('requireSystemAuth', () => {
     const originalToken = process.env.SYSTEM_AUTH_TOKEN;
 
+    // 32-char token used by the default beforeEach — meets the minimum
+    // length requirement so tests verify auth logic, not the length guard.
+    const VALID_TOKEN = 'test-secret-abcdef-1234567890abc'; // exactly 32 chars
+
     beforeEach(() => {
-        process.env.SYSTEM_AUTH_TOKEN = 'test-secret-abcdef';
+        process.env.SYSTEM_AUTH_TOKEN = VALID_TOKEN;
     });
 
     afterEach(() => {
@@ -35,7 +39,7 @@ describe('requireSystemAuth', () => {
 
     it('returns 200 when the bearer matches SYSTEM_AUTH_TOKEN', async () => {
         const res = await makeApp().request('/protected', {
-            headers: { authorization: 'Bearer test-secret-abcdef' },
+            headers: { authorization: `Bearer ${VALID_TOKEN}` },
         });
         expect(res.status).toBe(200);
     });
@@ -58,7 +62,7 @@ describe('requireSystemAuth', () => {
 
     it('returns 401 when authorization header is malformed (no Bearer prefix)', async () => {
         const res = await makeApp().request('/protected', {
-            headers: { authorization: 'test-secret-abcdef' },
+            headers: { authorization: VALID_TOKEN },
         });
         expect(res.status).toBe(401);
     });
@@ -79,17 +83,38 @@ describe('requireSystemAuth', () => {
         expect(res.status).toBe(503);
     });
 
-    it('rejects a token that is a prefix of the secret (constant-time guard)', async () => {
-        // 'test-secret-abc' is a prefix of 'test-secret-abcdef' — must reject.
+    it('returns 503 (fail-closed) when SYSTEM_AUTH_TOKEN is shorter than 32 chars', async () => {
+        // Short secrets don't meet the minimum entropy requirement; the
+        // middleware should refuse all requests rather than silently accept.
+        process.env.SYSTEM_AUTH_TOKEN = 'too-short'; // 9 chars < 32
         const res = await makeApp().request('/protected', {
-            headers: { authorization: 'Bearer test-secret-abc' },
+            headers: { authorization: 'Bearer too-short' },
+        });
+        expect(res.status).toBe(503);
+        const body = await res.json();
+        expect(body.error.message).toMatch(/misconfigured/);
+    });
+
+    it('accepts a token that meets the 32-char minimum', async () => {
+        // 32 chars exactly — should be accepted if it matches.
+        process.env.SYSTEM_AUTH_TOKEN = 'a'.repeat(32);
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: `Bearer ${'a'.repeat(32)}` },
+        });
+        expect(res.status).toBe(200);
+    });
+
+    it('rejects a token that is a prefix of the secret (constant-time guard)', async () => {
+        // A prefix of VALID_TOKEN — must reject even though the prefix matches.
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: `Bearer ${VALID_TOKEN.slice(0, -4)}` },
         });
         expect(res.status).toBe(401);
     });
 
     it('rejects a token that is longer than the secret', async () => {
         const res = await makeApp().request('/protected', {
-            headers: { authorization: 'Bearer test-secret-abcdef-extra' },
+            headers: { authorization: `Bearer ${VALID_TOKEN}-extra` },
         });
         expect(res.status).toBe(401);
     });
