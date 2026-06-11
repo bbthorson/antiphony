@@ -208,7 +208,16 @@ export async function checkRateLimit(
  */
 export const rateLimit = (options: RateLimitOptions, customKey?: string): MiddlewareHandler => {
     return async (c, next) => {
-        const ip = extractClientIp(c.req.header('x-forwarded-for'));
+        const xff = c.req.header('x-forwarded-for');
+        const ip = extractClientIp(xff);
+        // H5 verification diagnostic (June 2026): emit the raw XFF chain + the
+        // IP we extracted so a single known-source request confirms the
+        // TRUSTED_PROXY_HOPS offset in client-ip.ts against real production
+        // traffic. Low volume (pre-beta). Remove/downgrade once confirmed.
+        logger.info(
+            { requestId: c.get('requestId'), xff: xff ?? null, clientIp: ip },
+            '[rate-limit] xff diagnostic',
+        );
         const key = `ratelimit_${customKey || ip}`;
         const result = await checkRateLimit(key, options, c.get('requestId'));
         if (!result.allowed) {
