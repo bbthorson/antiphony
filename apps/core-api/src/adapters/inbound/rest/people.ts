@@ -1,11 +1,24 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { toReplyViewPublic } from 'shared/types';
+import { PersonNotesUpdateSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { feedService, organizationService } from '../../outbound/firebase/core-services-firebase.js';
 import { getCrmNotes, setCrmNotes } from '../../../lib/crm-notes-store.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+
+/**
+ * Canonical handle regex — matches `[a-zA-Z0-9_]{3,20}`.
+ *
+ * Validated at the route boundary for every `:handle` path param so
+ * URL-encoded traversal sequences like `a%2F..%2F..%2Ffcm` can't change the
+ * depth of the Firestore path built in `crm-notes-store.ts` (M3 security fix).
+ */
+const HANDLE_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
+
+function validateHandle(handle: string): boolean {
+    return HANDLE_REGEX.test(handle);
+}
 
 /**
  * People / CRM endpoints mounted at `/api/v1/people`.
@@ -124,6 +137,10 @@ app.get('/:handle/replies', requireAuth(), rateLimit(RATE_LIMITS.read), async (c
     const uid = c.get('viewerUid')!;
     const handle = c.req.param('handle');
 
+    if (!validateHandle(handle)) {
+        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
+    }
+
     const result = await feedService.getPersonReplies(uid, handle);
 
     return c.json({
@@ -149,6 +166,10 @@ app.get('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) 
     const uid = c.get('viewerUid')!;
     const handle = c.req.param('handle');
 
+    if (!validateHandle(handle)) {
+        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
+    }
+
     const notes = await getCrmNotes(uid, handle);
     return c.json({ success: true, data: notes });
 });
@@ -161,14 +182,17 @@ app.get('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) 
 // omit a field to leave it untouched. Both fields are optional in the
 // schema so callers can update just one.
 
-const NotesUpdateSchema = z.object({
-    notes: z.string().max(10_000).optional(),
-    tags: z.array(z.string().max(64)).max(50).optional(),
-});
+// Use the shared PersonNotesUpdateSchema — bounds are identical (notes ≤10K;
+// ≤50 tags, each ≤64 chars). Importing from shared avoids the drift risk
+// flagged in the security audit Info section (M3 cleanup).
 
 app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
     const uid = c.get('viewerUid')!;
     const handle = c.req.param('handle');
+
+    if (!validateHandle(handle)) {
+        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
+    }
 
     let body: unknown;
     try {
@@ -177,7 +201,7 @@ app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c
         return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
-    const parsed = NotesUpdateSchema.safeParse(body);
+    const parsed = PersonNotesUpdateSchema.safeParse(body);
     if (!parsed.success) {
         return c.json(
             errorEnvelope(c, 'Invalid request body', { issues: parsed.error.issues }),

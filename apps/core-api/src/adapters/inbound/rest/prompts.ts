@@ -205,8 +205,10 @@ app.openapi(createRouteDef, async (c) => {
 
     // Idempotency: if the client retries with the same Idempotency-Key, we
     // either return the cached response (completed) or 409 (still processing).
+    // The uid is threaded in so the doc ID is per-user — two different callers
+    // with the same raw key get independent records (M5 security fix).
     try {
-        const idem = await checkIdempotency(c);
+        const idem = await checkIdempotency(c, uid);
         if (idem) {
             return c.json(idem.cached as object, 200);
         }
@@ -265,7 +267,7 @@ app.openapi(createRouteDef, async (c) => {
     }
 
     const responseBody = { success: true as const, data: { promptId: created.id } };
-    await saveIdempotencyResult(c, responseBody);
+    await saveIdempotencyResult(c, uid, responseBody);
 
     return c.json(responseBody, 200);
 });

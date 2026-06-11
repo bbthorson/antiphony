@@ -198,7 +198,7 @@ describe('GET /api/v1/people', () => {
             promptsWithReplies: [
                 {
                     prompt: { record: { id: 'p-1', title: 'P1' } },
-                    replies: [mkReplyView('r-1', 'p-1', 'replier-handle')],
+                    replies: [mkReplyView('r-1', 'p-1', 'replier_handle')],
                 },
             ],
         } as never);
@@ -264,6 +264,43 @@ describe('GET /api/v1/people', () => {
 // GET /api/v1/people/:handle/replies
 // ---------------------------------------------------------------------------
 
+describe('GET /api/v1/people/:handle/replies — handle validation (M3)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('400s when handle contains a path traversal sequence', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+
+        // URL-encoded `a%2F..%2F..%2Ffcm` decodes to `a/../../../fcm`
+        const res = await app().request(
+            `/api/v1/people/${encodeURIComponent('a/../../../fcm')}/replies`,
+            { headers: { authorization: 'Bearer t' } },
+        );
+
+        expect(res.status).toBe(400);
+        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
+    });
+
+    it('400s when handle is too short (< 3 chars)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/ab/replies', {
+            headers: { authorization: 'Bearer t' },
+        });
+        expect(res.status).toBe(400);
+        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
+    });
+
+    it('400s when handle contains invalid characters', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/handle-with-dash/replies', {
+            headers: { authorization: 'Bearer t' },
+        });
+        expect(res.status).toBe(400);
+        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
+    });
+});
+
 describe('GET /api/v1/people/:handle/replies', () => {
     beforeEach(() => {
         vi.resetAllMocks();
@@ -273,13 +310,13 @@ describe('GET /api/v1/people/:handle/replies', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
         vi.mocked(feedService.getPersonReplies).mockResolvedValue({
             replies: [
-                mkReplyView('r-1', 'p-1', 'replier-handle'),
-                mkReplyView('r-2', 'p-2', 'replier-handle'),
+                mkReplyView('r-1', 'p-1', 'replier_handle'),
+                mkReplyView('r-2', 'p-2', 'replier_handle'),
             ],
             promptTitles: { 'p-1': 'First Prompt', 'p-2': 'Second Prompt' },
         } as never);
 
-        const res = await app().request('/api/v1/people/replier-handle/replies', {
+        const res = await app().request('/api/v1/people/replier_handle/replies', {
             headers: { authorization: 'Bearer t' },
         });
 
@@ -288,17 +325,17 @@ describe('GET /api/v1/people/:handle/replies', () => {
         expect(body.success).toBe(true);
         expect(body.data.replies).toHaveLength(2);
         expect(body.data.promptTitles).toEqual({ 'p-1': 'First Prompt', 'p-2': 'Second Prompt' });
-        expect(feedService.getPersonReplies).toHaveBeenCalledWith('u-self', 'replier-handle');
+        expect(feedService.getPersonReplies).toHaveBeenCalledWith('u-self', 'replier_handle');
     });
 
     it('strips private fields from reply objects', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
         vi.mocked(feedService.getPersonReplies).mockResolvedValue({
-            replies: [mkReplyView('r-1', 'p-1', 'replier-handle')],
+            replies: [mkReplyView('r-1', 'p-1', 'replier_handle')],
             promptTitles: { 'p-1': 'P1' },
         } as never);
 
-        const res = await app().request('/api/v1/people/replier-handle/replies', {
+        const res = await app().request('/api/v1/people/replier_handle/replies', {
             headers: { authorization: 'Bearer t' },
         });
 
@@ -308,8 +345,37 @@ describe('GET /api/v1/people/:handle/replies', () => {
     });
 
     it('401s when no auth is provided', async () => {
-        const res = await app().request('/api/v1/people/replier-handle/replies');
+        const res = await app().request('/api/v1/people/replier_handle/replies');
         expect(res.status).toBe(401);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/people/:handle/notes — handle validation (M3)
+// ---------------------------------------------------------------------------
+
+describe('GET /api/v1/people/:handle/notes — handle validation (M3)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('400s on a path-traversal handle', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request(
+            `/api/v1/people/${encodeURIComponent('a%2F..%2F..%2Ffcm')}/notes`,
+            { headers: { authorization: 'Bearer t' } },
+        );
+        expect(res.status).toBe(400);
+        expect(getCrmNotes).not.toHaveBeenCalled();
+    });
+
+    it('400s when handle contains invalid characters', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/bad-handle!/notes', {
+            headers: { authorization: 'Bearer t' },
+        });
+        expect(res.status).toBe(400);
+        expect(getCrmNotes).not.toHaveBeenCalled();
     });
 });
 
@@ -329,7 +395,7 @@ describe('GET /api/v1/people/:handle/notes', () => {
             tags: ['regular', 'verified'],
         });
 
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             headers: { authorization: 'Bearer t' },
         });
 
@@ -337,14 +403,14 @@ describe('GET /api/v1/people/:handle/notes', () => {
         const body = await res.json();
         expect(body.data.notes).toBe('Always asks great questions');
         expect(body.data.tags).toEqual(['regular', 'verified']);
-        expect(getCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle');
+        expect(getCrmNotes).toHaveBeenCalledWith('u-self', 'replier_handle');
     });
 
     it('returns empty defaults when no notes exist', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
         vi.mocked(getCrmNotes).mockResolvedValue({ notes: '', tags: [] });
 
-        const res = await app().request('/api/v1/people/no-notes/notes', {
+        const res = await app().request('/api/v1/people/no_notes/notes', {
             headers: { authorization: 'Bearer t' },
         });
 
@@ -355,9 +421,44 @@ describe('GET /api/v1/people/:handle/notes', () => {
     });
 
     it('401s when no auth is provided', async () => {
-        const res = await app().request('/api/v1/people/replier-handle/notes');
+        const res = await app().request('/api/v1/people/replier_handle/notes');
         expect(res.status).toBe(401);
         expect(getCrmNotes).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/people/:handle/notes — handle validation (M3)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/v1/people/:handle/notes — handle validation (M3)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('400s on a path-traversal handle before body parsing', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request(
+            `/api/v1/people/${encodeURIComponent('a%2F..%2F..%2Ffcm')}/notes`,
+            {
+                method: 'POST',
+                headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+                body: JSON.stringify({ notes: 'x' }),
+            },
+        );
+        expect(res.status).toBe(400);
+        expect(setCrmNotes).not.toHaveBeenCalled();
+    });
+
+    it('400s on a handle with spaces', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        const res = await app().request('/api/v1/people/bad handle/notes', {
+            method: 'POST',
+            headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
+            body: JSON.stringify({ notes: 'x' }),
+        });
+        expect(res.status).toBe(400);
+        expect(setCrmNotes).not.toHaveBeenCalled();
     });
 });
 
@@ -374,7 +475,7 @@ describe('POST /api/v1/people/:handle/notes', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
         vi.mocked(setCrmNotes).mockResolvedValue(undefined);
 
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
             body: JSON.stringify({ notes: 'Got it', tags: ['vip'] }),
@@ -383,7 +484,7 @@ describe('POST /api/v1/people/:handle/notes', () => {
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle', {
+        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier_handle', {
             notes: 'Got it',
             tags: ['vip'],
         });
@@ -393,18 +494,18 @@ describe('POST /api/v1/people/:handle/notes', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
         vi.mocked(setCrmNotes).mockResolvedValue(undefined);
 
-        await app().request('/api/v1/people/replier-handle/notes', {
+        await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
             body: JSON.stringify({ notes: 'Got it' }),
         });
 
-        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier-handle', { notes: 'Got it' });
+        expect(setCrmNotes).toHaveBeenCalledWith('u-self', 'replier_handle', { notes: 'Got it' });
     });
 
     it('400s on invalid JSON body', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
             body: 'not json',
@@ -415,7 +516,7 @@ describe('POST /api/v1/people/:handle/notes', () => {
 
     it('400s when notes exceeds max length', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
             body: JSON.stringify({ notes: 'x'.repeat(10_001) }),
@@ -426,7 +527,7 @@ describe('POST /api/v1/people/:handle/notes', () => {
 
     it('400s when tags is not a string array', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { authorization: 'Bearer t', 'content-type': 'application/json' },
             body: JSON.stringify({ tags: [1, 2, 3] }),
@@ -436,7 +537,7 @@ describe('POST /api/v1/people/:handle/notes', () => {
     });
 
     it('401s when no auth is provided', async () => {
-        const res = await app().request('/api/v1/people/replier-handle/notes', {
+        const res = await app().request('/api/v1/people/replier_handle/notes', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ notes: 'x' }),
