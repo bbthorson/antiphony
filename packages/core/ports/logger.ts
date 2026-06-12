@@ -18,5 +18,4 @@ export interface Logger {
     error(msg: string): void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const defaultLogger: Logger = console as unknown as Logger;
