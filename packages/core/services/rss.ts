@@ -1,5 +1,6 @@
 import Parser from 'rss-parser';
 import { type Logger, defaultLogger } from '../ports/logger';
+import { safeFetchText, isAllowedHost } from './safe-fetch';
 
 /**
  * RssService parses external RSS/Atom feeds into a normalized summary.
@@ -34,38 +35,32 @@ export class RssService {
         this.parser = new Parser();
     }
 
+    /**
+     * Fast pre-validation: protocol allowlist + reject a literal non-public IP
+     * (or `localhost`) host up front. DNS hostnames pass here and are validated
+     * comprehensively at connect time by `safeFetchText`'s SSRF-safe lookup,
+     * which resolves the host and rejects any non-public resolved address.
+     */
     private validateUrl(url: string): boolean {
+        let parsedUrl: URL;
         try {
-            const parsedUrl = new URL(url);
-
-            // 1. Protocol check
-            if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-                this.logger.warn({ protocol: parsedUrl.protocol }, '[RssService] Blocked unsafe protocol');
-                return false;
-            }
-
-            // 2. Hostname check
-            const hostname = parsedUrl.hostname.toLowerCase();
-
-            // Block localhost/loopback
-            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
-                this.logger.warn({ hostname }, '[RssService] Blocked loopback address');
-                return false;
-            }
-
-            // Block Private IP ranges (basic regex check for IPv4)
-            // 10.x.x.x
-            if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return false;
-            // 192.168.x.x
-            if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return false;
-            // 172.16.x.x - 172.31.x.x
-            if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return false;
-
-            return true;
+            parsedUrl = new URL(url);
         } catch (e) {
             this.logger.error({ err: e }, '[RssService] URL validation error');
             return false;
         }
+
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            this.logger.warn({ protocol: parsedUrl.protocol }, '[RssService] Blocked unsafe protocol');
+            return false;
+        }
+
+        if (!isAllowedHost(parsedUrl.hostname)) {
+            this.logger.warn({ hostname: parsedUrl.hostname }, '[RssService] Blocked unsafe host');
+            return false;
+        }
+
+        return true;
     }
 
     async parseFeed(url: string, maxItems: number = 5): Promise<RssSummary | null> {
@@ -75,9 +70,14 @@ export class RssService {
         }
 
         try {
-            const feed = await this.parser.parseURL(url);
+            // Fetch through the SSRF-safe client (validates every resolved IP,
+            // pins the socket, re-validates redirects), then parse the text —
+            // NOT `parser.parseURL`, whose internal fetch follows redirects to
+            // arbitrary hosts and does no IP validation.
+            const xml = await safeFetchText(url, this.logger);
+            const feed = await this.parser.parseString(xml);
 
-            const items: RssItem[] = feed.items.slice(0, maxItems).map(item => ({
+            const items: RssItem[] = (feed.items || []).slice(0, maxItems).map(item => ({
                 title: item.title,
                 link: item.link,
                 content: item.contentSnippet || item.content,
