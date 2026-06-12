@@ -2,24 +2,32 @@
  * Number of trusted reverse-proxy hops the platform appends to the RIGHT of
  * `X-Forwarded-For`.
  *
- * Firebase App Hosting fronts Cloud Run with a Google external Application Load
- * Balancer (GFE). Per Google's external ALB contract the edge appends
- * `<client-ip>,<GFE-ip>`, so the GFE is the LAST entry and the real client is
- * one hop in from the right.
+ * Firebase App Hosting fronts Cloud Run with **two** Google infrastructure hops,
+ * confirmed empirically from production XFF chains (June 2026 H5 investigation —
+ * see `docs/security-audit-2026-06.md`). Every chain on the `vox-pop-core-api`
+ * backend has the exact shape:
  *
- * Confirmed empirically (June 2026 H5 investigation — see
- * `docs/security-audit-2026-06.md`): EVERY Cloud Run request-log `remoteIp`
- * for the `vox-pop-core-api` backend is a Google GFE address in
- * `192.178.13.0/24`. That is the peer Cloud Run sees — i.e. the rightmost XFF
- * entry is Google infrastructure, never the client. The previous code took the
- * rightmost entry, so all traffic collapsed into rotating Google-infra buckets,
- * neutering per-IP rate limiting and the pending-upload `ipHash` abuse signal.
+ *     <client-ip>, <GCLB-ip 35.219.x>, <GFE-ip 192.178.13.x>
  *
- * VERIFY AFTER DEPLOY: the diagnostic log in `rate-limit.ts` emits the raw
- * chain + chosen IP. Make one request from a known IP and confirm `clientIp`
- * matches it. If App Hosting adds an extra app-visible hop, bump this to 2.
+ * The two rightmost entries are Google's load balancer and front-end (both
+ * public Google ranges, so they can't be filtered by an is-private check); the
+ * real client is the entry TWO hops in from the right. The original H5 fix used
+ * 1 hop and so bucketed on the stable `35.219.x` GCLB IP — the diagnostic log in
+ * `rate-limit.ts` showed `clientIp: 35.219.200.199` for every request, which is
+ * how we caught it. With 2 hops the client is correctly extracted, and a client
+ * that spoofs a leading XFF entry is ignored (we trust only what the edge
+ * appended).
+ *
+ * Overridable via the `TRUSTED_PROXY_HOPS` env var (apphosting.yaml) so a future
+ * platform topology change can be corrected without a code deploy — the
+ * diagnostic log in `rate-limit.ts` is the detector (if `clientIp` starts
+ * showing a Google infra IP or `unknown`, the hop count moved). Falls back to 2
+ * when unset or non-numeric.
  */
-const TRUSTED_PROXY_HOPS = 1;
+const TRUSTED_PROXY_HOPS = (() => {
+    const raw = Number(process.env.TRUSTED_PROXY_HOPS);
+    return Number.isInteger(raw) && raw >= 0 ? raw : 2;
+})();
 
 /**
  * Normalize an XFF entry: lowercase, and unwrap an IPv4-mapped IPv6 address
