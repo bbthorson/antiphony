@@ -40,7 +40,9 @@ const { userService, promptService } = await import('../../outbound/firebase/cor
 
 type MockUser = { id: string; handle: string };
 type MockPrompt = {
-    record: { id: string; authorId: string; status: string };
+    record: { id: string; authorId: string; status: string; [k: string]: unknown };
+    // Real prompts are always hydrated with an author; toPromptViewPublic projects it.
+    author?: Record<string, unknown>;
     [k: string]: unknown;
 };
 
@@ -60,7 +62,7 @@ describe('GET /api/v1/prompts/public/:handle/:promptId', () => {
     it('returns { user, prompt } when both exist, prompt is live, and ownership matches', async () => {
         vi.mocked(userService.getUserData).mockResolvedValue(asUser({ id: 'u-1', handle: 'alice' }));
         vi.mocked(promptService.getPromptData).mockResolvedValue(
-            asPrompt({ record: { id: 'p-1', authorId: 'u-1', status: 'live' } }),
+            asPrompt({ record: { id: 'p-1', authorId: 'u-1', status: 'live' }, author: { id: 'u-1', handle: 'alice' } }),
         );
 
         const res = await app().request('/api/v1/prompts/public/alice/p-1');
@@ -72,10 +74,47 @@ describe('GET /api/v1/prompts/public/:handle/:promptId', () => {
         expect(body.data.prompt.record.id).toBe('p-1');
     });
 
+    it('strips PII/admin fields from user, nested prompt author, and owner-only prompt fields', async () => {
+        vi.mocked(userService.getUserData).mockResolvedValue(asUser({
+            id: 'u-1', handle: 'alice', displayName: 'Alice',
+            // PII / admin — must NOT reach an anonymous caller.
+            email: 'alice@example.com', tier: 'creator_pro', lastSeenAt: '2026-06-01T00:00:00Z',
+            unreadReplyCount: 5, phoneNumber: '+15551234567',
+        } as unknown as MockUser));
+        vi.mocked(promptService.getPromptData).mockResolvedValue(asPrompt({
+            record: { id: 'p-1', authorId: 'u-1', status: 'live', title: 'T', audioUrl: 'https://x/a.webm', createdAt: '2026-01-01T00:00:00Z' },
+            author: { id: 'u-1', handle: 'alice', email: 'alice@example.com', tier: 'creator_pro' },
+            replyCount: 3,
+            // Owner-only prompt enrichment — must be stripped.
+            analytics: { views: 99 },
+            aiStatus: 'error',
+            aiError: 'boom',
+            aiSummary: 'private',
+        }));
+
+        const res = await app().request('/api/v1/prompts/public/alice/p-1');
+        expect(res.status).toBe(200);
+        const { data } = await res.json();
+
+        for (const k of ['email', 'tier', 'lastSeenAt', 'unreadReplyCount', 'phoneNumber']) {
+            expect(data.user[k]).toBeUndefined();
+            expect(data.prompt.author[k]).toBeUndefined();
+        }
+        expect(data.user.handle).toBe('alice');
+        expect(data.prompt.author.handle).toBe('alice');
+        for (const k of ['analytics', 'aiStatus', 'aiError', 'aiSummary']) {
+            expect(data.prompt[k]).toBeUndefined();
+        }
+        // Public surface still intact.
+        expect(data.prompt.record.id).toBe('p-1');
+        expect(data.prompt.record.title).toBe('T');
+        expect(data.prompt.replyCount).toBe(3);
+    });
+
     it('normalizes the handle (lowercases, strips leading @, URL-decodes)', async () => {
         vi.mocked(userService.getUserData).mockResolvedValue(asUser({ id: 'u-2', handle: 'bob' }));
         vi.mocked(promptService.getPromptData).mockResolvedValue(
-            asPrompt({ record: { id: 'p-2', authorId: 'u-2', status: 'live' } }),
+            asPrompt({ record: { id: 'p-2', authorId: 'u-2', status: 'live' }, author: { id: 'u-2', handle: 'bob' } }),
         );
 
         // `@Bob` URL-encoded = %40Bob.

@@ -1,5 +1,10 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { ProfileViewSchema, PromptViewSchema } from 'shared/types';
+import {
+    ProfileViewBasicSchema,
+    PromptViewPublicSchema,
+    toProfileViewBasic,
+    toPromptViewPublic,
+} from 'shared/types';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { userService, promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
@@ -22,9 +27,13 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * `specs/decoupling-migration.md` End State for the mobile cutover plan.
  */
 
+// Public endpoint — project to the basic/public shapes so PII (email, tier,
+// lastSeenAt, …) and owner-only prompt fields (analytics, aiStatus/aiError,
+// moderation) never serialize to anonymous callers. `toPromptViewPublic` also
+// projects the nested `prompt.author` down to the basic shape.
 const PublicPromptResponseSchema = z.object({
-    user: ProfileViewSchema,
-    prompt: PromptViewSchema,
+    user: ProfileViewBasicSchema,
+    prompt: PromptViewPublicSchema,
 });
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
@@ -81,7 +90,10 @@ app.openapi(getPublicPromptRoute, async (c) => {
 
     return c.json({
         success: true as const,
-        data: { user, prompt },
+        data: {
+            user: toProfileViewBasic(user),
+            prompt: toPromptViewPublic(prompt),
+        },
     }, 200);
 });
 
