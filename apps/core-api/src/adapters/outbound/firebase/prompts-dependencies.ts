@@ -1,8 +1,8 @@
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { PromptDocumentSchema } from 'shared/types/storage';
-import { PromptRecordSchema } from 'shared/types';
+import { PromptRecordSchema } from 'shared/types/records';
 import type { PromptDocument } from 'shared/types/storage';
-import type { PromptRecord } from 'shared/types';
+import type { PromptRecord } from 'shared/types/records';
 import { logger } from '../../../lib/logger.js';
 import type {
     PromptDependencies,

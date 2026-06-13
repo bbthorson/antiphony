@@ -1,5 +1,10 @@
-import { ReplyRecord, ReplyView, ProfileView, PromptView, PromptRecordSchema, ReplyEnrichmentRecord } from 'shared/types';
-import { OrganizationRecord, OrganizationMemberRecord, OrgInviteRecord } from 'shared/types/records';
+import { ReplyRecord, PromptRecordSchema, ReplyEnrichmentRecord } from 'shared/types/records';
+import { ReplyView, ProfileView, PromptView } from 'shared/types/views';
+import {
+    OrganizationRecord,
+    OrganizationMemberRecord,
+    OrgInviteRecord,
+} from 'shared/types/records';
 import { OrganizationView, OrganizationMemberView, OrgInviteView } from 'shared/types/views';
 import { PromptDocument } from 'shared/types/storage';
 import { NotFoundError } from 'shared/errors';

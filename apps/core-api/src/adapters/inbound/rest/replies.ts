@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { toReplyViewPublic, ReplyViewPublicSchema } from 'shared/types';
+import { toReplyViewPublic, ReplyViewPublicSchema } from 'shared/types/views';
 import {
     UpdateReplyStatusRequestSchema,
     BulkReplyActionRequestSchema,

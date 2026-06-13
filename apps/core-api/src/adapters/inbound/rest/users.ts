@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { toProfileViewBasic, ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types';
+import { toProfileViewBasic, ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types/views';
 import { PublicProfileDtoSchema } from 'shared/types/api';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';

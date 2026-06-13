@@ -1,8 +1,8 @@
 import admin from 'firebase-admin';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
-import { ReplyRecordSchema, ReplyEnrichmentRecordSchema } from 'shared/types';
+import { ReplyRecordSchema, ReplyEnrichmentRecordSchema } from 'shared/types/records';
 import { NotFoundError } from 'shared/errors';
-import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types';
+import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types/records';
 import { logger } from '../../../lib/logger.js';
 
 function promptsCollection() {

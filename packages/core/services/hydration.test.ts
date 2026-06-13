@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { HydrationService } from './hydration';
 import type { HydrationDependencies } from '../ports/hydration-dependencies';
 import { PromptDocumentSchema } from 'shared/types/storage';
-import type { ProfileView, ReplyRecord } from 'shared/types';
+import type { ReplyRecord } from 'shared/types/records';
+import type { ProfileView } from 'shared/types/views';
 
 /**
  * Focused tests for the prompt-doc → PromptView derivation of analytics

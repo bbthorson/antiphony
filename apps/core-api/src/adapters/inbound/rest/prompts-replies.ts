@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { toReplyViewPublic, ReplyViewSchema, ReplyViewPublicSchema } from 'shared/types';
+import { toReplyViewPublic, ReplyViewSchema, ReplyViewPublicSchema } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth } from '../../../middleware/auth.js';
 import { promptService, replyService } from '../../outbound/firebase/core-services-firebase.js';

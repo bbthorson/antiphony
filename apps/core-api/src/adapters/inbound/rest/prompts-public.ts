@@ -4,7 +4,7 @@ import {
     PromptViewPublicSchema,
     toProfileViewBasic,
     toPromptViewPublic,
-} from 'shared/types';
+} from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { userService, promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';

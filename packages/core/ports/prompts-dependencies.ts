@@ -1,5 +1,5 @@
 import type { PromptDocument } from 'shared/types/storage';
-import type { PromptRecord } from 'shared/types';
+import type { PromptRecord } from 'shared/types/records';
 
 /**
  * PromptDependencies is the portable interface that PromptService uses to

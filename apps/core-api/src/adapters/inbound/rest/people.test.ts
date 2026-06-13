@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ReplyView } from 'shared/types';
+import type { ReplyView } from 'shared/types/views';
 
 /**
  * Tests for `/api/v1/people/*` — the People (CRM) routes:

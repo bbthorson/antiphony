@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { PromptView, ReplyRecord, ReplyView, ProfileView } from 'shared/types';
+import type { ReplyRecord } from 'shared/types/records';
+import type { PromptView, ReplyView, ProfileView } from 'shared/types/views';
 import { ReplyService } from './replies';
 import type { ReplyDependencies } from '../ports/replies-dependencies';
 import type { CoreServices } from '../ports/core-services';

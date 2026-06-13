@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { toPromptViewPublic, PromptViewSchema, PromptViewPublicSchema } from 'shared/types';
+import { toPromptViewPublic, PromptViewSchema, PromptViewPublicSchema } from 'shared/types/views';
 import { CreatePromptRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth, requireAuth } from '../../../middleware/auth.js';

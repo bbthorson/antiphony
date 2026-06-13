@@ -11,7 +11,7 @@ import {
     type OrganizationView,
     type ReplyView,
     type HandleResolution,
-} from 'shared/types';
+} from 'shared/types/views';
 import type { CoreServices, RssSummary } from '../ports/core-services';
 import { type Logger, defaultLogger } from '../ports/logger';
 

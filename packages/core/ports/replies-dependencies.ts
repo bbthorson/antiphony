@@ -1,4 +1,4 @@
-import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types';
+import type { ReplyRecord, ReplyEnrichmentRecord } from 'shared/types/records';
 
 /**
  * Maps a reply's `sentiment` enum value to the lowercase bucket key used in

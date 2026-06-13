@@ -1,4 +1,4 @@
-import type { PromptRecord, ReplyRecord, UserRecord } from 'shared/types';
+import type { PromptRecord, ReplyRecord, UserRecord } from 'shared/types/records';
 import type { OrganizationRecord } from 'shared/types/records';
 
 /**

@@ -1,4 +1,5 @@
-import type { UserRecord, ProfileView } from 'shared/types';
+import type { UserRecord } from 'shared/types/records';
+import type { ProfileView } from 'shared/types/views';
 
 /**
  * UserDependencies is the portable interface that UserService uses to access

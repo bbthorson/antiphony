@@ -1,5 +1,6 @@
-import { ReplyRecordSchema } from 'shared/types';
-import type { ReplyView, ReplyRecord, ProfileView } from 'shared/types';
+import { ReplyRecordSchema } from 'shared/types/records';
+import type { ReplyRecord } from 'shared/types/records';
+import type { ReplyView, ProfileView } from 'shared/types/views';
 import { NotFoundError, ForbiddenError } from 'shared/errors';
 import type { CoreServices } from '../ports/core-services';
 import type { ReplyDependencies } from '../ports/replies-dependencies';

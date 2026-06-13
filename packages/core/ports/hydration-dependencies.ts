@@ -1,5 +1,6 @@
 import type { PromptDocument } from 'shared/types/storage';
-import type { ProfileView, ReplyEnrichmentRecord } from 'shared/types';
+import type { ReplyEnrichmentRecord } from 'shared/types/records';
+import type { ProfileView } from 'shared/types/views';
 
 /**
  * HydrationDependencies is the portable interface that HydrationService

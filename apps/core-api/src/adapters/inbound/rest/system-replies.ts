@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { toReplyViewPublic } from 'shared/types';
+import { toReplyViewPublic } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireSystemAuth } from '../../../middleware/system-auth.js';
 import { replyService } from '../../outbound/firebase/core-services-firebase.js';

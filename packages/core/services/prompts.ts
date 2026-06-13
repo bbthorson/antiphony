@@ -1,4 +1,5 @@
-import { PromptView, PromptRecord } from 'shared/types';
+import { PromptRecord } from 'shared/types/records';
+import { PromptView } from 'shared/types/views';
 import { z } from 'zod';
 import type { CoreServices } from '../ports/core-services';
 import type { PromptDependencies, PromptQueryOptions } from '../ports/prompts-dependencies';

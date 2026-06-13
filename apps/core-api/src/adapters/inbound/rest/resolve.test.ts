@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ProfileView, OrganizationView } from 'shared/types';
+import type { ProfileView, OrganizationView } from 'shared/types/views';
 
 /**
  * Tests for `GET /api/v1/resolve/:handle`.

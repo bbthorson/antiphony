@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ProfileView } from 'shared/types';
+import type { ProfileView } from 'shared/types/views';
 import { FeedService } from './feeds';
 import type { CoreServices } from '../ports/core-services';
 import { defaultLogger } from '../ports/logger';

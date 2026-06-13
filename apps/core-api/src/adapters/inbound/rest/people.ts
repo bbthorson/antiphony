@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { toReplyViewPublic } from 'shared/types';
+import { toReplyViewPublic } from 'shared/types/views';
 import { PersonNotesUpdateSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';

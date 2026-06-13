@@ -1,13 +1,12 @@
+import type { PromptRecord, ReplyRecord } from 'shared/types/records';
 import type {
     PromptView,
     ProfileView,
     OrganizationView,
     OrganizationMemberView,
     OrgInviteView,
-    PromptRecord,
-    ReplyRecord,
     ReplyView,
-} from 'shared/types';
+} from 'shared/types/views';
 import type {
     OrganizationRecord,
     OrganizationMemberRecord,

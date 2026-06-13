@@ -1,7 +1,8 @@
 import admin from 'firebase-admin';
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
-import { ProfileViewSchema, ProfileViewBasicSchema, UserRecordSchema } from 'shared/types';
-import type { ProfileView } from 'shared/types';
+import { UserRecordSchema } from 'shared/types/records';
+import { ProfileViewSchema, ProfileViewBasicSchema } from 'shared/types/views';
+import type { ProfileView } from 'shared/types/views';
 import { ConflictError } from 'shared/errors';
 import { logger } from '../../../lib/logger.js';
 import type {

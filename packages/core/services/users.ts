@@ -1,4 +1,5 @@
-import type { UserRecord, ProfileView } from 'shared/types';
+import type { UserRecord } from 'shared/types/records';
+import type { ProfileView } from 'shared/types/views';
 import { NotFoundError } from 'shared/errors';
 import type { CoreServices } from '../ports/core-services';
 import type { UpdateProfileDto, UserDependencies } from '../ports/users-dependencies';
