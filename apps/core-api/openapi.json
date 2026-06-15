@@ -739,11 +739,11 @@
                   "title": {
                     "type": "string",
                     "minLength": 3,
-                    "maxLength": 100
+                    "maxLength": 80
                   },
                   "description": {
                     "type": "string",
-                    "maxLength": 1000
+                    "maxLength": 200
                   },
                   "audioUrl": {
                     "anyOf": [
@@ -4626,7 +4626,8 @@
                   },
                   "usageIntent": {
                     "type": "string",
-                    "nullable": true
+                    "nullable": true,
+                    "maxLength": 200
                   },
                   "website": {
                     "anyOf": [
@@ -12544,155 +12545,6 @@
                                   "type": "string"
                                 }
                               ]
-                            },
-                            "usageIntent": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "rssSummary": {
-                              "type": "object",
-                              "properties": {
-                                "title": {
-                                  "type": "string"
-                                },
-                                "description": {
-                                  "type": "string"
-                                },
-                                "items": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "title": {
-                                        "type": "string"
-                                      },
-                                      "link": {
-                                        "type": "string"
-                                      },
-                                      "content": {
-                                        "type": "string"
-                                      },
-                                      "pubDate": {
-                                        "type": "string"
-                                      }
-                                    }
-                                  }
-                                },
-                                "lastFetchedAt": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                }
-                              }
-                            },
-                            "promptAudioUrl": {
-                              "type": "string"
-                            },
-                            "totalPrompts": {
-                              "type": "number"
-                            },
-                            "totalReplies": {
-                              "type": "number"
-                            },
-                            "favoritePromptId": {
-                              "type": "string"
-                            },
-                            "phoneNumber": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "email": {
-                              "type": "string"
-                            },
-                            "lastSeenAt": {
-                              "anyOf": [
-                                {},
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "lastActiveAt": {
-                              "anyOf": [
-                                {},
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "unreadReplyCount": {
-                              "type": "number",
-                              "default": 0
-                            },
-                            "newReplierCount": {
-                              "type": "number",
-                              "default": 0
-                            },
-                            "tier": {
-                              "type": "string",
-                              "enum": [
-                                "free",
-                                "creator_pro"
-                              ]
-                            },
-                            "showBlueskyPublicly": {
-                              "type": "boolean"
-                            },
-                            "settings": {
-                              "type": "object",
-                              "properties": {
-                                "notifications": {
-                                  "type": "boolean"
-                                },
-                                "theme": {
-                                  "type": "string"
-                                }
-                              }
-                            },
-                            "blockedUsers": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "followers": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "following": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "reportCount": {
-                              "type": "number"
-                            },
-                            "isBanned": {
-                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -12956,155 +12808,6 @@
                                       "type": "string"
                                     }
                                   ]
-                                },
-                                "usageIntent": {
-                                  "type": "string",
-                                  "nullable": true
-                                },
-                                "rssSummary": {
-                                  "type": "object",
-                                  "properties": {
-                                    "title": {
-                                      "type": "string"
-                                    },
-                                    "description": {
-                                      "type": "string"
-                                    },
-                                    "items": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "title": {
-                                            "type": "string"
-                                          },
-                                          "link": {
-                                            "type": "string"
-                                          },
-                                          "content": {
-                                            "type": "string"
-                                          },
-                                          "pubDate": {
-                                            "type": "string"
-                                          }
-                                        }
-                                      }
-                                    },
-                                    "lastFetchedAt": {
-                                      "anyOf": [
-                                        {},
-                                        {
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "string"
-                                        }
-                                      ]
-                                    }
-                                  }
-                                },
-                                "promptAudioUrl": {
-                                  "type": "string"
-                                },
-                                "totalPrompts": {
-                                  "type": "number"
-                                },
-                                "totalReplies": {
-                                  "type": "number"
-                                },
-                                "favoritePromptId": {
-                                  "type": "string"
-                                },
-                                "phoneNumber": {
-                                  "type": "string",
-                                  "nullable": true
-                                },
-                                "email": {
-                                  "type": "string"
-                                },
-                                "lastSeenAt": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
-                                "lastActiveAt": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
-                                "unreadReplyCount": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "newReplierCount": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "tier": {
-                                  "type": "string",
-                                  "enum": [
-                                    "free",
-                                    "creator_pro"
-                                  ]
-                                },
-                                "showBlueskyPublicly": {
-                                  "type": "boolean"
-                                },
-                                "settings": {
-                                  "type": "object",
-                                  "properties": {
-                                    "notifications": {
-                                      "type": "boolean"
-                                    },
-                                    "theme": {
-                                      "type": "string"
-                                    }
-                                  }
-                                },
-                                "blockedUsers": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                },
-                                "followers": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                },
-                                "following": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                },
-                                "reportCount": {
-                                  "type": "number"
-                                },
-                                "isBanned": {
-                                  "type": "boolean"
                                 }
                               },
                               "required": [
@@ -13162,77 +12865,6 @@
                                 "archived"
                               ],
                               "default": "public"
-                            },
-                            "analytics": {
-                              "type": "object",
-                              "properties": {
-                                "views": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "listens": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "avgEngagementScore": {
-                                  "type": "number",
-                                  "nullable": true
-                                },
-                                "sentimentBreakdown": {
-                                  "type": "object",
-                                  "properties": {
-                                    "positive": {
-                                      "type": "number"
-                                    },
-                                    "neutral": {
-                                      "type": "number"
-                                    },
-                                    "negative": {
-                                      "type": "number"
-                                    }
-                                  },
-                                  "required": [
-                                    "positive",
-                                    "neutral",
-                                    "negative"
-                                  ]
-                                }
-                              }
-                            },
-                            "moderation": {
-                              "type": "object",
-                              "properties": {
-                                "flagged": {
-                                  "type": "boolean",
-                                  "default": false
-                                },
-                                "reason": {
-                                  "type": "string"
-                                }
-                              }
-                            },
-                            "aiLabels": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "aiSummary": {
-                              "type": "string"
-                            },
-                            "aiStatus": {
-                              "type": "string",
-                              "enum": [
-                                "pending",
-                                "complete",
-                                "error"
-                              ]
-                            },
-                            "aiError": {
-                              "type": "string"
-                            },
-                            "transcription": {
-                              "type": "string"
                             }
                           },
                           "required": [
