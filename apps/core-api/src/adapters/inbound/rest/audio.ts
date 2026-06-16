@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { logger } from '../../../lib/logger.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * GET /api/v1/audio?url={encodedAudioUrl}
@@ -33,10 +34,49 @@ const prefixedPath = (p: string): boolean =>
 const hasTraversalSegment = (p: string): boolean =>
     p.split('/').some((seg) => seg === '..');
 
-const app = new Hono();
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
-app.get('/', rateLimit(RATE_LIMITS.read), async (c) => {
-    const audioUrl = c.req.query('url');
+// `url` is declared optional so the OpenAPIHono validator doesn't pre-empt
+// the handler's own "Missing url" 400 (which carries a specific message the
+// embed + clients rely on). It is effectively REQUIRED — see the description
+// and the handler guard below.
+const QuerySchema = z.object({
+    url: z
+        .string()
+        .optional()
+        .openapi({
+            param: { name: 'url', in: 'query' },
+            description:
+                'REQUIRED. The canonical storage URL (or object path) of the audio to proxy. ' +
+                'Must resolve to an object under `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.',
+            example: 'https://storage.googleapis.com/<bucket>/replies/<promptId>/<userId>_<ts>.webm',
+        }),
+});
+
+const proxyRoute = createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Audio'],
+    summary: 'Resolve audio to a signed URL',
+    description:
+        'Validates the requested object path against the served prefixes (`audio/`, `prompts/`, `replies/`) ' +
+        'and, for reply audio, that the parent prompt exists, then 302-redirects to a short-lived signed URL ' +
+        '(~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.',
+    middleware: [rateLimit(RATE_LIMITS.read)] as const,
+    request: { query: QuerySchema },
+    responses: {
+        302: {
+            description:
+                'Redirect (Location header) to a time-limited signed URL for the requested object.',
+        },
+        400: errorResponse('Missing or malformed `url`'),
+        403: errorResponse('Object path outside the served allowlist'),
+        404: errorResponse('Parent prompt or backing object not found'),
+    },
+});
+
+app.openapi(proxyRoute, async (c) => {
+    const { url: audioUrl } = c.req.valid('query');
     if (!audioUrl) {
         return c.json(errorEnvelope(c, 'Missing "url" query parameter'), 400);
     }

@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { randomUUID } from 'crypto';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * POST /api/v1/audio/upload
@@ -46,9 +47,35 @@ const EXT_MAP: Record<string, string> = {
     'audio/wav': 'wav',
 };
 
-const app = new Hono();
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
-app.post('/', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
+const UploadResponseSchema = z.object({
+    audioUrl: z.string().openapi({ description: 'Canonical storage URL of the stored object' }),
+});
+
+// The body is multipart/form-data parsed manually in the handler (Web
+// `File`), not via a Zod body schema — the field contract is documented in
+// the route description rather than a generated body schema (binary form
+// fields don't round-trip cleanly through zod-openapi, and the handler keeps
+// its specific size/MIME error messages).
+const uploadRoute = createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['Audio'],
+    summary: 'Upload audio (authenticated)',
+    description:
+        'Authenticated multipart/form-data upload with a single `file` field (max 25MB; ' +
+        'types: m4a, mp4, mpeg, webm, ogg, wav). Stores under `audio/<uid>/...` and returns its URL. ' +
+        'Anonymous embed uploads use `POST /api/v1/audio/upload-pending` instead.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.hourly)] as const,
+    responses: {
+        200: jsonResponse(UploadResponseSchema, 'Stored audio URL'),
+        400: errorResponse('Missing/oversized file or unsupported audio type'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(uploadRoute, async (c) => {
     const uid = c.get('viewerUid')!;
 
     let formData: FormData;
@@ -77,7 +104,7 @@ app.post('/', requireAuth(), rateLimit(RATE_LIMITS.hourly), async (c) => {
     const buffer = Buffer.from(await file.arrayBuffer());
     const audioUrl = await StorageService.uploadFile(buffer, path, mimeType);
 
-    return c.json({ success: true, data: { audioUrl } });
+    return c.json({ success: true as const, data: { audioUrl } }, 200);
 });
 
 export { app as audioUploadRoute };

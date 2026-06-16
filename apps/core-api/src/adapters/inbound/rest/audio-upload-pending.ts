@@ -1,8 +1,9 @@
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { promptService } from '../../outbound/firebase/core-services-firebase.js';
 import { createPendingUpload, hashIp, extractClientIp } from '../../../lib/pending-uploads.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -45,9 +46,34 @@ const ALLOWED_TYPES = new Set([
 const MAX_SIZE = 25 * 1024 * 1024;
 const MIN_SIZE = 512;
 
-const app = new Hono();
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
-app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
+const PendingResponseSchema = z.object({
+    pendingId: z.string().openapi({ description: 'Opaque id to pass as `?pending=` when binding the reply' }),
+});
+
+// Multipart body (`file` + `promptId`) is parsed manually in the handler, not
+// via a Zod body schema — see the note on the sibling `/audio/upload` route.
+const uploadPendingRoute = createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['Audio'],
+    summary: 'Upload audio (anonymous, embed)',
+    description:
+        'Anonymous multipart/form-data upload for the embed-redirect flow. Fields: `file` ' +
+        '(512B–25MB; types: m4a, mp4, mpeg, webm, ogg, wav) and `promptId` (must be a live prompt). ' +
+        'Persists a prompt-scoped pending upload and returns its `pendingId`; the authenticated ' +
+        '`POST /api/v1/replies` later binds it to the author. Rate-limited per IP.',
+    middleware: [rateLimit(RATE_LIMITS.sensitive)] as const,
+    responses: {
+        200: jsonResponse(PendingResponseSchema, 'Pending upload id'),
+        400: errorResponse('Missing/oversized/undersized file, missing promptId, or unsupported type'),
+        404: errorResponse('Prompt not found or not accepting replies'),
+        500: errorResponse('Storage/persistence failure'),
+    },
+});
+
+app.openapi(uploadPendingRoute, async (c) => {
     let formData: FormData;
     try {
         formData = await c.req.formData();
@@ -109,7 +135,7 @@ app.post('/', rateLimit(RATE_LIMITS.sensitive), async (c) => {
     // Standard response envelope — the embed client unwraps `data.pendingId`
     // (ReplyDot.submitPendingEmbed). Must mirror the sibling `/audio/upload`
     // route's `{ success: true, data }` shape, not a bare `{ pendingId }`.
-    return c.json({ success: true, data: { pendingId } });
+    return c.json({ success: true as const, data: { pendingId } }, 200);
 });
 
 export { app as audioUploadPendingRoute };
