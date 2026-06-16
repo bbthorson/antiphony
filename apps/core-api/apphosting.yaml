@@ -70,7 +70,7 @@ env:
     # ALLOWED_ORIGINS env var is unset), so removing localhost here does
     # NOT break `npm run dev`. (Security audit Info finding.)
     - variable: ALLOWED_ORIGINS
-      value: "https://voxpop.phonicfactory.com,https://embed.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app"
+      value: "https://voxpop.phonicfactory.com,https://embed.voxpop.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app"
       availability:
           - RUNTIME
     # Shared secret used by apps/telephony to authenticate
