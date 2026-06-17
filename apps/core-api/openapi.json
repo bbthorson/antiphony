@@ -29,6 +29,10 @@
     {
       "name": "Connectors",
       "description": "Connector control plane — uniform per-connector config, status, and enable/disable (settings opaque, secrets by reference)."
+    },
+    {
+      "name": "Organizations",
+      "description": "Organization primitives — create/update, membership, role management, invites, and the public org-profile projection."
     }
   ],
   "components": {
@@ -15352,6 +15356,4071 @@
           },
           "404": {
             "description": "Prompt not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/slug/{slug}/profile": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get the public org-profile payload",
+        "description": "Public aggregated payload for the org-profile page: org details, public (live) prompts in the org context, and an RSS summary if configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Org-profile payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "org": {
+                          "type": "object",
+                          "properties": {
+                            "record": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 3,
+                                  "maxLength": 50
+                                },
+                                "slug": {
+                                  "type": "string",
+                                  "minLength": 3,
+                                  "maxLength": 30,
+                                  "pattern": "^[a-z0-9-]+$"
+                                },
+                                "avatarUrl": {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                "rssFeedUrl": {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                "websiteUrl": {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "ownerId": {
+                                  "type": "string"
+                                },
+                                "createdAt": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "domain": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "domainVerified": {
+                                  "type": "boolean",
+                                  "default": false
+                                },
+                                "domainVerificationToken": {
+                                  "type": "string"
+                                },
+                                "billingEmail": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "format": "email"
+                                },
+                                "tier": {
+                                  "type": "string",
+                                  "enum": [
+                                    "free",
+                                    "pro",
+                                    "business",
+                                    "enterprise"
+                                  ],
+                                  "default": "business"
+                                },
+                                "stripeCustomerId": {
+                                  "type": "string"
+                                },
+                                "subscriptionStatus": {
+                                  "type": "string",
+                                  "enum": [
+                                    "active",
+                                    "trialing",
+                                    "past_due",
+                                    "canceled",
+                                    "unpaid"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "slug",
+                                "ownerId",
+                                "createdAt"
+                              ]
+                            },
+                            "memberCount": {
+                              "type": "number",
+                              "default": 1
+                            },
+                            "currentUserRole": {
+                              "type": "string",
+                              "enum": [
+                                "owner",
+                                "admin",
+                                "member"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "record"
+                          ]
+                        },
+                        "prompts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string"
+                              },
+                              "cid": {
+                                "type": "string"
+                              },
+                              "record": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "authorId": {
+                                    "type": "string"
+                                  },
+                                  "orgId": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 3
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "createdBy": {
+                                    "type": "string"
+                                  },
+                                  "audioUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "uri"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "audio": {
+                                    "type": "object",
+                                    "properties": {
+                                      "$type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "blob"
+                                        ]
+                                      },
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "mimeType": {
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "$type",
+                                      "ref",
+                                      "mimeType",
+                                      "size"
+                                    ]
+                                  },
+                                  "atprotoUri": {
+                                    "type": "string",
+                                    "pattern": "^at:\\/\\/.+"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "live",
+                                      "archived",
+                                      "deleted"
+                                    ],
+                                    "default": "live"
+                                  },
+                                  "aiStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "aiError": {
+                                    "type": "string"
+                                  },
+                                  "aiSummary": {
+                                    "type": "string"
+                                  },
+                                  "aiLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "transcription": {
+                                    "type": "string"
+                                  },
+                                  "waveformPeaks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "socialVideoUrl": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  },
+                                  "socialVideoStoragePath": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "socialVideoError": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoSourceAudio": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "authorId",
+                                  "title",
+                                  "audioUrl",
+                                  "createdAt"
+                                ]
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "displayName": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "avatarUrl": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "bio": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "website": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "links": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "url": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "label",
+                                        "url"
+                                      ]
+                                    }
+                                  },
+                                  "bluesky": {
+                                    "type": "object",
+                                    "properties": {
+                                      "handle": {
+                                        "type": "string"
+                                      },
+                                      "did": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "handle",
+                                      "did"
+                                    ]
+                                  },
+                                  "stats": {
+                                    "type": "object",
+                                    "properties": {
+                                      "followers": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "following": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "prompts": {
+                                        "type": "number",
+                                        "default": 0
+                                      }
+                                    }
+                                  },
+                                  "badges": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "isVerified": {
+                                    "type": "boolean"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "usageIntent": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "rssSummary": {
+                                    "type": "object",
+                                    "properties": {
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "link": {
+                                              "type": "string"
+                                            },
+                                            "content": {
+                                              "type": "string"
+                                            },
+                                            "pubDate": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "lastFetchedAt": {
+                                        "anyOf": [
+                                          {},
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "promptAudioUrl": {
+                                    "type": "string"
+                                  },
+                                  "totalPrompts": {
+                                    "type": "number"
+                                  },
+                                  "totalReplies": {
+                                    "type": "number"
+                                  },
+                                  "favoritePromptId": {
+                                    "type": "string"
+                                  },
+                                  "phoneNumber": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "email": {
+                                    "type": "string"
+                                  },
+                                  "lastSeenAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "lastActiveAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "unreadReplyCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "newReplierCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "tier": {
+                                    "type": "string",
+                                    "enum": [
+                                      "free",
+                                      "creator_pro"
+                                    ]
+                                  },
+                                  "showBlueskyPublicly": {
+                                    "type": "boolean"
+                                  },
+                                  "settings": {
+                                    "type": "object",
+                                    "properties": {
+                                      "notifications": {
+                                        "type": "boolean"
+                                      },
+                                      "theme": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "blockedUsers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "followers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "following": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "reportCount": {
+                                    "type": "number"
+                                  },
+                                  "isBanned": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id"
+                                ]
+                              },
+                              "replyCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "likeCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "updatedAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "lastReplyAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "visibility": {
+                                "type": "string",
+                                "enum": [
+                                  "public",
+                                  "private",
+                                  "unlisted",
+                                  "archived"
+                                ],
+                                "default": "public"
+                              },
+                              "analytics": {
+                                "type": "object",
+                                "properties": {
+                                  "views": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "listens": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "avgEngagementScore": {
+                                    "type": "number",
+                                    "nullable": true
+                                  },
+                                  "sentimentBreakdown": {
+                                    "type": "object",
+                                    "properties": {
+                                      "positive": {
+                                        "type": "number"
+                                      },
+                                      "neutral": {
+                                        "type": "number"
+                                      },
+                                      "negative": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "positive",
+                                      "neutral",
+                                      "negative"
+                                    ]
+                                  }
+                                }
+                              },
+                              "moderation": {
+                                "type": "object",
+                                "properties": {
+                                  "flagged": {
+                                    "type": "boolean",
+                                    "default": false
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "aiLabels": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "aiSummary": {
+                                "type": "string"
+                              },
+                              "aiStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "complete",
+                                  "error"
+                                ]
+                              },
+                              "aiError": {
+                                "type": "string"
+                              },
+                              "transcription": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "record",
+                              "author"
+                            ]
+                          }
+                        },
+                        "rssSummary": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "image": {
+                              "type": "string"
+                            },
+                            "link": {
+                              "type": "string"
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "link": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "pubDate": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "lastFetchedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "org",
+                        "prompts",
+                        "rssSummary"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/slug/{slug}": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Resolve an organization by slug",
+        "description": "Public — auth optional. When authenticated, `currentUserRole` on the returned view reflects the viewer's membership.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 50
+                            },
+                            "slug": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 30,
+                              "pattern": "^[a-z0-9-]+$"
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "rssFeedUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "websiteUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "ownerId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "domain": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "domainVerified": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "domainVerificationToken": {
+                              "type": "string"
+                            },
+                            "billingEmail": {
+                              "type": "string",
+                              "nullable": true,
+                              "format": "email"
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "free",
+                                "pro",
+                                "business",
+                                "enterprise"
+                              ],
+                              "default": "business"
+                            },
+                            "stripeCustomerId": {
+                              "type": "string"
+                            },
+                            "subscriptionStatus": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "trialing",
+                                "past_due",
+                                "canceled",
+                                "unpaid"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "ownerId",
+                            "createdAt"
+                          ]
+                        },
+                        "memberCount": {
+                          "type": "number",
+                          "default": 1
+                        },
+                        "currentUserRole": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "admin",
+                            "member"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "record"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/members": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List organization members",
+        "description": "Requires membership (owner, admin, or member).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "record": {
+                            "type": "object",
+                            "properties": {
+                              "orgId": {
+                                "type": "string"
+                              },
+                              "userId": {
+                                "type": "string"
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "owner",
+                                  "admin",
+                                  "member"
+                                ]
+                              },
+                              "joinedAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "invitedBy": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "orgId",
+                              "userId",
+                              "role",
+                              "joinedAt"
+                            ]
+                          },
+                          "profile": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "handle": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "displayName": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "avatarUrl": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "bio": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "website": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "links": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "url": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "url"
+                                  ]
+                                }
+                              },
+                              "bluesky": {
+                                "type": "object",
+                                "properties": {
+                                  "handle": {
+                                    "type": "string"
+                                  },
+                                  "did": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "handle",
+                                  "did"
+                                ]
+                              },
+                              "stats": {
+                                "type": "object",
+                                "properties": {
+                                  "followers": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "following": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "prompts": {
+                                    "type": "number",
+                                    "default": 0
+                                  }
+                                }
+                              },
+                              "badges": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "isVerified": {
+                                "type": "boolean"
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "record",
+                          "profile"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Directly add a member",
+        "description": "Admin+ only. Bypasses the email-invite flow (caller already knows the target UID).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  }
+                },
+                "required": [
+                  "userId",
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The added member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/prompts": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List prompts in the organization context",
+        "description": "Requires membership. Paginated (cursor); `publicOnly=true` restricts to live prompts. Non-members get 403 — the public live subset is on the org-profile projection.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "nullable": true,
+              "default": false
+            },
+            "required": false,
+            "name": "publicOnly",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated org prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string"
+                              },
+                              "cid": {
+                                "type": "string"
+                              },
+                              "record": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "authorId": {
+                                    "type": "string"
+                                  },
+                                  "orgId": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 3
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "createdBy": {
+                                    "type": "string"
+                                  },
+                                  "audioUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "uri"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "audio": {
+                                    "type": "object",
+                                    "properties": {
+                                      "$type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "blob"
+                                        ]
+                                      },
+                                      "ref": {
+                                        "type": "string"
+                                      },
+                                      "mimeType": {
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "$type",
+                                      "ref",
+                                      "mimeType",
+                                      "size"
+                                    ]
+                                  },
+                                  "atprotoUri": {
+                                    "type": "string",
+                                    "pattern": "^at:\\/\\/.+"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "live",
+                                      "archived",
+                                      "deleted"
+                                    ],
+                                    "default": "live"
+                                  },
+                                  "aiStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "aiError": {
+                                    "type": "string"
+                                  },
+                                  "aiSummary": {
+                                    "type": "string"
+                                  },
+                                  "aiLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "transcription": {
+                                    "type": "string"
+                                  },
+                                  "waveformPeaks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "socialVideoUrl": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  },
+                                  "socialVideoStoragePath": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "complete",
+                                      "error"
+                                    ]
+                                  },
+                                  "socialVideoError": {
+                                    "type": "string"
+                                  },
+                                  "socialVideoSourceAudio": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "authorId",
+                                  "title",
+                                  "audioUrl",
+                                  "createdAt"
+                                ]
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "displayName": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "avatarUrl": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "bio": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "website": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "links": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "url": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "label",
+                                        "url"
+                                      ]
+                                    }
+                                  },
+                                  "bluesky": {
+                                    "type": "object",
+                                    "properties": {
+                                      "handle": {
+                                        "type": "string"
+                                      },
+                                      "did": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "handle",
+                                      "did"
+                                    ]
+                                  },
+                                  "stats": {
+                                    "type": "object",
+                                    "properties": {
+                                      "followers": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "following": {
+                                        "type": "number",
+                                        "default": 0
+                                      },
+                                      "prompts": {
+                                        "type": "number",
+                                        "default": 0
+                                      }
+                                    }
+                                  },
+                                  "badges": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "isVerified": {
+                                    "type": "boolean"
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "usageIntent": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "rssSummary": {
+                                    "type": "object",
+                                    "properties": {
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "link": {
+                                              "type": "string"
+                                            },
+                                            "content": {
+                                              "type": "string"
+                                            },
+                                            "pubDate": {
+                                              "type": "string"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "lastFetchedAt": {
+                                        "anyOf": [
+                                          {},
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "promptAudioUrl": {
+                                    "type": "string"
+                                  },
+                                  "totalPrompts": {
+                                    "type": "number"
+                                  },
+                                  "totalReplies": {
+                                    "type": "number"
+                                  },
+                                  "favoritePromptId": {
+                                    "type": "string"
+                                  },
+                                  "phoneNumber": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "email": {
+                                    "type": "string"
+                                  },
+                                  "lastSeenAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "lastActiveAt": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "unreadReplyCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "newReplierCount": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "tier": {
+                                    "type": "string",
+                                    "enum": [
+                                      "free",
+                                      "creator_pro"
+                                    ]
+                                  },
+                                  "showBlueskyPublicly": {
+                                    "type": "boolean"
+                                  },
+                                  "settings": {
+                                    "type": "object",
+                                    "properties": {
+                                      "notifications": {
+                                        "type": "boolean"
+                                      },
+                                      "theme": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "blockedUsers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "followers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "following": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "reportCount": {
+                                    "type": "number"
+                                  },
+                                  "isBanned": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id"
+                                ]
+                              },
+                              "replyCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "likeCount": {
+                                "type": "number",
+                                "default": 0
+                              },
+                              "updatedAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "lastReplyAt": {
+                                "anyOf": [
+                                  {},
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "visibility": {
+                                "type": "string",
+                                "enum": [
+                                  "public",
+                                  "private",
+                                  "unlisted",
+                                  "archived"
+                                ],
+                                "default": "public"
+                              },
+                              "analytics": {
+                                "type": "object",
+                                "properties": {
+                                  "views": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "listens": {
+                                    "type": "number",
+                                    "default": 0
+                                  },
+                                  "avgEngagementScore": {
+                                    "type": "number",
+                                    "nullable": true
+                                  },
+                                  "sentimentBreakdown": {
+                                    "type": "object",
+                                    "properties": {
+                                      "positive": {
+                                        "type": "number"
+                                      },
+                                      "neutral": {
+                                        "type": "number"
+                                      },
+                                      "negative": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "positive",
+                                      "neutral",
+                                      "negative"
+                                    ]
+                                  }
+                                }
+                              },
+                              "moderation": {
+                                "type": "object",
+                                "properties": {
+                                  "flagged": {
+                                    "type": "boolean",
+                                    "default": false
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "aiLabels": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "aiSummary": {
+                                "type": "string"
+                              },
+                              "aiStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "complete",
+                                  "error"
+                                ]
+                              },
+                              "aiError": {
+                                "type": "string"
+                              },
+                              "transcription": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "record",
+                              "author"
+                            ]
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}": {
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get organization details",
+        "description": "Requires membership (owner, admin, or member).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 50
+                            },
+                            "slug": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 30,
+                              "pattern": "^[a-z0-9-]+$"
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "rssFeedUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "websiteUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "ownerId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "domain": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "domainVerified": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "domainVerificationToken": {
+                              "type": "string"
+                            },
+                            "billingEmail": {
+                              "type": "string",
+                              "nullable": true,
+                              "format": "email"
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "free",
+                                "pro",
+                                "business",
+                                "enterprise"
+                              ],
+                              "default": "business"
+                            },
+                            "stripeCustomerId": {
+                              "type": "string"
+                            },
+                            "subscriptionStatus": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "trialing",
+                                "past_due",
+                                "canceled",
+                                "unpaid"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "ownerId",
+                            "createdAt"
+                          ]
+                        },
+                        "memberCount": {
+                          "type": "number",
+                          "default": 1
+                        },
+                        "currentUserRole": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "admin",
+                            "member"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "record"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a member of this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Update an organization",
+        "description": "Admin+ only. A slug rename is collision-checked against other orgs (409 on conflict).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 50
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-z0-9-]+$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "avatarUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri"
+                  },
+                  "rssFeedUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri"
+                  },
+                  "websiteUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri"
+                  },
+                  "billingEmail": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "email"
+                  },
+                  "domain": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 253
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 50
+                            },
+                            "slug": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 30,
+                              "pattern": "^[a-z0-9-]+$"
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "rssFeedUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "websiteUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "ownerId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "domain": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "domainVerified": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "domainVerificationToken": {
+                              "type": "string"
+                            },
+                            "billingEmail": {
+                              "type": "string",
+                              "nullable": true,
+                              "format": "email"
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "free",
+                                "pro",
+                                "business",
+                                "enterprise"
+                              ],
+                              "default": "business"
+                            },
+                            "stripeCustomerId": {
+                              "type": "string"
+                            },
+                            "subscriptionStatus": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "trialing",
+                                "past_due",
+                                "canceled",
+                                "unpaid"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "ownerId",
+                            "createdAt"
+                          ]
+                        },
+                        "memberCount": {
+                          "type": "number",
+                          "default": 1
+                        },
+                        "currentUserRole": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "admin",
+                            "member"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "record"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Slug already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Create an organization",
+        "description": "Any authenticated user can create an org and becomes its owner. The slug is reserved transactionally; a collision returns 409.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 50
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-z0-9-]+$"
+                  },
+                  "avatarUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "rssFeedUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "websiteUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "name",
+                  "slug"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 50
+                            },
+                            "slug": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 30,
+                              "pattern": "^[a-z0-9-]+$"
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "rssFeedUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "websiteUrl": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "ownerId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "domain": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "domainVerified": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "domainVerificationToken": {
+                              "type": "string"
+                            },
+                            "billingEmail": {
+                              "type": "string",
+                              "nullable": true,
+                              "format": "email"
+                            },
+                            "tier": {
+                              "type": "string",
+                              "enum": [
+                                "free",
+                                "pro",
+                                "business",
+                                "enterprise"
+                              ],
+                              "default": "business"
+                            },
+                            "stripeCustomerId": {
+                              "type": "string"
+                            },
+                            "subscriptionStatus": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "trialing",
+                                "past_due",
+                                "canceled",
+                                "unpaid"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "ownerId",
+                            "createdAt"
+                          ]
+                        },
+                        "memberCount": {
+                          "type": "number",
+                          "default": 1
+                        },
+                        "currentUserRole": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "admin",
+                            "member"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "record"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Handle already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/members/{userId}": {
+      "patch": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Change a member's role",
+        "description": "Admin+ only. The owner's role cannot be changed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Remove a member",
+        "description": "Self-removal (leave) is allowed for any member; admin+ can remove others. The owner cannot be removed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/invites": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Create an invite",
+        "description": "Admin+ only. 7-day expiry.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  }
+                },
+                "required": [
+                  "email",
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created invite",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "orgId": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string",
+                              "format": "email"
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "admin",
+                                "member"
+                              ]
+                            },
+                            "invitedBy": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "accepted",
+                                "expired",
+                                "revoked"
+                              ],
+                              "default": "pending"
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "expiresAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "orgId",
+                            "email",
+                            "role",
+                            "invitedBy",
+                            "createdAt",
+                            "expiresAt"
+                          ]
+                        },
+                        "inviterName": {
+                          "type": "string"
+                        },
+                        "orgName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "record",
+                        "orgName"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/invites/{inviteId}": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Accept an invite",
+        "description": "Any authenticated user can accept an invite addressed to them. Returns the new membership.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orgId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "inviteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
             "content": {
               "application/json": {
                 "schema": {

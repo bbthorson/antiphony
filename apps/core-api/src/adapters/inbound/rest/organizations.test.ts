@@ -436,7 +436,9 @@ describe('PATCH /api/v1/organizations/:orgId', () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-member' });
         vi.mocked(organizationService.getMemberRole).mockResolvedValue('member');
 
-        const res = await app().request('/api/v1/organizations/org-1', patchInit({ name: 'X' }));
+        // Valid body so request-validation passes and we reach the permission
+        // check (createRoute validates the body before the handler runs).
+        const res = await app().request('/api/v1/organizations/org-1', patchInit({ name: 'New Name' }));
         expect(res.status).toBe(403);
     });
 

@@ -1,11 +1,17 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
     CreateOrgRequestSchema,
     UpdateOrgRequestSchema,
     CreateOrgInviteRequestSchema,
     UpdateMemberRoleRequestSchema,
 } from 'shared/api-codecs';
+import {
+    OrganizationViewSchema,
+    OrganizationMemberViewSchema,
+    OrgInviteViewSchema,
+    OrgProfileDataSchema,
+    PromptViewSchema,
+} from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { optionalAuth, requireAuth } from '../../../middleware/auth.js';
 import {
@@ -15,41 +21,30 @@ import {
     hydrationService,
 } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * Organization endpoints mounted at `/api/v1/organizations`.
  *
- * Reads (PR #411):
- *   GET  /slug/:slug/profile  — public aggregated org-profile-page payload.
- *   GET  /slug/:slug          — resolve org by slug (public, auth-optional).
- *   GET  /:orgId/members      — list org members (requires membership).
- *   GET  /:orgId/prompts      — list org prompts (requires membership).
- *   GET  /:orgId              — get org details (requires membership).
+ * Instrumented into the public contract (Plan B, B4) — orgs are a core domain
+ * primitive: membership, invites, role management, plus a public org-profile
+ * projection. Tagged `Organizations`.
  *
- * Writes (this PR, PR-A of the Post-4a roadmap):
- *   POST   /                              — create org (any authed user).
- *   PATCH  /:orgId                        — update org (admin+).
- *   POST   /:orgId/members                — direct-add a member (admin+).
- *   PATCH  /:orgId/members/:userId        — change a member's role (admin+).
- *   DELETE /:orgId/members/:userId        — remove a member (admin+ or self).
- *   POST   /:orgId/invites                — create an invite (admin+).
- *   POST   /:orgId/invites/:inviteId      — accept an invite (any authed user).
+ *   GET  /slug/{slug}/profile           — public aggregated org-profile payload.
+ *   GET  /slug/{slug}                   — resolve org by slug (auth-optional).
+ *   GET  /{orgId}/members               — list members (requires membership).
+ *   GET  /{orgId}/prompts               — list org prompts (requires membership).
+ *   GET  /{orgId}                       — org details (requires membership).
+ *   POST   /                            — create org (any authed user).
+ *   PATCH  /{orgId}                     — update org (admin+).
+ *   POST   /{orgId}/members             — direct-add a member (admin+).
+ *   PATCH  /{orgId}/members/{userId}    — change a member's role (admin+).
+ *   DELETE /{orgId}/members/{userId}    — remove a member (admin+ or self).
+ *   POST   /{orgId}/invites             — create an invite (admin+).
+ *   POST   /{orgId}/invites/{inviteId}  — accept an invite (any authed user).
  *
- * Parity sources retired in this PR (the entire apps/web parity files
- * are deleted because their GET halves were strangled in PR #411 and
- * their write halves now live here):
- *   apps/web/src/app/api/v1/organizations/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/members/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/members/[userId]/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/invites/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/invites/[inviteId]/route.ts
- *   apps/web/src/app/api/v1/organizations/[orgId]/prompts/route.ts
- *   apps/web/src/app/api/v1/organizations/slug/[slug]/route.ts
- *   apps/web/src/app/api/v1/organizations/slug/[slug]/profile/route.ts
- *
- * Route ordering: more-specific paths first so Hono's parameter matcher
- * doesn't capture a literal segment ("slug") as :orgId.
+ * Route ordering: more-specific paths first so the parameter matcher doesn't
+ * capture a literal segment ("slug") as {orgId}.
  */
 
 const PromptsQuerySchema = z.object({
@@ -65,395 +60,435 @@ const AddMemberSchema = z.object({
     role: z.enum(['admin', 'member'], { message: 'role must be admin or member' }),
 });
 
-const app = new Hono();
+const SlugParam = z.object({ slug: z.string().openapi({ param: { name: 'slug', in: 'path' } }) });
+const OrgIdParam = z.object({ orgId: z.string().openapi({ param: { name: 'orgId', in: 'path' } }) });
+const OrgMemberParams = z.object({
+    orgId: z.string().openapi({ param: { name: 'orgId', in: 'path' } }),
+    userId: z.string().openapi({ param: { name: 'userId', in: 'path' } }),
+});
+const OrgInviteParams = z.object({
+    orgId: z.string().openapi({ param: { name: 'orgId', in: 'path' } }),
+    inviteId: z.string().openapi({ param: { name: 'inviteId', in: 'path' } }),
+});
+
+const jsonBody = <T extends z.ZodTypeAny>(schema: T) => ({
+    body: { content: { 'application/json': { schema } } },
+});
+
+const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/organizations/slug/:slug/profile — public aggregated payload
+// GET /slug/{slug}/profile — public aggregated payload
 // ---------------------------------------------------------------------------
-//
-// Returns the org-profile-page composite: org details + public (live) prompts
-// in the org context + RSS summary if configured. Public endpoint — no auth.
 
-app.get('/slug/:slug/profile', rateLimit(RATE_LIMITS.read), async (c) => {
-    const slug = c.req.param('slug');
+const getProfileRoute = createRoute({
+    method: 'get',
+    path: '/slug/{slug}/profile',
+    tags: ['Organizations'],
+    summary: 'Get the public org-profile payload',
+    description: 'Public aggregated payload for the org-profile page: org details, public (live) prompts in the org context, and an RSS summary if configured.',
+    middleware: [rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: SlugParam },
+    responses: {
+        200: jsonResponse(OrgProfileDataSchema, 'Org-profile payload'),
+        404: errorResponse('Organization not found'),
+    },
+});
 
+app.openapi(getProfileRoute, async (c) => {
+    const { slug } = c.req.valid('param');
     const data = await feedService.getOrgProfileData(slug);
     if (!data) {
         return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
-
-    return c.json({ success: true, data });
+    return c.json({ success: true as const, data }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/organizations/slug/:slug — resolve org by slug
+// GET /slug/{slug} — resolve org by slug
 // ---------------------------------------------------------------------------
-//
-// Public endpoint — auth is optional; when present, `currentUserRole` on the
-// returned view reflects that user's membership role.
 
-app.get('/slug/:slug', optionalAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
-    const slug = c.req.param('slug');
+const resolveSlugRoute = createRoute({
+    method: 'get',
+    path: '/slug/{slug}',
+    tags: ['Organizations'],
+    summary: 'Resolve an organization by slug',
+    description: 'Public — auth optional. When authenticated, `currentUserRole` on the returned view reflects the viewer\'s membership.',
+    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: SlugParam },
+    responses: {
+        200: jsonResponse(OrganizationViewSchema, 'The organization'),
+        404: errorResponse('Organization not found'),
+    },
+});
+
+app.openapi(resolveSlugRoute, async (c) => {
+    const { slug } = c.req.valid('param');
     const requesterId = c.get('viewerUid');
-
     const org = await organizationService.getOrganizationBySlug(slug, requesterId ?? undefined);
     if (!org) {
         return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
-
-    return c.json({ success: true, data: org });
+    return c.json({ success: true as const, data: org }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/organizations/:orgId/members — list members
+// GET /{orgId}/members — list members
 // ---------------------------------------------------------------------------
-//
-// Requires membership (owner, admin, or member).
 
-app.get('/:orgId/members', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const listMembersRoute = createRoute({
+    method: 'get',
+    path: '/{orgId}/members',
+    tags: ['Organizations'],
+    summary: 'List organization members',
+    description: 'Requires membership (owner, admin, or member).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: OrgIdParam },
+    responses: {
+        200: jsonResponse(z.array(OrganizationMemberViewSchema), 'The members'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not a member of this organization'),
+    },
+});
+
+app.openapi(listMembersRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
-
+    const { orgId } = c.req.valid('param');
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role) {
         return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
-
     const members = await organizationService.getMembers(orgId);
-    return c.json({ success: true, data: members });
+    return c.json({ success: true as const, data: members }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/organizations/:orgId/prompts — list prompts in org context
+// GET /{orgId}/prompts — list prompts in org context
 // ---------------------------------------------------------------------------
-//
-// Requires membership. Non-members get 403 (org prompt lists are internal by
-// default — the public org-profile aggregated endpoint above exposes the
-// "live" subset separately).
-//
-// Query params:
-//   limit (default 20, max 100)
-//   cursor (last-seen prompt id)
-//   publicOnly=true → restrict to status==live
 
-app.get('/:orgId/prompts', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const PromptsPageSchema = z.object({
+    items: z.array(PromptViewSchema),
+    nextCursor: z.string().nullable(),
+});
+
+const listOrgPromptsRoute = createRoute({
+    method: 'get',
+    path: '/{orgId}/prompts',
+    tags: ['Organizations'],
+    summary: 'List prompts in the organization context',
+    description: 'Requires membership. Paginated (cursor); `publicOnly=true` restricts to live prompts. Non-members get 403 — the public live subset is on the org-profile projection.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: OrgIdParam, query: PromptsQuerySchema },
+    responses: {
+        200: jsonResponse(PromptsPageSchema, 'Paginated org prompts'),
+        400: errorResponse('Invalid query parameters'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not a member of this organization'),
+    },
+});
+
+app.openapi(listOrgPromptsRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
+    const { orgId } = c.req.valid('param');
 
     const isMember = await organizationService.isMember(orgId, uid);
     if (!isMember) {
         return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
-    const queryResult = PromptsQuerySchema.safeParse({
-        limit: c.req.query('limit'),
-        cursor: c.req.query('cursor'),
-        publicOnly: c.req.query('publicOnly'),
-    });
-    if (!queryResult.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid query parameters', { issues: queryResult.error.issues }),
-            400,
-        );
-    }
-    const { limit, cursor, publicOnly } = queryResult.data;
-
+    const { limit, cursor, publicOnly } = c.req.valid('query');
     const prompts = await promptService.getPromptsForOrgContext(orgId, limit, cursor, publicOnly);
 
-    // Paginated standard shape: nested cursor inside `data` alongside
-    // `items`. See envelope-Phase-3.
     return c.json({
-        success: true,
+        success: true as const,
         data: {
             items: prompts,
-            // Guard against empty results: only compute a cursor when the
-            // page is full AND there's at least one prompt.
             nextCursor:
                 prompts.length > 0 && prompts.length === limit
                     ? prompts[prompts.length - 1].record.id
                     : null,
         },
-    });
+    }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/organizations/:orgId — org details
+// GET /{orgId} — org details
 // ---------------------------------------------------------------------------
-//
-// Requires membership (owner, admin, or member).
 
-app.get('/:orgId', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+const getOrgRoute = createRoute({
+    method: 'get',
+    path: '/{orgId}',
+    tags: ['Organizations'],
+    summary: 'Get organization details',
+    description: 'Requires membership (owner, admin, or member).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    request: { params: OrgIdParam },
+    responses: {
+        200: jsonResponse(OrganizationViewSchema, 'The organization'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not a member of this organization'),
+        404: errorResponse('Organization not found'),
+    },
+});
+
+app.openapi(getOrgRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
-
+    const { orgId } = c.req.valid('param');
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role) {
         return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
-
     const org = await organizationService.getOrganization(orgId, uid);
     if (!org) {
         return c.json(errorEnvelope(c, 'Organization not found'), 404);
     }
-
-    return c.json({ success: true, data: org });
+    return c.json({ success: true as const, data: org }, 200);
 });
 
-// ===========================================================================
-// Writes (PR-A — Post-4a roadmap, parity with the apps/web routes being
-// retired in this PR). All writes require auth; specific permission checks
-// per endpoint below.
-// ===========================================================================
-
 // ---------------------------------------------------------------------------
-// POST /api/v1/organizations — create an organization
+// POST / — create an organization
 // ---------------------------------------------------------------------------
-//
-// Any authenticated user can create an org; they become the owner. Pre-checks
-// the org slug against existing orgs and returns 409. The underlying binding's
-// `createOrganizationWithOwner` transaction also reserves a row in the
-// `handles` collection inside the same transaction — that closes the race
-// against concurrent POST /handles/claim writers. A losing-side race throws
-// "Handle already taken" from inside the transaction and bubbles to 500;
-// the common case is caught by the cheaper pre-check below.
 
-app.post('/', requireAuth(), rateLimit(RATE_LIMITS.sensitive), async (c) => {
+const createOrgRoute = createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['Organizations'],
+    summary: 'Create an organization',
+    description: 'Any authenticated user can create an org and becomes its owner. The slug is reserved transactionally; a collision returns 409.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.sensitive)] as const,
+    request: jsonBody(CreateOrgRequestSchema),
+    responses: {
+        200: jsonResponse(OrganizationViewSchema, 'The created organization'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        409: errorResponse('Handle already taken'),
+    },
+});
+
+app.openapi(createOrgRoute, async (c) => {
     const uid = c.get('viewerUid')!;
+    const input = c.req.valid('json');
 
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = CreateOrgRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    // Pre-check slug uniqueness against existing orgs. The transactional
-    // re-check inside `createOrganizationWithOwner` covers the race.
-    const existing = await organizationService.getOrganizationBySlug(validation.data.slug);
+    const existing = await organizationService.getOrganizationBySlug(input.slug);
     if (existing) {
         return c.json(errorEnvelope(c, 'Handle already taken'), 409);
     }
 
-    const record = await organizationService.createOrganization(uid, validation.data);
+    const record = await organizationService.createOrganization(uid, input);
     const view = await hydrationService.hydrateOrganization(record, 'owner');
-
-    return c.json({ success: true, data: view });
+    return c.json({ success: true as const, data: view }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/v1/organizations/:orgId — update an organization
+// PATCH /{orgId} — update an organization
 // ---------------------------------------------------------------------------
-//
-// Admin+ only. Slug rename is collision-checked against other orgs. Race
-// against concurrent renames is not bounded — last-writer-wins on the rare
-// concurrent slug-rename case (matches apps/web parity).
 
-app.patch('/:orgId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const updateOrgRoute = createRoute({
+    method: 'patch',
+    path: '/{orgId}',
+    tags: ['Organizations'],
+    summary: 'Update an organization',
+    description: 'Admin+ only. A slug rename is collision-checked against other orgs (409 on conflict).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgIdParam, ...jsonBody(UpdateOrgRequestSchema) },
+    responses: {
+        200: jsonResponse(OrganizationViewSchema, 'The updated organization'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Insufficient permissions'),
+        409: errorResponse('Slug already taken'),
+    },
+});
+
+app.openapi(updateOrgRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
+    const { orgId } = c.req.valid('param');
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
         return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = UpdateOrgRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    // If slug is being changed, ensure it's not taken by another org.
-    if (validation.data.slug) {
-        const existing = await organizationService.getOrganizationBySlug(validation.data.slug);
+    const input = c.req.valid('json');
+    if (input.slug) {
+        const existing = await organizationService.getOrganizationBySlug(input.slug);
         if (existing && existing.record.id !== orgId) {
             return c.json(errorEnvelope(c, 'Slug already taken'), 409);
         }
     }
 
-    const updated = await organizationService.updateOrganization(orgId, validation.data);
+    const updated = await organizationService.updateOrganization(orgId, input);
     const view = await hydrationService.hydrateOrganization(updated, role);
-
-    return c.json({ success: true, data: view });
+    return c.json({ success: true as const, data: view }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/organizations/:orgId/members — direct-add a member
+// POST /{orgId}/members — direct-add a member
 // ---------------------------------------------------------------------------
-//
-// Admin+ only. Bypasses the email-invite flow (used when the caller already
-// knows the target's UID, e.g. internal tooling). For invite-based flow,
-// use POST /:orgId/invites then POST /:orgId/invites/:inviteId.
 
-app.post('/:orgId/members', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const addMemberRoute = createRoute({
+    method: 'post',
+    path: '/{orgId}/members',
+    tags: ['Organizations'],
+    summary: 'Directly add a member',
+    description: 'Admin+ only. Bypasses the email-invite flow (caller already knows the target UID).',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgIdParam, ...jsonBody(AddMemberSchema) },
+    responses: {
+        200: jsonResponse(z.record(z.unknown()), 'The added member'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Insufficient permissions'),
+    },
+});
+
+app.openapi(addMemberRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
+    const { orgId } = c.req.valid('param');
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
         return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = AddMemberSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    const member = await organizationService.addMember(
-        orgId,
-        validation.data.userId,
-        validation.data.role,
-        uid,
-    );
-
-    return c.json({ success: true, data: member });
+    const input = c.req.valid('json');
+    const member = await organizationService.addMember(orgId, input.userId, input.role, uid);
+    return c.json({ success: true as const, data: member }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/v1/organizations/:orgId/members/:userId — change a member's role
+// PATCH /{orgId}/members/{userId} — change a member's role
 // ---------------------------------------------------------------------------
-//
-// Admin+ only. Cannot change the owner's role (service-level guard throws).
 
-app.patch('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const updateMemberRoleRoute = createRoute({
+    method: 'patch',
+    path: '/{orgId}/members/{userId}',
+    tags: ['Organizations'],
+    summary: 'Change a member\'s role',
+    description: 'Admin+ only. The owner\'s role cannot be changed.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgMemberParams, ...jsonBody(UpdateMemberRoleRequestSchema) },
+    responses: {
+        200: jsonResponse(z.null(), 'Role updated'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Insufficient permissions'),
+    },
+});
+
+app.openapi(updateMemberRoleRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
-    const targetUserId = c.req.param('userId');
+    const { orgId, userId } = c.req.valid('param');
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
         return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = UpdateMemberRoleRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
-    await organizationService.updateMemberRole(orgId, targetUserId, validation.data.role);
-    return c.json({ success: true, data: null });
+    const input = c.req.valid('json');
+    await organizationService.updateMemberRole(orgId, userId, input.role);
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/v1/organizations/:orgId/members/:userId — remove a member
+// DELETE /{orgId}/members/{userId} — remove a member
 // ---------------------------------------------------------------------------
-//
-// Self-removal (leave) is allowed for any member. Admin+ can remove others.
-// The owner cannot be removed (service-level guard throws).
 
-app.delete('/:orgId/members/:userId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const removeMemberRoute = createRoute({
+    method: 'delete',
+    path: '/{orgId}/members/{userId}',
+    tags: ['Organizations'],
+    summary: 'Remove a member',
+    description: 'Self-removal (leave) is allowed for any member; admin+ can remove others. The owner cannot be removed.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgMemberParams },
+    responses: {
+        200: jsonResponse(z.null(), 'Member removed'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Insufficient permissions'),
+    },
+});
+
+app.openapi(removeMemberRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
-    const targetUserId = c.req.param('userId');
+    const { orgId, userId } = c.req.valid('param');
 
     const callerRole = await organizationService.getMemberRole(orgId, uid);
     if (!callerRole) {
         return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
     }
 
-    // Self-leave is OK for any member; otherwise admin+ required.
-    const isSelf = uid === targetUserId;
+    const isSelf = uid === userId;
     if (!isSelf && callerRole !== 'owner' && callerRole !== 'admin') {
         return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
-    await organizationService.removeMember(orgId, targetUserId);
-    return c.json({ success: true, data: null });
+    await organizationService.removeMember(orgId, userId);
+    return c.json({ success: true as const, data: null }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/organizations/:orgId/invites — create an invite
+// POST /{orgId}/invites — create an invite
 // ---------------------------------------------------------------------------
-//
-// Admin+ only. 7-day expiry (service-level constant).
 
-app.post('/:orgId/invites', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const createInviteRoute = createRoute({
+    method: 'post',
+    path: '/{orgId}/invites',
+    tags: ['Organizations'],
+    summary: 'Create an invite',
+    description: 'Admin+ only. 7-day expiry.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgIdParam, ...jsonBody(CreateOrgInviteRequestSchema) },
+    responses: {
+        200: jsonResponse(OrgInviteViewSchema, 'The created invite'),
+        400: errorResponse('Invalid request body'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Insufficient permissions'),
+    },
+});
+
+app.openapi(createInviteRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
+    const { orgId } = c.req.valid('param');
 
     const role = await organizationService.getMemberRole(orgId, uid);
     if (!role || (role !== 'owner' && role !== 'admin')) {
         return c.json(errorEnvelope(c, 'Insufficient permissions'), 403);
     }
 
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const validation = CreateOrgInviteRequestSchema.safeParse(body);
-    if (!validation.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: validation.error.issues }),
-            400,
-        );
-    }
-
+    const input = c.req.valid('json');
     const inviteRecord = await organizationService.createInvite(orgId, {
-        email: validation.data.email,
-        role: validation.data.role,
+        email: input.email,
+        role: input.role,
         invitedBy: uid,
     });
-
     const inviteView = await hydrationService.hydrateInvite(inviteRecord);
-    return c.json({ success: true, data: inviteView });
+    return c.json({ success: true as const, data: inviteView }, 200);
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/organizations/:orgId/invites/:inviteId — accept an invite
+// POST /{orgId}/invites/{inviteId} — accept an invite
 // ---------------------------------------------------------------------------
-//
-// Any authenticated user can accept an invite addressed to them. Service
-// checks the invite status (pending/expired) and writes the member row.
-// Returns the raw `OrganizationMemberRecord` (no hydration — matches the
-// apps/web parity behavior).
 
-app.post('/:orgId/invites/:inviteId', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
+const acceptInviteRoute = createRoute({
+    method: 'post',
+    path: '/{orgId}/invites/{inviteId}',
+    tags: ['Organizations'],
+    summary: 'Accept an invite',
+    description: 'Any authenticated user can accept an invite addressed to them. Returns the new membership.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: OrgInviteParams },
+    responses: {
+        200: jsonResponse(z.record(z.unknown()), 'The new membership'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(acceptInviteRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const orgId = c.req.param('orgId');
-    const inviteId = c.req.param('inviteId');
-
+    const { orgId, inviteId } = c.req.valid('param');
     const member = await organizationService.acceptInvite(orgId, inviteId, uid);
-    return c.json({ success: true, data: member });
+    return c.json({ success: true as const, data: member }, 200);
 });
 
 export { app as organizationsRoute };

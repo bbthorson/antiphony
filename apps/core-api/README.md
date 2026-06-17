@@ -42,8 +42,9 @@ The documented public API surface is defined by **one rule**:
 > `app.openapi(createRoute({ ... }), handler)` on an `OpenAPIHono` **and** carries
 > one of the approved tags.
 
-The approved tag set — **Users, Prompts, Replies, Audio, Auth, Connectors** — is
-the single source of truth, declared in [`src/lib/openapi-info.ts`](src/lib/openapi-info.ts)
+The approved tag set — **Users, Prompts, Replies, Audio, Auth, Connectors,
+Organizations** — is the single source of truth, declared in
+[`src/lib/openapi-info.ts`](src/lib/openapi-info.ts)
 (`OPENAPI_TAGS`). A route belongs in the contract only if it is a **primitive**
 (CRUD over a core resource), a **query** (a read needing server-only state), or a
 **public-projection** (an anonymous, public-safe read). Compositions and
