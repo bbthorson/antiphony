@@ -244,6 +244,26 @@ describe('ReplyService.listReplyFeed', () => {
         expect(result.replies.map((r) => r.record.id)).toEqual(['r-p2']);
     });
 
+    it('scopes by authorUid filter across the viewer\'s prompts', async () => {
+        const t0 = Date.now();
+        const replies = new Map<string, ReplyRecord[]>([
+            ['p1', [
+                makeReplyRecord({ id: 'r-bob-p1', promptId: 'p1', authorId: 'u-bob', createdAt: new Date(t0) }),
+                makeReplyRecord({ id: 'r-amy-p1', promptId: 'p1', authorId: 'u-amy', createdAt: new Date(t0 - 1000) }),
+            ]],
+            ['p2', [
+                makeReplyRecord({ id: 'r-bob-p2', promptId: 'p2', authorId: 'u-bob', createdAt: new Date(t0 - 2000) }),
+            ]],
+        ]);
+        const svc = buildService({
+            prompts: [makePromptView('p1'), makePromptView('p2')],
+            repliesByPromptId: replies,
+        });
+
+        const result = await svc.listReplyFeed(VIEWER_UID, { authorUid: 'u-bob' });
+        expect(result.replies.map((r) => r.record.id)).toEqual(['r-bob-p1', 'r-bob-p2']);
+    });
+
     it('returns empty page when filtered prompt does not exist', async () => {
         const svc = buildService({
             prompts: [makePromptView('p1')],

@@ -94,7 +94,7 @@ describe('GET /api/v1/replies/feed', () => {
         });
 
         const res = await app().request(
-            '/api/v1/replies/feed?limit=50&cursor=abc&promptId=p-x&status=archived&readStatus=unread&dateFrom=2026-01-01&dateTo=2026-04-01',
+            '/api/v1/replies/feed?limit=50&cursor=abc&promptId=p-x&authorUid=u-bob&status=archived&readStatus=unread&dateFrom=2026-01-01&dateTo=2026-04-01',
             { headers: { authorization: 'Bearer ok' } },
         );
 
@@ -110,6 +110,7 @@ describe('GET /api/v1/replies/feed', () => {
         expect(call[0]).toBe('v1');
         expect(call[1]).toMatchObject({
             promptId: 'p-x',
+            authorUid: 'u-bob',
             status: 'archived',
             readStatus: 'unread',
         });
@@ -130,6 +131,7 @@ describe('GET /api/v1/replies/feed', () => {
         expect(call[1]?.status).toBe('live');
         expect(call[1]?.readStatus).toBe('all');
         expect(call[1]?.promptId).toBeUndefined();
+        expect(call[1]?.authorUid).toBeUndefined();
         expect(call[1]?.dateFrom).toBeUndefined();
         expect(call[1]?.dateTo).toBeUndefined();
         expect(call[2]?.limit).toBe(20);

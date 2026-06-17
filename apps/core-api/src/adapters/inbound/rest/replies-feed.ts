@@ -35,6 +35,7 @@ const QuerySchema = z.object({
         .openapi({ description: 'Page size — clamped to 1–100; default 20.' }),
     cursor: z.string().optional().openapi({ description: 'Pagination cursor — the last reply id from the prior page' }),
     promptId: z.string().optional().openapi({ description: 'Scope the feed to a single prompt' }),
+    authorUid: z.string().optional().openapi({ description: 'Scope the feed to replies authored by this uid (the viewer\'s view of one person\'s activity)' }),
     status: z.enum(['live', 'archived', 'all']).default('live').openapi({ description: 'Reply status filter (default `live`)' }),
     readStatus: z.enum(['all', 'read', 'unread']).default('all').openapi({ description: 'Read-state filter (default `all`)' }),
     dateFrom: z
@@ -73,12 +74,13 @@ const feedRoute = createRoute({
 
 app.openapi(feedRoute, async (c) => {
     const uid = c.get('viewerUid')!;
-    const { limit, cursor, promptId, status, readStatus, dateFrom, dateTo } = c.req.valid('query');
+    const { limit, cursor, promptId, authorUid, status, readStatus, dateFrom, dateTo } = c.req.valid('query');
 
     const { replies, nextCursor } = await replyService.listReplyFeed(
         uid,
         {
             promptId,
+            authorUid,
             status,
             readStatus,
             ...(dateFrom ? { dateFrom: new Date(dateFrom) } : {}),

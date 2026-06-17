@@ -16,6 +16,14 @@ export interface ReplyFeedFilters {
     dateFrom?: Date;
     dateTo?: Date;
     readStatus?: 'read' | 'unread' | 'all';
+    /**
+     * Restrict to replies authored by this uid across the viewer's prompts.
+     * Keyed on the canonical, immutable `record.authorId` (not handle) so it
+     * survives replier renames. Powers the People-tab "this person's activity"
+     * view, which previously lived in the now-retired
+     * `/api/v1/people/:handle/replies` endpoint.
+     */
+    authorUid?: string;
 }
 
 interface FeedCursor {
@@ -319,6 +327,10 @@ export class ReplyService {
 
         if (filters?.status === 'archived') {
             allReplies = allReplies.filter(r => r.record.status === 'archived');
+        }
+
+        if (filters?.authorUid) {
+            allReplies = allReplies.filter(r => r.record.authorId === filters.authorUid);
         }
 
         if (filters?.dateFrom) {

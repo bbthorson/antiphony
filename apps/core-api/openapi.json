@@ -7719,6 +7719,15 @@
           {
             "schema": {
               "type": "string",
+              "description": "Scope the feed to replies authored by this uid (the viewer's view of one person's activity)"
+            },
+            "required": false,
+            "name": "authorUid",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "live",
                 "archived",
