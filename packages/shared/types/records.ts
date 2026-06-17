@@ -389,6 +389,52 @@ export const CallForwardingConfigSchema = z.object({
 export type CallForwardingConfig = z.infer<typeof CallForwardingConfigSchema>;
 
 /**
+ * Connector-config primitive (Plan B). The uniform control-plane record for a
+ * connector's per-owner settings. The core owns the *envelope* (ownership,
+ * enabled, status, timestamps) and treats `settings` as an opaque,
+ * connector-specific blob — the connector app validates its own settings shape
+ * on read. Secrets are never stored here; `secretRef` points into a secret
+ * store. Stored at `connector_configs/{ownerId}/items/{connectorType}`.
+ *
+ * See `specs/plan-b-connector-boundaries.md`.
+ */
+
+/**
+ * Known connector types. An allowlist (not a free string) so the core can
+ * enforce "connectorType is known" at the envelope boundary. Extend as
+ * connectors are added.
+ */
+export const ConnectorTypeSchema = z.enum(['telephony']);
+export type ConnectorType = z.infer<typeof ConnectorTypeSchema>;
+
+/**
+ * Connector-reported status. `state` is a coarse lifecycle the control-plane UI
+ * can render generically; `detail` carries a connector-specific human string
+ * (e.g. a verification failure reason).
+ */
+export const ConnectorStatusSchema = z.object({
+    state: z.enum(['unconfigured', 'pending', 'active', 'error', 'disabled']).default('unconfigured'),
+    detail: z.string().nullable().optional(),
+    updatedAt: FirestoreTimestampSchema.optional(),
+});
+export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>;
+
+export const ConnectorConfigRecordSchema = z.object({
+    connectorType: ConnectorTypeSchema,
+    /** The owning user. Org-scoping (ownerId as an orgId) is a later step. */
+    ownerId: z.string(),
+    /** Opaque, connector-specific blob. Core does not interpret this. */
+    settings: z.record(z.unknown()).default({}),
+    /** Reference into a secret store (e.g. Secret Manager key). Never a raw secret. */
+    secretRef: z.string().nullable().optional(),
+    enabled: z.boolean().default(false),
+    status: ConnectorStatusSchema.default({ state: 'unconfigured' }),
+    createdAt: FirestoreTimestampSchema,
+    updatedAt: FirestoreTimestampSchema,
+});
+export type ConnectorConfigRecord = z.infer<typeof ConnectorConfigRecordSchema>;
+
+/**
  * A single screening (allowlist) rule — canonical user-authored config, NOT
  * derived/enriched, so it's owned by core-api (tier 1) like call-forwarding.
  * Stored per-user under `users/{uid}/private_data/screening/rules/{ruleId}`.

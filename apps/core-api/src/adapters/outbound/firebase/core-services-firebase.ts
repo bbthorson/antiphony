@@ -5,6 +5,7 @@ import { FeedService } from '@vox-pop/core/services/feeds';
 import { PromptService } from '@vox-pop/core/services/prompts';
 import { ReplyService } from '@vox-pop/core/services/replies';
 import { CallForwardingService } from '@vox-pop/core/services/call-forwarding';
+import { ConnectorConfigService } from '@vox-pop/core/services/connector-config';
 import { ScreeningService } from '@vox-pop/core/services/screening';
 import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
 import { makeStorageService } from '@vox-pop/core/services/storage';
@@ -15,6 +16,7 @@ import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
 import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
+import { firebaseConnectorConfigDependencies } from './connector-config-dependencies.js';
 import { firebaseScreeningDependencies } from './screening-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 import { logger } from '../../../lib/logger.js';
@@ -126,6 +128,11 @@ export const feedService = new FeedService(firebaseCoreServices, logger);
 // Not part of `CoreServices` because no other core service calls into it
 // today (apps/telephony/ will use it via the HTTP surface, not in-process).
 export const callForwardingService = new CallForwardingService(firebaseCallForwardingDependencies);
+// ConnectorConfigService — uniform control-plane CRUD over connector settings
+// at connector_configs/{ownerId}/items/{connectorType} (Plan B). Not part of
+// `CoreServices` (no other core service calls it); connectors use it via the
+// HTTP surface. Telephony is the first consumer.
+export const connectorConfigService = new ConnectorConfigService(firebaseConnectorConfigDependencies);
 // ScreeningService — pure data CRUD on the screening allowlist at
 // users/{uid}/private_data/screening/rules/{ruleId}. Not part of `CoreServices`
 // (no other core service calls it). Phase-2 capture-all evaluation lives in

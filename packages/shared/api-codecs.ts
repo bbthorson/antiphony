@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CallForwardingConfigSchema } from './types/records';
+import { CallForwardingConfigSchema, ConnectorConfigRecordSchema } from './types/records';
 
 export const CreatePromptRequestSchema = z.object({
   // Bounds chosen so the public prompt hero never needs to clip: title +
@@ -98,6 +98,23 @@ export const CallForwardingConfigInputSchema = CallForwardingConfigSchema.omit({
 });
 
 export const CallForwardingConfigUpdateSchema = CallForwardingConfigInputSchema.partial();
+
+// Connector-config primitive (Plan B) — uniform control-plane write shapes.
+// `connectorType` comes from the path, `ownerId` from auth, the server stamps
+// `createdAt`/`updatedAt`, and `status` is connector-reported (NOT user-writable
+// — letting a client set it would let them fake e.g. a 'verified' state) — so
+// all are omitted from the wire shapes. The sanctioned status-write path is the
+// connector-side `ConnectorConfigService.reportStatus`. `settings` stays an
+// opaque blob (the connector validates its own shape).
+export const ConnectorConfigInputSchema = ConnectorConfigRecordSchema.omit({
+  connectorType: true,
+  ownerId: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const ConnectorConfigUpdateSchema = ConnectorConfigInputSchema.partial();
 
 // People enrichment (apps/identity tier-2). Per-viewer CRM notes/tags + merge.
 // Bounds mirror the legacy inline schema in core-api's people.ts notes route

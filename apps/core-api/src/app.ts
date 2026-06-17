@@ -25,6 +25,7 @@ import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
+import { connectorsRoute } from './adapters/inbound/rest/connectors.js';
 import { screeningRoute } from './adapters/inbound/rest/screening.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
@@ -156,6 +157,8 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/audio/upload-pending', audioUploadPendingRoute);
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
+    // Connector control plane (Plan B) — uniform per-connector config.
+    a.route('/api/v1/connectors', connectorsRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/rss', rssParseRoute);
     a.route('/api/v1/organizations', organizationsRoute);

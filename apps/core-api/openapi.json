@@ -25,6 +25,10 @@
     {
       "name": "Auth",
       "description": "Identity-linking primitives (AT Protocol connect/disconnect)."
+    },
+    {
+      "name": "Connectors",
+      "description": "Connector control plane — uniform per-connector config, status, and enable/disable (settings opaque, secrets by reference)."
     }
   ],
   "components": {
@@ -13164,6 +13168,1474 @@
           },
           "404": {
             "description": "Parent prompt or backing object not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{connectorType}/config": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Get the viewer's connector config",
+        "description": "Returns the authenticated viewer's `ConnectorConfigRecord` for the connector, or 404 if none is set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connector config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connectorType": {
+                          "type": "string",
+                          "enum": [
+                            "telephony"
+                          ]
+                        },
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "nullable": true
+                          },
+                          "default": {}
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "unconfigured",
+                                "pending",
+                                "active",
+                                "error",
+                                "disabled"
+                              ],
+                              "default": "unconfigured"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "updatedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "default": {
+                            "state": "unconfigured"
+                          }
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "connectorType",
+                        "ownerId",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No config for this connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Create or replace the viewer's connector config",
+        "description": "Idempotent full write of the config envelope. `settings` is an opaque, connector-specific blob; `secretRef` references a secret store (never a raw secret). Server stamps `createdAt`/`updatedAt`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "default": {}
+                  },
+                  "secretRef": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connectorType": {
+                          "type": "string",
+                          "enum": [
+                            "telephony"
+                          ]
+                        },
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "nullable": true
+                          },
+                          "default": {}
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "unconfigured",
+                                "pending",
+                                "active",
+                                "error",
+                                "disabled"
+                              ],
+                              "default": "unconfigured"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "updatedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "default": {
+                            "state": "unconfigured"
+                          }
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "connectorType",
+                        "ownerId",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Partially update the viewer's connector config",
+        "description": "Merge-update config fields (`settings`, `secretRef`, `enabled`, `status`). 404 if no config exists yet.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "default": {}
+                  },
+                  "secretRef": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connectorType": {
+                          "type": "string",
+                          "enum": [
+                            "telephony"
+                          ]
+                        },
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "nullable": true
+                          },
+                          "default": {}
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "unconfigured",
+                                "pending",
+                                "active",
+                                "error",
+                                "disabled"
+                              ],
+                              "default": "unconfigured"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "updatedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "default": {
+                            "state": "unconfigured"
+                          }
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "connectorType",
+                        "ownerId",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No config for this connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{connectorType}/status": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Get the connector's status",
+        "description": "Returns the connector-reported `status` for the viewer's config, or 404 if none is set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connector status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "unconfigured",
+                            "pending",
+                            "active",
+                            "error",
+                            "disabled"
+                          ],
+                          "default": "unconfigured"
+                        },
+                        "detail": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No config for this connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{connectorType}/enable": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Enable the connector",
+        "description": "Flip the viewer's connector `enabled` flag to `true`. 404 if no config exists yet.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connectorType": {
+                          "type": "string",
+                          "enum": [
+                            "telephony"
+                          ]
+                        },
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "nullable": true
+                          },
+                          "default": {}
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "unconfigured",
+                                "pending",
+                                "active",
+                                "error",
+                                "disabled"
+                              ],
+                              "default": "unconfigured"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "updatedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "default": {
+                            "state": "unconfigured"
+                          }
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "connectorType",
+                        "ownerId",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No config for this connector",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/connectors/{connectorType}/disable": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Disable the connector",
+        "description": "Flip the viewer's connector `enabled` flag to `false`. 404 if no config exists yet.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "telephony"
+              ],
+              "description": "The connector to configure (allowlisted; unknown types 400).",
+              "example": "telephony"
+            },
+            "required": true,
+            "name": "connectorType",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connectorType": {
+                          "type": "string",
+                          "enum": [
+                            "telephony"
+                          ]
+                        },
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "nullable": true
+                          },
+                          "default": {}
+                        },
+                        "secretRef": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "unconfigured",
+                                "pending",
+                                "active",
+                                "error",
+                                "disabled"
+                              ],
+                              "default": "unconfigured"
+                            },
+                            "detail": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "updatedAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "default": {
+                            "state": "unconfigured"
+                          }
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "connectorType",
+                        "ownerId",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No config for this connector",
             "content": {
               "application/json": {
                 "schema": {

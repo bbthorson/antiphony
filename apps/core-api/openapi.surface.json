@@ -3,6 +3,8 @@
   "endpoints": [
     "DELETE /api/v1/prompts/{promptId}",
     "GET /api/v1/audio",
+    "GET /api/v1/connectors/{connectorType}/config",
+    "GET /api/v1/connectors/{connectorType}/status",
     "GET /api/v1/prompts",
     "GET /api/v1/prompts/public/{handle}/{promptId}",
     "GET /api/v1/prompts/{promptId}",
@@ -20,6 +22,7 @@
     "GET /api/v1/users/{handle}",
     "GET /api/v1/users/{handle}/profile",
     "GET /api/v1/users/{handle}/prompts",
+    "PATCH /api/v1/connectors/{connectorType}/config",
     "PATCH /api/v1/prompts/{promptId}/atproto-uri",
     "PATCH /api/v1/prompts/{promptId}/status",
     "PATCH /api/v1/replies/{replyId}/notes",
@@ -28,6 +31,8 @@
     "POST /api/v1/atproto/disconnect",
     "POST /api/v1/audio/upload",
     "POST /api/v1/audio/upload-pending",
+    "POST /api/v1/connectors/{connectorType}/disable",
+    "POST /api/v1/connectors/{connectorType}/enable",
     "POST /api/v1/prompts",
     "POST /api/v1/prompts/{promptId}/read",
     "POST /api/v1/replies",
@@ -36,6 +41,7 @@
     "POST /api/v1/users/badges/read",
     "POST /api/v1/users/me/delete",
     "POST /api/v1/users/me/handle",
-    "POST /api/v1/users/switch-org"
+    "POST /api/v1/users/switch-org",
+    "PUT /api/v1/connectors/{connectorType}/config"
   ]
 }
