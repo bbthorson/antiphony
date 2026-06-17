@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
-import { OPENAPI_INFO } from './lib/openapi-info.js';
+import { OPENAPI_INFO, OPENAPI_TAGS } from './lib/openapi-info.js';
 import { requestId } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
@@ -179,7 +179,7 @@ export function app(): OpenAPIHono {
     //    in the spec. Public-doc scope: `/users`, `/prompts`, `/replies`,
     //    `/auth`. Transport/utility/system routes intentionally stay
     //    plain-Hono. See `specs/drafts/openapi-generation.md`.
-    a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO });
+    a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
     // 6. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.

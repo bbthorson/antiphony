@@ -26,3 +26,22 @@ export const OPENAPI_INFO = {
         'Every JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`.',
     ].join('\n'),
 } as const;
+
+/**
+ * The approved tag set for the public contract — the single source of truth
+ * for "what is public" (Plan A, A4). A route belongs in the documented surface
+ * **iff** it is instrumented via `app.openapi(createRoute(...))` and carries one
+ * of these tags. Adding a tag here is a deliberate widening of the contract;
+ * do not introduce a tag without a corresponding surface review.
+ *
+ * Each entry maps to a class in the design rule (primitive / query /
+ * public-projection); compositions and app-coupled routes stay on plain `Hono`
+ * and never appear here. See `specs/plan-a-core-api-contract.md`.
+ */
+export const OPENAPI_TAGS = [
+    { name: 'Users', description: 'User primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },
+    { name: 'Prompts', description: 'Prompt primitives — create, read, update status, and the public prompt projection.' },
+    { name: 'Replies', description: 'Reply primitives plus the cross-prompt feed and transcription search queries.' },
+    { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
+    { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },
+] as const;

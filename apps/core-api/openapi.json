@@ -5,11 +5,335 @@
     "version": "0.1.0",
     "description": "Open-source REST surface for Vox Pop — users, prompts, replies, and the auth surface that links them.\n\n## Authentication\n\nEvery authenticated endpoint accepts a bearer token via the `Authorization: Bearer <token>` header. Two token types are accepted interchangeably:\n\n- **Firebase ID token** — issued by the Firebase Auth client SDK. Short-lived (~1 hour); refresh client-side.\n- **Firebase session cookie** — issued by the hosted dashboard via `POST /api/v1/auth/session` (apps/web only; per-origin Set-Cookie semantics). Longer-lived; useful for server-rendered clients.\n\nBoth verify against the same Firebase project. Public endpoints accept missing/invalid tokens but project to the public view shape.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
+  "tags": [
+    {
+      "name": "Users",
+      "description": "User primitives, the viewer's own profile, and public identity projections (profiles, handle resolution)."
+    },
+    {
+      "name": "Prompts",
+      "description": "Prompt primitives — create, read, update status, and the public prompt projection."
+    },
+    {
+      "name": "Replies",
+      "description": "Reply primitives plus the cross-prompt feed and transcription search queries."
+    },
+    {
+      "name": "Audio",
+      "description": "Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints."
+    },
+    {
+      "name": "Auth",
+      "description": "Identity-linking primitives (AT Protocol connect/disconnect)."
+    }
+  ],
   "components": {
     "schemas": {},
     "parameters": {}
   },
   "paths": {
+    "/api/v1/resolve/{handle}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Resolve a handle to a user or organization",
+        "description": "Public identity lookup over the unified handle space. Returns a discriminated union — `{ type: 'user', profile }` or `{ type: 'org', org }` — or `null` when the handle resolves to neither. The user projection omits PII (basic profile only).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The handle to resolve (user handle or org slug; case-insensitive)"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resolved user or organization, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "user"
+                              ]
+                            },
+                            "profile": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "handle": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "displayName": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "avatarUrl": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "bio": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "website": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "links": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "label": {
+                                        "type": "string"
+                                      },
+                                      "url": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "label",
+                                      "url"
+                                    ]
+                                  }
+                                },
+                                "bluesky": {
+                                  "type": "object",
+                                  "properties": {
+                                    "handle": {
+                                      "type": "string"
+                                    },
+                                    "did": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "handle",
+                                    "did"
+                                  ]
+                                },
+                                "stats": {
+                                  "type": "object",
+                                  "properties": {
+                                    "followers": {
+                                      "type": "number",
+                                      "default": 0
+                                    },
+                                    "following": {
+                                      "type": "number",
+                                      "default": 0
+                                    },
+                                    "prompts": {
+                                      "type": "number",
+                                      "default": 0
+                                    }
+                                  }
+                                },
+                                "badges": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "isVerified": {
+                                  "type": "boolean"
+                                },
+                                "createdAt": {
+                                  "anyOf": [
+                                    {},
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "org"
+                              ]
+                            },
+                            "org": {
+                              "type": "object",
+                              "properties": {
+                                "record": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 50
+                                    },
+                                    "slug": {
+                                      "type": "string",
+                                      "minLength": 3,
+                                      "maxLength": 30,
+                                      "pattern": "^[a-z0-9-]+$"
+                                    },
+                                    "avatarUrl": {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    "rssFeedUrl": {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    "websiteUrl": {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    "description": {
+                                      "type": "string"
+                                    },
+                                    "ownerId": {
+                                      "type": "string"
+                                    },
+                                    "createdAt": {
+                                      "anyOf": [
+                                        {},
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    "domain": {
+                                      "type": "string",
+                                      "nullable": true
+                                    },
+                                    "domainVerified": {
+                                      "type": "boolean",
+                                      "default": false
+                                    },
+                                    "domainVerificationToken": {
+                                      "type": "string"
+                                    },
+                                    "billingEmail": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "format": "email"
+                                    },
+                                    "tier": {
+                                      "type": "string",
+                                      "enum": [
+                                        "free",
+                                        "pro",
+                                        "business",
+                                        "enterprise"
+                                      ],
+                                      "default": "business"
+                                    },
+                                    "stripeCustomerId": {
+                                      "type": "string"
+                                    },
+                                    "subscriptionStatus": {
+                                      "type": "string",
+                                      "enum": [
+                                        "active",
+                                        "trialing",
+                                        "past_due",
+                                        "canceled",
+                                        "unpaid"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "name",
+                                    "slug",
+                                    "ownerId",
+                                    "createdAt"
+                                  ]
+                                },
+                                "memberCount": {
+                                  "type": "number",
+                                  "default": 1
+                                },
+                                "currentUserRole": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner",
+                                    "admin",
+                                    "member"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "record"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "org"
+                          ]
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/prompts": {
       "get": {
         "tags": [
@@ -7354,7 +7678,7 @@
         "tags": [
           "Replies"
         ],
-        "summary": "Paginated reply inbox",
+        "summary": "List the viewer's replies (paginated, filterable)",
         "description": "Cross-prompt feed of the authenticated viewer's replies. Reverse-chronological, cursor-paginated. Filter by prompt id, status, read state, and date range.",
         "parameters": [
           {

@@ -60,7 +60,7 @@ const feedRoute = createRoute({
     method: 'get',
     path: '/feed',
     tags: ['Replies'],
-    summary: 'Paginated reply inbox',
+    summary: 'List the viewer\'s replies (paginated, filterable)',
     description: 'Cross-prompt feed of the authenticated viewer\'s replies. Reverse-chronological, cursor-paginated. Filter by prompt id, status, read state, and date range.',
     middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
     request: { query: QuerySchema },
