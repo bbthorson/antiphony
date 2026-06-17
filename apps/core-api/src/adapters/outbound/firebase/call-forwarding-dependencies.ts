@@ -19,7 +19,17 @@ export type { CallForwardingDependencies };
  * Scope: pure data CRUD. No Twilio coupling — Twilio lives in
  * apps/telephony/ (planned tier-2 service).
  *
- * See `specs/decoupling-migration.md` § Post-4a Roadmap — PR-E.
+ * @deprecated (Plan B B3') Telephony now stores its config on the
+ * connector-config primitive (`connector_configs/{uid}/items/telephony`), so:
+ *   - `findUidByPhoneNumber` / `findUidByDedicatedNumber` are **re-pointed**
+ *     to query that new location (the live SIP routing path).
+ *   - the CRUD methods (`getConfig`/`saveConfig`/`updateConfig`/`deleteConfig`)
+ *     still target the legacy `private_data/call_forwarding` doc but are now
+ *     **orphaned** — the only callers (core-api's `/users/me/call-forwarding`
+ *     route + `call-forwarding/by-uid`) are superseded by the connector-config
+ *     control plane and slated for removal in a follow-up.
+ *
+ * See `specs/plan-b-connector-boundaries.md`.
  */
 
 const PRIVATE_DATA_DOC_ID = 'call_forwarding';
@@ -76,25 +86,26 @@ export const firebaseCallForwardingDependencies: CallForwardingDependencies = {
     async findUidByPhoneNumber(phoneNumber: string): Promise<string | null> {
         if (!phoneNumber || !phoneNumber.trim()) return null;
 
-        // Collection-group query across all `private_data` subcollections.
-        // Path is `users/{uid}/private_data/call_forwarding`; we only care
-        // about docs where phoneNumber matches AND the config is in a
-        // routable state (verified + enabled). Other private_data docs
-        // (none today, but the namespace is shared) would lack these
-        // fields and would naturally fall out of the predicate.
+        // Collection-group query across connector-config `items` subcollections
+        // (Plan B B3' — telephony config now lives at
+        // `connector_configs/{uid}/items/telephony`). We only want a routable
+        // telephony config: phone match + verified + enabled. Verification state
+        // is connector-owned and lives in `status.data`; the user-authored phone
+        // and the routing fields are in `settings`. Requires the composite index
+        // in `firestore.indexes.json`.
         const snap = await getAdminDb()
-            .collectionGroup('private_data')
-            .where('phoneNumber', '==', phoneNumber)
-            .where('verificationStatus', '==', 'verified')
+            .collectionGroup('items')
+            .where('connectorType', '==', 'telephony')
+            .where('settings.phoneNumber', '==', phoneNumber)
+            .where('status.data.verificationStatus', '==', 'verified')
             .where('enabled', '==', true)
             .limit(1)
             .get();
 
         if (snap.empty) return null;
 
-        // Path is `users/{uid}/private_data/call_forwarding`; split out
-        // the uid segment. Matches the pattern used in the pre-PR-E3
-        // apps/web/src/services/ivr/forwarding.ts impl.
+        // Path is `connector_configs/{uid}/items/telephony`; the uid is the
+        // second segment.
         const parts = snap.docs[0].ref.path.split('/');
         return parts[1] ?? null;
     },
@@ -102,19 +113,18 @@ export const firebaseCallForwardingDependencies: CallForwardingDependencies = {
     async findUidByDedicatedNumber(voxpopNumber: string): Promise<string | null> {
         if (!voxpopNumber || !voxpopNumber.trim()) return null;
 
-        // Paid-tier dedicated numbers are 1:1 with users — voxpopNumber
-        // is unique per provisioned number. No `enabled` predicate
-        // here intentionally: a paid-tier user might temporarily
-        // disable forwarding but Twilio's still routing the call to
-        // their dedicated number; the IVR can still answer "you've
-        // reached <user>, leave a message" rather than route to a 404.
-        // Matches the pre-PR-E3 behavior in apps/web's
-        // ivr/forwarding.ts.
+        // Paid-tier dedicated numbers are 1:1 with users — voxpopNumber is
+        // unique per provisioned number. No `enabled` predicate here
+        // intentionally: a paid-tier user might temporarily disable forwarding
+        // but Twilio's still routing the call to their dedicated number; the IVR
+        // can still answer "you've reached <user>, leave a message" rather than
+        // route to a 404. Storage: `connector_configs/{uid}/items/telephony`.
         const snap = await getAdminDb()
-            .collectionGroup('private_data')
-            .where('voxpopNumber', '==', voxpopNumber)
-            .where('tier', '==', 'paid')
-            .where('verificationStatus', '==', 'verified')
+            .collectionGroup('items')
+            .where('connectorType', '==', 'telephony')
+            .where('settings.voxpopNumber', '==', voxpopNumber)
+            .where('settings.tier', '==', 'paid')
+            .where('status.data.verificationStatus', '==', 'verified')
             .limit(1)
             .get();
 

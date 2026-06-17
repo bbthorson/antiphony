@@ -136,6 +136,31 @@ app.openapi(patchConfigRoute, async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /{connectorType}/config — remove config
+// ---------------------------------------------------------------------------
+
+const deleteConfigRoute = createRoute({
+    method: 'delete',
+    path: '/{connectorType}/config',
+    tags: ['Connectors'],
+    summary: 'Delete the viewer\'s connector config',
+    description: 'Removes the config record. Idempotent — succeeds even if none exists. Any connector-side teardown (e.g. releasing a provisioned resource) is the connector\'s responsibility before calling this.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: { params: ConnectorTypeParam },
+    responses: {
+        200: jsonResponse(z.null(), 'Config deleted'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(deleteConfigRoute, async (c) => {
+    const uid = c.get('viewerUid')!;
+    const { connectorType } = c.req.valid('param');
+    await connectorConfigService.deleteConfig(uid, connectorType);
+    return c.json({ success: true as const, data: null }, 200);
+});
+
+// ---------------------------------------------------------------------------
 // GET /{connectorType}/status — read status
 // ---------------------------------------------------------------------------
 

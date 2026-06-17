@@ -150,6 +150,27 @@ describe('ConnectorConfigService.reportStatus', () => {
             NotFoundError,
         );
     });
+
+    it('merges status.data so reporting one field does not drop the others', async () => {
+        const seed = await new ConnectorConfigService(fakeDeps().deps).saveConfig('u-1', 'telephony', input);
+        const { deps } = fakeDeps([seed]);
+        const svc = new ConnectorConfigService(deps);
+
+        await svc.reportStatus('u-1', 'telephony', { data: { verificationAttempts: 2 } });
+        const after = await svc.reportStatus('u-1', 'telephony', { data: { verificationStatus: 'verified' } });
+
+        expect(after.status.data).toEqual({ verificationAttempts: 2, verificationStatus: 'verified' });
+    });
+
+    it('optionally flips enabled (connector-driven activation on verify)', async () => {
+        const seed = await new ConnectorConfigService(fakeDeps().deps).saveConfig('u-1', 'telephony', input);
+        const { deps } = fakeDeps([seed]);
+        const svc = new ConnectorConfigService(deps);
+
+        const updated = await svc.reportStatus('u-1', 'telephony', { state: 'active' }, { enabled: true });
+        expect(updated.enabled).toBe(true);
+        expect(updated.status.state).toBe('active');
+    });
 });
 
 describe('ConnectorConfigService.getStatus / getConfig / deleteConfig', () => {

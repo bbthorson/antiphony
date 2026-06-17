@@ -413,8 +413,15 @@ export type ConnectorType = z.infer<typeof ConnectorTypeSchema>;
  * (e.g. a verification failure reason).
  */
 export const ConnectorStatusSchema = z.object({
+    /** Coarse, generic lifecycle the control-plane UI can render without
+     * connector-specific knowledge. */
     state: z.enum(['unconfigured', 'pending', 'active', 'error', 'disabled']).default('unconfigured'),
     detail: z.string().nullable().optional(),
+    /** Opaque, connector-specific status detail (e.g. telephony's
+     * `{ verificationStatus, verificationAttempts, failureReason }`). Connector-
+     * owned like the rest of `status` — never user-writable. Nullable so a doc
+     * that stored `data: null` round-trips without a parse error. */
+    data: z.record(z.unknown()).nullable().optional(),
     updatedAt: FirestoreTimestampSchema.optional(),
 });
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>;

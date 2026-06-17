@@ -26,6 +26,7 @@ import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
 import { connectorsRoute } from './adapters/inbound/rest/connectors.js';
+import { connectorsSystemRoute } from './adapters/inbound/rest/connectors-system.js';
 import { screeningRoute } from './adapters/inbound/rest/screening.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
@@ -166,6 +167,10 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/notifications', notificationsRoute);
     a.route('/api/v1/call-forwarding', callForwardingLookupRoute);
     a.route('/api/v1/system/replies', systemRepliesRoute);
+    // Connector status-report (ingestion plane, system-auth) — connectors
+    // report their owner-scoped status here; the user-facing config control
+    // plane is the documented /api/v1/connectors/* surface.
+    a.route('/api/v1/system/connectors', connectorsSystemRoute);
     // PR-F3b stage 1: apps/web's rate-limit shim calls this endpoint
     // (system-auth) instead of touching Firestore directly, so apps/web
     // doesn't need firebase-admin for rate-limiting.

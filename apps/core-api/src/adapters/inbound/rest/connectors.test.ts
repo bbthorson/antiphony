@@ -225,6 +225,25 @@ describe('PATCH /api/v1/connectors/{connectorType}/config', () => {
     });
 });
 
+describe('DELETE /api/v1/connectors/{connectorType}/config', () => {
+    it('deletes and returns 200 (idempotent)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(connectorConfigService.deleteConfig).mockResolvedValue(undefined);
+
+        const res = await app().request('/api/v1/connectors/telephony/config', {
+            method: 'DELETE',
+            headers: { authorization: 'Bearer t' },
+        });
+        expect(res.status).toBe(200);
+        expect(connectorConfigService.deleteConfig).toHaveBeenCalledWith('u-1', 'telephony');
+    });
+
+    it('401s without auth', async () => {
+        const res = await app().request('/api/v1/connectors/telephony/config', { method: 'DELETE' });
+        expect(res.status).toBe(401);
+    });
+});
+
 describe('GET /api/v1/connectors/{connectorType}/status', () => {
     it('returns 200 with the status', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });

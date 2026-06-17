@@ -115,22 +115,35 @@ export class ConnectorConfigService {
      * end-user can't fake a state (e.g. 'verified'). Intended for the connector
      * itself, via a privileged (system-auth) path wired in the telephony
      * migration. Shallow-merges onto existing status and stamps its `updatedAt`.
-     * Throws `NotFoundError` if no config exists.
+     *
+     * Optionally also flips `enabled` in the same write — the connector
+     * legitimately activates a connector on a successful verification (e.g.
+     * telephony's SIP verify-callback). This is connector-driven activation, not
+     * a user status-fake, so it's allowed on this trusted path. Throws
+     * `NotFoundError` if no config exists.
      */
     async reportStatus(
         ownerId: string,
         connectorType: ConnectorType,
         status: Partial<ConnectorStatus>,
+        opts?: { enabled?: boolean },
     ): Promise<ConnectorConfigRecord> {
         const existing = await this.deps.getConfig(ownerId, connectorType);
         if (!existing) {
             throw new NotFoundError(`No ${connectorType} connector config for this owner`);
         }
         const now = this.deps.now();
-        const nextStatus: ConnectorStatus = { ...existing.status, ...status, updatedAt: now };
-        const merged: ConnectorConfigRecord = { ...existing, status: nextStatus, updatedAt: now };
+        // Merge the opaque `data` sub-blob (same rationale as settings in
+        // updateConfig) so reporting one status field doesn't drop the others
+        // (e.g. updating verificationStatus mustn't wipe verificationAttempts).
+        const data = status.data
+            ? { ...(existing.status.data ?? {}), ...status.data }
+            : existing.status.data;
+        const nextStatus: ConnectorStatus = { ...existing.status, ...status, data, updatedAt: now };
+        const enabled = opts?.enabled ?? existing.enabled;
+        const merged: ConnectorConfigRecord = { ...existing, status: nextStatus, enabled, updatedAt: now };
         const validated = ConnectorConfigRecordSchema.parse(merged);
-        await this.deps.updateConfig(ownerId, connectorType, { status: nextStatus, updatedAt: now });
+        await this.deps.updateConfig(ownerId, connectorType, { status: nextStatus, enabled, updatedAt: now });
         return validated;
     }
 
