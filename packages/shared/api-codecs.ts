@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CallForwardingConfigSchema, ConnectorConfigRecordSchema } from './types/records';
+import { ConnectorConfigRecordSchema } from './types/records';
 
 export const CreatePromptRequestSchema = z.object({
   // Bounds chosen so the public prompt hero never needs to clip: title +
@@ -87,17 +87,6 @@ export const SwitchOrgRequestSchema = z.object({
   /** orgId to switch to, or null to switch to personal context */
   orgId: z.string().nullable(),
 });
-
-// Call-forwarding data layer (canonical CRUD; Twilio orchestration lives in apps/telephony/).
-// Server stamps `createdAt` / `updatedAt`, so both shapes omit them. PR-E1 in
-// the Post-4a roadmap added the core-api endpoints; apps/telephony/ POSTs the
-// already-Twilio-resolved config and PATCHes verification-state transitions.
-export const CallForwardingConfigInputSchema = CallForwardingConfigSchema.omit({
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const CallForwardingConfigUpdateSchema = CallForwardingConfigInputSchema.partial();
 
 // Connector-config primitive (Plan B) — uniform control-plane write shapes.
 // `connectorType` comes from the path, `ownerId` from auth, the server stamps

@@ -23,7 +23,6 @@ import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pe
 import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
 import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
-import { callForwardingRoute } from './adapters/inbound/rest/call-forwarding.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
 import { connectorsRoute } from './adapters/inbound/rest/connectors.js';
 import { connectorsSystemRoute } from './adapters/inbound/rest/connectors-system.js';
@@ -135,14 +134,8 @@ export function app(): OpenAPIHono {
     // Register the more specific `/me` mount FIRST so Hono prefers it over the
     // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
     // and 404 on user lookup).
-    // Register the more-specific `/me/call-forwarding` mount BEFORE the
-    // `/users/me` mount so it takes precedence — handlers in usersMeRoute
-    // don't expect a `/call-forwarding/...` sub-path, but registering more
-    // specific first is the defensive pattern (and matches the precedent
-    // set by registering `/me` before `/:handle` below).
-    a.route('/api/v1/users/me/call-forwarding', callForwardingRoute);
-    // Same defensive ordering as call-forwarding: register the more-specific
-    // `/me/screening` mount before `/me` so it isn't shadowed by usersMeRoute.
+    // Register the more-specific `/me/screening` mount before `/me` so it isn't
+    // shadowed by usersMeRoute.
     a.route('/api/v1/users/me/screening', screeningRoute);
     a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersActionsRoute);
