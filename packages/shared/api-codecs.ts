@@ -105,7 +105,7 @@ export const ConnectorConfigInputSchema = ConnectorConfigRecordSchema.omit({
 
 export const ConnectorConfigUpdateSchema = ConnectorConfigInputSchema.partial();
 
-// People enrichment (apps/identity tier-2). Per-viewer CRM notes/tags + merge.
+// People enrichment (apps/relationships tier-2). Per-viewer CRM notes/tags + merge.
 // Bounds mirror the legacy inline schema in core-api's people.ts notes route
 // (notes ≤10K; ≤50 tags, each ≤64 chars). Both fields optional so partial
 // merge-writes don't clobber the other.

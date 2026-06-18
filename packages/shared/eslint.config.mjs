@@ -27,7 +27,7 @@ export default [
                             "../../apps/**", "../apps/**", "**/apps/**",
                             "@vox-pop/web", "@vox-pop/web/*",
                             "@vox-pop/core-api", "@vox-pop/core-api/*",
-                            "@vox-pop/identity", "@vox-pop/identity/*",
+                            "@vox-pop/relationships", "@vox-pop/relationships/*",
                             "@vox-pop/mobile", "@vox-pop/mobile/*",
                             "@vox-pop/embed", "@vox-pop/embed/*",
                             "@vox-pop/telephony", "@vox-pop/telephony/*",

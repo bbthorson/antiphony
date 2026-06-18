@@ -305,7 +305,7 @@ export type ReplyEnrichmentRecord = z.infer<typeof ReplyEnrichmentRecordSchema>;
 /**
  * Per-viewer CRM enrichment about a target person, owned by the viewing
  * creator. Stored at `enrichments/people/items/{viewerUid}_{targetUid}` —
- * the tier-2 enrichment namespace, served by the closed `apps/identity`
+ * the tier-2 enrichment namespace, served by the closed `apps/relationships`
  * deployable (NOT core-api), so self-hosters running core-api see clean
  * canonical records without phantom CRM/identity fields. See
  * `specs/data-separation.md` § 3 and `specs/people-enrichment-split.md`.
