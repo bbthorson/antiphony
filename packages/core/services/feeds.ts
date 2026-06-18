@@ -9,7 +9,6 @@ import {
     toReplyViewPublic,
     type PromptView,
     type OrganizationView,
-    type ReplyView,
     type HandleResolution,
 } from 'shared/types/views';
 import type { CoreServices, RssSummary } from '../ports/core-services';
@@ -36,54 +35,6 @@ export class FeedService {
         private readonly services: CoreServices,
         private readonly logger: Logger = defaultLogger,
     ) {}
-
-    calculateRepliersFromPrompts(promptsWithReplies: PromptWithReplies[]): Replier[] {
-        this.logger.info({ count: promptsWithReplies.length }, '[FeedService] Calculating repliers from prompts');
-        try {
-            const repliersMap = new Map<string, { handle: string; lastReplyDate: Date; firstReplyAt: Date; totalReplies: number }>();
-
-            for (const prompt of promptsWithReplies) {
-                for (const reply of prompt.replies) {
-                    const senderHandle = reply.author?.handle;
-
-                    if (senderHandle) {
-                        const replyDate = new Date(reply.record.createdAt);
-                        const existingReplier = repliersMap.get(senderHandle);
-
-                        if (existingReplier) {
-                            existingReplier.totalReplies += 1;
-                            if (replyDate > existingReplier.lastReplyDate) {
-                                existingReplier.lastReplyDate = replyDate;
-                            }
-                            if (replyDate < existingReplier.firstReplyAt) {
-                                existingReplier.firstReplyAt = replyDate;
-                            }
-                        } else {
-                            repliersMap.set(senderHandle, {
-                                handle: senderHandle,
-                                lastReplyDate: replyDate,
-                                firstReplyAt: replyDate,
-                                totalReplies: 1,
-                            });
-                        }
-                    }
-                }
-            }
-
-            const repliersArray = Array.from(repliersMap.values()).sort((a, b) => b.lastReplyDate.getTime() - a.lastReplyDate.getTime());
-
-            const serializableRepliers = repliersArray.map(replier => ({
-                ...replier,
-                lastReplyDate: replier.lastReplyDate.toISOString(),
-                firstReplyAt: replier.firstReplyAt.toISOString(),
-            }));
-
-            return serializableRepliers;
-        } catch (error) {
-            this.logger.error({ err: error }, '[FeedService] Error calculating repliers');
-            throw error;
-        }
-    }
 
     /**
      * Fetches a paginated feed for a user, including prompts and replies.
@@ -230,39 +181,6 @@ export class FeedService {
         });
 
         return this.calculateEnrichedRepliersFromPrompts(promptsWithReplies);
-    }
-
-    /**
-     * Fetches data for the People/CRM page.
-     * Eagerly fetches all replies to calculate repliers (N+1 is acceptable for the CRM use case).
-     * @param orgId - If provided, scopes to prompts in this org context.
-     */
-    async getPeopleData(userId: string, orgId?: string | null) {
-        const [user, prompts] = await Promise.all([
-            this.services.users.getUserDataByUid(userId),
-            orgId
-                ? this.services.prompts.getPromptsForOrgContext(orgId, 100, undefined, false)
-                : this.services.prompts.getPromptsForUser(userId, 100, undefined, false),
-        ]);
-        if (!user) return null;
-
-        const promptIds = prompts.map(p => p.record.id);
-        const repliesMap = await this.services.replies.getRepliesForPrompts(promptIds, user);
-
-        const promptsWithReplies: PromptWithReplies[] = prompts.map((prompt) => {
-            const replies = repliesMap.get(prompt.record.id) || [];
-            return { ...prompt, replies };
-        });
-
-        const enrichedRepliers = this.calculateEnrichedRepliersFromPrompts(promptsWithReplies);
-        const repliers = this.calculateRepliersFromPrompts(promptsWithReplies);
-
-        return {
-            user,
-            promptsWithReplies,
-            repliers,
-            enrichedRepliers,
-        };
     }
 
     /**

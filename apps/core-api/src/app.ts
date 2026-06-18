@@ -21,7 +21,6 @@ import { rssParseRoute } from './adapters/inbound/rest/rss-parse.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pending.js';
 import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
-import { peopleRoute } from './adapters/inbound/rest/people.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
 import { connectorsRoute } from './adapters/inbound/rest/connectors.js';
@@ -156,7 +155,6 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/rss', rssParseRoute);
     a.route('/api/v1/organizations', organizationsRoute);
-    a.route('/api/v1/people', peopleRoute);
     a.route('/api/v1/notifications', notificationsRoute);
     a.route('/api/v1/call-forwarding', callForwardingLookupRoute);
     a.route('/api/v1/system/replies', systemRepliesRoute);

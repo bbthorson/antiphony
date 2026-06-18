@@ -5,7 +5,7 @@ import { UpdateProfileRequestSchema } from 'shared/api-codecs';
 import { ProfileViewSelfSchema } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
-import { userService, organizationService } from '../../outbound/firebase/core-services-firebase.js';
+import { userService, organizationService, feedService } from '../../outbound/firebase/core-services-firebase.js';
 import { firebaseUserDependencies } from '../../outbound/firebase/users-dependencies.js';
 import { getAdminDb, getAdminAuth } from '../../../lib/firebase-admin.js';
 import { APP_CONFIG } from '../../../lib/app-config.js';
@@ -19,6 +19,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   GET    /                       — full profile (PII)
  *   PATCH  /                       — update profile (handle-swap + field merge)
  *   GET    /organizations          — hydrated orgs the viewer belongs to
+ *   GET    /audience               — the viewer's audience (EnrichedReplier[])
  *   GET    /handle/available       — check handle availability
  *   POST   /handle                 — claim or re-affirm the viewer's handle
  *   POST   /delete                 — soft-delete (deactivate) account
@@ -195,6 +196,55 @@ app.openapi(getOrganizationsRoute, async (c) => {
     const uid = c.get('viewerUid')!;
     const orgs = await organizationService.getUserOrganizations(uid);
     return c.json({ success: true as const, data: orgs }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/users/me/audience?orgId=... — the viewer's audience
+// ---------------------------------------------------------------------------
+//
+// Returns the authenticated viewer's audience as `EnrichedReplier[]`: every
+// person who has replied to the viewer's prompts, with an all-time per-author
+// rollup (totalReplies, first/last reply dates) plus the author's profile and
+// (for lite users) phone number.
+//
+// This is the sole survivor of the retired `/api/v1/people/*` surface. Unlike
+// the paginated reply feed (`/api/v1/replies/feed`), it computes accurate
+// all-time aggregates per author, so it can't be collapsed into the feed.
+//
+// Kept UNDOCUMENTED / plain-Hono (not `app.openapi`) for now: it surfaces
+// author-only phone PII and is a contract candidate later. Because it's a
+// plain route it stays out of the OpenAPI surface snapshot.
+//
+// Query params:
+//   orgId (optional) — scope to an org context. Missing/empty = personal.
+
+app.get('/audience', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
+    const uid = c.get('viewerUid')!;
+    const orgIdRaw = c.req.query('orgId');
+    // Treat missing or empty as null (personal context). Matches the service
+    // signature's `orgId?: string | null`.
+    const orgId = orgIdRaw && orgIdRaw.length > 0 ? orgIdRaw : null;
+
+    // IDOR guard: an `orgId` scopes the query to that org's prompts and their
+    // repliers (incl. lite-user phone numbers). Without a membership check any
+    // authenticated caller could enumerate any org's audience. Personal context
+    // (orgId === null) reads only the caller's own prompts, so no check needed.
+    if (orgId) {
+        // Validate the shape before it reaches a Firestore doc path. An orgId
+        // is a single path segment (UUID / Firestore auto-id); a value with `/`
+        // or other unexpected characters would throw an invalid-reference error
+        // deep in getMemberRole. Reject it at the boundary with a clean 400.
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(orgId)) {
+            return c.json(errorEnvelope(c, 'Invalid orgId'), 400);
+        }
+        const role = await organizationService.getMemberRole(orgId, uid);
+        if (!role) {
+            return c.json(errorEnvelope(c, 'Not a member of this organization'), 403);
+        }
+    }
+
+    const audience = await feedService.getPeopleList(uid, orgId);
+    return c.json({ success: true as const, data: audience }, 200);
 });
 
 // -----------------------------------------------------------------------------

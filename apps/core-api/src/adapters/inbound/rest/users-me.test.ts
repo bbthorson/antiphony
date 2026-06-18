@@ -9,7 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * Mocks:
  *   - `sessionVerifier.verifyToken` — controls the auth outcome.
- *   - `core-services-firebase` — stubs `userService` and `organizationService`.
+ *   - `core-services-firebase` — stubs `userService`, `organizationService`,
+ *     and `feedService` (the audience read).
  *   - `firebase-admin` — minimal mock so rate-limit middleware doesn't try
  *     to reach Firestore.
  */
@@ -20,6 +21,10 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     },
     organizationService: {
         getUserOrganizations: vi.fn(),
+        getMemberRole: vi.fn(),
+    },
+    feedService: {
+        getPeopleList: vi.fn(),
     },
     firebaseCoreServices: {},
 }));
@@ -88,7 +93,7 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../../../app.js');
-const { userService, organizationService } = await import('../../outbound/firebase/core-services-firebase.js');
+const { userService, organizationService, feedService } = await import('../../outbound/firebase/core-services-firebase.js');
 const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
 
 function mkProfile(overrides: Record<string, unknown> = {}) {
@@ -540,5 +545,105 @@ describe('POST /api/v1/users/me/delete', () => {
 
         expect(res.status).toBe(200);
         expect(txDelete).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/users/me/audience — the viewer's audience (EnrichedReplier[])
+// ---------------------------------------------------------------------------
+//
+// Rehomed off the retired `/api/v1/people/list`. Same IDOR semantics: an
+// `orgId` requires membership; a malformed orgId is rejected before any
+// service call; personal context (no orgId) skips the membership check.
+
+describe('GET /api/v1/users/me/audience', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+    });
+
+    it('returns the enriched-replier list for the authenticated viewer', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([
+            { profile: { id: 'r-1' }, totalReplies: 1 },
+            { profile: { id: 'r-2' }, totalReplies: 1 },
+        ] as unknown as Awaited<ReturnType<typeof feedService.getPeopleList>>);
+
+        const res = await app().request('/api/v1/users/me/audience', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        expect(body.data).toHaveLength(2);
+    });
+
+    it('401s when no auth is provided', async () => {
+        const res = await app().request('/api/v1/users/me/audience');
+        expect(res.status).toBe(401);
+    });
+
+    it('passes orgId through to the service when the caller is a member', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(organizationService.getMemberRole).mockResolvedValue('member');
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        await app().request('/api/v1/users/me/audience?orgId=org-1', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(organizationService.getMemberRole).toHaveBeenCalledWith('org-1', 'u-self');
+        expect(feedService.getPeopleList).toHaveBeenCalledWith('u-self', 'org-1');
+    });
+
+    it('403s on orgId when the caller is NOT a member (IDOR guard)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(organizationService.getMemberRole).mockResolvedValue(null);
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        const res = await app().request('/api/v1/users/me/audience?orgId=someone-elses-org', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(403);
+        // The service — which would expose cross-org replier phone numbers —
+        // must never run for a non-member.
+        expect(feedService.getPeopleList).not.toHaveBeenCalled();
+    });
+
+    it('400s on a malformed orgId before touching the service', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+
+        const res = await app().request(`/api/v1/users/me/audience?orgId=${encodeURIComponent('a/../../fcm')}`, {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(res.status).toBe(400);
+        expect(organizationService.getMemberRole).not.toHaveBeenCalled();
+        expect(feedService.getPeopleList).not.toHaveBeenCalled();
+    });
+
+    it('treats missing orgId as null (personal context — no membership check)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        await app().request('/api/v1/users/me/audience', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(organizationService.getMemberRole).not.toHaveBeenCalled();
+        expect(feedService.getPeopleList).toHaveBeenCalledWith('u-self', null);
+    });
+
+    it('treats empty-string orgId as null (personal context)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
+        vi.mocked(feedService.getPeopleList).mockResolvedValue([]);
+
+        await app().request('/api/v1/users/me/audience?orgId=', {
+            headers: { authorization: 'Bearer t' },
+        });
+
+        expect(organizationService.getMemberRole).not.toHaveBeenCalled();
+        expect(feedService.getPeopleList).toHaveBeenCalledWith('u-self', null);
     });
 });
