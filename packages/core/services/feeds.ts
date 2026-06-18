@@ -233,41 +233,6 @@ export class FeedService {
     }
 
     /**
-     * Fetches all replies from a specific person across the user's prompts.
-     * @param orgId - If provided, scopes to prompts in this org context.
-     */
-    async getPersonReplies(userId: string, personHandle: string, orgId?: string | null): Promise<{ replies: ReplyView[], promptTitles: Record<string, string> }> {
-        const [user, prompts] = await Promise.all([
-            this.services.users.getUserDataByUid(userId),
-            orgId
-                ? this.services.prompts.getPromptsForOrgContext(orgId, 100, undefined, false)
-                : this.services.prompts.getPromptsForUser(userId, 100, undefined, false),
-        ]);
-        if (!user) return { replies: [], promptTitles: {} };
-        const promptIds = prompts.map(p => p.record.id);
-        const repliesMap = await this.services.replies.getRepliesForPrompts(promptIds, user);
-
-        const promptTitles: Record<string, string> = {};
-        const personReplies: ReplyView[] = [];
-
-        for (const prompt of prompts) {
-            const replies = repliesMap.get(prompt.record.id) || [];
-            for (const reply of replies) {
-                if (reply.author?.handle === personHandle) {
-                    personReplies.push(reply);
-                    promptTitles[prompt.record.id] = prompt.record.title;
-                }
-            }
-        }
-
-        personReplies.sort((a, b) =>
-            new Date(b.record.createdAt).getTime() - new Date(a.record.createdAt).getTime()
-        );
-
-        return { replies: personReplies, promptTitles };
-    }
-
-    /**
      * Fetches data for the People/CRM page.
      * Eagerly fetches all replies to calculate repliers (N+1 is acceptable for the CRM use case).
      * @param orgId - If provided, scopes to prompts in this org context.

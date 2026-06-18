@@ -6,16 +6,15 @@ import type { ReplyView } from 'shared/types/views';
  *
  *   GET /                — full composite (repliers + enrichedRepliers + promptsWithReplies)
  *   GET /list            — just enrichedRepliers (lighter)
- *   GET /:handle/replies — replies from a specific person
  *
- * All three are auth-required and parity-ported from apps/web in PR-F2.
+ * Both are auth-required. (A person's activity timeline moved to the
+ * cross-prompt reply feed, `GET /api/v1/replies/feed?authorUid=`.)
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     feedService: {
         getPeopleData: vi.fn(),
         getPeopleList: vi.fn(),
-        getPersonReplies: vi.fn(),
     },
     userService: {},
     organizationService: {
@@ -250,96 +249,6 @@ describe('GET /api/v1/people', () => {
 
     it('401s when no auth is provided', async () => {
         const res = await app().request('/api/v1/people');
-        expect(res.status).toBe(401);
-    });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/v1/people/:handle/replies
-// ---------------------------------------------------------------------------
-
-describe('GET /api/v1/people/:handle/replies — handle validation (M3)', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
-
-    it('400s when handle contains a path traversal sequence', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-
-        // URL-encoded `a%2F..%2F..%2Ffcm` decodes to `a/../../../fcm`
-        const res = await app().request(
-            `/api/v1/people/${encodeURIComponent('a/../../../fcm')}/replies`,
-            { headers: { authorization: 'Bearer t' } },
-        );
-
-        expect(res.status).toBe(400);
-        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
-    });
-
-    it('400s when handle is too short (< 3 chars)', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        const res = await app().request('/api/v1/people/ab/replies', {
-            headers: { authorization: 'Bearer t' },
-        });
-        expect(res.status).toBe(400);
-        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
-    });
-
-    it('400s when handle contains invalid characters', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        const res = await app().request('/api/v1/people/handle-with-dash/replies', {
-            headers: { authorization: 'Bearer t' },
-        });
-        expect(res.status).toBe(400);
-        expect(feedService.getPersonReplies).not.toHaveBeenCalled();
-    });
-});
-
-describe('GET /api/v1/people/:handle/replies', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
-
-    it('returns replies + promptTitles for the given handle', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        vi.mocked(feedService.getPersonReplies).mockResolvedValue({
-            replies: [
-                mkReplyView('r-1', 'p-1', 'replier_handle'),
-                mkReplyView('r-2', 'p-2', 'replier_handle'),
-            ],
-            promptTitles: { 'p-1': 'First Prompt', 'p-2': 'Second Prompt' },
-        } as never);
-
-        const res = await app().request('/api/v1/people/replier_handle/replies', {
-            headers: { authorization: 'Bearer t' },
-        });
-
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.success).toBe(true);
-        expect(body.data.replies).toHaveLength(2);
-        expect(body.data.promptTitles).toEqual({ 'p-1': 'First Prompt', 'p-2': 'Second Prompt' });
-        expect(feedService.getPersonReplies).toHaveBeenCalledWith('u-self', 'replier_handle');
-    });
-
-    it('strips private fields from reply objects', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-self' });
-        vi.mocked(feedService.getPersonReplies).mockResolvedValue({
-            replies: [mkReplyView('r-1', 'p-1', 'replier_handle')],
-            promptTitles: { 'p-1': 'P1' },
-        } as never);
-
-        const res = await app().request('/api/v1/people/replier_handle/replies', {
-            headers: { authorization: 'Bearer t' },
-        });
-
-        const body = await res.json();
-        expect(body.data.replies[0].notes).toBeUndefined();
-        expect(body.data.replies[0].listenerPhoneNumber).toBeUndefined();
-    });
-
-    it('401s when no auth is provided', async () => {
-        const res = await app().request('/api/v1/people/replier_handle/replies');
         expect(res.status).toBe(401);
     });
 });

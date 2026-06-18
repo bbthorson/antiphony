@@ -6,19 +6,6 @@ import { feedService, organizationService } from '../../outbound/firebase/core-s
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
- * Canonical handle regex — matches `[a-zA-Z0-9_]{3,20}`.
- *
- * Validated at the route boundary for the `:handle` path param so
- * URL-encoded traversal sequences like `a%2F..%2F..%2Ffcm` can't change the
- * depth of any Firestore path derived from it (M3 security fix).
- */
-const HANDLE_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
-
-function validateHandle(handle: string): boolean {
-    return HANDLE_REGEX.test(handle);
-}
-
-/**
  * People / CRM endpoints mounted at `/api/v1/people`.
  *
  *   GET /                  — full "People" composite for the dashboard People tab.
@@ -27,17 +14,14 @@ function validateHandle(handle: string): boolean {
  *   GET /list              — list authenticated user's repliers (EnrichedReplier[]).
  *                            Lighter-weight than `/` — used by widgets that just
  *                            need the people list, not the prompt cross-reference.
- *   GET /:handle/replies   — all replies authored by a specific handle across the
- *                            authenticated user's prompts.
  *
- * All three endpoints derive the owner from the session — no cross-user queries.
+ * Both endpoints derive the owner from the session — no cross-user queries.
  * Reply objects are sanitized via `toReplyViewPublic` before returning so
  * private CRM fields (notes, listenerPhoneNumber) never leak to clients.
  *
  * Parity sources:
  *   apps/web/src/app/api/v1/people/route.ts
  *   apps/web/src/app/api/v1/people/list/route.ts
- *   apps/web/src/app/api/v1/people/[handle]/replies/route.ts
  */
 
 const app = new Hono();
@@ -122,33 +106,12 @@ app.get('/list', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
     return c.json({ success: true, data: enrichedRepliers });
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/v1/people/:handle/replies
-// ---------------------------------------------------------------------------
-//
-// All replies authored by `:handle` across the authenticated user's
-// prompts, plus a `promptTitles` lookup map so the client can render
-// each reply's parent prompt title without a second fetch. Replies
-// projected through `toReplyViewPublic`.
-
-app.get('/:handle/replies', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
-    const uid = c.get('viewerUid')!;
-    const handle = c.req.param('handle');
-
-    if (!validateHandle(handle)) {
-        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
-    }
-
-    const result = await feedService.getPersonReplies(uid, handle);
-
-    return c.json({
-        success: true,
-        data: {
-            replies: result.replies.map(toReplyViewPublic),
-            promptTitles: result.promptTitles,
-        },
-    });
-});
+// NOTE: a person's activity timeline (formerly `GET /:handle/replies`) is now
+// served by the cross-prompt reply feed: `GET /api/v1/replies/feed?authorUid=`
+// scopes the viewer's feed to one author (keyed on the immutable `authorId`).
+// The client derives the per-reply prompt titles from the viewer's own prompt
+// list, so the bespoke handle-keyed endpoint + `feedService.getPersonReplies`
+// were retired.
 
 // NOTE: per-viewer CRM notes/tags (`GET`/`POST /:handle/notes`) moved off
 // core-api to the relationships service (tier-2, today's `apps/identity`),
