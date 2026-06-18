@@ -1,18 +1,16 @@
 import { Hono } from 'hono';
 import { toReplyViewPublic } from 'shared/types/views';
-import { PersonNotesUpdateSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { feedService, organizationService } from '../../outbound/firebase/core-services-firebase.js';
-import { getCrmNotes, setCrmNotes } from '../../../lib/crm-notes-store.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 
 /**
  * Canonical handle regex — matches `[a-zA-Z0-9_]{3,20}`.
  *
- * Validated at the route boundary for every `:handle` path param so
+ * Validated at the route boundary for the `:handle` path param so
  * URL-encoded traversal sequences like `a%2F..%2F..%2Ffcm` can't change the
- * depth of the Firestore path built in `crm-notes-store.ts` (M3 security fix).
+ * depth of any Firestore path derived from it (M3 security fix).
  */
 const HANDLE_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -152,65 +150,11 @@ app.get('/:handle/replies', requireAuth(), rateLimit(RATE_LIMITS.read), async (c
     });
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/v1/people/:handle/notes
-// ---------------------------------------------------------------------------
-//
-// Read the authenticated viewer's CRM notes + tags about `:handle`.
-// Per-viewer storage: notes are private to the authenticated user,
-// not visible to anyone else (including the target). Returns
-// `{ notes: '', tags: [] }` when no entry exists — UI uses empty
-// defaults rather than treating 404 as "no notes".
-
-app.get('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.read), async (c) => {
-    const uid = c.get('viewerUid')!;
-    const handle = c.req.param('handle');
-
-    if (!validateHandle(handle)) {
-        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
-    }
-
-    const notes = await getCrmNotes(uid, handle);
-    return c.json({ success: true, data: notes });
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/v1/people/:handle/notes
-// ---------------------------------------------------------------------------
-//
-// Update the viewer's CRM notes + tags about `:handle`. Merge-write —
-// omit a field to leave it untouched. Both fields are optional in the
-// schema so callers can update just one.
-
-// Use the shared PersonNotesUpdateSchema — bounds are identical (notes ≤10K;
-// ≤50 tags, each ≤64 chars). Importing from shared avoids the drift risk
-// flagged in the security audit Info section (M3 cleanup).
-
-app.post('/:handle/notes', requireAuth(), rateLimit(RATE_LIMITS.write), async (c) => {
-    const uid = c.get('viewerUid')!;
-    const handle = c.req.param('handle');
-
-    if (!validateHandle(handle)) {
-        return c.json(errorEnvelope(c, 'Invalid handle'), 400);
-    }
-
-    let body: unknown;
-    try {
-        body = await c.req.json();
-    } catch {
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
-
-    const parsed = PersonNotesUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-        return c.json(
-            errorEnvelope(c, 'Invalid request body', { issues: parsed.error.issues }),
-            400,
-        );
-    }
-
-    await setCrmNotes(uid, handle, parsed.data);
-    return c.json({ success: true, data: null });
-});
+// NOTE: per-viewer CRM notes/tags (`GET`/`POST /:handle/notes`) moved off
+// core-api to the relationships service (tier-2, today's `apps/identity`),
+// re-keyed on the target's immutable uid (`/people/:targetUid/notes`). The
+// legacy handle-keyed `users/{viewerUid}/crm/{handle}` store was migrated by
+// `scripts/migrate-crm-notes-to-enrichments.ts`. core-api stays tier-1: it
+// no longer carries any viewer-private relationship state.
 
 export { app as peopleRoute };
