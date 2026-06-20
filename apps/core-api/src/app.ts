@@ -50,9 +50,14 @@ import { systemAtprotoSigninRoute } from './adapters/inbound/rest/system-atproto
  * Exported for unit tests.
  */
 export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWED_ORIGINS): string[] {
-    if (!raw) return ['http://localhost:9002'];
+    // Local-dev fallback when ALLOWED_ORIGINS is unset: the legacy emulator
+    // origin (:9002) plus apps/public (:3002), whose browser-direct audio
+    // upload (POST /api/v1/audio/upload) needs CORS even in dev. See
+    // specs/apps-public-split.md § Gotcha 5.
+    const fallback = ['http://localhost:9002', 'http://localhost:3002'];
+    if (!raw) return fallback;
     const entries = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-    return entries.length > 0 ? entries : ['http://localhost:9002'];
+    return entries.length > 0 ? entries : fallback;
 }
 
 /**
