@@ -71,11 +71,18 @@ env:
     # removing localhost here does NOT break `npm run dev`. (Security audit
     # Info finding.)
     #
-    # prompts.voxpop… is the apps/public capture surface — it does
-    # browser-direct audio upload (POST /api/v1/audio/upload), so its origin
-    # must be allowlisted here. See specs/apps-public-split.md § CORS/origins.
+    # Both the inbox (apps/web @ inbox.voxpop…) and the public capture surface
+    # (apps/public @ prompts.voxpop…) do browser-direct audio upload
+    # (POST /api/v1/audio/upload), so BOTH custom domains must be allowlisted
+    # here — plus each backend's *.hosted.app default for testing. See
+    # specs/apps-public-split.md § CORS/origins.
+    #
+    # IMPORTANT: this value is overridden if a backend-level (Firebase console)
+    # ALLOWED_ORIGINS is set on vox-pop-core-api — console values win over
+    # apphosting.yaml (variable hierarchy). Keep the console override deleted so
+    # this version-controlled list is the single source of truth.
     - variable: ALLOWED_ORIGINS
-      value: "https://voxpop.phonicfactory.com,https://prompts.voxpop.phonicfactory.com,https://embed.voxpop.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app"
+      value: "https://voxpop.phonicfactory.com,https://inbox.voxpop.phonicfactory.com,https://prompts.voxpop.phonicfactory.com,https://embed.voxpop.phonicfactory.com,https://vox-pop-embed.web.app,https://vox-pop-embed.firebaseapp.com,https://vox-pop--vox-pop-simple.us-east4.hosted.app,https://vox-pop-prompts--vox-pop-simple.us-east4.hosted.app,https://vox-pop-core-api--vox-pop-simple.us-east4.hosted.app"
       availability:
           - RUNTIME
     # Shared secret used by apps/telephony to authenticate
