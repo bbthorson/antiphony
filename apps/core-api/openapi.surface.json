@@ -24,6 +24,7 @@
     "GET /api/v1/users",
     "GET /api/v1/users/handles",
     "GET /api/v1/users/me",
+    "GET /api/v1/users/me/channels",
     "GET /api/v1/users/me/handle/available",
     "GET /api/v1/users/me/organizations",
     "GET /api/v1/users/{handle}",

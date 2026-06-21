@@ -13,6 +13,7 @@ import { repliesRoute } from './adapters/inbound/rest/replies.js';
 import { systemRepliesRoute } from './adapters/inbound/rest/system-replies.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
 import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
+import { usersChannelsRoute } from './adapters/inbound/rest/users-channels.js';
 import { usersActionsRoute } from './adapters/inbound/rest/users-actions.js';
 import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
@@ -141,6 +142,7 @@ export function app(): OpenAPIHono {
     // Register the more-specific `/me/screening` mount before `/me` so it isn't
     // shadowed by usersMeRoute.
     a.route('/api/v1/users/me/screening', screeningRoute);
+    a.route('/api/v1/users/me/channels', usersChannelsRoute);
     a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);
