@@ -7975,8 +7975,8 @@
         "tags": [
           "Replies"
         ],
-        "summary": "List the viewer's replies (paginated, filterable)",
-        "description": "Cross-prompt feed of the authenticated viewer's replies. Reverse-chronological, cursor-paginated. Filter by prompt id, status, read state, and date range.",
+        "summary": "List the viewer's replies (paginated, sortable, filterable)",
+        "description": "Cross-prompt feed of the authenticated viewer's replies. Cursor-paginated, sortable newest/oldest by createdAt (default newest). Filter by prompt id, status, read state, and date range.",
         "parameters": [
           {
             "schema": {
@@ -8042,6 +8042,20 @@
             },
             "required": false,
             "name": "readStatus",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "oldest"
+              ],
+              "default": "newest",
+              "description": "Sort direction by createdAt — `newest` (reverse-chronological, default) or `oldest`"
+            },
+            "required": false,
+            "name": "order",
             "in": "query"
           },
           {

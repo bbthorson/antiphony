@@ -160,6 +160,62 @@ describe('ReplyService.listReplyFeed', () => {
         expect(result.nextCursor).toBeNull();
     });
 
+    it('sorts oldest-first when order=oldest', async () => {
+        const day = 86400000;
+        const t0 = Date.now();
+        const replies = new Map<string, ReplyRecord[]>([
+            ['p1', [
+                makeReplyRecord({ id: 'r-old-p1', promptId: 'p1', createdAt: new Date(t0 - 5 * day) }),
+                makeReplyRecord({ id: 'r-new-p1', promptId: 'p1', createdAt: new Date(t0 - 1 * day) }),
+            ]],
+            ['p2', [
+                makeReplyRecord({ id: 'r-mid-p2', promptId: 'p2', createdAt: new Date(t0 - 3 * day) }),
+            ]],
+        ]);
+        const svc = buildService({
+            prompts: [makePromptView('p1'), makePromptView('p2')],
+            repliesByPromptId: replies,
+        });
+
+        const result = await svc.listReplyFeed(VIEWER_UID, undefined, { order: 'oldest' });
+
+        expect(result.replies.map((r) => r.record.id)).toEqual([
+            'r-old-p1',
+            'r-mid-p2',
+            'r-new-p1',
+        ]);
+    });
+
+    it('paginates oldest-first with the cursor advancing forward in time', async () => {
+        const day = 86400000;
+        const t0 = Date.now();
+        // r-0 newest … r-4 oldest. Oldest-first should yield r-4, r-3, … r-0.
+        const replies = new Map<string, ReplyRecord[]>([
+            ['p1', Array.from({ length: 5 }, (_, i) =>
+                makeReplyRecord({
+                    id: `r-${i}`,
+                    promptId: 'p1',
+                    createdAt: new Date(t0 - i * day),
+                }),
+            )],
+        ]);
+        const svc = buildService({
+            prompts: [makePromptView('p1')],
+            repliesByPromptId: replies,
+        });
+
+        const page1 = await svc.listReplyFeed(VIEWER_UID, undefined, { limit: 2, order: 'oldest' });
+        expect(page1.replies.map((r) => r.record.id)).toEqual(['r-4', 'r-3']);
+        expect(page1.nextCursor).toBeTruthy();
+
+        const page2 = await svc.listReplyFeed(VIEWER_UID, undefined, { limit: 2, cursor: page1.nextCursor, order: 'oldest' });
+        expect(page2.replies.map((r) => r.record.id)).toEqual(['r-2', 'r-1']);
+
+        const page3 = await svc.listReplyFeed(VIEWER_UID, undefined, { limit: 2, cursor: page2.nextCursor, order: 'oldest' });
+        expect(page3.replies.map((r) => r.record.id)).toEqual(['r-0']);
+        expect(page3.nextCursor).toBeNull();
+    });
+
     it('paginates via opaque cursor; second page resumes after the last item', async () => {
         const day = 86400000;
         const t0 = Date.now();

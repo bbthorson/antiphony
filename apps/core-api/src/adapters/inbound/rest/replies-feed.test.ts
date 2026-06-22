@@ -116,7 +116,30 @@ describe('GET /api/v1/replies/feed', () => {
         });
         expect(call[1]?.dateFrom).toBeInstanceOf(Date);
         expect(call[1]?.dateTo).toBeInstanceOf(Date);
-        expect(call[2]).toEqual({ limit: 50, cursor: 'abc' });
+        // `order` defaults to 'newest' when the param is omitted (as here).
+        expect(call[2]).toEqual({ limit: 50, cursor: 'abc', order: 'newest' });
+    });
+
+    it('forwards order=oldest into pagination', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'v1b' });
+        vi.mocked(replyService.listReplyFeed).mockResolvedValue({ replies: [], nextCursor: null });
+
+        await app().request('/api/v1/replies/feed?order=oldest', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        const call = vi.mocked(replyService.listReplyFeed).mock.calls[0];
+        expect(call[2]?.order).toBe('oldest');
+    });
+
+    it('400s on an unknown order value', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'v1c' });
+
+        const res = await app().request('/api/v1/replies/feed?order=sideways', {
+            headers: { authorization: 'Bearer ok' },
+        });
+
+        expect(res.status).toBe(400);
     });
 
     it('applies defaults when optional params are omitted', async () => {
@@ -136,6 +159,7 @@ describe('GET /api/v1/replies/feed', () => {
         expect(call[1]?.dateTo).toBeUndefined();
         expect(call[2]?.limit).toBe(20);
         expect(call[2]?.cursor).toBeUndefined();
+        expect(call[2]?.order).toBe('newest');
     });
 
     it('clamps oversized limit to 100', async () => {

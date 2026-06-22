@@ -235,25 +235,35 @@ export class ReplyService {
      * callers can stream large reply sets.
      *
      * Cursor is a base64-encoded `{ ts, id }` pair pointing at the last item
-     * returned. The next page is everything strictly older than `ts`, or
-     * equal `ts` with `id > cursorId` (id is the secondary sort key for
-     * stability across same-ms timestamps).
+     * returned. The next page is everything strictly past `ts` in the active
+     * sort direction (older for `newest`, newer for `oldest`), or equal `ts`
+     * with `id > cursorId` (id is the secondary sort key for stability across
+     * same-ms timestamps).
+     *
+     * `order` selects the primary createdAt direction: `'newest'` (default,
+     * reverse-chronological) or `'oldest'`. The secondary id key stays
+     * ascending in BOTH directions so the cursor's `id > cursorId` tiebreak
+     * advances consistently regardless of order.
      */
     async listReplyFeed(
         userId: string,
         filters?: ReplyFeedFilters,
-        pagination?: { limit?: number; cursor?: string | null },
+        pagination?: { limit?: number; cursor?: string | null; order?: 'newest' | 'oldest' },
     ): Promise<{ replies: ReplyView[]; nextCursor: string | null }> {
         const requestedLimit = pagination?.limit ?? 20;
         const limit = Math.max(1, Math.min(100, requestedLimit));
+        const oldestFirst = pagination?.order === 'oldest';
 
         const all = await this.loadAndFilterReplies(userId, filters);
-        // `loadAndFilterReplies` already sorts by createdAt desc, but its
-        // secondary order isn't guaranteed (it comes from Map iteration over
-        // the `in` chunk results). Re-sort with a stable id tiebreaker so the
-        // cursor logic below is deterministic.
+        // `loadAndFilterReplies` returns createdAt-desc, but its secondary
+        // order isn't guaranteed (it comes from Map iteration over the `in`
+        // chunk results). Re-sort by createdAt in the requested direction with
+        // a stable id-ascending tiebreaker so the cursor logic below is
+        // deterministic for either order.
         all.sort((a, b) => {
-            const tsDiff = b.record.createdAt.getTime() - a.record.createdAt.getTime();
+            const at = a.record.createdAt.getTime();
+            const bt = b.record.createdAt.getTime();
+            const tsDiff = oldestFirst ? at - bt : bt - at;
             if (tsDiff !== 0) return tsDiff;
             return a.record.id < b.record.id ? -1 : a.record.id > b.record.id ? 1 : 0;
         });
@@ -262,7 +272,8 @@ export class ReplyService {
         const startIndex = cursor
             ? all.findIndex(r => {
                 const ts = r.record.createdAt.getTime();
-                if (ts < cursor.ts) return true;
+                // Past the cursor in the active sort direction.
+                if (oldestFirst ? ts > cursor.ts : ts < cursor.ts) return true;
                 if (ts === cursor.ts && r.record.id > cursor.id) return true;
                 return false;
             })
