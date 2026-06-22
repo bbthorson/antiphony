@@ -89,6 +89,40 @@ describe('OpenAPI document', () => {
     });
 });
 
+describe('Security headers', () => {
+    it('sends a strict API-tier CSP on JSON responses', async () => {
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/health'));
+        const csp = res.headers.get('content-security-policy');
+        expect(csp).toBeTruthy();
+        expect(csp).toContain("default-src 'none'");
+        expect(csp).toContain("frame-ancestors 'none'");
+        expect(csp).toContain("base-uri 'none'");
+        expect(csp).toContain("form-action 'none'");
+    });
+
+    it('denies framing and sets the hardening headers', async () => {
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/health'));
+        expect(res.headers.get('x-frame-options')).toBe('DENY');
+        expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+        expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+        // Cross-origin by design: same-origin would break cross-origin no-cors
+        // loads (e.g. <audio> against the audio proxy). CORS still gates fetch.
+        expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
+        expect(res.headers.get('permissions-policy')).toContain('microphone=()');
+    });
+
+    it('applies the headers to /api/v1/* routes too', async () => {
+        // The middleware is global (`*`), so even an unmatched /api/v1/* path
+        // (404) carries the headers — which is exactly what we want to assert:
+        // the policy reaches the API surface, not just the root probes.
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/api/v1/nonexistent'));
+        expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+    });
+});
+
 describe('GET /health', () => {
     it('returns ok:true with sha and deployedAt fields', async () => {
         const a = app();

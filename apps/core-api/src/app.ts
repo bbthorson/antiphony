@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
 import { OPENAPI_INFO, OPENAPI_TAGS } from './lib/openapi-info.js';
 import { requestId } from './middleware/request-id.js';
+import { securityHeaders } from './middleware/security-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
 import { promptsRoute } from './adapters/inbound/rest/prompts.js';
@@ -72,12 +73,15 @@ export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWE
  *
  *   1. request-id — sets `c.var.requestId`; must run before anything that
  *      reads it (error-handler, rate-limit, handlers).
- *   2. CORS — scoped to `/api/v1/*`; runs before route handlers so preflight
+ *   2. security-headers — global API-tier hardening (strict CSP, frame-deny,
+ *      etc.); see middleware/security-headers.ts. Before CORS so even preflight
+ *      and error responses carry the headers.
+ *   3. CORS — scoped to `/api/v1/*`; runs before route handlers so preflight
  *      OPTIONS requests are answered immediately. Allowlist comes from
  *      ALLOWED_ORIGINS env var. See specs/client-caller-split.md.
- *   3. routes — each route opts into rate-limit per-endpoint via the
+ *   4. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit.
- *   4. error-handler — installed via `app.onError` so it catches throws
+ *   5. error-handler — installed via `app.onError` so it catches throws
  *      from handlers AND from middleware (rate-limit, request-id).
  */
 
@@ -88,7 +92,10 @@ export function app(): OpenAPIHono {
     //    the error handler can bind it to log lines.
     a.use('*', requestId());
 
-    // 2. CORS — allowlist for browser-direct calls. Allowlist comes from the
+    // 2. Security headers — strict API-tier CSP + hardening on every response.
+    a.use('*', securityHeaders());
+
+    // 3. CORS — allowlist for browser-direct calls. Allowlist comes from the
     //    ALLOWED_ORIGINS env var (comma-separated). See parseAllowedOrigins
     //    above and apps/core-api/apphosting.yaml. Phase 1 of the
     //    client-caller-split flip (specs/client-caller-split.md). Server-side
@@ -111,7 +118,7 @@ export function app(): OpenAPIHono {
         }),
     );
 
-    // 3. Health + service identity. No rate limit (probes hit these).
+    // 4. Health + service identity. No rate limit (probes hit these).
     a.get('/', (c) =>
         c.json({
             service: 'vox-pop-core-api',
@@ -128,7 +135,7 @@ export function app(): OpenAPIHono {
         }),
     );
 
-    // 4. API routes.
+    // 5. API routes.
     a.route('/api/v1/resolve', resolveRoute);
     a.route('/api/v1/prompts', promptsRoute);
     // Mount the replies sub-route on /api/v1/prompts so `/:promptId/replies`
@@ -180,14 +187,14 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/system/users', systemBlueskyIdentityRoute);
     a.route('/api/v1/system/atproto', systemAtprotoSigninRoute);
 
-    // 5. OpenAPI document — served at `/openapi.json`. Only routes
+    // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
     //    in the spec. Public-doc scope: `/users`, `/prompts`, `/replies`,
     //    `/auth`. Transport/utility/system routes intentionally stay
     //    plain-Hono. See `specs/drafts/openapi-generation.md`.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
-    // 6. Error handler — last, via `onError` so it catches throws from
+    // 7. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
     a.onError(errorHandler);
 
