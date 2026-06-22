@@ -1,11 +1,30 @@
 # Firebase App Hosting config for the core-api backend (Phase 4a).
 #
+# ── SINGLE SOURCE OF TRUTH for core-api's deployed config ──────────────────────
+# core-api deploys from the PUBLIC MIRROR (`bbthorson/vox-pop-core`), whose
+# `vox-pop-core-api` App Hosting backend is rooted at `/` and therefore reads the
+# mirror's ROOT `apphosting.yaml`. That root file is NOT part of any synced
+# subtree, so the sync workflow regenerates it from THIS file on every sync
+# (`cp apps/core-api/apphosting.yaml apphosting.yaml` in
+# `.github/workflows/sync-public-core.yml`). Net effect: edit THIS file on the
+# private master and it propagates to what production actually runs. (Before
+# #654 the mirror root was hand-maintained and silently diverged — see
+# docs/tech-debt.md Architecture Drift #5.)
+#
+# The `rootDirectory: apps/core-api` below is what makes a verbatim copy a
+# complete, deployable ROOT config: it points the framework adapter at the app
+# subdir while `npm ci` still runs from the workspace root. In the PRIVATE repo
+# this file is inert (no private backend reads it; core-api only deploys from the
+# mirror), so the field is harmless here and load-bearing once copied.
+#
 # App Hosting discovers a framework adapter automatically; the Hono +
 # @hono/node-server template here matches the adapter's expectations
 # (Node >= 22, `build` + `start` npm scripts, `PORT` env var).
 #
-# See https://firebase.blog/posts/2025/06/app-hosting-frameworks/
-# and specs/decoupling-migration.md § Phase 4.
+# See https://firebase.blog/posts/2025/06/app-hosting-frameworks/,
+# specs/decoupling-migration.md § Phase 4, and docs/4b-carveout-runbook.md.
+
+rootDirectory: apps/core-api
 
 runConfig:
     # min=0 is fine for a solo-user deployment; revisit if we get real traffic.
