@@ -2,6 +2,7 @@ import type { ErrorHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
+import { reportError } from 'shared/observability/report-error';
 import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
 
@@ -79,6 +80,11 @@ export const errorHandler: ErrorHandler = (error, c) => {
     const isDev = process.env.NODE_ENV === 'development';
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error({ ...meta, error: err.message, stack: err.stack }, 'unhandled api error');
+    // Surface the crash to GCP Error Reporting (log-based; see
+    // shared/observability/report-error). Only the unknown-500 branch reports —
+    // the ServiceError/Zod/JSON branches above are expected client errors, not
+    // crashes, so they stay log-only and don't pollute the error dashboard.
+    reportError(err, meta);
     return c.json(
         errorEnvelope(c, 'Internal Server Error', isDev ? { details: err.message } : {}),
         500,

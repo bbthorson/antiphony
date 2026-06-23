@@ -6,3 +6,4 @@ export * from './types/api';
 export * from './nsid';
 export * from './errors';
 export * from './utils';
+export * from './observability';
