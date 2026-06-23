@@ -104,17 +104,18 @@ describe('GET /api/v1/users/me/channels', () => {
         const inbound = byType(data.inbound);
         const outbound = byType(data.outbound);
 
-        // Grouping by direction
-        expect(Object.keys(inbound).sort()).toEqual(['bluesky-replies', 'phone', 'sip', 'web-capture']);
-        expect(Object.keys(outbound).sort()).toEqual(['bluesky-publishing', 'embed', 'rss', 'sms-invites']);
+        // Grouping by direction. SIP is folded into `phone` (an ingress
+        // address, not its own channel); `phone-voicemail` is the outbound face.
+        expect(Object.keys(inbound).sort()).toEqual(['bluesky-replies', 'phone', 'web-capture']);
+        expect(Object.keys(outbound).sort()).toEqual(['bluesky-publishing', 'embed', 'phone-voicemail', 'rss', 'sms-invites']);
 
         // Always-on
         expect(inbound['web-capture']).toMatchObject({ state: 'active', enabled: true, alwaysOn: true });
         expect(outbound['rss']).toMatchObject({ state: 'active', enabled: true, alwaysOn: true });
 
-        // Unconfigured
+        // Unconfigured — no telephony, no SIP → both phone faces unconfigured
         expect(inbound['phone']).toMatchObject({ state: 'unconfigured', enabled: false });
-        expect(inbound['sip']).toMatchObject({ state: 'unconfigured', enabled: false });
+        expect(outbound['phone-voicemail']).toMatchObject({ state: 'unconfigured', enabled: false });
         expect(outbound['bluesky-publishing']).toMatchObject({
             state: 'unconfigured',
             enabled: false,
@@ -146,9 +147,38 @@ describe('GET /api/v1/users/me/channels', () => {
         const outbound = byType(data.outbound);
 
         expect(inbound['phone']).toMatchObject({ state: 'active', enabled: true, statusDetail: 'Verified' });
-        expect(inbound['sip']).toMatchObject({ state: 'active', enabled: true });
+        // SIP folded into phone (no own row); the outbound voicemail face is active.
+        expect(inbound['sip']).toBeUndefined();
+        expect(outbound['phone-voicemail']).toMatchObject({ state: 'active', enabled: true });
         expect(outbound['bluesky-publishing']).toMatchObject({ state: 'active', enabled: true });
 
         expect(connectorConfigService.getConfig).toHaveBeenCalledWith('u-1', 'telephony');
+    });
+
+    it('keeps phone enabled via SIP even when call forwarding is verified-but-disabled', async () => {
+        // Edge flagged in review: forwarding connector is verified (state active)
+        // but toggled OFF (enabled false), while a SIP address is provisioned.
+        // SIP makes the channel reachable on its own, so it stays active+enabled.
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'u-1' });
+        vi.mocked(userService.getUserDataByUid).mockResolvedValue({ id: 'u-1' } as never);
+        vi.mocked(connectorConfigService.getConfig).mockResolvedValue(
+            mkTelephony({ enabled: false, status: { state: 'active', detail: 'Verified' } }),
+        );
+        sipSnap = { exists: true, data: () => VALID_SIP };
+
+        const res = await app().request('/api/v1/users/me/channels', {
+            headers: { authorization: 'Bearer t' },
+        });
+        expect(res.status).toBe(200);
+        const { data } = await res.json();
+        const inbound = byType(data.inbound);
+
+        expect(inbound['phone']).toMatchObject({
+            state: 'active',
+            enabled: true,
+            statusDetail: 'SIP address active',
+        });
+        // The outbound voicemail face is reachable too (telephony state active).
+        expect(byType(data.outbound)['phone-voicemail']).toMatchObject({ state: 'active', enabled: true });
     });
 });

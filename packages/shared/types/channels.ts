@@ -27,10 +27,10 @@ export const ChannelTypeSchema = z.enum([
     // inbound
     'web-capture',
     'phone',
-    'sip',
     'bluesky-replies',
     // outbound
     'bluesky-publishing',
+    'phone-voicemail',
     'rss',
     'embed',
     'sms-invites',
@@ -135,19 +135,11 @@ export const CHANNEL_DESCRIPTORS: readonly ChannelDescriptor[] = [
     {
         type: 'phone',
         direction: 'inbound',
+        // Inbound voice. Call forwarding and the SIP address are two ingress
+        // addresses of this one channel, not separate channels — both deliver a
+        // voice reply to the same inbox over the same telephony substrate.
         label: 'Phone',
-        description: 'Forward missed calls to your Vox Pop inbox as voicemail.',
-        alwaysOn: false,
-        configurable: true,
-        gated: false,
-        dependsOn: null,
-        comingSoon: false,
-    },
-    {
-        type: 'sip',
-        direction: 'inbound',
-        label: 'SIP address',
-        description: 'Point a VoIP softphone at your inbox.',
+        description: 'Forward calls — or point a VoIP softphone (SIP) — at your Vox Pop inbox.',
         alwaysOn: false,
         configurable: true,
         gated: false,
@@ -175,6 +167,24 @@ export const CHANNEL_DESCRIPTORS: readonly ChannelDescriptor[] = [
         configurable: true,
         gated: false,
         dependsOn: 'bluesky-identity',
+        comingSoon: false,
+    },
+    {
+        type: 'phone-voicemail',
+        direction: 'outbound',
+        // The outbound face of telephony: when a caller reaches the line, the
+        // IVR plays the creator's inbox prompt as the voicemail greeting and
+        // offers their live prompts as keypad options (apps/telephony
+        // IvrService). That is the creator's prompt distributed by phone — a
+        // genuine outbound surface, not a coming-soon placeholder. Config (the
+        // greeting = the inbox prompt) is managed via prompts, so no inline
+        // Configure screen yet → configurable:false for now.
+        label: 'Phone voicemail',
+        description: 'Callers hear your prompt as the voicemail greeting, then leave a reply.',
+        alwaysOn: false,
+        configurable: false,
+        gated: false,
+        dependsOn: null,
         comingSoon: false,
     },
     {

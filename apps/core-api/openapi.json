@@ -4607,9 +4607,9 @@
                                 "enum": [
                                   "web-capture",
                                   "phone",
-                                  "sip",
                                   "bluesky-replies",
                                   "bluesky-publishing",
+                                  "phone-voicemail",
                                   "rss",
                                   "embed",
                                   "sms-invites"
@@ -4684,9 +4684,9 @@
                                 "enum": [
                                   "web-capture",
                                   "phone",
-                                  "sip",
                                   "bluesky-replies",
                                   "bluesky-publishing",
+                                  "phone-voicemail",
                                   "rss",
                                   "embed",
                                   "sms-invites"

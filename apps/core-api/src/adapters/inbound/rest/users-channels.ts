@@ -21,8 +21,11 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *
  * Projects the scattered per-user channel state into one uniform inbound /
  * outbound list, with no storage migration. Sources, by channel:
- *   - phone               → `telephony` connector envelope (connectorConfigService)
- *   - sip                 → `users/{uid}/enrichment/sip` doc
+ *   - phone               → `telephony` connector envelope + `enrichment/sip`
+ *                           (call forwarding and the SIP address are two ingress
+ *                           addresses of the one inbound phone channel)
+ *   - phone-voicemail     → outbound face of the same telephony substrate (the
+ *                           IVR greeting); reachable when a phone ingress exists
  *   - bluesky-publishing  → linked Bluesky DID on the profile
  *   - web-capture/rss/embed → always-on (static)
  *   - *-coming-soon       → registered-but-unbuilt (static)
@@ -56,21 +59,44 @@ function resolveState(
 
     switch (d.type) {
         case 'phone': {
+            // Inbound voice. Two ingress addresses fold into this one channel:
+            // call forwarding (the telephony connector) and the always-available
+            // SIP address (derived from the handle). The SIP address makes the
+            // channel reachable on its own — independent of the forwarding
+            // enable toggle — so whenever SIP is provisioned the channel is
+            // active + enabled and call forwarding becomes a status detail.
             const cfg = ctx.telephony;
+            const connectorState = (cfg?.status?.state ?? 'unconfigured') as ChannelState;
+            if (ctx.hasSip) {
+                const forwardingActive = connectorState === 'active' && Boolean(cfg?.enabled);
+                return {
+                    state: 'active',
+                    enabled: true,
+                    statusDetail: forwardingActive
+                        ? (cfg?.status?.detail ?? 'SIP and call forwarding active')
+                        : 'SIP address active',
+                };
+            }
             if (!cfg) return { state: 'unconfigured', enabled: false, statusDetail: null };
-            // ConnectorStatus.state is a subset of ChannelState — passthrough.
-            // Optional-chain `status` so a legacy/corrupt doc missing the field
-            // degrades to 'unconfigured' rather than throwing.
+            // No SIP — reflect the forwarding connector's own state. (ConnectorStatus.state
+            // is a subset of ChannelState — passthrough.)
             return {
-                state: (cfg.status?.state ?? 'unconfigured') as ChannelState,
+                state: connectorState,
                 enabled: cfg.enabled,
                 statusDetail: cfg.status?.detail ?? null,
             };
         }
-        case 'sip':
-            return ctx.hasSip
-                ? { state: 'active', enabled: true, statusDetail: null }
+        case 'phone-voicemail': {
+            // Outbound face of telephony: the IVR plays the user's inbox prompt
+            // to callers as the voicemail greeting (apps/telephony IvrService).
+            // Reachable whenever a phone ingress exists — forwarding active or a
+            // SIP address present. (A more precise "is the inbox prompt set?"
+            // check is a Phase-2 refinement; this avoids an extra core-api read.)
+            const reachable = ctx.telephony?.status?.state === 'active' || ctx.hasSip;
+            return reachable
+                ? { state: 'active', enabled: true, statusDetail: 'Plays your inbox prompt to callers' }
                 : { state: 'unconfigured', enabled: false, statusDetail: null };
+        }
         case 'bluesky-publishing':
             // Publishing is usable once an identity is linked. The dependency
             // is surfaced via the descriptor's `dependsOn` hint when unmet.
