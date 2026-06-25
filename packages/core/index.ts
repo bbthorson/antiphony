@@ -1,4 +1,4 @@
-// @vox-pop/core — the open-core tier.
+// @antiphony/core — the open-core tier.
 //
 // This package is intentionally empty today. It exists as the structural home
 // for code that will migrate from `apps/web/src/services/*` during Phase 2 of

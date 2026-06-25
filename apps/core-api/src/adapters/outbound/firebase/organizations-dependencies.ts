@@ -9,7 +9,7 @@ import type {
     OrganizationMemberRecord,
     OrgInviteRecord,
 } from 'shared/types/records';
-import type { OrganizationDependencies } from '@vox-pop/core/ports/organizations-dependencies';
+import type { OrganizationDependencies } from '@antiphony/core/ports/organizations-dependencies';
 
 export type { OrganizationDependencies };
 

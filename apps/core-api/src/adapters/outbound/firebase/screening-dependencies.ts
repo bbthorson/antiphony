@@ -1,6 +1,6 @@
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { ScreeningRuleRecordSchema, type ScreeningRuleRecord } from 'shared/types/records';
-import type { ScreeningRuleDependencies } from '@vox-pop/core/ports/screening-dependencies';
+import type { ScreeningRuleDependencies } from '@antiphony/core/ports/screening-dependencies';
 import { logger } from '../../../lib/logger.js';
 
 export type { ScreeningRuleDependencies };

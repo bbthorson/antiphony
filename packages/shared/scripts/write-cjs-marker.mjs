@@ -6,7 +6,7 @@
 // `@hono/zod-openapi`'s `.openapi()` extension never reaches schemas defined
 // here (see the dual-package-hazard fix). But the *build* still emits CommonJS
 // (tsconfig.build → module: commonjs) because `functions` consumes the built
-// `@vox-pop/shared` via `require()`. This marker tells Node to interpret the
+// `@antiphony/shared` via `require()`. This marker tells Node to interpret the
 // emitted dist/*.js as CommonJS regardless of the package root's `type`.
 import { writeFileSync, mkdirSync } from 'node:fs';
 

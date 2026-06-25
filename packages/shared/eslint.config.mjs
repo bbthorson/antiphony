@@ -2,9 +2,9 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 /**
- * ESLint config for `@vox-pop/shared`.
+ * ESLint config for `@antiphony/shared`.
  *
- * **Dependency direction** (Plan A, A6): `@vox-pop/shared` is the contract
+ * **Dependency direction** (Plan A, A6): `@antiphony/shared` is the contract
  * package at the bottom of the dependency graph — records, views, and the Zod
  * request/response codecs consumed by core-api, web, mobile, and functions. It
  * must not import from any `apps/*` (that would invert the graph and make the
@@ -26,7 +26,7 @@ export default [
                             "@/*",
                             "../../apps/**", "../apps/**", "**/apps/**",
                             "@vox-pop/web", "@vox-pop/web/*",
-                            "@vox-pop/core-api", "@vox-pop/core-api/*",
+                            "@antiphony/core-api", "@antiphony/core-api/*",
                             "@vox-pop/relationships", "@vox-pop/relationships/*",
                             "@vox-pop/mobile", "@vox-pop/mobile/*",
                             "@vox-pop/embed", "@vox-pop/embed/*",

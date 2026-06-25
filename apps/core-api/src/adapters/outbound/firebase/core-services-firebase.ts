@@ -1,15 +1,15 @@
-import { UserService } from '@vox-pop/core/services/users';
-import { OrganizationService } from '@vox-pop/core/services/organizations';
-import { HydrationService } from '@vox-pop/core/services/hydration';
-import { FeedService } from '@vox-pop/core/services/feeds';
-import { PromptService } from '@vox-pop/core/services/prompts';
-import { ReplyService } from '@vox-pop/core/services/replies';
-import { CallForwardingService } from '@vox-pop/core/services/call-forwarding';
-import { ConnectorConfigService } from '@vox-pop/core/services/connector-config';
-import { ScreeningService } from '@vox-pop/core/services/screening';
-import { rssService as rssServiceSingleton } from '@vox-pop/core/services/rss';
-import { makeStorageService } from '@vox-pop/core/services/storage';
-import type { CoreServices } from '@vox-pop/core/ports/core-services';
+import { UserService } from '@antiphony/core/services/users';
+import { OrganizationService } from '@antiphony/core/services/organizations';
+import { HydrationService } from '@antiphony/core/services/hydration';
+import { FeedService } from '@antiphony/core/services/feeds';
+import { PromptService } from '@antiphony/core/services/prompts';
+import { ReplyService } from '@antiphony/core/services/replies';
+import { CallForwardingService } from '@antiphony/core/services/call-forwarding';
+import { ConnectorConfigService } from '@antiphony/core/services/connector-config';
+import { ScreeningService } from '@antiphony/core/services/screening';
+import { rssService as rssServiceSingleton } from '@antiphony/core/services/rss';
+import { makeStorageService } from '@antiphony/core/services/storage';
+import type { CoreServices } from '@antiphony/core/ports/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseOrganizationDependencies } from './organizations-dependencies.js';
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
@@ -35,7 +35,7 @@ import { logger } from '../../../lib/logger.js';
  *   - `FeedService` — `resolveHandle`, `getUserProfileData`, `getOrgProfileData`,
  *     plus `getPersonReplies` (Batch A2) reachable — all routed via the
  *     prompts + rss + replies CoreServices wiring.
- *   - `RssService` — singleton from `@vox-pop/core/services/rss` used directly
+ *   - `RssService` — singleton from `@antiphony/core/services/rss` used directly
  *     (no Firebase binding; it's a standalone URL-fetch class).
  *   - `ReplyService` — **wired this PR (Batch A2)**. `getRepliesForPrompt`,
  *     `getRepliesForPrompts`, and `searchReplies` reachable. Write methods

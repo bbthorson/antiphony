@@ -24,12 +24,12 @@ import type {
     ReplyQueryOptions,
     ReplyActivityRecord,
     AggregateDeltaAccumulator,
-} from '@vox-pop/core/ports/replies-dependencies';
+} from '@antiphony/core/ports/replies-dependencies';
 import {
     sentimentKey,
     promptAggregateUpdate,
     computeAggregateDelta,
-} from '@vox-pop/core/ports/replies-dependencies';
+} from '@antiphony/core/ports/replies-dependencies';
 
 export type { ReplyDependencies, ReplyQueryOptions, ReplyActivityRecord };
 

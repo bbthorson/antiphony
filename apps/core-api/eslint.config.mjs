@@ -4,10 +4,10 @@ import globals from "globals";
 import voxPop from "../../eslint-rules/index.mjs";
 
 /**
- * ESLint config for `@vox-pop/core-api`.
+ * ESLint config for `@antiphony/core-api`.
  *
  * The central rule is the **dependency arrow invariant**: core-api must not
- * import from `apps/web/` or `apps/mobile/`. Once the `@vox-pop/core`
+ * import from `apps/web/` or `apps/mobile/`. Once the `@antiphony/core`
  * workspace dep is added (PR #2), core-api will import from core and shared
  * only. Firebase Admin is allowed — core-api is the Firebase-wired
  * deployment of core, and the no-Firebase rule lives on `packages/core/`

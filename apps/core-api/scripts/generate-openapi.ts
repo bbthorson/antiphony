@@ -4,9 +4,9 @@
  * Bundles itself via esbuild before executing — same pattern as the main
  * `npm run build` (see `esbuild.config.mjs`). Bundling is required because
  * the source imports cross-workspace via tsconfig path aliases
- * (`shared/*`, `@vox-pop/core/*`); Node's ESM resolver doesn't honor those.
+ * (`shared/*`, `@antiphony/core/*`); Node's ESM resolver doesn't honor those.
  *
- * Run via `npm run gen:openapi -w @vox-pop/core-api` (also invoked from
+ * Run via `npm run gen:openapi -w @antiphony/core-api` (also invoked from
  * `npm run build` so the artifact stays fresh in CI). The output is
  * committed so the public docs site can read it at build time without
  * standing up core-api.

@@ -8,7 +8,7 @@ import { logger } from '../../../lib/logger.js';
 import type {
     UserDependencies,
     UpdateProfileDto,
-} from '@vox-pop/core/ports/users-dependencies';
+} from '@antiphony/core/ports/users-dependencies';
 
 // Re-export for app callers that want the type without reaching into core.
 export type { UserDependencies, UpdateProfileDto };

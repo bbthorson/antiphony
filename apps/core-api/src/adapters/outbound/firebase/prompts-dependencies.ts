@@ -8,7 +8,7 @@ import type {
     PromptDependencies,
     PromptQueryOptions,
     ActivityRecord,
-} from '@vox-pop/core/ports/prompts-dependencies';
+} from '@antiphony/core/ports/prompts-dependencies';
 
 export type { PromptDependencies, PromptQueryOptions, ActivityRecord };
 

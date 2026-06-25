@@ -11,7 +11,7 @@ export default defineConfig({
             // Mirror tsconfig paths so vitest resolves workspace imports
             // the same way tsx does at runtime.
             'shared': new URL('../../packages/shared', import.meta.url).pathname,
-            '@vox-pop/core': new URL('../../packages/core', import.meta.url).pathname,
+            '@antiphony/core': new URL('../../packages/core', import.meta.url).pathname,
         },
     },
 });

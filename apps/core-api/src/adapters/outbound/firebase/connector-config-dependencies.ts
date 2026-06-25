@@ -5,7 +5,7 @@ import {
     type ConnectorConfigRecord,
     type ConnectorType,
 } from 'shared/types/records';
-import type { ConnectorConfigDependencies } from '@vox-pop/core/ports/connector-config-dependencies';
+import type { ConnectorConfigDependencies } from '@antiphony/core/ports/connector-config-dependencies';
 
 export type { ConnectorConfigDependencies };
 

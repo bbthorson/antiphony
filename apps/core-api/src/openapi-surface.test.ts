@@ -47,7 +47,7 @@ describe('public API surface (A5 contract guard)', () => {
                 'Public API surface drifted from openapi.surface.json.',
                 ...added.map((e) => `  + added (not in snapshot):   ${e}`),
                 ...removed.map((e) => `  - removed (still in snapshot): ${e}`),
-                'Run `npm run gen:openapi -w @vox-pop/core-api` and commit the updated snapshot in this PR.',
+                'Run `npm run gen:openapi -w @antiphony/core-api` and commit the updated snapshot in this PR.',
             ];
             throw new Error(lines.join('\n'));
         }

@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 /**
- * ESLint config for `@vox-pop/core`.
+ * ESLint config for `@antiphony/core`.
  *
  * Two invariants:
  *  - **Firebase-free**: this package must not import firebase / firebase-admin —
@@ -38,7 +38,7 @@ export default [
                             "@/*",
                             "../../apps/**", "../apps/**", "**/apps/**",
                             "@vox-pop/web", "@vox-pop/web/*",
-                            "@vox-pop/core-api", "@vox-pop/core-api/*",
+                            "@antiphony/core-api", "@antiphony/core-api/*",
                             "@vox-pop/relationships", "@vox-pop/relationships/*",
                             "@vox-pop/mobile", "@vox-pop/mobile/*",
                             "@vox-pop/embed", "@vox-pop/embed/*",

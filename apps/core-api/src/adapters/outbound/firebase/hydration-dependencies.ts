@@ -1,5 +1,5 @@
 import { getAdminDb } from '../../../lib/firebase-admin.js';
-import type { HydrationDependencies } from '@vox-pop/core/ports/hydration-dependencies';
+import type { HydrationDependencies } from '@antiphony/core/ports/hydration-dependencies';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseCoreServices } from './core-services-firebase.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';

@@ -1,5 +1,5 @@
 {
-  "name": "@vox-pop/core-api",
+  "name": "@antiphony/core-api",
   "version": "0.1.0",
   "private": true,
   "description": "Vox Pop core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment. Phase 4a of the decoupling migration — see specs/decoupling-migration.md.",
@@ -17,8 +17,8 @@
   "dependencies": {
     "@hono/node-server": "^1.14.0",
     "@hono/zod-openapi": "^0.19.10",
-    "@vox-pop/core": "*",
-    "@vox-pop/shared": "*",
+    "@antiphony/core": "*",
+    "@antiphony/shared": "*",
     "firebase-admin": "^13.6.0",
     "hono": "^4.12.22",
     "pino": "^9.5.0",

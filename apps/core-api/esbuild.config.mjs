@@ -3,7 +3,7 @@ import { build } from 'esbuild';
 /**
  * esbuild production bundle for core-api.
  *
- * Why bundle: core-api's source imports from `@vox-pop/core/*` and `shared/*`
+ * Why bundle: core-api's source imports from `@antiphony/core/*` and `shared/*`
  * via tsconfig path aliases. At runtime, Node's ESM resolver doesn't honor
  * tsconfig paths, and the workspace symlink indirection + ESM-from-CJS
  * named-import interop makes pure-Node resolution of these aliases
@@ -23,8 +23,8 @@ import { build } from 'esbuild';
  *     external. Declared in core-api's package.json so npm resolves it
  *     at runtime from node_modules.
  *
- * Everything else (Hono, @hono/node-server, zod, @vox-pop/core,
- * @vox-pop/shared) bundles. Bundled output is ~500KB-1MB; cold start is
+ * Everything else (Hono, @hono/node-server, zod, @antiphony/core,
+ * @antiphony/shared) bundles. Bundled output is ~500KB-1MB; cold start is
  * fast (single-file load, no module-resolution overhead).
  *
  * Source maps are on so stack traces in Cloud Logging point at the
@@ -39,7 +39,7 @@ await build({
     format: 'esm',
     outfile: 'dist/index.js',
     external: ['firebase-admin', 'pino', 'pino-pretty', 'rss-parser'],
-    // esbuild needs the tsconfig to honor the path aliases (shared/*, @vox-pop/core/*).
+    // esbuild needs the tsconfig to honor the path aliases (shared/*, @antiphony/core/*).
     tsconfig: 'tsconfig.json',
     sourcemap: true,
     minify: false,

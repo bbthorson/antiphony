@@ -1,5 +1,5 @@
 import { getAdminStorage } from '../../../lib/firebase-admin.js';
-import type { BlobStore } from '@vox-pop/core/ports/storage-dependencies';
+import type { BlobStore } from '@antiphony/core/ports/storage-dependencies';
 
 export type { BlobStore };
 

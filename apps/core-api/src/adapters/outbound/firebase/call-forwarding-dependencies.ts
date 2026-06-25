@@ -1,5 +1,5 @@
 import { getAdminDb } from '../../../lib/firebase-admin.js';
-import type { CallForwardingDependencies } from '@vox-pop/core/ports/call-forwarding-dependencies';
+import type { CallForwardingDependencies } from '@antiphony/core/ports/call-forwarding-dependencies';
 
 export type { CallForwardingDependencies };
 
