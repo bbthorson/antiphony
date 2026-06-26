@@ -1,5 +1,39 @@
 import { z } from 'zod';
 import { ConnectorConfigRecordSchema } from './types/records';
+import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
+
+/**
+ * Create-request codec for the new Antiphony `dev.antiphony.audio.post` model
+ * (Stream 1, additive — does not replace `CreatePromptRequestSchema`). The
+ * audio is uploaded first (signed-URL flow); the request references it as the
+ * embed. `reply` presence makes the new post a reply; absence makes it a
+ * prompt. `originAppId`/`authorId`/`kind` are stamped server-side, not sent.
+ */
+export const CreateAudioPostRequestSchema = z.object({
+  /** User-authored text; may be empty for pure-audio posts. */
+  text: z.string().max(3000).default(''),
+  /** Optional headline (prompt feature). */
+  title: z.string().max(3000).optional(),
+  /** The uploaded audio attachment. */
+  embed: AudioEmbedSchema.optional(),
+  /** Present ⇒ this is a reply (StrongRef root + parent). */
+  reply: ReplyRefSchema.optional(),
+  /** BCP-47 language tags. */
+  langs: z.array(z.string()).max(3).optional(),
+  /** Author self-label values (content warnings). */
+  selfLabels: z.array(z.string()).optional(),
+})
+  // A reply is a caption on someone else's prompt — it carries no title.
+  .refine((d) => !(d.reply && d.title), {
+    message: 'Replies cannot have a title',
+    path: ['title'],
+  })
+  // Reject completely empty posts: require text or an audio embed.
+  .refine((d) => d.text.trim().length > 0 || !!d.embed, {
+    message: 'Post must have text or an audio embed',
+    path: ['text'],
+  });
+export type CreateAudioPostRequest = z.infer<typeof CreateAudioPostRequestSchema>;
 
 export const CreatePromptRequestSchema = z.object({
   // Bounds chosen so the public prompt hero never needs to clip: title +

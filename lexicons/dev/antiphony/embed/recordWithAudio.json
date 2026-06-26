@@ -1,0 +1,31 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.embed.recordWithAudio",
+    "description": "Quote another record AND attach audio — the audio analogue of app.bsky.embed.recordWithMedia. Lets a post both reference another record and carry its own dev.antiphony.embed.audio.",
+    "defs": {
+        "main": {
+            "type": "object",
+            "required": ["record", "audio"],
+            "properties": {
+                "record": {
+                    "type": "ref",
+                    "ref": "app.bsky.embed.record",
+                    "description": "The quoted record (StrongRef)."
+                },
+                "audio": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.embed.audio",
+                    "description": "The attached audio."
+                }
+            }
+        },
+        "view": {
+            "type": "object",
+            "required": ["record", "audio"],
+            "properties": {
+                "record": { "type": "ref", "ref": "app.bsky.embed.record#view" },
+                "audio": { "type": "ref", "ref": "dev.antiphony.embed.audio#view" }
+            }
+        }
+    }
+}

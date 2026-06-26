@@ -1,0 +1,70 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.post",
+    "description": "An Antiphony audio post — the single canonical content record. Mirrors app.bsky.feed.post's field structure (so it's legible to atproto tooling), differing only in the NSID, the audio embed, and an optional title. A post with `reply` is a reply; without `reply` it is a prompt (root post). `title` is an optional prompt feature, NOT the discriminator.",
+    "defs": {
+        "main": {
+            "type": "record",
+            "description": "A prompt (no `reply`) or a reply (has `reply`). The audio lives in `embed` as a dev.antiphony.embed.audio.",
+            "key": "tid",
+            "record": {
+                "type": "object",
+                "required": ["text", "createdAt"],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "maxGraphemes": 300,
+                        "maxLength": 3000,
+                        "description": "USER-authored text (bsky-semantic). The prompt's typed question/description, or an optional reply caption. May be empty for pure-audio posts. NEVER the transcript — that lives in the audio embed."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxGraphemes": 300,
+                        "maxLength": 3000,
+                        "description": "Optional short headline. A prompt feature; replies omit it. Its presence is NOT the prompt/reply discriminator (that is `reply` presence)."
+                    },
+                    "embed": {
+                        "type": "union",
+                        "refs": [
+                            "dev.antiphony.embed.audio",
+                            "dev.antiphony.embed.recordWithAudio",
+                            "app.bsky.embed.record",
+                            "app.bsky.embed.external"
+                        ],
+                        "description": "Post attachment. Audio posts carry dev.antiphony.embed.audio. Never wrap your own audio/records as an external card (the one path to recursive rendering)."
+                    },
+                    "reply": {
+                        "type": "ref",
+                        "ref": "#replyRef",
+                        "description": "Present iff this post is a reply. Its presence discriminates reply-vs-prompt. Carries StrongRef root + parent for portable, content-addressed threading."
+                    },
+                    "langs": {
+                        "type": "array",
+                        "items": { "type": "string", "format": "language" },
+                        "maxLength": 3,
+                        "description": "BCP-47 language tags for the post text."
+                    },
+                    "labels": {
+                        "type": "union",
+                        "refs": ["com.atproto.label.defs#selfLabels"],
+                        "description": "Author-applied self-labels (content warnings). User input, so it stays on the record; service moderation is the labeler layer, not a field here."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "datetime",
+                        "description": "When the post was created (ISO 8601)."
+                    }
+                }
+            }
+        },
+        "replyRef": {
+            "type": "object",
+            "description": "StrongRef threading pointers. `root` = the prompt at the top of the thread; `parent` = the post being directly answered (the prompt, or another reply). Replaces the legacy flat promptId.",
+            "required": ["root", "parent"],
+            "properties": {
+                "root": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+                "parent": { "type": "ref", "ref": "com.atproto.repo.strongRef" }
+            }
+        }
+    }
+}

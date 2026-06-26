@@ -1,0 +1,68 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.embed.audio",
+    "description": "An audio attachment for a post. Antiphony's contribution to the AT Protocol embed family — atproto has images/video/external/record embeds but no audio. Modeled on app.bsky.embed.video (blob + alt + captions), but audio-shaped.",
+    "defs": {
+        "main": {
+            "type": "object",
+            "description": "The stored embed. Holds the audio blob and its universal, render-time-independent metadata. Does NOT carry the transcript — that is platform enrichment (dev.antiphony.audio.transcript) lifted into the #view at read time.",
+            "required": ["audio"],
+            "properties": {
+                "audio": {
+                    "type": "blob",
+                    "accept": ["audio/*"],
+                    "maxSize": 104857600,
+                    "description": "The audio bytes, content-addressed by CID. Up to 100 MB."
+                },
+                "durationMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Duration of the audio in milliseconds. Milliseconds (not seconds) is the platform-wide unit."
+                },
+                "alt": {
+                    "type": "string",
+                    "maxGraphemes": 1000,
+                    "maxLength": 10000,
+                    "description": "USER-authored short description of the audio (the audio analogue of image alt text). NOT the transcript."
+                },
+                "waveform": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                    "maxLength": 1000,
+                    "description": "Pre-computed visual waveform peaks (normalized 0–100) for instant rendering."
+                }
+            }
+        },
+        "view": {
+            "type": "object",
+            "description": "The hydrated, per-read view of an audio embed. Carries a resolved playback URL (in this centralized deployment, a signed Storage URL — not the raw blob) and the transcript lifted from the platform-enrichment record.",
+            "required": ["url"],
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Resolved, playable audio URL (signed Storage URL in the centralized deployment; a blob/CDN URL under federation)."
+                },
+                "durationMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Duration in milliseconds (copied from the record embed)."
+                },
+                "alt": {
+                    "type": "string",
+                    "description": "User-authored short description (copied from the record embed)."
+                },
+                "waveform": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                    "description": "Waveform peaks (copied from the record embed)."
+                },
+                "transcript": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.transcript#timedTranscript",
+                    "description": "Machine transcript, lifted from the dev.antiphony.audio.transcript enrichment record at read time. Absent until transcription completes."
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,67 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.transcript",
+    "description": "A machine-generated, timed transcript of a post's audio. PLATFORM enrichment (owned by Antiphony, like denoise/waveform), stored as its own record referencing the post by StrongRef — the like/label pattern. Lifted into dev.antiphony.embed.audio#view.transcript at read time; never stored on the post itself.",
+    "defs": {
+        "main": {
+            "type": "record",
+            "description": "The transcript enrichment record for one post's audio.",
+            "key": "tid",
+            "record": {
+                "type": "object",
+                "required": ["subject", "transcript", "createdAt"],
+                "properties": {
+                    "subject": {
+                        "type": "ref",
+                        "ref": "com.atproto.repo.strongRef",
+                        "description": "The post whose audio this transcribes (uri + cid)."
+                    },
+                    "transcript": {
+                        "type": "ref",
+                        "ref": "#timedTranscript",
+                        "description": "The timed transcript payload."
+                    },
+                    "lang": {
+                        "type": "string",
+                        "description": "BCP-47 language tag of the transcript (e.g. `en`)."
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Identifier of the model/provider that produced this transcript (provenance)."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "datetime",
+                        "description": "When the transcript was generated (ISO 8601)."
+                    }
+                }
+            }
+        },
+        "timedTranscript": {
+            "type": "object",
+            "description": "A timed transcript: an array of time-coded segments plus an optional concatenated text rollup for simple consumers (the audio analogue of WebVTT captions).",
+            "required": ["segments"],
+            "properties": {
+                "segments": {
+                    "type": "array",
+                    "items": { "type": "ref", "ref": "#segment" },
+                    "description": "Time-ordered transcript segments."
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Optional concatenated plaintext of all segments, for consumers that don't need timing."
+                }
+            }
+        },
+        "segment": {
+            "type": "object",
+            "description": "One time-coded transcript segment.",
+            "required": ["startMs", "endMs", "text"],
+            "properties": {
+                "startMs": { "type": "integer", "minimum": 0, "description": "Segment start offset, milliseconds." },
+                "endMs": { "type": "integer", "minimum": 0, "description": "Segment end offset, milliseconds." },
+                "text": { "type": "string", "description": "Transcribed text for this segment." }
+            }
+        }
+    }
+}

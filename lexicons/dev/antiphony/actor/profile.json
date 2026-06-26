@@ -1,0 +1,32 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.actor.profile",
+    "description": "An Antiphony actor profile. One record per actor at the well-known `self` rkey, mirroring app.bsky.actor.profile. Port of com.voxpop.actor.profile under the Antiphony namespace.",
+    "defs": {
+        "main": {
+            "type": "record",
+            "key": "literal:self",
+            "record": {
+                "type": "object",
+                "properties": {
+                    "handle": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 20,
+                        "description": "Public handle (e.g. `brad`). Distinct from the AT Protocol handle, which lives on the actor's identity."
+                    },
+                    "usageIntent": {
+                        "type": "string",
+                        "maxLength": 100,
+                        "description": "Stated intent of the actor (e.g. `Podcaster`, `Listener`)."
+                    },
+                    "rssFeed": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "External podcast feed URL associated with this actor."
+                    }
+                }
+            }
+        }
+    }
+}
