@@ -7,6 +7,7 @@ import { ReplyService } from '@antiphony/core/services/replies';
 import { CallForwardingService } from '@antiphony/core/services/call-forwarding';
 import { ConnectorConfigService } from '@antiphony/core/services/connector-config';
 import { ScreeningService } from '@antiphony/core/services/screening';
+import { AudioPostService } from '@antiphony/core/services/audio-posts';
 import { rssService as rssServiceSingleton } from '@antiphony/core/services/rss';
 import { makeStorageService } from '@antiphony/core/services/storage';
 import type { CoreServices } from '@antiphony/core/ports/core-services';
@@ -18,6 +19,7 @@ import { firebaseReplyDependencies } from './replies-dependencies.js';
 import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
 import { firebaseConnectorConfigDependencies } from './connector-config-dependencies.js';
 import { firebaseScreeningDependencies } from './screening-dependencies.js';
+import { firebaseAudioPostDependencies } from './audio-posts-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -138,6 +140,11 @@ export const connectorConfigService = new ConnectorConfigService(firebaseConnect
 // (no other core service calls it). Phase-2 capture-all evaluation lives in
 // apps/telephony; this is the canonical config store. See consumer-call-app § 5.
 export const screeningService = new ScreeningService(firebaseScreeningDependencies);
+// AudioPostService — Antiphony canonical `dev.antiphony.audio.post` model
+// (Stream 1 PR2). Self-contained: it owns its own dependencies binding and is
+// NOT part of `CoreServices` (no other core service calls it). Additive — the
+// legacy PromptService/ReplyService keep serving Vox Pop's /prompts + /replies.
+export const audioPostService = new AudioPostService(firebaseAudioPostDependencies);
 // Re-export RssService's own singleton for completeness. Core owns both the
 // class and the singleton (it's a genuinely standalone service, no Firebase
 // bindings). Routes that need it can import directly from here.

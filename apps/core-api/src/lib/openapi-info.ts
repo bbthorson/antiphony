@@ -41,6 +41,7 @@ export const OPENAPI_INFO = {
 export const OPENAPI_TAGS = [
     { name: 'Users', description: 'User primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },
     { name: 'Prompts', description: 'Prompt primitives — create, read, update status, and the public prompt projection.' },
+    { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
     { name: 'Replies', description: 'Reply primitives plus the cross-prompt feed and transcription search queries.' },
     { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
     { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },

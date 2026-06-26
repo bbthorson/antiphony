@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
 import { promptsRoute } from './adapters/inbound/rest/prompts.js';
 import { promptsRepliesRoute } from './adapters/inbound/rest/prompts-replies.js';
+import { postsRoute } from './adapters/inbound/rest/posts.js';
 import { usersPromptsRoute } from './adapters/inbound/rest/users-prompts.js';
 import { repliesFeedRoute } from './adapters/inbound/rest/replies-feed.js';
 import { repliesSearchRoute } from './adapters/inbound/rest/replies-search.js';
@@ -141,6 +142,9 @@ export function app(): OpenAPIHono {
     // Mount the replies sub-route on /api/v1/prompts so `/:promptId/replies`
     // composes with the existing `/:promptId` handler in promptsRoute.
     a.route('/api/v1/prompts', promptsRepliesRoute);
+    // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`,
+    // Stream 1 PR2). Additive — sits alongside the legacy /prompts + /replies.
+    a.route('/api/v1/posts', postsRoute);
     // Users routes all mount at /api/v1/users; route files distinguish by
     // path tail (`/me` vs `/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
     // Register the more specific `/me` mount FIRST so Hono prefers it over the
