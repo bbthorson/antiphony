@@ -1,9 +1,50 @@
 {
   "name": "@antiphony/shared",
   "version": "0.1.0",
-  "private": true,
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./api-codecs": {
+      "types": "./dist/api-codecs.d.ts",
+      "default": "./dist/api-codecs.js"
+    },
+    "./nsid": {
+      "types": "./dist/nsid.d.ts",
+      "default": "./dist/nsid.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "default": "./dist/errors/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "default": "./dist/utils/index.js"
+    },
+    "./observability": {
+      "types": "./dist/observability/index.d.ts",
+      "default": "./dist/observability/index.js"
+    },
+    "./observability/report-error": {
+      "types": "./dist/observability/report-error.d.ts",
+      "default": "./dist/observability/report-error.js"
+    },
+    "./types/*": {
+      "types": "./dist/types/*.d.ts",
+      "default": "./dist/types/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/write-cjs-marker.mjs",
     "typecheck": "tsc --noEmit",
@@ -14,6 +55,5 @@
   },
   "devDependencies": {
     "typescript": "^5.7.2"
-  },
-  "type": "module"
+  }
 }
