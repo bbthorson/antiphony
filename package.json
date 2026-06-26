@@ -1,0 +1,27 @@
+{
+  "name": "antiphony",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Antiphony — standalone call-and-response audio infrastructure (open core extracted from Vox Pop).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/core-api",
+    "dev": "PORT=8090 VOXPOP_USE_EMULATOR=true npm run dev -w @antiphony/core-api",
+    "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "volta": {
+    "node": "22"
+  }
+}
