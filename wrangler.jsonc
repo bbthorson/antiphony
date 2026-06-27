@@ -1,0 +1,20 @@
+{
+	// Cloudflare Workers static-assets config for the docs site.
+	// The Pages "Connect to Git" flow now provisions a Worker (not a classic
+	// Pages project), so it runs `npx wrangler deploy`, which reads this file
+	// at the repo root. This is an assets-only Worker (no `main` script): it
+	// just serves the static Astro build.
+	//
+	// Build settings in the Cloudflare dashboard:
+	//   Build command:  npm run build -w @antiphony/docs
+	//   (this file's `assets.directory` is what gets uploaded)
+	//
+	// Unrelated to apphosting.yaml, which deploys apps/core-api to Firebase
+	// App Hosting (api.antiphony.dev) and is ignored by Cloudflare.
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "antiphony-docs",
+	"compatibility_date": "2025-01-01",
+	"assets": {
+		"directory": "./apps/docs/dist"
+	}
+}
