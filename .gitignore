@@ -33,6 +33,9 @@ yarn-error.log*
 # local env files
 .env*
 !.env.example
+# Committed emulator-only dev defaults for the reference app (no real
+# secrets — demo project id + localhost emulator hosts; see file header).
+!apps/reference/.env.development
 
 # firebase
 .firebase
