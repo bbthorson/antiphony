@@ -1,0 +1,19 @@
+{
+  "name": "@antiphony/docs",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Antiphony documentation site — Astro Starlight. Deploys to Cloudflare Pages at docs.antiphony.dev.",
+  "scripts": {
+    "dev": "node scripts/copy-openapi.mjs && astro dev",
+    "start": "node scripts/copy-openapi.mjs && astro dev",
+    "build": "node scripts/copy-openapi.mjs --strict && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.39.2",
+    "astro": "^6.3.1",
+    "sharp": "^0.34.5"
+  }
+}
