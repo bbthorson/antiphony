@@ -1,5 +1,5 @@
 /**
- * vox-pop local ESLint plugin.
+ * antiphony local ESLint plugin.
  *
  * Houses repo-local lint rules that enforce conventions specific to this
  * codebase. Currently:
@@ -9,7 +9,7 @@
  *     `success: true`. See the rule file for details.
  *   - `require-success-envelope`: the complement — requires inline
  *     `.json({ … })` route responses to BE an envelope (carry a `success`
- *     key) in the first place. Used on apps/web's route handlers.
+ *     key) in the first place. (Carried over; not currently enabled here.)
  *
  * Add new rules by importing them here and registering them in the
  * `rules` map below — the import path stays stable (`../../eslint-rules/`)
@@ -21,7 +21,7 @@ import requireSuccessEnvelope from "./require-success-envelope.mjs";
 
 /** @type {import("eslint").ESLint.Plugin} */
 const plugin = {
-    meta: { name: "vox-pop" },
+    meta: { name: "antiphony" },
     rules: {
         "no-success-envelope-extras": noSuccessEnvelopeExtras,
         "require-success-envelope": requireSuccessEnvelope,

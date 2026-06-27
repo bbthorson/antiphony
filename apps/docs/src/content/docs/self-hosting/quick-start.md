@@ -39,7 +39,7 @@ In a second terminal. The Firestore emulator owns `:8080`, so bind core-api to `
 
 ```bash
 PORT=8090 \
-VOXPOP_USE_EMULATOR=true \
+ANTIPHONY_USE_EMULATOR=true \
 GCLOUD_PROJECT=demo-antiphony \
 ANTIPHONY_ORIGIN_APP_ID=local \
   npm run dev -w @antiphony/core-api

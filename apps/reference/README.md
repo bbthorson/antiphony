@@ -32,7 +32,7 @@ npx firebase emulators:start --only auth,firestore,storage --project demo-antiph
 
 # 2. core-api on :8090, pointed at the emulators
 PORT=8090 \
-VOXPOP_USE_EMULATOR=true \
+ANTIPHONY_USE_EMULATOR=true \
 GCLOUD_PROJECT=demo-antiphony \
 ANTIPHONY_ORIGIN_APP_ID=reference \
 ALLOWED_ORIGINS=http://localhost:3002 \

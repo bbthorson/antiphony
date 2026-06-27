@@ -1,5 +1,5 @@
 /**
- * ESLint rule: vox-pop/no-success-envelope-extras
+ * ESLint rule: antiphony/no-success-envelope-extras
  *
  * Enforces the standard success envelope contract on Hono responses:
  *
