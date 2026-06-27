@@ -72,6 +72,6 @@ env:
     # NOTE: a backend-level ALLOWED_ORIGINS set in the console OVERRIDES this —
     # keep the console value unset so this file stays the source of truth.
     - variable: ALLOWED_ORIGINS
-      value: "https://antiphony-core-api--antiphony-core.us-east4.hosted.app"
+      value: "https://api.antiphony.dev,https://antiphony-core-api--antiphony-core.us-east4.hosted.app"
       availability:
           - RUNTIME
