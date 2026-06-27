@@ -1,5 +1,5 @@
 /**
- * ESLint rule: vox-pop/require-success-envelope
+ * ESLint rule: antiphony/require-success-envelope
  *
  * The COMPLEMENT to `no-success-envelope-extras`. That rule guards the SHAPE of
  * a response that already opted into the envelope (`{ success: true, ... }` may

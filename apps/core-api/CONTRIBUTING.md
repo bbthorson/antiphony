@@ -15,8 +15,8 @@ Thanks for your interest in contributing! Vox Pop follows an open-core model —
 Before starting, ensure you have Node 22 (or use the pinned Volta/NVM settings) and Java on your PATH.
 
 ```bash
-git clone https://github.com/bbthorson/vox-pop.git
-cd vox-pop
+git clone https://github.com/bbthorson/antiphony.git
+cd antiphony
 npm install
 
 # Check prerequisites (Node, Java, Firebase CLI, free ports)

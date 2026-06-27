@@ -88,7 +88,7 @@ The origin is the only thing you configure. The app reads it from build-time env
 npx firebase emulators:start --only auth,firestore,storage --project demo-antiphony
 
 # 2. core-api on :8090, pointed at the emulators
-PORT=8090 VOXPOP_USE_EMULATOR=true GCLOUD_PROJECT=demo-antiphony \
+PORT=8090 ANTIPHONY_USE_EMULATOR=true GCLOUD_PROJECT=demo-antiphony \
   ANTIPHONY_ORIGIN_APP_ID=reference npm run dev -w @antiphony/core-api
 
 # 3. the reference app

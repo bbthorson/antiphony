@@ -9,18 +9,15 @@ import { getStorage } from 'firebase-admin/storage';
 const { credential } = admin;
 
 /**
- * Firebase Admin SDK bootstrap for core-api. Mirrors
- * `apps/web/src/lib/firebase/admin.ts` with three differences:
+ * Firebase Admin SDK bootstrap for core-api.
  *
- *   1. No `server-only` import — that's a Next.js package and core-api is
- *      a plain Node service. Core-api is server-only by construction.
- *   2. Emulator detection reads `VOXPOP_USE_EMULATOR` (not
- *      `NEXT_PUBLIC_USE_FIREBASE_EMULATOR` — we've got no `NEXT_PUBLIC_*`
- *      convention here). During Phase 4a transition the same Firebase
- *      emulators that apps/web uses cover both backends.
- *   3. Logging is via pino in this codebase, not Winston — but bootstrap
- *      uses `console` directly because the logger module would import
- *      this one at module-load time and we'd hit a cycle.
+ *   - No `server-only` import — that's a Next.js package and core-api is a
+ *     plain Node service. Core-api is server-only by construction.
+ *   - Emulator detection reads `ANTIPHONY_USE_EMULATOR` (there's no
+ *     `NEXT_PUBLIC_*` convention here).
+ *   - Logging is via pino, but this bootstrap uses `console` directly: the
+ *     logger module imports this one, so logging here would create a
+ *     module-load cycle.
  *
  * Lazy-init pattern: the Admin SDK is initialized on the first call to any
  * accessor (`getAdminDb`, `getAdminAuth`, etc.), not at module-load, so
@@ -29,15 +26,14 @@ const { credential } = admin;
  *
  * Credentials:
  *   - Production: `ADMIN_SERVICE_ACCOUNT_JSON` env var (set as an App Hosting
- *     secret) — matches apps/web's convention so both backends share one
- *     secret during Phase 4a. Per `specs/decoupling-migration.md` Post-4a
- *     Follow-ups: split into two service accounts after the flip stabilizes.
- *   - Fallback: Application Default Credentials (useful for local gcloud
- *     auth or GCP-managed-identity environments).
+ *     secret).
+ *   - Fallback: Application Default Credentials — what the `antiphony-core`
+ *     App Hosting deploy uses (also handy for local gcloud auth or
+ *     GCP-managed-identity environments).
  *   - Emulator: anonymous credential; project ID comes from env.
  */
 
-const appName = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || 'vox-pop-core-api';
+const appName = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || 'antiphony-core-api';
 
 let adminApp: admin.app.App | undefined;
 
@@ -52,16 +48,15 @@ function getAdminApp(): admin.app.App {
         return adminApp;
     }
 
-    const useEmulators = process.env.VOXPOP_USE_EMULATOR === 'true';
+    const useEmulators = process.env.ANTIPHONY_USE_EMULATOR === 'true';
 
     if (useEmulators) {
-        // Emulator hosts mirror apps/web's defaults so both backends hit the
-        // same emulator instance during local dev.
+        // Default emulator hosts for local dev (overridable via env).
         process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
         process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
         process.env.FIREBASE_STORAGE_EMULATOR_HOST = process.env.FIREBASE_STORAGE_EMULATOR_HOST || '127.0.0.1:9199';
 
-        const emulatorProjectId = process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'vox-pop-simple';
+        const emulatorProjectId = process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'demo-antiphony';
         adminApp = admin.initializeApp(
             {
                 projectId: emulatorProjectId,
@@ -127,7 +122,7 @@ export function getAdminStorage() {
 }
 
 export function isUsingEmulator(): boolean {
-    return process.env.VOXPOP_USE_EMULATOR === 'true';
+    return process.env.ANTIPHONY_USE_EMULATOR === 'true';
 }
 
 /** Access to the `admin` namespace for callers that need `admin.firestore.FieldValue` etc. */

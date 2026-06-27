@@ -26,12 +26,12 @@ For local development against the Firebase emulators (see [Quick start](/self-ho
 
 | Variable | Purpose |
 |---|---|
-| `VOXPOP_USE_EMULATOR` | When `true`, the composition root wires the emulator-backed clients instead of production Firebase. |
+| `ANTIPHONY_USE_EMULATOR` | When `true`, the composition root wires the emulator-backed clients instead of production Firebase. |
 | `FIRESTORE_EMULATOR_HOST` | Firestore emulator address (e.g. `localhost:8080`). |
 | `FIREBASE_AUTH_EMULATOR_HOST` | Auth emulator address (e.g. `localhost:9099`). |
 | `FIREBASE_STORAGE_EMULATOR_HOST` | Storage emulator address. |
 
-The Firebase Admin SDK reads the `*_EMULATOR_HOST` variables directly; `VOXPOP_USE_EMULATOR` gates the parts of the composition root the SDK doesn't cover.
+The Firebase Admin SDK reads the `*_EMULATOR_HOST` variables directly; `ANTIPHONY_USE_EMULATOR` gates the parts of the composition root the SDK doesn't cover.
 
 ## Service-to-service auth
 

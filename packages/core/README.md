@@ -1,8 +1,8 @@
-# @vox-pop/core
+# @antiphony/core
 
-> Open-core service layer for Vox Pop. Portable business-logic classes (`UserService`, `PromptService`, `ReplyService`, `OrganizationService`, `HydrationService`, `FeedService`, `RssService`, `StorageService`) plus their dependency contracts.
+> Open-core service layer for Antiphony. Portable business-logic classes (`PostService`, `UserService`, `HydrationService`, `FeedService`, `StorageService`, plus the legacy `PromptService`/`ReplyService`/`OrganizationService` on the Stream-4 retirement path) plus their dependency contracts.
 >
-> **License:** MIT. **Status:** Phase 4a complete; consumed by `apps/core-api` (and by `apps/web` during the rollout window).
+> **License:** MIT. **Status:** consumed by `apps/core-api`.
 
 ## What lives here
 
@@ -47,8 +47,8 @@ A self-hoster who wants Postgres support implements all the `*-dependencies.ts` 
 1. **No `firebase` / `firebase-admin` imports.** ESLint enforces. If a port pulls these in, the port isn't complete.
 2. **No Next.js imports.** This package builds standalone for arbitrary Node runtimes.
 3. **Cross-service calls go through `CoreServices`.** Don't import another service's concrete class; reach via `this.services.users.*` etc. See [`specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 2.5 for the rationale.
-4. **Shared types stay in [`@vox-pop/shared`](../shared/).** Don't duplicate them here.
+4. **Shared types stay in [`@antiphony/shared`](../shared/).** Don't duplicate them here.
 
-## Phase 4b — open-source split
+## Publishing
 
-This package is destined for [github.com/bbthorson/vox-pop-core](https://github.com/bbthorson/vox-pop-core) via `git subtree split` once the carve-out runs. See [`docs/4b-carveout-runbook.md`](../../docs/4b-carveout-runbook.md). The MIT `LICENSE` file in this directory travels with the split.
+`@antiphony/core` is currently `private` — no npm release yet. It gains substance alongside the canonical `dev.antiphony.audio.post` services before it's published; the companion [`@antiphony/shared`](../shared/) (types + Zod schemas) **is** published. The MIT `LICENSE` in this directory ships with any future release.

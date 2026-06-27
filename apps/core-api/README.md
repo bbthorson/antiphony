@@ -1,8 +1,8 @@
-# @vox-pop/core-api
+# @antiphony/core-api
 
-> **Open-source core of [Vox Pop](https://voxpop.com).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — identity, prompts, replies, organizations, inbox, and notifications. Pairs with a Firestore backend and any Firebase-compatible auth provider.
+> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, replies, audio upload/playback, and identity. Pairs with a Firestore backend and any Firebase-compatible auth provider.
 >
-> **Hosted version:** [voxpop.com](https://voxpop.com). The hosted product adds IVR / call-forwarding / Twilio integration and embed-widget distribution. This repo contains only the open-core tier.
+> **Apps built on it** (e.g. [Vox Pop](https://voxpop.com)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
 
 ## Status
 
@@ -77,17 +77,15 @@ For detailed instructions on setting up your local environment, running the full
 ## Verification
 
 ```bash
-npm run typecheck -w @vox-pop/core-api
-npm run build -w @vox-pop/core-api     # esbuild; bundle stays < 500kb
-npm run lint -w @vox-pop/core-api
-npm run test -w @vox-pop/core-api -- --run
+npm run typecheck -w @antiphony/core-api
+npm run build -w @antiphony/core-api     # esbuild; bundle stays < 500kb
+npm run lint -w @antiphony/core-api
+npm run test -w @antiphony/core-api -- --run
 ```
 
 ## Deployment
 
-Firebase App Hosting. [`apphosting.yaml`](./apphosting.yaml) mirrors the runtime config of the apps/web backend. Provision the backend in the Firebase console, wire secrets, and map a domain (or use the default `*.run.app` URL).
-
-Once the backend is up, flip traffic in apps/web by setting `CORE_API_BASE_URL` in apps/web's apphosting.yaml. Rollback = unset the var.
+Firebase App Hosting — the `antiphony-core` backend serves `api.antiphony.dev`. See [`apphosting.yaml`](../../apphosting.yaml) at the repo root for the production config. Provision the backend in the Firebase console, wire credentials (Application Default Credentials on App Hosting), and map a domain (or use the default `*.hosted.app` URL).
 
 ## Why Hono, not Next.js
 
