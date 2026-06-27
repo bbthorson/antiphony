@@ -47,6 +47,33 @@ Open <http://localhost:3002>. The app signs in anonymously against the auth
 emulator (no setup needed), records audio, uploads it, creates a post, then
 fetches and renders the hydrated `AudioPostView`.
 
+## Run it (against the LIVE API)
+
+To point the app at the deployed `antiphony-core` core-api and real Firebase
+Auth instead of the emulator — no local stack needed:
+
+```bash
+npm run dev:live -w @antiphony/reference   # HMR dev server on :3002, live config
+# or a production build + static preview:
+npm run build -w @antiphony/reference && npm run preview -w @antiphony/reference
+```
+
+Both load `.env.production`, which targets the live API and uses the real
+(non-secret, public) Firebase web `apiKey`. Anonymous sign-in hits real
+Firebase Auth (the **Anonymous** provider must be enabled on the project).
+
+**CORS caveat:** the production backend's `ALLOWED_ORIGINS` deliberately
+excludes localhost (prod must never accept credentialed requests from
+localhost). So `localhost:3002` → live API is CORS-blocked out of the box.
+To run local-against-live, either temporarily add `http://localhost:3002` to
+the backend's `ALLOWED_ORIGINS` (apphosting.yaml), or — the real path —
+deploy this app to an allowlisted origin (e.g. `reference.antiphony.dev`) and
+add that origin to `ALLOWED_ORIGINS`.
+
+Until the `api.antiphony.dev` TLS cert finishes provisioning, swap
+`VITE_CORE_API_BASE_URL` to the `…hosted.app` fallback noted in
+`.env.production`.
+
 ### Notes
 
 - **Origin/tenancy**: the post's `originAppId` is stamped server-side from

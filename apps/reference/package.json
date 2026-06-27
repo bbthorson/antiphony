@@ -6,6 +6,7 @@
   "description": "Neutral reference creation app for the Antiphony contract — record → upload → create audio.post → hydrate → render. NO product branding; this is the contract's acceptance harness and the capture-kit seed.",
   "scripts": {
     "dev": "vite",
+    "dev:live": "vite --mode production",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 3002",
     "typecheck": "tsc --noEmit",
