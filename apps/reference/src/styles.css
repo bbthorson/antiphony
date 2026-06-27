@@ -1,0 +1,79 @@
+/* Neutral, unbranded styling — system fonts, grays only. The reference app
+   must NOT carry any product's visual language; a branded client is a
+   Tier-3 concern. */
+
+:root {
+    color-scheme: light dark;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    line-height: 1.5;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; background: #f6f6f7; color: #1a1a1a; }
+@media (prefers-color-scheme: dark) {
+    body { background: #161618; color: #ececec; }
+}
+
+.app { max-width: 640px; margin: 0 auto; padding: 32px 20px 80px; }
+
+header h1 { margin: 0 0 4px; font-size: 1.5rem; }
+.muted { color: #777; }
+.small { font-size: 0.85rem; }
+code { background: rgba(127, 127, 127, 0.18); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+
+.card {
+    background: rgba(127, 127, 127, 0.06);
+    border: 1px solid rgba(127, 127, 127, 0.22);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    display: grid;
+    gap: 14px;
+}
+.card h2 { margin: 0; font-size: 1.1rem; }
+
+.field { display: grid; gap: 4px; font-size: 0.9rem; }
+.field em { color: #999; font-style: normal; }
+.field input, .field textarea {
+    font: inherit;
+    padding: 8px 10px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+}
+
+.panel { padding: 12px; border: 1px dashed rgba(127, 127, 127, 0.3); border-radius: 8px; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+
+.btn {
+    font: inherit;
+    padding: 8px 14px;
+    border: 1px solid rgba(127, 127, 127, 0.4);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: #2a2a2a; color: #fff; border-color: #2a2a2a; }
+@media (prefers-color-scheme: dark) { .btn-primary { background: #ececec; color: #161618; border-color: #ececec; } }
+.btn-stop { color: #c0392b; border-color: #c0392b; }
+.btn-ghost { border-style: dashed; }
+
+.error { color: #c0392b; }
+
+.meta { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; }
+.title { margin: 4px 0 0; }
+.text { margin: 4px 0; }
+.alt { font-style: italic; }
+
+.badge { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(127, 127, 127, 0.4); }
+.badge-prompt { background: rgba(80, 130, 200, 0.18); }
+.badge-reply { background: rgba(120, 180, 120, 0.18); }
+.badge-you { background: rgba(200, 160, 60, 0.22); }
+
+.transcript, .raw { font-size: 0.9rem; }
+.raw pre { overflow: auto; background: rgba(127, 127, 127, 0.1); padding: 12px; border-radius: 8px; font-size: 0.78rem; }

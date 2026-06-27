@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// Same posture as firestore.rules: core-api (Admin SDK) is the only writer.
+// Audio bytes are uploaded via `POST /api/v1/audio/upload` and read back
+// through short-lived signed URLs minted server-side — never via direct
+// client Storage access. Deny everything.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
