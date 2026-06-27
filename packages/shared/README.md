@@ -1,57 +1,50 @@
-# @vox-pop/shared
+# @antiphony/shared
 
-> Open-core type definitions and validation codecs shared across every tier — `apps/core-api`, `apps/web`, `apps/mobile`, `functions/`, and any future binding (Postgres, in-memory).
->
-> **License:** MIT. **Status:** Stable; ships as part of the open-core surface.
+Shared types, Zod schemas, and request/response codecs for [Antiphony](https://github.com/bbthorson/antiphony) — open infrastructure and an AT Protocol lexicon for audio call-and-response.
 
-## What lives here
+This is the contract package: the same Zod schemas that validate the wire format in `apps/core-api`, mirror the `dev.antiphony.*` lexicons, and type any client built on the public API. If you're building against Antiphony, this is what you import.
 
-### `types/records.ts`
-Raw Firestore (or equivalent backend) schemas. The shape of stored data, before any view-layer hydration.
+Docs: **<https://docs.antiphony.dev>** — start with [the lexicons](https://docs.antiphony.dev/lexicons/overview/).
 
-```ts
-// PromptRecord example
-{
-  id: 'p_abc',
-  authorId: 'u_123',
-  title: 'Hello',
-  audioUrl: '...',
-  createdAt: new Date('2026-04-25T12:00:00Z'),
-  status: 'live',
-}
+## Install
+
+```bash
+npm install @antiphony/shared zod
 ```
 
-### `types/views.ts`
-Hydrated API-response schemas. A `View` always carries its underlying `Record` plus author/recipient/computed-field hydration.
+`zod` is the only runtime dependency and the peer of every validation schema.
+
+## Dual ESM/CJS
+
+Ships both ESM and CommonJS builds with correct type resolution under `node16`/`nodenext` and bundlers (verified with [`@arethetypeswrong/cli`](https://github.com/arethetypeswrong/arethetypeswrong.github.io)). `import` and `require` both resolve to the right artifact.
+
+## Exports
 
 ```ts
-// PromptView example
-{
-  record: { /* PromptRecord */ },
-  author: { id, handle, displayName, avatarUrl, ... },
-  replyCount: 12,
-  visibility: 'public',
-}
+import { AudioPostRecordSchema, AudioPostViewSchema } from '@antiphony/shared';
 ```
 
-### `api-codecs.ts`
-Zod request schemas for write endpoints — `CreatePromptRequestSchema`, `UpdateOrgRequestSchema`, etc. Single source of truth for write-payload validation; consumed by both core-api route handlers and apps/web client code so the request shape can't drift.
+The root re-exports the most-used pieces (records, views, audio types, API types, codecs, NSIDs, errors, utils, observability). Granular subpaths are available too:
 
-### `nsid.ts`
-AT Protocol Namespaced Identifiers (`com.voxpop.audio.prompt`, `com.voxpop.actor.profile`, `com.voxpop.audio.reply`) plus the NSID-to-Firestore-collection mapping. Used by Phase 4c lexicon publishing (see [`specs/4c-atproto-prompts.md`](../../specs/4c-atproto-prompts.md)).
+| Subpath | What's in it |
+| :--- | :--- |
+| `@antiphony/shared` | The common surface: records, views, audio + API types, `api-codecs`, `nsid`, `errors`, `utils`, `observability`. |
+| `@antiphony/shared/api-codecs` | Request/response Zod codecs for the REST surface. |
+| `@antiphony/shared/nsid` | The `dev.antiphony.*` NSID constants. |
+| `@antiphony/shared/errors` | Shared error types and helpers. |
+| `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers). |
+| `@antiphony/shared/observability` | Logging/error-reporting helpers (`./observability/report-error` for just the reporter). |
+| `@antiphony/shared/types/*` | Individual type modules: `records`, `views`, `audio`, `blob`, `api`, `channels`, `storage`. |
 
-### `errors.ts`
-Typed `ServiceError` subclasses (`NotFoundError`, `ForbiddenError`, `ConflictError`). Throw from service code; the error-handler middleware in core-api maps them to HTTP statuses automatically.
+## The records this models
 
-### `utils/`
-Pure utility functions — projection helpers (`toReplyViewPublic`, `toProfileViewBasic`), date/string/sanitization helpers. No I/O, no Firebase imports.
+- **`dev.antiphony.audio.post`** — the single canonical content record. A post without a `reply` is a prompt; with a `reply` it's a reply.
+- **`dev.antiphony.embed.audio`** — the audio attachment (stored record + hydrated view with a signed playback URL).
+- **`dev.antiphony.audio.transcript`** — platform-enrichment transcript, lifted into the embed view at read time.
+- **`dev.antiphony.actor.profile`** — the actor profile.
 
-## Rules
+See the [lexicon reference](https://docs.antiphony.dev/lexicons/overview/) for the full contract.
 
-1. **Zero runtime dependencies on Firebase, Next.js, Hono, or React.** Every tier imports `@vox-pop/shared`; cross-tier imports must be portable.
-2. **Records vs. Views vs. Codecs are NOT interchangeable.** Stored shape, response shape, and request shape have different lifecycles — keep them in distinct files even when they look similar.
-3. **Schema changes are a contract change.** When `PromptRecord` gets a new field, every binding has to handle it. Use `.optional()` / `.default()` aggressively for forward compatibility; widening is cheaper than narrowing later.
+## License
 
-## Phase 4b — open-source split
-
-This package is destined for [github.com/bbthorson/vox-pop-core](https://github.com/bbthorson/vox-pop-core) via `git subtree split` once the carve-out runs. See [`docs/4b-carveout-runbook.md`](../../docs/4b-carveout-runbook.md). The MIT `LICENSE` file in this directory travels with the split.
+MIT

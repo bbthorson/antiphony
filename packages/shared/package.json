@@ -1,6 +1,15 @@
 {
   "name": "@antiphony/shared",
   "version": "0.1.0",
+  "description": "Shared types, Zod schemas, and codecs for Antiphony — open audio call-and-response infrastructure and AT Protocol lexicons.",
+  "license": "MIT",
+  "homepage": "https://docs.antiphony.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbthorson/antiphony.git",
+    "directory": "packages/shared"
+  },
+  "bugs": "https://github.com/bbthorson/antiphony/issues",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/cjs/index.cjs",
