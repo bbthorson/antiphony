@@ -12,7 +12,7 @@
 	// Unrelated to apphosting.yaml, which deploys apps/core-api to Firebase
 	// App Hosting (api.antiphony.dev) and is ignored by Cloudflare.
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "antiphony-docs",
+	"name": "antiphony",
 	"compatibility_date": "2025-01-01",
 	"assets": {
 		"directory": "./apps/docs/dist"
