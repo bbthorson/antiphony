@@ -1,17 +1,20 @@
 # Firebase App Hosting config for the Antiphony core-api backend.
 #
 # ── Authoritative deploy config for the `antiphony-core` project ───────────────
-# App Hosting reads this from the REPO ROOT. The backend is rooted at `/` so that
-# `npm ci` installs the whole workspace (core-api depends on @antiphony/core and
-# @antiphony/shared via npm workspaces), while `rootDirectory: apps/core-api`
-# points the Node framework adapter at the app subdir. The adapter runs the
-# app's `build` (esbuild → dist/index.js + gen:openapi) and `start`
-# (node dist/index.js, listening on $PORT).
+# The App Hosting backend is rooted at the REPO ROOT (`/`). The generic Node
+# buildpack runs the ROOT package.json scripts from /workspace:
+#   - `npm ci`        installs the whole workspace (core-api depends on
+#                     @antiphony/core + @antiphony/shared via npm workspaces).
+#   - `npm run build` builds @antiphony/shared (dual) then bundles core-api to
+#                     apps/core-api/dist/index.js (esbuild) + gen:openapi.
+#   - `npm start`     → `node apps/core-api/dist/index.js`, listening on $PORT.
+# (We deploy from repo root rather than a `rootDirectory` subdir because the
+# buildpack's start phase ignores rootDirectory and defaults to `node index.js`
+# at /workspace — so the root package.json must carry the `start` script.)
 #
 # Unlike the Vox Pop monorepo, there is no public-mirror sync here — this repo
 # IS the authoritative source, so this root file is the single source of truth
-# for what production runs. (Vox Pop kept a copy at apps/core-api/apphosting.yaml
-# only to feed its sync workflow; that indirection is gone.)
+# for what production runs.
 #
 # Credentials: Application Default Credentials (the App Hosting compute service
 # account) — NO `ADMIN_SERVICE_ACCOUNT_JSON` secret needed. firebase-admin falls
@@ -23,8 +26,6 @@
 #                                            audio URLs via ADC, i.e. signBlob)
 # Token VERIFICATION (requireAuth) needs no special grant — it validates Firebase
 # ID tokens against Google's public certs.
-
-rootDirectory: apps/core-api
 
 runConfig:
     # min=0 is fine for a low-traffic reference deploy; raise if cold starts bite.

@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/core-api",
+    "start": "node apps/core-api/dist/index.js",
     "dev": "PORT=8090 VOXPOP_USE_EMULATOR=true npm run dev -w @antiphony/core-api",
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
