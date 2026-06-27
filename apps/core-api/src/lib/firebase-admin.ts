@@ -48,7 +48,7 @@ function getAdminApp(): admin.app.App {
         return adminApp;
     }
 
-    const useEmulators = process.env.ANTIPHONY_USE_EMULATOR === 'true';
+    const useEmulators = isUsingEmulator();
 
     if (useEmulators) {
         // Default emulator hosts for local dev (overridable via env).
