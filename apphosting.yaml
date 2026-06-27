@@ -1,0 +1,77 @@
+# Firebase App Hosting config for the Antiphony core-api backend.
+#
+# ── Authoritative deploy config for the `antiphony-core` project ───────────────
+# App Hosting reads this from the REPO ROOT. The backend is rooted at `/` so that
+# `npm ci` installs the whole workspace (core-api depends on @antiphony/core and
+# @antiphony/shared via npm workspaces), while `rootDirectory: apps/core-api`
+# points the Node framework adapter at the app subdir. The adapter runs the
+# app's `build` (esbuild → dist/index.js + gen:openapi) and `start`
+# (node dist/index.js, listening on $PORT).
+#
+# Unlike the Vox Pop monorepo, there is no public-mirror sync here — this repo
+# IS the authoritative source, so this root file is the single source of truth
+# for what production runs. (Vox Pop kept a copy at apps/core-api/apphosting.yaml
+# only to feed its sync workflow; that indirection is gone.)
+#
+# Credentials: Application Default Credentials (the App Hosting compute service
+# account) — NO `ADMIN_SERVICE_ACCOUNT_JSON` secret needed. firebase-admin falls
+# back to ADC when that env var is unset (see src/lib/firebase-admin.ts). Grant
+# the App Hosting SA these roles on the project:
+#   - roles/datastore.user                  (Firestore read/write)
+#   - roles/storage.objectAdmin             (audio blob upload/read)
+#   - roles/iam.serviceAccountTokenCreator  (on ITSELF — required for V4 signed
+#                                            audio URLs via ADC, i.e. signBlob)
+# Token VERIFICATION (requireAuth) needs no special grant — it validates Firebase
+# ID tokens against Google's public certs.
+
+rootDirectory: apps/core-api
+
+runConfig:
+    # min=0 is fine for a low-traffic reference deploy; raise if cold starts bite.
+    minInstances: 0
+    startupProbe:
+        timeoutSeconds: 10
+        periodSeconds: 30
+        failureThreshold: 10
+    livenessProbe:
+        failureThreshold: 10
+
+env:
+    # Project id — firebase-admin reads GCLOUD_PROJECT (or FIREBASE_PROJECT_ID).
+    - variable: GCLOUD_PROJECT
+      value: "antiphony-core"
+      availability:
+          - BUILD
+          - RUNTIME
+    # Default Storage bucket. New Firebase projects provision a
+    # `<project>.firebasestorage.app` bucket — VERIFY the exact name after you
+    # enable Storage and update this if it differs.
+    - variable: FIREBASE_STORAGE_BUCKET
+      value: "antiphony-core.firebasestorage.app"
+      availability:
+          - BUILD
+          - RUNTIME
+    - variable: NODE_ENV
+      value: "production"
+      availability:
+          - RUNTIME
+    - variable: LOG_LEVEL
+      value: "info"
+      availability:
+          - RUNTIME
+    # Multi-tenant origin/tenancy key stamped on every created post and used to
+    # scope reads (see adapters/inbound/rest/posts.ts getOriginAppId()).
+    - variable: ANTIPHONY_ORIGIN_APP_ID
+      value: "antiphony"
+      availability:
+          - RUNTIME
+    # CORS allowlist for browser-direct calls (the reference app's audio upload).
+    # Comma-separated full origins. Starts with the App Hosting default domain
+    # for the `antiphony-core-api` backend; ADD the custom domain (e.g.
+    # https://api.antiphony.dev / the reference app's origin) once DNS is wired.
+    # NOTE: a backend-level ALLOWED_ORIGINS set in the console OVERRIDES this —
+    # keep the console value unset so this file stays the source of truth.
+    - variable: ALLOWED_ORIGINS
+      value: "https://antiphony-core-api--antiphony-core.us-east4.hosted.app"
+      availability:
+          - RUNTIME
