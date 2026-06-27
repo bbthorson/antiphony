@@ -1,15 +1,19 @@
 ---
-title: Vox Pop Core
-description: Open-source infrastructure for audio-based call-and-response applications.
+title: Antiphony
+description: Open infrastructure and an AT Protocol lexicon for audio call-and-response.
 template: splash
 hero:
-  tagline: MIT-licensed infrastructure for audio-based call-and-response apps — prompts, replies, identity, and audio behind one HTTP API. voxpop.com is one app built on it.
+  tagline: An AT Protocol lexicon and MIT-licensed infrastructure for audio call-and-response — audio posts, replies, identity, and transcription behind one HTTP API. Vox Pop is one app built on it.
   actions:
+    - text: The lexicons
+      link: /lexicons/overview/
+      icon: right-arrow
     - text: Quick start
       link: /self-hosting/quick-start/
       icon: right-arrow
+      variant: minimal
     - text: View on GitHub
-      link: https://github.com/bbthorson/vox-pop-core
+      link: https://github.com/bbthorson/antiphony
       icon: external
       variant: minimal
 ---
@@ -19,8 +23,11 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 ## What's here
 
 <CardGrid>
-	<Card title="What is Vox Pop Core?" icon="information">
-		The infrastructure, the call-and-response model, and what it does. [Read more →](/introduction/overview/)
+	<Card title="What is Antiphony?" icon="information">
+		The lexicon, the call-and-response model, and what the infrastructure does. [Read more →](/introduction/overview/)
+	</Card>
+	<Card title="The lexicons" icon="document">
+		`dev.antiphony.*` — the AT Protocol records every Antiphony app shares. The contract you build against. [Browse →](/lexicons/overview/)
 	</Card>
 	<Card title="Architecture" icon="setting">
 		How the service is wired and where the backend swaps out. [Read more →](/introduction/architecture/)
@@ -29,15 +36,15 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 		Run the open core yourself — Firebase-backed today, generalization in progress. [Quick start →](/self-hosting/quick-start/)
 	</Card>
 	<Card title="Build your own app" icon="code-branch">
-		Consume the public API from your own surface — `apps/embed` is the worked example. [Get started →](/build-your-own/overview/)
+		Consume the public API from your own surface — `apps/reference` is the worked example. [Get started →](/build-your-own/overview/)
 	</Card>
-	<Card title="API reference" icon="document">
+	<Card title="API reference" icon="open-book">
 		Every `/api/v1/*` endpoint, generated from the Zod schemas. [Browse →](/api/overview/)
 	</Card>
 </CardGrid>
 
 ## Where the line is
 
-Vox Pop Core is infrastructure, not a finished app. It gives you identity, prompts, replies, and audio behind one API; the product experience — and the higher-level, product-specific features a given app layers on (telephony, hosted widget distribution, teams, billing) — belongs to whatever you build on top. [voxpop.com](https://voxpop.com) is one such app.
+Antiphony is infrastructure and a protocol, not a finished app. It gives you identity, audio posts, replies, and transcription behind one API — and a set of `dev.antiphony.*` AT Protocol lexicons that define those records portably. The product experience, and the higher-level features a given app layers on (telephony, hosted distribution, teams, billing), belong to whatever you build on top.
 
-Curious what the end-user side of an app built on the core looks like? The [Vox Pop help center](https://voxpop.app/help) walks through recording prompts, managing replies, and sharing embeds.
+[Vox Pop](https://voxpop.com) is one such app. Anything Antiphony stores — an audio prompt and the replies it draws — is a `dev.antiphony.audio.post`; how an app presents that, who it lets reply, and what it charges for are app decisions, not protocol ones.

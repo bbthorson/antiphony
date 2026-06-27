@@ -4,20 +4,29 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://docs.phonicfactory.com',
+	site: 'https://docs.antiphony.dev',
 	integrations: [
 		starlight({
-			title: 'Vox Pop Core',
-			description: 'Open-source infrastructure for audio-based call-and-response applications.',
+			title: 'Antiphony',
+			description: 'Open infrastructure and an AT Protocol lexicon for audio call-and-response.',
 			social: [
-				{ icon: 'github', label: 'GitHub', href: 'https://github.com/bbthorson/vox-pop-core' },
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/bbthorson/antiphony' },
 			],
 			sidebar: [
 				{
 					label: 'Introduction',
 					items: [
-						{ label: 'What is Vox Pop Core?', slug: 'introduction/overview' },
+						{ label: 'What is Antiphony?', slug: 'introduction/overview' },
 						{ label: 'Architecture', slug: 'introduction/architecture' },
+					],
+				},
+				{
+					label: 'Lexicons',
+					items: [
+						// The crown jewel: the dev.antiphony.* AT Protocol lexicons.
+						// The canonical contract an adopter builds against — every
+						// REST shape is derived from these.
+						{ label: 'The Antiphony lexicons', slug: 'lexicons/overview' },
 					],
 				},
 				{
@@ -30,25 +39,10 @@ export default defineConfig({
 				{
 					label: 'Build your own',
 					items: [
-						// Conceptual hub. The embed walkthrough now lives under
-						// How-to guides (it's a task-oriented recipe); this page
-						// cross-links to it in prose, so it isn't orphaned.
 						{ label: 'Build your own app', slug: 'build-your-own/overview' },
-					],
-				},
-				{
-					label: 'How-to guides',
-					items: [
-						// Task-oriented recipes that orchestrate multiple
-						// endpoints. The embed walkthrough is a how-to in
-						// spirit (it composes the public fetch + render), so
-						// it anchors this section as the first recipe.
-						{ label: 'Example: the embed app', slug: 'build-your-own/embed-example' },
-						// The canonical cookbook: composes the replies
-						// primitives (feed/read/status/notes/search) into an
-						// inbox — the worked proof that "inbox" is composed
-						// UX, not an endpoint.
-						{ label: 'Build a reply inbox', slug: 'how-to/reply-inbox' },
+						// The neutral reference app (apps/reference) is the worked
+						// example: record → upload → create post → hydrate → render.
+						{ label: 'Example: the reference app', slug: 'build-your-own/reference-app' },
 					],
 				},
 				{
@@ -61,8 +55,7 @@ export default defineConfig({
 						{ label: 'Architecture & connectors', slug: 'explanation/connectors' },
 						// The design rules the consumer API obeys (primitives not
 						// compositions, queries, projections, descriptions as
-						// contracts). The contributor-facing counterpart to the
-						// connector model — what belongs in core vs a connector.
+						// contracts).
 						{ label: 'API design principles', slug: 'explanation/api-design-principles' },
 					],
 				},
@@ -70,10 +63,8 @@ export default defineConfig({
 					label: 'API reference',
 					items: [
 						{ label: 'Overview', slug: 'api/overview' },
-						// Live Scalar-rendered endpoint reference. Standalone
-						// Astro page (src/pages/api/reference.astro) outside
-						// Starlight content because Scalar needs the full
-						// viewport to render its own sidebar/nav.
+						// Generated Scalar-rendered endpoint list — a secondary aid.
+						// The lexicons are the primary, hand-written contract.
 						{ label: 'Endpoint reference', link: '/api/reference/' },
 					],
 				},

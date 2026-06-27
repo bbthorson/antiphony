@@ -5,11 +5,13 @@
  * so Scalar gets the full viewport (its own sidebar + nav are
  * sufficient; nesting it inside Starlight's chrome cramps the layout).
  *
+ * This is a SECONDARY aid. The canonical, hand-written contract is the
+ * lexicon reference (src/content/docs/lexicons/overview.md); this page
+ * is a generated endpoint lookup, linked from there and from
+ * src/content/docs/api/overview.md.
+ *
  * The spec is served from `/openapi.json`, copied into `public/` by
  * `scripts/copy-openapi.mjs` at build time.
- *
- * Linked from `src/content/docs/api/overview.md` and from Starlight's
- * sidebar in `astro.config.mjs`.
  */
 ---
 
@@ -18,11 +20,11 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>API Reference — Vox Pop Core</title>
+        <title>API Reference — Antiphony</title>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <meta
             name="description"
-            content="Live OpenAPI reference for the Vox Pop Core /api/v1/* surface — users, prompts, replies, auth."
+            content="Live OpenAPI reference for the Antiphony /api/v1/* surface — posts, audio, actors, identity."
         />
     </head>
     <body>
@@ -44,14 +46,14 @@
                 showSidebar: true,
                 hideDownloadButton: false,
                 metaData: {
-                    title: 'Vox Pop Core API',
+                    title: 'Antiphony API',
                 },
             })}></script>
         <!--
             Scalar CDN bundle pinned to a specific version. Bumping is a
             deliberate review act — verify the new release renders the
             spec without regressions, then update both the URL and the
-            version note in `docs/README.md` (when added).
+            version note in `apps/docs/README.md`.
         -->
         <script
             is:inline

@@ -1,49 +1,45 @@
-# Vox Pop Core Documentation
+# Antiphony Documentation
 
-This directory contains the source for the [Vox Pop Core](https://docs.phonicfactory.com) documentation site, built with [Astro Starlight](https://starlight.astro.build/).
+This directory (`@antiphony/docs`) contains the source for the [Antiphony](https://docs.antiphony.dev) documentation site, built with [Astro Starlight](https://starlight.astro.build/). It deploys to **Cloudflare Pages** at `docs.antiphony.dev`.
 
-## Local Development
+## Local development
 
-1. Install dependencies: `npm install`
-2. Start the dev server: `npm run dev`
-3. Build for production: `npm run build`
+From the repo root:
 
-## 🚀 Project Structure
+```bash
+npm install
+npm run dev -w @antiphony/docs      # local dev server at localhost:4321
+npm run build -w @antiphony/docs    # production build to apps/docs/dist/
+npm run preview -w @antiphony/docs  # preview the production build locally
+```
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+`npm run dev`/`build` first run `scripts/copy-openapi.mjs`, which copies
+`apps/core-api/openapi.json` into `public/openapi.json` so the API reference
+page (`/api/reference`) can render it. Regenerate that spec with
+`npm run gen:openapi -w @antiphony/core-api` when the API contract changes.
+Production builds pass `--strict`, so a missing spec fails the build.
+
+## Structure
 
 ```
 .
-├── public/
+├── public/                         # static assets (+ generated openapi.json)
+├── scripts/copy-openapi.mjs        # copies the OpenAPI spec at build time
 ├── src/
 │   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+│   ├── content/docs/               # the docs pages (.md / .mdx)
+│   └── pages/api/reference.astro   # Scalar endpoint reference (secondary aid)
+├── astro.config.mjs                # site config + sidebar
+└── package.json
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+Starlight serves every `.md`/`.mdx` under `src/content/docs/` as a route based
+on its file path. The canonical contract lives in `src/content/docs/lexicons/` —
+the `dev.antiphony.*` lexicon reference is the crown jewel; the Scalar endpoint
+page is a generated lookup aid.
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+## Deploy
 
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+Cloudflare Pages builds `npm run build -w @antiphony/docs` and serves
+`apps/docs/dist/`. The Scalar bundle is pinned in `reference.astro`; bumping it
+is a deliberate review act.
