@@ -15,7 +15,6 @@ import { repliesRoute } from './adapters/inbound/rest/replies.js';
 import { systemRepliesRoute } from './adapters/inbound/rest/system-replies.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
 import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
-import { usersChannelsRoute } from './adapters/inbound/rest/users-channels.js';
 import { usersActionsRoute } from './adapters/inbound/rest/users-actions.js';
 import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
@@ -25,10 +24,6 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pending.js';
 import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
 import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
-import { callForwardingLookupRoute } from './adapters/inbound/rest/call-forwarding-lookup.js';
-import { connectorsRoute } from './adapters/inbound/rest/connectors.js';
-import { connectorsSystemRoute } from './adapters/inbound/rest/connectors-system.js';
-import { screeningRoute } from './adapters/inbound/rest/screening.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
 import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
@@ -150,10 +145,6 @@ export function app(): OpenAPIHono {
     // Register the more specific `/me` mount FIRST so Hono prefers it over the
     // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
     // and 404 on user lookup).
-    // Register the more-specific `/me/screening` mount before `/me` so it isn't
-    // shadowed by usersMeRoute.
-    a.route('/api/v1/users/me/screening', screeningRoute);
-    a.route('/api/v1/users/me/channels', usersChannelsRoute);
     a.route('/api/v1/users/me', usersMeRoute);
     a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);
@@ -168,18 +159,11 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/audio/upload-pending', audioUploadPendingRoute);
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
-    // Connector control plane (Plan B) — uniform per-connector config.
-    a.route('/api/v1/connectors', connectorsRoute);
     a.route('/api/v1/prompts/public', promptsPublicRoute);
     a.route('/api/v1/rss', rssParseRoute);
     a.route('/api/v1/organizations', organizationsRoute);
     a.route('/api/v1/notifications', notificationsRoute);
-    a.route('/api/v1/call-forwarding', callForwardingLookupRoute);
     a.route('/api/v1/system/replies', systemRepliesRoute);
-    // Connector status-report (ingestion plane, system-auth) — connectors
-    // report their owner-scoped status here; the user-facing config control
-    // plane is the documented /api/v1/connectors/* surface.
-    a.route('/api/v1/system/connectors', connectorsSystemRoute);
     // PR-F3b stage 1: apps/web's rate-limit shim calls this endpoint
     // (system-auth) instead of touching Firestore directly, so apps/web
     // doesn't need firebase-admin for rate-limiting.

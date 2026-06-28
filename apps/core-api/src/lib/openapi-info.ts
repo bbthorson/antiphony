@@ -45,6 +45,5 @@ export const OPENAPI_TAGS = [
     { name: 'Replies', description: 'Reply primitives plus the cross-prompt feed and transcription search queries.' },
     { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
     { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },
-    { name: 'Connectors', description: 'Connector control plane — uniform per-connector config, status, and enable/disable (settings opaque, secrets by reference).' },
     { name: 'Organizations', description: 'Organization primitives — create/update, membership, role management, invites, and the public org-profile projection.' },
 ] as const;

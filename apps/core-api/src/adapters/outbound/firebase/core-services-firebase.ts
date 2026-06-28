@@ -4,9 +4,6 @@ import { HydrationService } from '@antiphony/core/services/hydration';
 import { FeedService } from '@antiphony/core/services/feeds';
 import { PromptService } from '@antiphony/core/services/prompts';
 import { ReplyService } from '@antiphony/core/services/replies';
-import { CallForwardingService } from '@antiphony/core/services/call-forwarding';
-import { ConnectorConfigService } from '@antiphony/core/services/connector-config';
-import { ScreeningService } from '@antiphony/core/services/screening';
 import { AudioPostService } from '@antiphony/core/services/audio-posts';
 import { rssService as rssServiceSingleton } from '@antiphony/core/services/rss';
 import { makeStorageService } from '@antiphony/core/services/storage';
@@ -16,9 +13,6 @@ import { firebaseOrganizationDependencies } from './organizations-dependencies.j
 import { firebaseHydrationDependencies } from './hydration-dependencies.js';
 import { firebasePromptDependencies } from './prompts-dependencies.js';
 import { firebaseReplyDependencies } from './replies-dependencies.js';
-import { firebaseCallForwardingDependencies } from './call-forwarding-dependencies.js';
-import { firebaseConnectorConfigDependencies } from './connector-config-dependencies.js';
-import { firebaseScreeningDependencies } from './screening-dependencies.js';
 import { firebaseAudioPostDependencies } from './audio-posts-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 import { logger } from '../../../lib/logger.js';
@@ -126,20 +120,6 @@ export const organizationService = new OrganizationService(
 export const promptService = new PromptService(firebasePromptDependencies, firebaseCoreServices, logger);
 export const replyService = new ReplyService(firebaseReplyDependencies, firebaseCoreServices, logger);
 export const feedService = new FeedService(firebaseCoreServices, logger);
-// CallForwardingService — pure data CRUD on users/{uid}/private_data/call_forwarding.
-// Not part of `CoreServices` because no other core service calls into it
-// today (apps/telephony/ will use it via the HTTP surface, not in-process).
-export const callForwardingService = new CallForwardingService(firebaseCallForwardingDependencies);
-// ConnectorConfigService — uniform control-plane CRUD over connector settings
-// at connector_configs/{ownerId}/items/{connectorType} (Plan B). Not part of
-// `CoreServices` (no other core service calls it); connectors use it via the
-// HTTP surface. Telephony is the first consumer.
-export const connectorConfigService = new ConnectorConfigService(firebaseConnectorConfigDependencies);
-// ScreeningService — pure data CRUD on the screening allowlist at
-// users/{uid}/private_data/screening/rules/{ruleId}. Not part of `CoreServices`
-// (no other core service calls it). Phase-2 capture-all evaluation lives in
-// apps/telephony; this is the canonical config store. See consumer-call-app § 5.
-export const screeningService = new ScreeningService(firebaseScreeningDependencies);
 // AudioPostService — Antiphony canonical `dev.antiphony.audio.post` model
 // (Stream 1 PR2). Self-contained: it owns its own dependencies binding and is
 // NOT part of `CoreServices` (no other core service calls it). Additive — the
