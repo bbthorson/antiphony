@@ -41,7 +41,7 @@ If you can build `apps/reference`, you can build your own surface. The [referenc
      -d '{ "text": "Ask me anything", "embed": { ... } }'
    ```
 4. **Read it back and render it.** `GET /api/v1/posts/{id}` returns a hydrated view — the post, its author, the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
-5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{id}/replies`.
+5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{id}/replies`. Replies are gated to a participant-only sub-thread — check `viewer.canReply` on the view before showing a reply control (see [reply gating](/api/overview/#reply-gating)).
 
 ## Where next?
 

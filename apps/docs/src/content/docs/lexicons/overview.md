@@ -41,6 +41,8 @@ A single record type carries both halves of call-and-response:
 
 **Threading is content-addressed.** A reply's `reply.root` points at the prompt at the top of the thread; `reply.parent` points at the post being directly answered (the prompt, or another reply). Both are `StrongRef`s (`{ uri, cid }`) — portable pointers that replace the legacy flat `promptId`.
 
+*Who* may reply isn't a field on this record — it's enforced by the AppView (replies form participant-only sub-threads). See [reply gating](/api/overview/#reply-gating).
+
 ### `dev.antiphony.embed.audio` — the audio attachment
 
 Antiphony's contribution to the AT Protocol embed family. The **record** form holds the stored, render-time-independent bytes and metadata; the **view** form is what a read returns.

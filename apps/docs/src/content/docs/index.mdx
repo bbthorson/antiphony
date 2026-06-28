@@ -2,6 +2,11 @@
 title: Antiphony
 description: Open infrastructure and an AT Protocol lexicon for audio call-and-response.
 template: splash
+# Override the auto-generated `<title>` so the splash page doesn't render the
+# doubled "Antiphony | Antiphony" (page title + Starlight's site-title suffix).
+head:
+  - tag: title
+    content: Antiphony — open audio call-and-response infrastructure
 hero:
   tagline: An AT Protocol lexicon and MIT-licensed infrastructure for audio call-and-response — audio posts, replies, identity, and transcription behind one HTTP API. Vox Pop is one app built on it.
   actions:

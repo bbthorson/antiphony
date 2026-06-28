@@ -15,6 +15,8 @@ The most important thing Antiphony defines is a set of **AT Protocol lexicons** 
 
 Antiphony has a single canonical content record: `dev.antiphony.audio.post`. A post **without** a `reply` is a prompt (the root of a thread); a post **with** a `reply` is a reply. The audio rides in a `dev.antiphony.embed.audio` attachment; the machine transcript is platform enrichment lifted into the view at read time, never stored on the post itself. That one record, mirrored on `app.bsky.feed.post`'s field structure, is what makes the data portable and legible to AT Protocol tooling.
 
+Replies aren't an open comment thread. Antiphony's call-and-response AppView **gates** them: a reply opens a **participant-only sub-thread** between the prompt's author and the responder, and only those two can continue it. That interaction rule — who may answer whom — is part of what Antiphony *is*, not something each app re-invents. See [reply gating](/api/overview/#reply-gating).
+
 :::note
 The core is backed by **Firebase** (Firestore, Firebase Auth, Cloud Storage) today, reached through swappable adapter interfaces. Generalizing that backend so Firebase isn't a hard dependency is in active progress — see [Architecture](/introduction/architecture/).
 :::
@@ -28,7 +30,7 @@ The core is backed by **Firebase** (Firestore, Firebase Auth, Cloud Storage) tod
 
 ## What's intentionally not in the open core
 
-The core stops at the infrastructure boundary. Anything that's a product or UX decision rather than shared plumbing — how an app distributes an embed, whether it offers telephony, how it handles **teams or billing**, **which sign-in methods it accepts before someone can reply** — belongs to the app, not the core. The core stays unopinionated so different apps can make those calls differently.
+The core stops at the infrastructure boundary. Anything that's a product or UX decision rather than shared plumbing — how an app distributes an embed, whether it offers telephony, how it handles **teams or billing**, **which sign-in methods it accepts before someone can reply** — belongs to the app, not the core. The core stays unopinionated about those **product and UX** choices, so different apps can make them differently — while still giving every app the same opinionated **call-and-response model** underneath (the post/reply shape, reply gating, the audio embed).
 
 The protocol has no "organization" primitive, either: grouping people into teams is product machinery an app layers on top. The core treats any `orgId` it sees as an opaque scoping key, nothing more. The tenancy boundary the core *does* enforce is the **origin app** (`originAppId`) — see [multi-tenancy](/introduction/architecture/).
 
