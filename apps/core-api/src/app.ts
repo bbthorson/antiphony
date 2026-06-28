@@ -5,25 +5,12 @@ import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
-import { promptsRoute } from './adapters/inbound/rest/prompts.js';
-import { promptsRepliesRoute } from './adapters/inbound/rest/prompts-replies.js';
 import { postsRoute } from './adapters/inbound/rest/posts.js';
-import { usersPromptsRoute } from './adapters/inbound/rest/users-prompts.js';
-import { repliesFeedRoute } from './adapters/inbound/rest/replies-feed.js';
-import { repliesSearchRoute } from './adapters/inbound/rest/replies-search.js';
-import { repliesRoute } from './adapters/inbound/rest/replies.js';
-import { systemRepliesRoute } from './adapters/inbound/rest/system-replies.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
 import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
-import { usersActionsRoute } from './adapters/inbound/rest/users-actions.js';
 import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
-import { promptsPublicRoute } from './adapters/inbound/rest/prompts-public.js';
-import { rssParseRoute } from './adapters/inbound/rest/rss-parse.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
-import { audioUploadPendingRoute } from './adapters/inbound/rest/audio-upload-pending.js';
-import { organizationsRoute } from './adapters/inbound/rest/organizations.js';
-import { notificationsRoute } from './adapters/inbound/rest/notifications.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
 import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
 import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
@@ -133,37 +120,21 @@ export function app(): OpenAPIHono {
 
     // 5. API routes.
     a.route('/api/v1/resolve', resolveRoute);
-    a.route('/api/v1/prompts', promptsRoute);
-    // Mount the replies sub-route on /api/v1/prompts so `/:promptId/replies`
-    // composes with the existing `/:promptId` handler in promptsRoute.
-    a.route('/api/v1/prompts', promptsRepliesRoute);
-    // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`,
-    // Stream 1 PR2). Additive — sits alongside the legacy /prompts + /replies.
+    // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
     // Users routes all mount at /api/v1/users; route files distinguish by
-    // path tail (`/me` vs `/:handle` vs `/:handle/prompts` vs `/:handle/profile`).
-    // Register the more specific `/me` mount FIRST so Hono prefers it over the
-    // `/:handle` parameter match (handle="me" would otherwise hit usersRoute
-    // and 404 on user lookup).
+    // path tail (`/me` vs `/:handle` vs `/:handle/profile`). Register the more
+    // specific `/me` mount FIRST so Hono prefers it over the `/:handle`
+    // parameter match (handle="me" would otherwise hit usersRoute and 404 on
+    // user lookup).
     a.route('/api/v1/users/me', usersMeRoute);
-    a.route('/api/v1/users', usersActionsRoute);
     a.route('/api/v1/users', usersRoute);
-    a.route('/api/v1/users', usersPromptsRoute);
     a.route('/api/v1/users', usersProfileRoute);
-    a.route('/api/v1/replies', repliesFeedRoute);
-    a.route('/api/v1/replies', repliesSearchRoute);
-    a.route('/api/v1/replies', repliesRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
-    // more-specific upload sub-routes BEFORE the proxy so they take
+    // more-specific upload sub-route BEFORE the proxy so it takes
     // precedence — Hono dispatches by registration order.
-    a.route('/api/v1/audio/upload-pending', audioUploadPendingRoute);
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
-    a.route('/api/v1/prompts/public', promptsPublicRoute);
-    a.route('/api/v1/rss', rssParseRoute);
-    a.route('/api/v1/organizations', organizationsRoute);
-    a.route('/api/v1/notifications', notificationsRoute);
-    a.route('/api/v1/system/replies', systemRepliesRoute);
     // PR-F3b stage 1: apps/web's rate-limit shim calls this endpoint
     // (system-auth) instead of touching Firestore directly, so apps/web
     // doesn't need firebase-admin for rate-limiting.
@@ -177,9 +148,9 @@ export function app(): OpenAPIHono {
 
     // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
-    //    in the spec. Public-doc scope: `/users`, `/prompts`, `/replies`,
-    //    `/auth`. Transport/utility/system routes intentionally stay
-    //    plain-Hono. See `specs/drafts/openapi-generation.md`.
+    //    in the spec. Public-doc scope: `/users`, `/resolve`, `/posts`,
+    //    `/audio`, `/atproto`. Transport/utility/system routes intentionally
+    //    stay plain-Hono. See `specs/drafts/openapi-generation.md`.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
     // 7. Error handler — last, via `onError` so it catches throws from

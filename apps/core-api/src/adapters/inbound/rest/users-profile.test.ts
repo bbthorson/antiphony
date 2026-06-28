@@ -1,18 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ProfileView } from 'shared/types/views';
 
 /**
  * Tests for `GET /api/v1/users/:handle/profile`.
+ *
+ * Identity-only: returns the basic (PII-free) profile for the resolved user.
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    feedService: {
-        getUserProfileData: vi.fn(),
+    userService: {
+        getUserData: vi.fn(),
     },
-    userService: {},
-    promptService: {},
-    organizationService: {},
-    hydrationService: {},
-    rssService: {},
     firebaseCoreServices: {},
 }));
 
@@ -37,52 +35,30 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../../../app.js');
-const { feedService } = await import('../../outbound/firebase/core-services-firebase.js');
-
-type MockProfileData = ReturnType<typeof mkProfileData>;
-
-function mkProfileData() {
-    return {
-        profileUser: { id: 'u-1', handle: 'alice', displayName: 'Alice' },
-        allPromptsWithReplies: [
-            {
-                record: { id: 'p-1', authorId: 'u-1', title: 'A', status: 'live', createdAt: '2026-04-01T00:00:00Z', audioUrl: '' },
-                author: { id: 'u-1', handle: 'alice' },
-                replyCount: 0,
-                lastReplyAt: null,
-                likeCount: 0,
-                visibility: 'public',
-                replies: [],
-            },
-        ],
-        repliers: [],
-    };
-}
-
-function asProfileData(v: MockProfileData) {
-    return v as unknown as Awaited<ReturnType<typeof feedService.getUserProfileData>>;
-}
+const { userService } = await import('../../outbound/firebase/core-services-firebase.js');
 
 describe('GET /api/v1/users/:handle/profile', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
-    it('returns the aggregated profile payload', async () => {
-        vi.mocked(feedService.getUserProfileData).mockResolvedValue(asProfileData(mkProfileData()));
+    it('returns the basic profile for the resolved user', async () => {
+        const profile = { id: 'u-1', handle: 'alice', displayName: 'Alice', email: 'alice@example.com' };
+        vi.mocked(userService.getUserData).mockResolvedValue(profile as unknown as ProfileView);
 
         const res = await app().request('/api/v1/users/alice/profile');
 
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.success).toBe(true);
-        expect(body.data.profileUser.handle).toBe('alice');
-        expect(body.data.allPromptsWithReplies).toHaveLength(1);
-        expect(body.data.repliers).toEqual([]);
+        expect(body.data.handle).toBe('alice');
+        expect(body.data.displayName).toBe('Alice');
+        // PII must not cross the public projection boundary.
+        expect(body.data.email).toBeUndefined();
     });
 
     it('returns 404 when the user cannot be resolved', async () => {
-        vi.mocked(feedService.getUserProfileData).mockResolvedValue(null);
+        vi.mocked(userService.getUserData).mockResolvedValue(null);
 
         const res = await app().request('/api/v1/users/nobody/profile');
 
@@ -95,7 +71,8 @@ describe('GET /api/v1/users/:handle/profile', () => {
     });
 
     it('propagates the inbound X-Request-ID header', async () => {
-        vi.mocked(feedService.getUserProfileData).mockResolvedValue(asProfileData(mkProfileData()));
+        const profile = { id: 'u-1', handle: 'alice', displayName: 'Alice' };
+        vi.mocked(userService.getUserData).mockResolvedValue(profile as unknown as ProfileView);
 
         const res = await app().request('/api/v1/users/alice/profile', {
             headers: { 'x-request-id': 'trace-uprofile' },
@@ -105,7 +82,7 @@ describe('GET /api/v1/users/:handle/profile', () => {
     });
 
     it('maps service errors to a 500 with requestId', async () => {
-        vi.mocked(feedService.getUserProfileData).mockRejectedValue(new Error('firestore outage'));
+        vi.mocked(userService.getUserData).mockRejectedValue(new Error('firestore outage'));
 
         const res = await app().request('/api/v1/users/alice/profile');
 

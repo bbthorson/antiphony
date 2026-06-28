@@ -7,10 +7,10 @@
  * (Auth + envelope conventions) stay in sync.
  */
 export const OPENAPI_INFO = {
-    title: 'Vox Pop Core API',
+    title: 'Antiphony Core API',
     version: '0.1.0',
     description: [
-        'Open-source REST surface for Vox Pop — users, prompts, replies, and the auth surface that links them.',
+        'Open-source REST surface for Antiphony — actor identity, canonical audio posts, audio storage, and the auth surface that links them.',
         '',
         '## Authentication',
         '',
@@ -39,11 +39,8 @@ export const OPENAPI_INFO = {
  * and never appear here. See `specs/plan-a-core-api-contract.md`.
  */
 export const OPENAPI_TAGS = [
-    { name: 'Users', description: 'User primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },
-    { name: 'Prompts', description: 'Prompt primitives — create, read, update status, and the public prompt projection.' },
+    { name: 'Users', description: 'Actor identity primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
-    { name: 'Replies', description: 'Reply primitives plus the cross-prompt feed and transcription search queries.' },
     { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
     { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },
-    { name: 'Organizations', description: 'Organization primitives — create/update, membership, role management, invites, and the public org-profile projection.' },
 ] as const;
