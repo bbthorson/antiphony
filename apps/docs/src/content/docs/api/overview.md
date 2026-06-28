@@ -27,6 +27,20 @@ Some routes still present on a given deployment (legacy `prompts`/`replies`, app
 
 Internal/utility routes (system-auth glue, ingestion plumbing) intentionally stay out of the public reference — they're service-to-service plumbing a third-party client wouldn't call.
 
+## Reply gating
+
+Replies are **not** an open comment thread — the AppView enforces who may reply, and clients should reflect that:
+
+- **Replying to a prompt** is open to any authenticated viewer (the app's default audience policy).
+- **Replying to a reply** is restricted to that branch's **two participants** — the prompt's author (the creator) and the responder who opened the branch. Anyone else gets a `403`.
+
+So each top-level reply is a private creator ↔ responder back-and-forth no third party can join. The rule is enforced on **write** (`POST /api/v1/posts` rejects a disallowed reply) and surfaced on **read**, so you don't have to reimplement it: every `AudioPostView` carries a `viewer` block with
+
+- **`canReply`** — whether the current caller may reply to this post, and
+- **`replyDisabledReason`** — `unauthenticated` or `not_a_participant` when they can't.
+
+Drive your reply affordance off `viewer.canReply`. (An app that wants different rules — open public threads, say — is a future `app.bsky.feed.threadgate` override; participant-only is the default.)
+
 ## Authentication
 
 All non-public endpoints require a bearer token in the `Authorization` header:
