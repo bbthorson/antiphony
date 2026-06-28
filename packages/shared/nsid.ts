@@ -1,5 +1,5 @@
 /**
- * AT Protocol Namespaced Identifiers (NSIDs) for Vox Pop record types.
+ * AT Protocol Namespaced Identifiers (NSIDs) for Antiphony record types.
  *
  * NSIDs are the canonical way to identify record types in AT Protocol.
  * This mapping connects AT Protocol NSIDs to Firestore collection names,
@@ -9,12 +9,8 @@
  */
 
 export const NSID = {
-    // Legacy Vox Pop record types (deprecated; removed in Stream 4).
-    Prompt: 'com.voxpop.audio.prompt',
-    Reply: 'com.voxpop.audio.reply',
-    Profile: 'com.voxpop.actor.profile',
-    // Antiphony canonical record types (dev.antiphony.*). Added additively in
-    // Stream 1; see lexicons/dev/antiphony/ + packages/shared/types/audio.ts.
+    // Antiphony canonical record types (dev.antiphony.*).
+    // See lexicons/dev/antiphony/ + packages/shared/types/audio.ts.
     AudioPost: 'dev.antiphony.audio.post',
     AudioTranscript: 'dev.antiphony.audio.transcript',
     ActorProfile: 'dev.antiphony.actor.profile',
@@ -34,17 +30,9 @@ export const EMBED_NSID = {
 /**
  * Maps AT Protocol record-type NSIDs to Firestore collection names.
  * When migrating to a PDS, this mapping becomes the adapter layer.
- *
- * Note: `dev.antiphony.actor.profile` and the legacy `com.voxpop.actor.profile`
- * both map to `users`. `nsidForCollection('users')` returns the legacy NSID
- * (listed first) — preserving today's reverse-lookup behavior until Stream 4
- * removes the legacy entry.
  */
 export const COLLECTIONS: Record<NsidValue, string> = {
-    [NSID.Prompt]: 'prompts',
-    [NSID.Reply]: 'replies',
-    [NSID.Profile]: 'users',
-    // Antiphony: one post collection + the transcript enrichment namespace.
+    // One post collection + the transcript enrichment namespace + actors.
     [NSID.AudioPost]: 'posts',
     [NSID.AudioTranscript]: 'audio_transcripts',
     [NSID.ActorProfile]: 'users',

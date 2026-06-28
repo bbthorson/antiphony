@@ -35,7 +35,6 @@ const entry = [
   'types/audio.ts',
   'types/blob.ts',
   'types/records.ts',
-  'types/storage.ts',
   'types/views.ts',
 ];
 
