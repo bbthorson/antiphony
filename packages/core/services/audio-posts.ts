@@ -74,7 +74,9 @@ export function buildPostUri(record: Pick<AudioPostRecord, 'id' | 'authorId' | '
  * of `buildPostUri`. Returns null for an unparseable/empty uri.
  */
 export function parsePostId(uri: string): string | null {
-    const id = uri.split('/').pop();
+    // filter(Boolean) drops empty segments so a trailing slash (or `//`) doesn't
+    // yield an empty id.
+    const id = uri.split('/').filter(Boolean).pop();
     return id && id.trim() ? id : null;
 }
 

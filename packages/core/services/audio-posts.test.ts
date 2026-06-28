@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AudioPostService, buildPostUri, type CreateAudioPostInput } from './audio-posts';
+import { AudioPostService, buildPostUri, parsePostId, type CreateAudioPostInput } from './audio-posts';
 import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProfileViewBasic } from 'shared/types/views';
@@ -50,6 +50,15 @@ describe('buildPostUri', () => {
             .toBe('at://did:plc:abc/dev.antiphony.audio.post/p1');
         expect(buildPostUri({ id: 'p1', authorId: 'u1' }))
             .toBe('at://u1/dev.antiphony.audio.post/p1');
+    });
+});
+
+describe('parsePostId', () => {
+    it('extracts the id (last segment), tolerating a trailing slash; null when empty', () => {
+        expect(parsePostId('at://did:plc:abc/dev.antiphony.audio.post/p1')).toBe('p1');
+        expect(parsePostId('at://did:plc:abc/dev.antiphony.audio.post/p1/')).toBe('p1');
+        expect(parsePostId(buildPostUri({ id: 'p9', authorId: 'u1' }))).toBe('p9');
+        expect(parsePostId('')).toBeNull();
     });
 });
 
