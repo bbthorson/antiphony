@@ -6,8 +6,10 @@ import {
     type AudioEmbedView,
     type ReplyRef,
     type TranscriptEnrichmentRecord,
+    type ViewerState,
 } from 'shared/types/audio';
 import type { ProfileViewBasic } from 'shared/types/views';
+import { ForbiddenError, NotFoundError } from 'shared/errors';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -67,6 +69,17 @@ export function buildPostUri(record: Pick<AudioPostRecord, 'id' | 'authorId' | '
     return `at://${authority}/${NSID.AudioPost}/${record.id}`;
 }
 
+/**
+ * Extract the post id (last path segment) from a post `at://` uri — the inverse
+ * of `buildPostUri`. Returns null for an unparseable/empty uri.
+ */
+export function parsePostId(uri: string): string | null {
+    // filter(Boolean) drops empty segments so a trailing slash (or `//`) doesn't
+    // yield an empty id.
+    const id = uri.split('/').filter(Boolean).pop();
+    return id && id.trim() ? id : null;
+}
+
 export class AudioPostService {
     constructor(private readonly deps: AudioPostDependencies) {}
 
@@ -78,6 +91,12 @@ export class AudioPostService {
     async createPost(input: CreateAudioPostInput): Promise<AudioPostRecord> {
         const kind: AudioPostRecord['kind'] = input.reply ? 'reply' : 'prompt';
 
+        // Reply gating (§6): resolve the parent to authorize the reply and derive
+        // the branch participant pair. Prompts have no parent, so they skip this.
+        const threadParticipants = input.reply
+            ? await this.resolveReplyParticipants(input.originAppId, input.authorId, input.reply)
+            : undefined;
+
         const record = AudioPostRecordSchema.parse({
             id: this.deps.newPostId(),
             originAppId: input.originAppId,
@@ -85,6 +104,7 @@ export class AudioPostService {
             authorDid: input.authorDid,
             orgId: input.orgId ?? undefined,
             kind,
+            threadParticipants,
             text: input.text,
             // Replies carry no title (record invariant); only prompts do.
             title: kind === 'prompt' ? input.title : undefined,
@@ -97,6 +117,44 @@ export class AudioPostService {
 
         await this.deps.savePost(record);
         return record;
+    }
+
+    /**
+     * Authorize a reply and compute its branch participant pair (§6 "Reply
+     * gating"). Throws when the parent is missing/cross-tenant (404) or the
+     * author isn't allowed to reply (403).
+     *
+     * - parent is the **prompt** (thread-root): any authenticated author may
+     *   answer (the app's default audience policy); the branch opens with
+     *   `{ creator (prompt author), this responder }`.
+     * - parent is a **reply**: only the branch's existing participants may
+     *   continue — the pair is inherited unchanged. Keying off the branch pair
+     *   (not `parent.author`) is what lets the creator ↔ responder back-and-forth
+     *   continue past the second turn.
+     */
+    private async resolveReplyParticipants(
+        originAppId: string,
+        authorId: string,
+        reply: ReplyRef,
+    ): Promise<string[]> {
+        const parentId = parsePostId(reply.parent.uri);
+        const parent = parentId ? await this.deps.getPostById(originAppId, parentId) : null;
+        if (!parent) {
+            throw new NotFoundError('Parent post not found');
+        }
+
+        if (parent.kind === 'prompt') {
+            // Top-level reply: the audience answers the call. Deduped so a
+            // creator replying to their own prompt collapses to a single id.
+            return Array.from(new Set([parent.authorId, authorId]));
+        }
+
+        // Reply to a reply: participant-only. Inherit the established pair.
+        const participants = parent.threadParticipants ?? [parent.authorId];
+        if (!participants.includes(authorId)) {
+            throw new ForbiddenError('Only the thread participants can reply here');
+        }
+        return participants;
     }
 
     /**
@@ -210,9 +268,27 @@ export class AudioPostService {
                 createdAt: record.createdAt,
             },
             embed,
-            viewer: {
-                isAuthor: viewerUid !== null && viewerUid === record.authorId,
-            },
+            viewer: this.computeViewerState(record, viewerUid),
         };
+    }
+
+    /**
+     * Per-viewer state: authorship + reply gating (§6). A prompt is repliable by
+     * any authenticated viewer (audience-policy default); a reply only by its
+     * branch participants. Anonymous viewers can't reply to anything.
+     */
+    private computeViewerState(record: AudioPostRecord, viewerUid: string | null): ViewerState {
+        const isAuthor = viewerUid !== null && viewerUid === record.authorId;
+
+        if (viewerUid === null) {
+            return { isAuthor, canReply: false, replyDisabledReason: 'unauthenticated' };
+        }
+        if (record.kind === 'prompt') {
+            return { isAuthor, canReply: true };
+        }
+        const participants = record.threadParticipants ?? [record.authorId];
+        return participants.includes(viewerUid)
+            ? { isAuthor, canReply: true }
+            : { isAuthor, canReply: false, replyDisabledReason: 'not_a_participant' };
     }
 }
