@@ -187,8 +187,8 @@ export const firebaseUserDependencies: UserDependencies = {
             if (!userData) continue;
 
             // Hydration-layer narrowing: batch lookup is the default feeder
-            // for `loadUser` (hydrating author/recipient across every PromptView
-            // / ReplyView), so it MUST NOT admit PII or admin fields. Explicit
+            // for hydrating post authors (across every AudioPostView), so it
+            // MUST NOT admit PII or admin fields. Explicit
             // field selection + ProfileViewBasicSchema ensures
             // email/phoneNumber/lastSeenAt/unreadReplyCount/settings/
             // blockedUsers/followers/following/reportCount/isBanned never cross
