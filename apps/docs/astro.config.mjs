@@ -12,6 +12,15 @@ export default defineConfig({
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/bbthorson/antiphony' },
 			],
+			// Brand: self-hosted fonts (Sora/Inter/JetBrains Mono) + the
+			// "Two Voices" duotone theme. Order matters — fonts before brand.css
+			// so the @font-face families exist when the theme references them.
+			customCss: [
+				'@fontsource-variable/inter',
+				'@fontsource-variable/sora',
+				'@fontsource-variable/jetbrains-mono',
+				'./src/styles/brand.css',
+			],
 			sidebar: [
 				{
 					label: 'Introduction',
