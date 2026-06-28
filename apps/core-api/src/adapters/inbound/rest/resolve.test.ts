@@ -1,27 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ProfileView, OrganizationView } from 'shared/types/views';
+import type { ProfileView } from 'shared/types/views';
 
 /**
  * Tests for `GET /api/v1/resolve/:handle`.
  *
  * Mocks:
- *   - `core-services-firebase` exports `feedService` with `resolveHandle`.
- *     Same pattern as handles.test.ts — mock the singleton rather than
- *     the whole Firebase stack.
+ *   - `core-services-firebase` exports `userService` with `getUserData`.
+ *     The route projects the resolved profile through `toProfileViewBasic`.
  *   - `firebase-admin` is stubbed because rate-limit middleware uses it;
  *     the transaction returns "not limited" so requests pass through.
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    feedService: {
-        resolveHandle: vi.fn(),
+    userService: {
+        getUserData: vi.fn(),
     },
-    // The other singletons aren't referenced by the resolve route itself,
-    // but exporting them keeps the mock shape compatible with the real
-    // module so nothing else trips if vitest's import graph touches them.
-    userService: {},
-    organizationService: {},
-    hydrationService: {},
     firebaseCoreServices: {},
 }));
 
@@ -52,55 +45,31 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 const { app } = await import('../../../app.js');
-const { feedService } = await import('../../outbound/firebase/core-services-firebase.js');
+const { userService } = await import('../../outbound/firebase/core-services-firebase.js');
 
 describe('GET /api/v1/resolve/:handle', () => {
     beforeEach(() => {
         vi.resetAllMocks();
     });
 
-    it('returns a user resolution as { success: true, data: { type: "user", profile } }', async () => {
-        const profile = { id: 'uid-123', handle: 'alice', displayName: 'Alice' };
-        vi.mocked(feedService.resolveHandle).mockResolvedValue({
-            type: 'user',
-            profile: profile as unknown as ProfileView,
-        });
+    it('returns the basic profile projection when the handle resolves', async () => {
+        const profile = { id: 'uid-123', handle: 'alice', displayName: 'Alice', email: 'alice@example.com' };
+        vi.mocked(userService.getUserData).mockResolvedValue(profile as unknown as ProfileView);
 
         const res = await app().request('/api/v1/resolve/alice');
 
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body).toEqual({
-            success: true,
-            data: {
-                type: 'user',
-                profile,
-            },
-        });
-    });
-
-    it('returns an org resolution as { success: true, data: { type: "org", org } }', async () => {
-        const org = { record: { id: 'org-456', slug: 'acme', name: 'Acme Inc' }, memberCount: 7 };
-        vi.mocked(feedService.resolveHandle).mockResolvedValue({
-            type: 'org',
-            org: org as unknown as OrganizationView,
-        });
-
-        const res = await app().request('/api/v1/resolve/acme');
-
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body).toEqual({
-            success: true,
-            data: {
-                type: 'org',
-                org,
-            },
-        });
+        expect(body.success).toBe(true);
+        expect(body.data.id).toBe('uid-123');
+        expect(body.data.handle).toBe('alice');
+        expect(body.data.displayName).toBe('Alice');
+        // PII must not cross the public projection boundary.
+        expect(body.data.email).toBeUndefined();
     });
 
     it('returns data: null when the handle does not resolve', async () => {
-        vi.mocked(feedService.resolveHandle).mockResolvedValue(null);
+        vi.mocked(userService.getUserData).mockResolvedValue(null);
 
         const res = await app().request('/api/v1/resolve/nobody');
 
@@ -110,7 +79,7 @@ describe('GET /api/v1/resolve/:handle', () => {
     });
 
     it('propagates the inbound X-Request-ID header', async () => {
-        vi.mocked(feedService.resolveHandle).mockResolvedValue(null);
+        vi.mocked(userService.getUserData).mockResolvedValue(null);
 
         const res = await app().request('/api/v1/resolve/anyone', {
             headers: { 'x-request-id': 'upstream-abc' },
@@ -120,7 +89,7 @@ describe('GET /api/v1/resolve/:handle', () => {
     });
 
     it('maps service errors to a 500 with requestId', async () => {
-        vi.mocked(feedService.resolveHandle).mockRejectedValue(new Error('firestore offline'));
+        vi.mocked(userService.getUserData).mockRejectedValue(new Error('firestore offline'));
 
         const res = await app().request('/api/v1/resolve/boom');
 

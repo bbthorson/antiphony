@@ -1,37 +1,33 @@
 import type { UserRecord } from 'shared/types/records';
 import type { ProfileView } from 'shared/types/views';
 import { NotFoundError } from 'shared/errors';
-import type { CoreServices } from '../ports/core-services';
 import type { UpdateProfileDto, UserDependencies } from '../ports/users-dependencies';
 import { type Logger, defaultLogger } from '../ports/logger';
 
 export type { UpdateProfileDto } from '../ports/users-dependencies';
 
-const DEFAULT_SYSTEM_GREETING_URL = 'https://storage.googleapis.com/voxpop-public/defaults/inbox-greeting.mp3';
-
 /**
  * UserService is the business-logic layer for users: handle resolution,
- * profile hydration, onboarding, and handle-swap orchestration. Data access
- * is delegated to an injected `UserDependencies` binding; peer-service
- * access (e.g., creating the General Inbox prompt in `ensureUserExists`)
- * flows through the injected `CoreServices` (Phase 2.5 DI container).
+ * profile hydration, identity onboarding, and handle-swap orchestration.
+ * Data access is delegated to an injected `UserDependencies` binding.
  *
  * Lives in `packages/core/` as of Task E.4. The Firebase-backed binding
  * (Firestore + Firebase Auth) and singleton construction live in
- * `apps/web/src/services/users.ts` as the composition layer.
+ * `apps/core-api/src/adapters/outbound/firebase/` as the composition layer.
  */
 export class UserService {
     constructor(
         private readonly deps: UserDependencies,
-        private readonly services: CoreServices,
         private readonly logger: Logger = defaultLogger,
     ) {}
 
     async getUserData(handle: string): Promise<ProfileView | null> {
-        // Trim but keep original case for the UID fallback — Firebase Auth
-        // UIDs are case-sensitive, so lowercasing `sLhaGagvW5NE...` to
-        // `slhagagvw5ne...` would cause the UID lookup to 404.
-        const trimmedInput = handle ? handle.trim() : '';
+        // Trim + strip a single leading `@` (clients often pass `@alice`), but
+        // keep original case for the UID fallback — Firebase Auth UIDs are
+        // case-sensitive, so lowercasing `sLhaGagvW5NE...` to `slhagagvw5ne...`
+        // would cause the UID lookup to 404. Lowercasing happens only for the
+        // handle/username lookups below.
+        const trimmedInput = handle ? handle.trim().replace(/^@/, '') : '';
         if (!trimmedInput) return null;
         const sanitizedHandle = trimmedInput.toLowerCase();
         this.logger.info({ handle: sanitizedHandle }, '[UserService] Fetching user data for handle');
@@ -109,41 +105,14 @@ export class UserService {
     }
 
     /**
-     * Ensures a user document exists — creates a stub if missing, then
-     * creates the General Inbox prompt (also only if missing).
-     *
-     * Order matters: user is written BEFORE the prompt, because prompt
-     * creation references the user as author.
+     * Ensures a user document exists — creates an identity stub if missing.
+     * Idempotent: a no-op when the user doc is already present.
      */
     async ensureUserExists(uid: string): Promise<void> {
-        let created: boolean;
         try {
-            created = await this.deps.ensureUserStub(uid);
+            await this.deps.ensureUserStub(uid);
         } catch (error) {
             this.logger.error({ err: error }, '[UserService] Error creating stub user');
-            throw new NotFoundError('Failed to create user profile');
-        }
-
-        if (!created) return;
-        this.logger.info({ uid }, '[UserService] Created stub user');
-
-        try {
-            const inboxId = `inbox_${uid}`;
-            const inboxPrompt = await this.services.prompts.getPromptRecord(inboxId);
-            if (!inboxPrompt) {
-                await this.services.prompts.createPrompt({
-                    id: inboxId,
-                    title: 'General Inbox',
-                    description: 'System prompt for SIP voicemails',
-                    status: 'archived',
-                    audioUrl: DEFAULT_SYSTEM_GREETING_URL,
-                    authorId: uid,
-                    createdAt: this.deps.now(),
-                });
-                this.logger.info({ uid }, '[UserService] Created General Inbox');
-            }
-        } catch (error) {
-            this.logger.error({ err: error }, '[UserService] Error creating General Inbox prompt');
             throw new NotFoundError('Failed to create user profile');
         }
     }

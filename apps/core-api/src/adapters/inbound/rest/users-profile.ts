@@ -1,34 +1,22 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { ProfileViewBasicSchema, toProfileViewBasic } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
-import { feedService } from '../../outbound/firebase/core-services-firebase.js';
+import { userService } from '../../outbound/firebase/core-services-firebase.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
  * GET /api/v1/users/:handle/profile
  *
- * Aggregated user-profile-page payload:
- *   `{ profileUser: ProfileView, allPromptsWithReplies: PromptWithReplies[], repliers: Replier[] }`
+ * Public actor-profile read for the profile page. Returns the basic
+ * (PII-free) profile for the resolved user. The handle slot accepts a handle
+ * or raw UID — `UserService.getUserData` carries the UID fallback. Returns
+ * 404 if the target user can't be resolved.
  *
- * The handle slot accepts a handle or raw UID — `FeedService.getUserProfileData`
- * delegates to `UserService.getUserData` which has the UID fallback. Public
- * endpoint. Returns 404 if the target user can't be resolved.
- *
- * Parity with: apps/web/src/app/api/v1/users/[handle]/profile/route.ts
- *
- * Note: `repliers` is always `[]` in the current implementation — the
- * eager-reply fetch was dropped during Phase 2 simplification. Clients
- * that need repliers call the CRM list endpoint separately.
+ * Identity-only: the canonical Antiphony surface keeps actor records to pure
+ * identity. Audio posts and their threads live under `/api/v1/posts`, not on
+ * the profile payload.
  */
-
-// Loose schema for the aggregated payload — the sharper view types are
-// nested and complex. Acceptable for the pilot; future iterations can
-// build a precise `UserProfilePayloadSchema` and lift it into shared.
-const ProfilePayloadSchema = z.object({
-    profileUser: z.unknown(),
-    allPromptsWithReplies: z.array(z.unknown()),
-    repliers: z.array(z.unknown()),
-});
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
@@ -36,8 +24,8 @@ const getProfileRoute = createRoute({
     method: 'get',
     path: '/{handle}/profile',
     tags: ['Users'],
-    summary: 'Get a user profile page payload',
-    description: 'Aggregated payload for the user-profile page: the profile, every public prompt with its replies, and the repliers list.',
+    summary: 'Get a user profile',
+    description: 'Public actor-profile read: the basic (PII-free) profile for the resolved user.',
     middleware: [rateLimit(RATE_LIMITS.read)] as const,
     request: {
         params: z.object({
@@ -45,20 +33,23 @@ const getProfileRoute = createRoute({
         }),
     },
     responses: {
-        200: jsonResponse(ProfilePayloadSchema, 'Profile-page payload'),
+        200: jsonResponse(ProfileViewBasicSchema, 'Actor profile'),
         404: errorResponse('User not found'),
     },
 });
 
 app.openapi(getProfileRoute, async (c) => {
-    const handle = c.req.param('handle');
-    const data = await feedService.getUserProfileData(handle);
+    // Use the validated param (matches the sibling /resolve route). Handle
+    // normalization (trim, leading `@` strip, case handling) lives in
+    // UserService.getUserData so all identity routes share one rule.
+    const { handle } = c.req.valid('param');
+    const profile = await userService.getUserData(handle);
 
-    if (!data) {
+    if (!profile) {
         return c.json(errorEnvelope(c, 'User not found'), 404);
     }
 
-    return c.json({ success: true as const, data }, 200);
+    return c.json({ success: true as const, data: toProfileViewBasic(profile) }, 200);
 });
 
 export { app as usersProfileRoute };

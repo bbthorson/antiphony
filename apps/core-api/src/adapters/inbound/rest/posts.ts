@@ -14,17 +14,16 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
 
 /**
  * Antiphony audio-post endpoints mounted at `/api/v1/posts`
- * (the `dev.antiphony.audio.post` model, Stream 1 PR2).
+ * (the `dev.antiphony.audio.post` model).
  *
  *   GET    /                  — list the viewer's posts (paginated, kind filter)
  *   GET    /:postId           — single hydrated AudioPostView (optional auth)
  *   GET    /:postId/replies   — thread: replies to the post (paginated)
  *   POST   /                  — create a post (idempotency-capable)
  *
- * Fully ADDITIVE — the legacy `/prompts` + `/replies` routes are untouched, so
- * Vox Pop keeps running while this new surface is validated on its own
- * (reference deploy + Stream 1.5 reference app). Vox Pop migrates last
- * (Stream 4).
+ * This is the canonical content surface: a single post collection where
+ * `reply` presence discriminates a prompt (thread root) from a reply. The
+ * legacy `/prompts` + `/replies` + `/organizations` surface has been removed.
  *
  * **Tenancy:** every read/write is scoped to a single `originAppId`, resolved
  * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `vox-pop`). Real
