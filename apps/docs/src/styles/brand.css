@@ -51,7 +51,9 @@ h6,
 /* The second voice — coral. Kept to small, deliberate moments. */
 ::selection {
 	background: var(--ap-response);
-	color: #fff;
+	/* Ink (not white) on coral — white-on-coral is ~2.7:1, below WCAG AA;
+	   ink is ~5.9:1 and reads cleanly. */
+	color: #0f172a;
 }
 
 /* Links answer in coral on hover (the response to the indigo call). */
