@@ -4916,6 +4916,17 @@
                                   "isAuthor": {
                                     "type": "boolean",
                                     "default": false
+                                  },
+                                  "canReply": {
+                                    "type": "boolean",
+                                    "default": false
+                                  },
+                                  "replyDisabledReason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unauthenticated",
+                                      "not_a_participant"
+                                    ]
                                   }
                                 }
                               }
@@ -5677,6 +5688,17 @@
                             "isAuthor": {
                               "type": "boolean",
                               "default": false
+                            },
+                            "canReply": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "replyDisabledReason": {
+                              "type": "string",
+                              "enum": [
+                                "unauthenticated",
+                                "not_a_participant"
+                              ]
                             }
                           }
                         }
@@ -6083,6 +6105,17 @@
                                   "isAuthor": {
                                     "type": "boolean",
                                     "default": false
+                                  },
+                                  "canReply": {
+                                    "type": "boolean",
+                                    "default": false
+                                  },
+                                  "replyDisabledReason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unauthenticated",
+                                      "not_a_participant"
+                                    ]
                                   }
                                 }
                               }

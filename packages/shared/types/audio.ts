@@ -136,6 +136,15 @@ export const AudioPostRecordSchema = z.object({
     orgId: z.string().nullable().optional(),
     /** Denormalized from `reply` presence: `reply` set ⇒ 'reply', else 'prompt'. */
     kind: z.enum(['prompt', 'reply']),
+    /**
+     * Branch participant pair (author ids) for reply gating — the parties to a
+     * reply's sub-thread: the creator (thread-root author) + the responder who
+     * opened the branch. Set on replies (deduped, 1–2 ids); absent on prompts
+     * (a prompt's repliers are the app's audience policy, not a fixed pair).
+     * Inherited down the branch so reply gating is an O(1) field check, never a
+     * thread walk. See `specs/antiphony-data-model.md` §6 "Reply gating".
+     */
+    threadParticipants: z.array(z.string()).optional(),
 
     // --- Lexicon fields (public contract) ---
     /** User-authored text (bsky-semantic). May be empty for pure-audio posts. NEVER the transcript. */
@@ -204,6 +213,14 @@ export type ActorProfileRecord = z.infer<typeof ActorProfileRecordSchema>;
 export const ViewerStateSchema = z.object({
     /** True when the authenticated caller authored this post. */
     isAuthor: z.boolean().default(false),
+    /**
+     * Whether the caller may reply to this post (reply gating, §6). A prompt is
+     * repliable by any authenticated viewer (the app's audience-policy default);
+     * a reply only by its branch participants (`{ creator, branch responder }`).
+     */
+    canReply: z.boolean().default(false),
+    /** Why `canReply` is false, when it is (omitted when the caller can reply). */
+    replyDisabledReason: z.enum(['unauthenticated', 'not_a_participant']).optional(),
 });
 export type ViewerState = z.infer<typeof ViewerStateSchema>;
 

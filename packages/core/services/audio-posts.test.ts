@@ -70,12 +70,78 @@ describe('createPost', () => {
 
     it('derives kind=reply and drops any title when a reply ref is present', async () => {
         const ref = { uri: 'at://u1/dev.antiphony.audio.post/root', cid: 'root' };
+        (deps.getPostById as ReturnType<typeof vi.fn>).mockResolvedValue({
+            id: 'root', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
+            text: 'the prompt', createdAt: new Date('2026-06-20T00:00:00Z'),
+        } as AudioPostRecord);
         const rec = await svc.createPost(promptInput({
-            text: '', title: 'should be dropped', reply: { root: ref, parent: ref },
+            authorId: 'u1', text: '', title: 'should be dropped', reply: { root: ref, parent: ref },
         }));
         expect(rec.kind).toBe('reply');
         expect(rec.title).toBeUndefined();
         expect(rec.reply?.parent.uri).toBe(ref.uri);
+    });
+});
+
+describe('reply gating (createPost, §6)', () => {
+    let deps: AudioPostDependencies;
+    let svc: AudioPostService;
+    beforeEach(() => { deps = makeDeps(); svc = new AudioPostService(deps); });
+
+    const prompt = {
+        id: 'root', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
+        text: 'the prompt', createdAt: new Date('2026-06-20T00:00:00Z'),
+    } as AudioPostRecord;
+    const rootRef = { uri: 'at://creator/dev.antiphony.audio.post/root', cid: 'root' };
+
+    function replyTo(parent: AudioPostRecord, authorId: string): CreateAudioPostInput {
+        const parentRef = { uri: buildPostUri(parent), cid: parent.id };
+        return promptInput({ authorId, text: 'a reply', reply: { root: rootRef, parent: parentRef } });
+    }
+
+    function setParent(rec: AudioPostRecord | null) {
+        (deps.getPostById as ReturnType<typeof vi.fn>).mockResolvedValue(rec);
+    }
+
+    it('opens a {creator, responder} pair for a top-level reply to a prompt', async () => {
+        setParent(prompt);
+        const rec = await svc.createPost(replyTo(prompt, 'responder'));
+        expect(rec.kind).toBe('reply');
+        expect([...(rec.threadParticipants ?? [])].sort()).toEqual(['creator', 'responder']);
+    });
+
+    it('collapses a creator self-reply to a single participant', async () => {
+        setParent(prompt);
+        const rec = await svc.createPost(replyTo(prompt, 'creator'));
+        expect(rec.threadParticipants).toEqual(['creator']);
+    });
+
+    it('404s when the parent is missing or cross-tenant, and saves nothing', async () => {
+        setParent(null);
+        await expect(svc.createPost(replyTo(prompt, 'responder'))).rejects.toMatchObject({ status: 404 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('lets a branch participant continue, inheriting the pair', async () => {
+        const reply = {
+            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            threadParticipants: ['creator', 'responder'], text: 'a reply',
+            reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
+        } as AudioPostRecord;
+        setParent(reply);
+        const rec = await svc.createPost(replyTo(reply, 'creator')); // creator answers back
+        expect([...(rec.threadParticipants ?? [])].sort()).toEqual(['creator', 'responder']);
+    });
+
+    it('403s when a non-participant replies to a reply, and saves nothing', async () => {
+        const reply = {
+            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            threadParticipants: ['creator', 'responder'], text: 'a reply',
+            reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
+        } as AudioPostRecord;
+        setParent(reply);
+        await expect(svc.createPost(replyTo(reply, 'stranger'))).rejects.toMatchObject({ status: 403 });
+        expect(deps.savePost).not.toHaveBeenCalled();
     });
 });
 
@@ -112,6 +178,30 @@ describe('hydrateAudioPosts', () => {
         expect(mine.viewer.isAuthor).toBe(true);
         expect(theirs.viewer.isAuthor).toBe(false);
         expect(anon.viewer.isAuthor).toBe(false);
+    });
+
+    it('prompt: any authenticated viewer canReply; anonymous cannot', async () => {
+        const [auth] = await svc.hydrateAudioPosts([record()], 'anyone');
+        const [anon] = await svc.hydrateAudioPosts([record()], null);
+        expect(auth.viewer.canReply).toBe(true);
+        expect(auth.viewer.replyDisabledReason).toBeUndefined();
+        expect(anon.viewer.canReply).toBe(false);
+        expect(anon.viewer.replyDisabledReason).toBe('unauthenticated');
+    });
+
+    it('reply: only branch participants canReply; others get not_a_participant', async () => {
+        const replyRec = record({
+            id: 'r1', kind: 'reply', threadParticipants: ['creator', 'responder'],
+            reply: {
+                root: { uri: 'at://creator/dev.antiphony.audio.post/root', cid: 'root' },
+                parent: { uri: 'at://creator/dev.antiphony.audio.post/root', cid: 'root' },
+            },
+        });
+        const [participant] = await svc.hydrateAudioPosts([replyRec], 'responder');
+        const [stranger] = await svc.hydrateAudioPosts([replyRec], 'stranger');
+        expect(participant.viewer.canReply).toBe(true);
+        expect(stranger.viewer.canReply).toBe(false);
+        expect(stranger.viewer.replyDisabledReason).toBe('not_a_participant');
     });
 
     it('batches author + transcript loads once for the whole set (no N+1)', async () => {
