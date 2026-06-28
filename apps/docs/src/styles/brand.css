@@ -1,0 +1,77 @@
+/**
+ * Antiphony brand — "Two Voices" duotone.
+ *
+ * The palette embodies call-and-response: an indigo **call** answered by a
+ * coral **response**. Indigo is the primary accent (links, active state); coral
+ * is used sparingly as the second voice (selection, link-hover, the title mark)
+ * so the duotone reads as a dialogue, not noise.
+ *
+ * Type: Sora (display/headings) · Inter (body) · JetBrains Mono (code),
+ * self-hosted via @fontsource-variable (no external requests).
+ */
+
+:root {
+	/* Brand anchors */
+	--ap-call: #4f46e5; /* the call — primary */
+	--ap-response: #f97362; /* the response — secondary */
+	--ap-font-display: 'Sora Variable', var(--sl-font);
+
+	/* Typography */
+	--sl-font: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+	--sl-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+	/* Accent ramp — indigo (the call). Light theme. */
+	--sl-color-accent-low: #e0e7ff;
+	--sl-color-accent: #4f46e5;
+	--sl-color-accent-high: #312e81;
+	--sl-color-text-accent: #4338ca;
+}
+
+/* Accent ramp — dark theme (brighter indigo so it carries on a dark field). */
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #1e1b4b;
+	--sl-color-accent: #6366f1;
+	--sl-color-accent-high: #c7d2fe;
+	--sl-color-text-accent: #a5b4fc;
+}
+
+/* Display font on headings + the site title. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.site-title {
+	font-family: var(--ap-font-display);
+	font-weight: 600;
+	letter-spacing: -0.015em;
+}
+
+/* The second voice — coral. Kept to small, deliberate moments. */
+::selection {
+	background: var(--ap-response);
+	color: #fff;
+}
+
+/* Links answer in coral on hover (the response to the indigo call). */
+.sl-markdown-content a {
+	text-decoration-color: color-mix(in srgb, var(--sl-color-text-accent) 40%, transparent);
+	text-underline-offset: 0.15em;
+	transition: text-decoration-color 0.15s ease;
+}
+.sl-markdown-content a:hover {
+	text-decoration-color: var(--ap-response);
+}
+
+/* A coral tick on the site title — a tiny call-and-response mark in the chrome. */
+.site-title::after {
+	content: '';
+	display: inline-block;
+	width: 0.4em;
+	height: 0.4em;
+	margin-inline-start: 0.35em;
+	border-radius: 50%;
+	background: var(--ap-response);
+	vertical-align: 0.08em;
+}
