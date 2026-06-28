@@ -39,7 +39,10 @@ const getProfileRoute = createRoute({
 });
 
 app.openapi(getProfileRoute, async (c) => {
-    const handle = c.req.param('handle');
+    // Use the validated param (matches the sibling /resolve route). Handle
+    // normalization (trim, leading `@` strip, case handling) lives in
+    // UserService.getUserData so all identity routes share one rule.
+    const { handle } = c.req.valid('param');
     const profile = await userService.getUserData(handle);
 
     if (!profile) {

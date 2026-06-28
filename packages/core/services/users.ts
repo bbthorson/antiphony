@@ -22,10 +22,12 @@ export class UserService {
     ) {}
 
     async getUserData(handle: string): Promise<ProfileView | null> {
-        // Trim but keep original case for the UID fallback — Firebase Auth
-        // UIDs are case-sensitive, so lowercasing `sLhaGagvW5NE...` to
-        // `slhagagvw5ne...` would cause the UID lookup to 404.
-        const trimmedInput = handle ? handle.trim() : '';
+        // Trim + strip a single leading `@` (clients often pass `@alice`), but
+        // keep original case for the UID fallback — Firebase Auth UIDs are
+        // case-sensitive, so lowercasing `sLhaGagvW5NE...` to `slhagagvw5ne...`
+        // would cause the UID lookup to 404. Lowercasing happens only for the
+        // handle/username lookups below.
+        const trimmedInput = handle ? handle.trim().replace(/^@/, '') : '';
         if (!trimmedInput) return null;
         const sanitizedHandle = trimmedInput.toLowerCase();
         this.logger.info({ handle: sanitizedHandle }, '[UserService] Fetching user data for handle');
