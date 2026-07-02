@@ -9,14 +9,14 @@ This page is the **mental model** for the whole project: why the API is scoped t
 
 ## The core is a hub
 
-Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single source of truth for identity, audio posts, replies, and transcription, with a contract in front of it. Everything a human or a machine actually touches — a web dashboard, an embed on a blog, a phone call, a mobile app — is a separate **connector** that talks to the hub over that contract.
+Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single source of truth for portable audio posts, replies, transcription, and an optional actor↔DID mapping, with a contract in front of it — deliberately not accounts or profiles, which stay with each connector. Everything a human or a machine actually touches — a web dashboard, an embed on a blog, a phone call, a mobile app — is a separate **connector** that talks to the hub over that contract.
 
 ```
                        ┌───────────────────────────┐
    web dashboard ────▶ │                           │ ◀──── mobile app
                        │        Antiphony          │
-   embed / pages ────▶ │   (identity · audio       │ ◀──── your app
-                       │     posts · transcripts)  │
+   embed / pages ────▶ │  (audio posts · replies   │ ◀──── your app
+                       │    · transcripts · DIDs)  │
    phone / IVR  ─────▶ │           hub             │ ◀──── RSS / federation
                        └───────────────────────────┘
 ```
@@ -48,7 +48,7 @@ Connectors don't all knock on the same door. The hub exposes distinct **planes**
 
 | Plane | Path shape | Who calls it | Auth |
 |---|---|---|---|
-| **Consumer API** | `/api/v1/*` | Apps built on the core — yours, a dashboard, mobile. | Bearer token (anonymous token for public projections). |
+| **Consumer API** | `/api/v1/*` | Apps built on the core — yours, a dashboard, mobile. | A service credential asserting the acting actor (or, for local demos, an anonymous end-user token) — see [Authentication](/api/overview/#authentication). Public projections accept no token. |
 | **Ingestion** | `system/*` | Ingress connectors writing on behalf of a captured event. | System-to-system, not end-user tokens. |
 
 The **consumer API** is the documented front door — it's all you need for the egress and bidirectional cases, and it's what appears in the [reference](/api/overview/). The **ingestion plane** (`system/*`) is the exception: it's system-to-system plumbing an ingress connector uses to write on behalf of a captured event, so it stays out of the public reference by design — it isn't something a third-party client calls with an end-user token.

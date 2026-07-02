@@ -16,13 +16,11 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list the viewer's posts, list a post's replies (the thread). One record type; `reply` presence is prompt-vs-reply.
-- **`/audio`** — Upload audio (authenticated and anonymous-pending), and resolve a stored ref to a short-lived signed playback URL.
-- **`/users`** — Profile read, current-user write, handle claim/availability.
-- **`/actors`** / **`/resolve`** — Actor profiles and handle resolution.
-- **`/atproto`** — AT Protocol identity linking (connect/disconnect — about the actor's DID).
+- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), and resolve a stored ref to a short-lived signed playback URL.
+- **`/actors`** — The optional actor↔DID mapping a connecting app may register (`POST /actors/register`, `GET /actors/:actorId`). This is narrow: just the AT Protocol identity, not a profile. See [service auth](#authentication) below.
 
-:::note
-Some routes still present on a given deployment (legacy `prompts`/`replies`, app-level grouping) are **app-layer carryover**, not part of the canonical Antiphony contract. The records above — and the [lexicons](/lexicons/overview/) — are what an adopter builds against.
+:::note[Legacy surface — not the target contract]
+`/users`, `/atproto`, and `/resolve` are still live on this deployment but are **Vox Pop's profile/identity-linking surface**, not part of Antiphony's core contract. Antiphony is infrastructure for storing and retrieving audio posts; end-user profile data (display name, bio, handle claiming, OAuth linking UX) belongs to the calling application, not the core. These routes stay until that app finishes moving its own profile store — don't build a new integration against them; use `/posts`, `/audio`, and `/actors`.
 :::
 
 Internal/utility routes (system-auth glue, ingestion plumbing) intentionally stay out of the public reference — they're service-to-service plumbing a third-party client wouldn't call.
@@ -43,13 +41,27 @@ Drive your reply affordance off `viewer.canReply`. (An app that wants different 
 
 ## Authentication
 
-All non-public endpoints require a bearer token in the `Authorization` header:
+Antiphony is meant to be called by an **application** (a BFF, a worker), not directly by end-user browsers. All non-public endpoints require a bearer token in the `Authorization` header:
 
 ```
-Authorization: Bearer <id_token_or_session_cookie>
+Authorization: Bearer <token>
 ```
 
-`core-api` accepts both Firebase ID tokens (mobile, embed, browser) and Firebase session cookie values (server-side rendered apps) interchangeably. An **anonymous** Firebase token is enough to write and read your own posts — see the [reference app](/build-your-own/reference-app/). Public projections accept missing/invalid tokens and return a public-safe shape.
+Two ways to authenticate, resolved in this order:
+
+1. **Service credential (the intended path).** Your app authenticates with its own service token (`ANTIPHONY_APP_TOKENS` — provisioned by whoever runs the deployment) and asserts which of *its* users is acting:
+
+   ```
+   Authorization: Bearer <your-app-service-token>
+   X-Antiphony-Acting-Actor: <your-internal-user-id>
+   X-Antiphony-Acting-Actor-Did: <their-at-protocol-did>   # optional
+   ```
+
+   Your app's tenancy (`originAppId`) is derived from the token — Antiphony never sees your end users' credentials, and you never see Antiphony's. Full contract: [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
+
+2. **Firebase end-user token (demo / this deployment's reference app only).** A Firebase ID token or session cookie, verified directly against this deployment's Firebase project. This is how [`apps/reference`](/build-your-own/reference-app/) works — a browser demo has nowhere to hold a service secret — but it couples the caller to this specific Firebase project, so it isn't the integration path for a real application.
+
+Public projections (e.g. `GET /posts/:id`) accept missing/invalid tokens and return a public-safe shape.
 
 ## Envelope
 

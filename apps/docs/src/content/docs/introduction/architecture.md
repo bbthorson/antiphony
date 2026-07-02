@@ -13,17 +13,18 @@ Firebase (Firestore, Firebase Auth, Cloud Storage) is the only backend implement
 ┌─────────────────────────────────────────────────────┐
 │                   apps/core-api/                      │
 │                                                       │
+│   middleware/auth.ts, service-auth.ts                 │
+│   ← app service credential → tenancy + acting actor    │
+│        │                                              │
+│        ▼                                              │
 │   adapters/inbound/rest/*.ts                          │
 │   ← Hono handlers + Zod request/response schemas      │
 │        │                                              │
 │        ▼                                              │
-│   use-cases/*.ts        (application logic)           │
-│        │                                              │
-│        ▼                                              │
 │   packages/core/services/*.ts                         │
-│   ← pure-TS services (PostService, AudioService,      │
-│     ActorService, FeedService, …) over *Dependencies  │
-│     interfaces — no Firebase import                   │
+│   ← pure-TS services (AudioPostService,               │
+│     ActorIdentityService, StorageService, …) over     │
+│     *Dependencies interfaces — no Firebase import      │
 │        ▲                                              │
 │        │ implements                                   │
 │   adapters/outbound/firebase/*.ts                     │
@@ -33,9 +34,9 @@ Firebase (Firestore, Firebase Auth, Cloud Storage) is the only backend implement
 
 ## The layers
 
-- **Inbound adapters** (`apps/core-api/src/adapters/inbound/rest/`) own HTTP. Each route file validates with Zod, authenticates via the bearer middleware, and delegates. Routes mount under `/api/v1/*` in `apps/core-api/src/app.ts` — that file is the single registry of the public surface (`posts`, `audio`, `users`, `atproto`, `resolve`, …).
-- **Use cases** (`apps/core-api/src/use-cases/`) hold application-level orchestration — the steps a request triggers, independent of transport.
-- **Services** (`packages/core/services/`) hold domain logic. They depend on small `*Dependencies` interfaces (a data port, a clock, an ID generator), **never on `firebase-admin` directly**. This is the package you reuse or test in isolation.
+- **Auth middleware** (`apps/core-api/src/middleware/auth.ts`, `service-auth.ts`) resolves the caller: a service-authenticated app (tenancy + asserted actor from its credential) or, for the demo path, a verified Firebase end-user token. See [API reference § Authentication](/api/overview/#authentication) and [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
+- **Inbound adapters** (`apps/core-api/src/adapters/inbound/rest/`) own HTTP. Each route file validates with Zod, authenticates via the bearer middleware, and delegates. Routes mount under `/api/v1/*` in `apps/core-api/src/app.ts` — that file is the single registry of the public surface (`posts`, `actors`, `audio`, and the legacy `users`/`atproto`/`resolve` surface — see [API reference](/api/overview/#whats-covered)).
+- **Services** (`packages/core/services/`) hold domain logic. They depend on small `*Dependencies` interfaces (a data port, a clock, an ID generator), **never on `firebase-admin` directly**. This is the package you reuse or test in isolation. (`apps/core-api/src/use-cases/` is a reserved layer for cross-service orchestration — currently empty; most routes call a service directly.)
 - **Outbound adapters / composition root** (`apps/core-api/src/adapters/outbound/firebase/`) implement those `*Dependencies` interfaces against Firestore, Firebase Auth, and Cloud Storage, and assemble the wired services that the routes import.
 
 ## The seam that matters
@@ -49,7 +50,7 @@ If you're building your own app *on top of* the API, you don't need any of this 
 
 ## Multi-tenancy
 
-One Antiphony deployment can serve more than one app. The tenancy boundary is the **origin app**: every post is stamped with an `originAppId` (server-side, from the deployment's `ANTIPHONY_ORIGIN_APP_ID`), and reads are scoped to the same key — so App A never sees App B's posts by default. Sharing across apps is **directional and explicit**, resolved at the read (AppView) layer rather than baked into the record.
+One Antiphony deployment can serve more than one app. The tenancy boundary is the **origin app**: every post is stamped with an `originAppId`, and reads are scoped to the same key — so App A never sees App B's posts by default. The tenancy key is derived from the caller's service credential (see [Authentication](/api/overview/#authentication)); a deployment-level `ANTIPHONY_ORIGIN_APP_ID` remains only as the fallback for the Firebase end-user demo path. Sharing across apps is **directional and explicit**, resolved at the read (AppView) layer rather than baked into the record.
 
 `orgId`, where it appears, is *not* a tenancy boundary — it's an opaque indexed facet an app may tag records with for its own grouping. The core stores and filters by it but never defines what an "org" is; teams, membership, and billing are app-layer concerns. (See [What is Antiphony?](/introduction/overview/#whats-intentionally-not-in-the-open-core).)
 
