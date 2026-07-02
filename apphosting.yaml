@@ -60,12 +60,22 @@ env:
       value: "info"
       availability:
           - RUNTIME
-    # Multi-tenant origin/tenancy key stamped on every created post and used to
-    # scope reads (see adapters/inbound/rest/posts.ts getOriginAppId()).
+    # Tenancy key FALLBACK for end-user (Firebase) mode — the reference app /
+    # demo path. Service-authenticated callers get their originAppId from
+    # their credential instead (see lib/origin-app.ts + specs/service-auth.md).
     - variable: ANTIPHONY_ORIGIN_APP_ID
       value: "antiphony"
       availability:
           - RUNTIME
+    # Service-to-service app credentials (specs/service-auth.md): comma-
+    # separated `appId:token` pairs, tokens ≥32 chars. SECRET — wire through
+    # Secret Manager, never a plaintext value here. Uncomment once the first
+    # BFF credential is issued:
+    #   firebase apphosting:secrets:set antiphony-app-tokens
+    # - variable: ANTIPHONY_APP_TOKENS
+    #   secret: antiphony-app-tokens
+    #   availability:
+    #       - RUNTIME
     # CORS allowlist for browser-direct calls (the reference app's audio upload).
     # Comma-separated full origins. Starts with the App Hosting default domain
     # for the `antiphony-core-api` backend; ADD the custom domain (e.g.

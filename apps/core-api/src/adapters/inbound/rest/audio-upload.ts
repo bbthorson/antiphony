@@ -95,7 +95,7 @@ app.openapi(uploadRoute, async (c) => {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const cid = await cidForBytes(buffer);
-    const path = blobObjectPath(getOriginAppId(), cid);
+    const path = blobObjectPath(getOriginAppId(c), cid);
     if (!path) {
         // Only reachable with a misconfigured origin app id — surface loudly.
         return c.json(errorEnvelope(c, 'Blob path could not be derived'), 400);

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { sessionVerifier } from '../lib/auth/session-verifier.js';
+import { matchServiceToken } from './service-auth.js';
 import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
 
@@ -7,7 +8,7 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * Auth bridge middleware. Two variants:
  *
  *   - `optionalAuth()` — reads `Authorization: Bearer <token>` if present,
- *     verifies via `sessionVerifier`, and attaches the viewer uid to
+ *     resolves it (see order below), and attaches the viewer uid to
  *     `c.var.viewerUid`. Absent or invalid tokens produce `viewerUid = null`
  *     (no error). Use on endpoints that have a public path and an
  *     owner-aware branch.
@@ -16,27 +17,47 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  *     missing or the token is invalid. Use on endpoints that require
  *     an authenticated viewer.
  *
- * The token can be either a Firebase ID token (mobile, embed, browser)
- * or a Firebase session cookie value (apps/web RSC). See
- * `session-verifier.ts` for the dual-verification rationale.
+ * ## Token resolution order (specs/service-auth.md)
+ *
+ *   1. **Service token** — the caller is an authenticated APPLICATION
+ *      (`ANTIPHONY_APP_TOKENS`). Tenancy (`originAppId`) comes from the
+ *      matched app; the acting end user is asserted via
+ *      `X-Antiphony-Acting-Actor` (+ optional `X-Antiphony-Acting-Actor-Did`)
+ *      and trusted within the app's tenancy.
+ *   2. **End-user token** — a Firebase ID token (mobile, embed, browser) or
+ *      session cookie value; verified via `sessionVerifier`. The per-deploy
+ *      compatibility/demo path — tenancy falls back to the env default.
  *
  * ## Context shape
  *
  * After either middleware runs:
- *   - `c.get('viewerUid'): string | null` — authenticated user's uid, or null.
+ *   - `c.get('viewerUid'): string | null` — acting user's id, or null.
  *   - `c.get('viewerSession'): VerifiedSession | null` — full decoded
- *     token, including custom claims (e.g. `currentOrg`). Use when a
- *     handler needs claims beyond the uid.
+ *     token (end-user mode only; null on the service path).
+ *   - `c.get('originAppId'): string | null` — tenancy key from the service
+ *     credential, or null (caller then falls back to the env default via
+ *     `getOriginAppId(c)`).
+ *   - `c.get('actingActorDid'): string | null` — app-asserted AT Protocol
+ *     DID of the acting user (service path only).
  */
 
 declare module 'hono' {
     interface ContextVariableMap {
-        /** Authenticated user's uid, or null when anonymous. Set by auth middleware. */
+        /** Acting user's id (verified end user, or app-asserted actor), or null when anonymous. */
         viewerUid: string | null;
-        /** Full verified session with custom claims, or null when anonymous. */
+        /** Full verified session with custom claims; null when anonymous or on the service path. */
         viewerSession: import('../lib/auth/session-verifier.js').VerifiedSession | null;
+        /** Tenancy key derived from a service credential, or null in end-user mode. */
+        originAppId: string | null;
+        /** App-asserted AT Protocol DID of the acting user, or null. */
+        actingActorDid: string | null;
     }
 }
+
+/** Header carrying the app-asserted acting user id (service path). */
+export const ACTING_ACTOR_HEADER = 'x-antiphony-acting-actor';
+/** Header carrying the app-asserted acting user DID (service path, optional). */
+export const ACTING_ACTOR_DID_HEADER = 'x-antiphony-acting-actor-did';
 
 /**
  * Extract a bearer token from the `Authorization` header. Returns null
@@ -63,6 +84,30 @@ function setAnonymous(
 ): void {
     c.set('viewerUid', null);
     c.set('viewerSession', null);
+    c.set('originAppId', null);
+    c.set('actingActorDid', null);
+}
+
+/**
+ * Try the service-token path. Returns true when the bearer matched a
+ * configured app token (context is then fully decorated); false to fall
+ * through to end-user verification.
+ */
+function tryServiceAuth(
+    c: Parameters<MiddlewareHandler>[0],
+    token: string,
+): boolean {
+    const appId = matchServiceToken(token);
+    if (!appId) return false;
+
+    const actor = c.req.header(ACTING_ACTOR_HEADER)?.trim() || null;
+    const did = c.req.header(ACTING_ACTOR_DID_HEADER)?.trim() || null;
+    c.set('viewerUid', actor);
+    c.set('viewerSession', null);
+    c.set('originAppId', appId);
+    // A DID assertion without an actor is meaningless — ignore it.
+    c.set('actingActorDid', actor ? did : null);
+    return true;
 }
 
 /**
@@ -76,10 +121,18 @@ export const optionalAuth = (): MiddlewareHandler => {
             return next();
         }
 
+        // Service path first: app tokens are long random strings that can
+        // never verify as Firebase JWTs, so this adds no risk and no cost.
+        if (tryServiceAuth(c, token)) {
+            return next();
+        }
+
         try {
             const session = await sessionVerifier.verifyToken(token);
             c.set('viewerUid', session.uid);
             c.set('viewerSession', session);
+            c.set('originAppId', null);
+            c.set('actingActorDid', null);
         } catch (err) {
             // Invalid token on an optional-auth route means "treat as
             // anonymous" — not a 401. This matches apps/web's behavior:
@@ -108,10 +161,24 @@ export const requireAuth = (): MiddlewareHandler => {
             return c.json(errorEnvelope(c, 'Authentication required'), 401);
         }
 
+        if (tryServiceAuth(c, token)) {
+            // requireAuth semantics need an acting user: an app calling a
+            // viewer-required endpoint must say WHO is acting.
+            if (!c.get('viewerUid')) {
+                return c.json(
+                    errorEnvelope(c, 'X-Antiphony-Acting-Actor header required for this endpoint'),
+                    401,
+                );
+            }
+            return next();
+        }
+
         try {
             const session = await sessionVerifier.verifyToken(token);
             c.set('viewerUid', session.uid);
             c.set('viewerSession', session);
+            c.set('originAppId', null);
+            c.set('actingActorDid', null);
         } catch (err) {
             setAnonymous(c);
             logger.info(
