@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
@@ -43,33 +44,19 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * never silently downgrade to "all requests allowed".
  *
  * Constant-time comparison defends against timing side-channels on the
- * secret. Hand-rolled (no `crypto.timingSafeEqual` to avoid Buffer
- * allocation hot in the path) — the typical token length is short so
- * the bounded-loop comparison is fast.
+ * secret (same approach as service-auth).
  */
 
 /**
- * Constant-time string comparison. Always iterates the longer string's
- * length so the time taken doesn't leak which prefix matched. Returns
- * true iff the strings are byte-identical.
+ * Constant-time string comparison. Hash both sides to fixed-length digests,
+ * then compare with the native `crypto.timingSafeEqual` — no timing or
+ * length leaks, no hand-rolled loop the JIT could optimize out of constant
+ * time.
  */
 function constantTimeEqual(a: string, b: string): boolean {
-    if (a.length !== b.length) {
-        // Length mismatch is an immediate reject — but we still walk
-        // through one full pass to keep the timing flat (defends
-        // against length-leak via response latency).
-        let diff = 1;
-        const len = Math.max(a.length, b.length);
-        for (let i = 0; i < len; i++) {
-            diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-        }
-        return diff === 0 && false;
-    }
-    let diff = 0;
-    for (let i = 0; i < a.length; i++) {
-        diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    }
-    return diff === 0;
+    const aHash = createHash('sha256').update(a).digest();
+    const bHash = createHash('sha256').update(b).digest();
+    return timingSafeEqual(aHash, bHash);
 }
 
 function extractBearer(authHeader: string | undefined): string | null {
