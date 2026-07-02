@@ -2,6 +2,7 @@ export * from './api-codecs';
 export * from './types/records';
 export * from './types/views';
 export * from './types/audio';
+export * from './types/actor-identity';
 export * from './types/blob';
 export * from './types/api';
 export * from './nsid';

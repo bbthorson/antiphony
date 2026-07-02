@@ -31,14 +31,14 @@ Every call below carries `Authorization: Bearer <token>`. Anonymous auth is the 
 
 ## 2. Upload the audio
 
-The recorded blob goes to the audio route, which stores it and returns a reference you place in the post's embed:
+The recorded blob goes to the audio route, which hashes it, stores it content-addressed, and returns the canonical blob ref you place in the post's embed verbatim:
 
 ```ts
-// POST /api/v1/audio/upload (multipart) → storage ref for the embed
+// POST /api/v1/audio/upload (multipart) → { $type: 'blob', ref: { $link: '<cid>' }, mimeType, size }
 const audio = await client.uploadAudio(blob);
 ```
 
-Audio is **never** inlined into the post. The post references it; playback later resolves to a short-lived signed URL.
+Audio is **never** inlined into the post. The post references it by content address (its CID); playback later resolves that reference to a short-lived signed URL.
 
 ## 3. Create the post
 
@@ -99,8 +99,8 @@ Open the app, record, and watch it round-trip create → fetch → render. The f
 
 ## What to copy for your own app
 
-1. **A bearer token** — anonymous Firebase auth is the floor; swap in your own sign-in.
-2. **Upload, then reference** — `POST /api/v1/audio/upload`, place the result in the post's `embed`.
+1. **A bearer token** — the reference app's anonymous Firebase auth is the local-dev/demo shortcut, not the integration pattern. A real app authenticates with a [service credential](/api/overview/#authentication) and asserts its own end user as the acting actor.
+2. **Upload, then reference** — `POST /api/v1/audio/upload`, place the returned blob ref in the post's `embed` verbatim.
 3. **Create with `POST /api/v1/posts`** — `reply` presence is prompt-vs-reply; the server stamps tenancy + timestamps.
 4. **Read the view, not the record** — `GET /api/v1/posts/{id}` gives you the signed URL, the lifted transcript, and viewer state.
 5. **The envelope convention** — unwrap `{ success, data }`, handle errors.

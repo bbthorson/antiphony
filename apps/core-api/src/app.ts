@@ -6,6 +6,7 @@ import { securityHeaders } from './middleware/security-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { resolveRoute } from './adapters/inbound/rest/resolve.js';
 import { postsRoute } from './adapters/inbound/rest/posts.js';
+import { actorsRoute } from './adapters/inbound/rest/actors.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
 import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
 import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
@@ -119,6 +120,9 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/resolve', resolveRoute);
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
+    // The optional actor↔DID mapping a connecting app may register
+    // (specs/service-auth.md). Not the user/profile surface — B4-prep.
+    a.route('/api/v1/actors', actorsRoute);
     // Users routes all mount at /api/v1/users; route files distinguish by
     // path tail (`/me` vs `/:handle` vs `/:handle/profile`). Register the more
     // specific `/me` mount FIRST so Hono prefers it over the `/:handle`
@@ -145,8 +149,8 @@ export function app(): OpenAPIHono {
     // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
     //    in the spec. Public-doc scope: `/users`, `/resolve`, `/posts`,
-    //    `/audio`, `/atproto`. Transport/utility/system routes intentionally
-    //    stay plain-Hono.
+    //    `/actors`, `/audio`, `/atproto`. Transport/utility/system routes
+    //    intentionally stay plain-Hono.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
     // 7. Error handler — last, via `onError` so it catches throws from

@@ -43,4 +43,5 @@ export const OPENAPI_TAGS = [
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
     { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
     { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },
+    { name: 'Actors', description: 'The optional actor↔DID mapping a connecting app may register with Antiphony (specs/service-auth.md). Not the user/profile surface — see the Users tag for that.' },
 ] as const;
