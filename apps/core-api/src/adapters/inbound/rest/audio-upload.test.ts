@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Tests for `POST /api/v1/audio/upload`.
  *
- * Auth-gated. Multipart upload → StorageService.uploadFile → returns
- * `{ audioUrl }`. Validates mime type allowlist and size cap.
+ * Auth-gated. Multipart upload → content CID → StorageService.uploadFile at
+ * the CID-derived path → returns `{ blob }` (the canonical AT Protocol blob
+ * ref). Validates mime type allowlist and size cap.
  */
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
@@ -110,25 +111,50 @@ describe('POST /api/v1/audio/upload', () => {
         expect(body.error.message).toContain('too large');
     });
 
-    it('uploads to a uid-scoped path and returns the audioUrl', async () => {
+    it('stores at the CID-derived tenancy path and returns the canonical blob ref', async () => {
         vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-4' });
-        vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example.m4a');
+        vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
 
+        const bytes = new Uint8Array(100);
         const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
             headers: { authorization: 'Bearer ok' },
-            body: makeFormData(
-                new File([new Uint8Array(100)], 'clip.m4a', { type: 'audio/m4a' }),
-            ),
+            body: makeFormData(new File([bytes], 'clip.m4a', { type: 'audio/m4a' })),
         });
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true, data: { audioUrl: 'https://cdn/example.m4a' } });
+        const body = await res.json();
+        expect(body.success).toBe(true);
+        const blob = body.data.blob;
+        // Canonical AT Protocol blob-ref shape with a real CIDv1 (raw+sha256
+        // CIDs base32-encode with the 'bafkrei' prefix).
+        expect(blob.$type).toBe('blob');
+        expect(blob.ref.$link).toMatch(/^bafkrei[a-z2-7]+$/);
+        expect(blob.mimeType).toBe('audio/m4a');
+        expect(blob.size).toBe(100);
 
         expect(vi.mocked(StorageService.uploadFile)).toHaveBeenCalledTimes(1);
         const [bufferArg, pathArg, mimeArg] = vi.mocked(StorageService.uploadFile).mock.calls[0];
         expect(Buffer.isBuffer(bufferArg)).toBe(true);
-        expect(pathArg).toMatch(/^audio\/uploader-4\/\d+-[0-9a-f-]{36}\.m4a$/);
+        // Path is derived from tenancy + CID, never stored on the record.
+        expect(pathArg).toBe(`blobs/antiphony/${blob.ref.$link}`);
         expect(mimeArg).toBe('audio/m4a');
+    });
+
+    it('returns the same CID for identical bytes (content addressing)', async () => {
+        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-5' });
+        vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
+
+        async function upload(): Promise<string> {
+            const res = await app().request('/api/v1/audio/upload', {
+                method: 'POST',
+                headers: { authorization: 'Bearer ok' },
+                body: makeFormData(new File([new Uint8Array([1, 2, 3])], 'a.m4a', { type: 'audio/m4a' })),
+            });
+            const body = await res.json();
+            return body.data.blob.ref.$link;
+        }
+
+        expect(await upload()).toBe(await upload());
     });
 });

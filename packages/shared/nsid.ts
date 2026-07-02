@@ -37,12 +37,3 @@ export const COLLECTIONS: Record<NsidValue, string> = {
     [NSID.AudioTranscript]: 'audio_transcripts',
     [NSID.ActorProfile]: 'users',
 };
-
-/**
- * Reverse lookup: get the NSID for a Firestore collection name.
- */
-export function nsidForCollection(collection: string): NsidValue | undefined {
-    const entries = Object.entries(COLLECTIONS) as [NsidValue, string][];
-    const match = entries.find(([, col]) => col === collection);
-    return match?.[0];
-}

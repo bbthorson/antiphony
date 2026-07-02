@@ -10,17 +10,14 @@ import { errorResponse, envelopeValidationHook } from '../../../lib/openapi-enve
  * GET /api/v1/audio?url={encodedAudioUrl}
  *
  * Audio proxy. Validates the referenced object path is one we serve
- * (prefix allowlist: `audio/`, `prompts/`, `replies/`) and that any
+ * (prefix allowlist: `blobs/`, `audio/`, `prompts/`, `replies/`) and that any
  * `replies/{promptId}/...` path points at a prompt that exists.
  * Returns a 302 redirect to a time-limited signed URL (1-hour expiry
  * default, cached to the client for 50 min).
- *
- * Parity with: apps/web/src/app/api/v1/audio/route.ts. Phase 1 of the
- * signed-URL migration — see `specs/signed-url-migration.md`.
  */
 
 const prefixedPath = (p: string): boolean =>
-    p.startsWith('audio/') || p.startsWith('prompts/') || p.startsWith('replies/');
+    p.startsWith('blobs/') || p.startsWith('audio/') || p.startsWith('prompts/') || p.startsWith('replies/');
 
 /**
  * Defense-in-depth against path-traversal bypasses. GCS uses a flat
@@ -48,7 +45,7 @@ const QuerySchema = z.object({
             param: { name: 'url', in: 'query' },
             description:
                 'REQUIRED. The canonical storage URL (or object path) of the audio to proxy. ' +
-                'Must resolve to an object under `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.',
+                'Must resolve to an object under `blobs/`, `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.',
             example: 'https://storage.googleapis.com/<bucket>/replies/<promptId>/<userId>_<ts>.webm',
         }),
 });
@@ -59,7 +56,7 @@ const proxyRoute = createRoute({
     tags: ['Audio'],
     summary: 'Resolve audio to a signed URL',
     description:
-        'Validates the requested object path against the served prefixes (`audio/`, `prompts/`, `replies/`) ' +
+        'Validates the requested object path against the served prefixes (`blobs/`, `audio/`, `prompts/`, `replies/`) ' +
         'and, for reply audio, that the parent prompt exists, then 302-redirects to a short-lived signed URL ' +
         '(~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.',
     middleware: [rateLimit(RATE_LIMITS.read)] as const,

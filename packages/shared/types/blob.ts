@@ -1,34 +1,25 @@
 import { z } from 'zod';
 
 /**
- * AT Protocol Blob Reference.
+ * AT Protocol Blob Reference — the canonical atproto JSON shape:
  *
- * Represents a reference to a binary blob (audio, image, etc.) stored
- * outside the record itself. This aligns with AT Protocol's blob handling
- * where binary data is stored in the PDS blob store with a CID reference.
+ *     { "$type": "blob", "ref": { "$link": "<cid>" }, "mimeType", "size" }
  *
- * During the transition from `audioUrl: string` to `audio: BlobRef`,
- * both fields coexist. Use `resolveAudioUrl()` to get the correct URL.
+ * `ref.$link` is a REAL content CID (CIDv1, raw codec, sha2-256 over the
+ * blob bytes), computed at upload time. Storage location is derived from the
+ * CID (`blobs/{originAppId}/{cid}`), never stored on the record — records
+ * carry content addresses, not provider URLs, so they stay portable.
  */
 export const BlobRefSchema = z.object({
     /** Discriminator for AT Protocol type system */
     $type: z.literal('blob'),
-    /** Content Identifier (CID) or URL pointing to the blob */
-    ref: z.string(),
+    /** IPLD link to the blob bytes: the content CID. */
+    ref: z.object({
+        $link: z.string().min(1),
+    }),
     /** MIME type of the blob (e.g., 'audio/webm') */
     mimeType: z.string(),
     /** Size of the blob in bytes */
-    size: z.number(),
+    size: z.number().int().min(0),
 });
 export type BlobRef = z.infer<typeof BlobRefSchema>;
-
-/**
- * Resolve the audio URL from a record that may have either `audio` (BlobRef)
- * or `audioUrl` (legacy string) field.
- *
- * Prefers BlobRef.ref if present, falls back to audioUrl.
- */
-export function resolveAudioUrl(record: { audio?: BlobRef; audioUrl?: string }): string | undefined {
-    if (record.audio?.ref) return record.audio.ref;
-    return record.audioUrl;
-}

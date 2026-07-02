@@ -9,6 +9,7 @@ import {
     saveIdempotencyResult,
     IdempotencyInProgressError,
 } from '../../../lib/idempotency.js';
+import { getOriginAppId } from '../../../lib/origin-app.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
@@ -25,22 +26,11 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * `reply` presence discriminates a prompt (thread root) from a reply. The
  * legacy `/prompts` + `/replies` + `/organizations` surface has been removed.
  *
- * **Tenancy:** every read/write is scoped to a single `originAppId`, resolved
- * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `vox-pop`). Real
- * multi-app auth (API keys / app claims) is a later, separate effort; for now
- * the deploy is single-tenant and the origin app is stamped server-side.
+ * **Tenancy:** every read/write is scoped to a single `originAppId` — derived
+ * from the caller's service credential when present, else deploy config
+ * (`ANTIPHONY_ORIGIN_APP_ID`, default `antiphony`). See `lib/origin-app.ts`
+ * and `specs/service-auth.md`. Always stamped server-side.
  */
-
-/** Default tenancy key when the deploy doesn't configure one. */
-const DEFAULT_ORIGIN_APP_ID = 'vox-pop';
-
-/**
- * Resolve the origin-app tenancy key for this deploy. Read per-request (not
- * captured at module load) so tests and per-env overrides take effect.
- */
-function getOriginAppId(): string {
-    return process.env.ANTIPHONY_ORIGIN_APP_ID?.trim() || DEFAULT_ORIGIN_APP_ID;
-}
 
 /**
  * Recover the internal post id from a hydrated view's `at://` uri (the id is
@@ -109,7 +99,7 @@ app.openapi(listRoute, async (c) => {
     }
     const { limit, cursor, kind } = queryResult.data;
 
-    const items = await audioPostService.getPostsForAuthor(getOriginAppId(), uid, uid, {
+    const items = await audioPostService.getPostsForAuthor(getOriginAppId(c), uid, uid, {
         limit,
         cursorId: cursor,
         kind,
@@ -156,7 +146,7 @@ app.openapi(getByIdRoute, async (c) => {
     const postId = c.req.param('postId');
     const viewerUid = c.get('viewerUid');
 
-    const view = await audioPostService.getPostView(getOriginAppId(), postId, viewerUid);
+    const view = await audioPostService.getPostView(getOriginAppId(c), postId, viewerUid);
     if (!view) {
         return c.json(errorEnvelope(c, 'Post not found'), 404);
     }
@@ -196,7 +186,7 @@ const repliesRoute = createRoute({
 app.openapi(repliesRoute, async (c) => {
     const postId = c.req.param('postId');
     const viewerUid = c.get('viewerUid');
-    const originAppId = getOriginAppId();
+    const originAppId = getOriginAppId(c);
 
     const queryResult = z
         .object({
@@ -302,8 +292,11 @@ app.openapi(createRouteDef, async (c) => {
     const { text, title, embed, reply, langs, selfLabels } = validation.data;
 
     const created = await audioPostService.createPost({
-        originAppId: getOriginAppId(),
+        originAppId: getOriginAppId(c),
         authorId: uid,
+        // App-asserted AT Protocol DID (service path only) — trusted within
+        // the app's tenancy; see specs/service-auth.md.
+        authorDid: c.get('actingActorDid') ?? undefined,
         text,
         title,
         embed,

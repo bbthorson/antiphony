@@ -7,7 +7,7 @@ The lexicons are the heart of Antiphony. They are the **AT Protocol record defin
 
 If you read one thing before building on Antiphony, read this.
 
-The source of truth is the JSON in [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/main/lexicons/dev/antiphony). This page is the guided tour.
+The source of truth is the JSON in [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony). This page is the guided tour.
 
 ## Design stance
 
@@ -101,6 +101,28 @@ dev.antiphony.embed.audio  ──(#view.transcript lifted at read time)──▶
 ```
 
 A prompt and its replies are all `audio.post` records, threaded by `StrongRef`. Each carries an `embed.audio`. The transcript lives in its own record and is folded into the embed's view only when it exists.
+
+## How faithful is this to AT Protocol?
+
+The records validate against the official `@atproto/lexicon` parser, blob refs
+use the canonical JSON shape (`{ "$type": "blob", "ref": { "$link": "<cid>" }, "mimeType", "size" }`),
+and CIDs are **real content addresses** computed by the AT Protocol rules:
+
+- **Blob CIDs** — CIDv1, `raw` codec, sha2-256 over the audio bytes, computed
+  at upload. Storage location is *derived* from the CID (never stored on the
+  record), so records stay portable across deployments.
+- **Record CIDs** — CIDv1, `dag-cbor` codec, sha2-256 over the canonical
+  lexicon record (the public fields only). The `cid` on every view — and in
+  every reply's `reply.root`/`reply.parent` StrongRef — is therefore a
+  verifiable content address.
+
+One known deviation remains, documented so integrators aren't surprised:
+
+- **`at://` URI authority.** When a post's author has no linked DID, the URI
+  authority is an internal actor id rather than a DID or handle
+  (`at://<actorId>/dev.antiphony.audio.post/<rkey>`). Real DIDs replace this
+  as identity federation lands; the URI *structure* is already correct, so
+  consuming code won't need to change shape.
 
 ## Where next?
 

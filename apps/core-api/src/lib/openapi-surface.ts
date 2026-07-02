@@ -1,5 +1,5 @@
 /**
- * Public-surface extraction — the Plan A (A5) contract guard.
+ * Public-surface extraction — the contract guard.
  *
  * The "surface" is the SET of public endpoints (path + method), nothing more.
  * `scripts/generate-openapi.ts` writes it to `openapi.surface.json`;
@@ -9,8 +9,8 @@
  *
  * Scope: this guards the surface *shape* (which endpoints exist), NOT the
  * field-level contract detail within an endpoint (a `maxLength` shrinking, a
- * field becoming required). That class of drift belongs to Plan D (versioning
- * `@antiphony/shared`). See `specs/plan-a-core-api-contract.md`.
+ * field becoming required). That class of drift is covered by versioning
+ * `@antiphony/shared`.
  */
 export const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace'] as const;
 

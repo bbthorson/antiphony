@@ -6,11 +6,8 @@ import { randomUUID } from 'node:crypto';
  * parses JSON fields natively into the LogEntry payload, so structured
  * fields end up queryable without any custom transport.
  *
- * Why pino over Winston (which apps/web uses): pino is faster, JSON-first,
- * and has no ceremony around child loggers with bound context. Apps/web's
- * Winston setup is the legacy choice for that codebase; see
- * specs/decoupling-migration.md Post-4a Follow-ups for the "migrate
- * apps/web to pino" note.
+ * Why pino: fast, JSON-first, and no ceremony around child loggers with
+ * bound context.
  *
  * Log level comes from `LOG_LEVEL` env (default: `info` in prod, `debug`
  * otherwise). Set `LOG_LEVEL=silent` in tests to suppress output.

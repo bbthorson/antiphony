@@ -1,11 +1,9 @@
 /**
  * BlobStore is the portable interface for audio (and generic binary) storage.
  * The default Firebase Storage implementation lives in
- * `apps/web/src/services/storage-dependencies.ts`. Alternative backends
- * (S3-compatible, local filesystem for dev) can be plugged in by providing
- * an object conforming to this interface.
- *
- * See `specs/decoupling-migration.md` — Task E storage port.
+ * `apps/core-api/src/adapters/outbound/firebase/storage-dependencies.ts`.
+ * Alternative backends (S3-compatible, local filesystem for dev) can be
+ * plugged in by providing an object conforming to this interface.
  *
  * URL format note: `upload` returns a provider-specific URL (for Firebase:
  * `https://storage.googleapis.com/{bucket}/{path}`). Callers treat this as

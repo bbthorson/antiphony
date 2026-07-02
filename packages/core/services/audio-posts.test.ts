@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AudioPostService, buildPostUri, parsePostId, type CreateAudioPostInput } from './audio-posts';
+import { AudioPostService, buildPostUri, parsePostId, canonicalPostRecord, type CreateAudioPostInput } from './audio-posts';
 import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProfileViewBasic } from 'shared/types/views';
@@ -13,7 +13,7 @@ import type { ProfileViewBasic } from 'shared/types/views';
 
 const AUDIO_EMBED = {
     $type: 'dev.antiphony.embed.audio' as const,
-    audio: { $type: 'blob' as const, ref: 'https://storage.example/audio/u1/a.webm', mimeType: 'audio/webm', size: 2048 },
+    audio: { $type: 'blob' as const, ref: { $link: 'bafkreiaudio' }, mimeType: 'audio/webm', size: 2048 },
     durationMs: 4200,
     alt: 'spoken word',
     waveform: [0, 30, 90],
@@ -32,7 +32,8 @@ function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDepe
         queryReplies: vi.fn(async () => []),
         getTranscriptsBySubjectUris: vi.fn(async () => new Map<string, TranscriptEnrichmentRecord>()),
         getAuthorsByIds: vi.fn(async () => new Map([[AUTHOR.id, AUTHOR]])),
-        signAudioUrl: vi.fn(async (url: string) => `signed::${url}`),
+        signAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `signed::${originAppId}::${blobCid}`),
+        cidForRecord: vi.fn(async () => 'bafyreitestcid'),
         now: vi.fn(() => new Date('2026-06-26T00:00:00Z')),
         ...overrides,
         // expose saved for assertions without widening the interface
@@ -73,8 +74,17 @@ describe('createPost', () => {
         expect(rec.title).toBe('Headline');
         expect(rec.reply).toBeUndefined();
         expect(rec.id).toBe('post-1');
+        expect(rec.cid).toBe('bafyreitestcid');
         expect(rec.createdAt).toEqual(new Date('2026-06-26T00:00:00Z'));
         expect(deps.savePost).toHaveBeenCalledWith(rec);
+        // The CID is computed over the canonical lexicon projection — public
+        // fields only, never storage/tenancy fields.
+        const canonical = vi.mocked(deps.cidForRecord).mock.calls[0][0];
+        expect(canonical.$type).toBe('dev.antiphony.audio.post');
+        expect(canonical).not.toHaveProperty('id');
+        expect(canonical).not.toHaveProperty('originAppId');
+        expect(canonical).not.toHaveProperty('authorId');
+        expect(canonical).not.toHaveProperty('kind');
     });
 
     it('derives kind=reply and drops any title when a reply ref is present', async () => {
@@ -174,7 +184,8 @@ describe('hydrateAudioPosts', () => {
         );
 
         const [view] = await svc.hydrateAudioPosts([rec], null);
-        expect(view.embed?.url).toBe(`signed::${AUDIO_EMBED.audio.ref}`);
+        // Signed via (originAppId, blobCid) — tenancy-scoped, CID-derived path.
+        expect(view.embed?.url).toBe(`signed::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
         expect(view.embed?.$type).toBe('dev.antiphony.embed.audio#view');
         expect(view.embed?.transcript).toEqual(transcript);
         expect(view.embed?.durationMs).toBe(4200);
@@ -241,6 +252,49 @@ describe('hydrateAudioPosts', () => {
     it('returns [] for an empty input without touching the loaders', async () => {
         expect(await svc.hydrateAudioPosts([], null)).toEqual([]);
         expect(deps.getAuthorsByIds).not.toHaveBeenCalled();
+    });
+});
+
+describe('canonicalPostRecord (record-CID projection)', () => {
+    const createdAt = new Date('2026-06-26T00:00:00Z');
+
+    it('emits only present lexicon fields, with $type and ISO createdAt', () => {
+        const canonical = canonicalPostRecord({ text: 'hi', createdAt });
+        expect(canonical).toEqual({
+            $type: 'dev.antiphony.audio.post',
+            text: 'hi',
+            createdAt: '2026-06-26T00:00:00.000Z',
+        });
+        // Absent optionals are OMITTED, not present-as-undefined — key
+        // presence changes the DAG-CBOR encoding and therefore the CID.
+        expect(Object.keys(canonical)).toEqual(['$type', 'text', 'createdAt']);
+    });
+
+    it('stamps the embed $type and expands selfLabels to the lexicon union shape', () => {
+        const canonical = canonicalPostRecord({
+            text: '', embed: AUDIO_EMBED, selfLabels: ['nsfw'], createdAt,
+        });
+        expect((canonical.embed as { $type: string }).$type).toBe('dev.antiphony.embed.audio');
+        expect(canonical.labels).toEqual({
+            $type: 'com.atproto.label.defs#selfLabels',
+            values: [{ val: 'nsfw' }],
+        });
+        expect(canonical).not.toHaveProperty('selfLabels');
+    });
+
+    it('omits an empty selfLabels array entirely', () => {
+        const canonical = canonicalPostRecord({ text: 'x', selfLabels: [], createdAt });
+        expect(canonical).not.toHaveProperty('labels');
+    });
+
+    it('drops explicitly-undefined embed optionals (DAG-CBOR rejects undefined)', () => {
+        const canonical = canonicalPostRecord({
+            text: 'x',
+            embed: { ...AUDIO_EMBED, durationMs: undefined, alt: undefined, waveform: undefined },
+            createdAt,
+        });
+        const embed = canonical.embed as Record<string, unknown>;
+        expect(Object.keys(embed).sort()).toEqual(['$type', 'audio']);
     });
 });
 

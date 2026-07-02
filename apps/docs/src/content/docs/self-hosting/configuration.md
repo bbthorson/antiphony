@@ -11,7 +11,7 @@ Most of the variables below are Firebase credentials, because Firebase is the ba
 
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_ORIGIN_APP_ID` | The tenancy key every post is stamped with on create; reads are scoped to it. One deployment can serve multiple apps, each with its own id. See [Multi-tenancy](/introduction/architecture/#multi-tenancy). |
+| `ANTIPHONY_ORIGIN_APP_ID` | The **fallback** tenancy key for end-user (Firebase-token) callers — the demo/reference path. Service-authenticated apps get their tenancy from their credential instead (see below). See [Multi-tenancy](/introduction/architecture/#multi-tenancy). |
 | `FIREBASE_PROJECT_ID` | Firebase project to authenticate against. (`GCLOUD_PROJECT` is honored as a fallback when running on Google infrastructure.) |
 | `FIREBASE_STORAGE_BUCKET` | GCS bucket for audio uploads. |
 | `ADMIN_SERVICE_ACCOUNT_JSON` | Service account JSON for Firebase Admin (production). On Google infrastructure, Application Default Credentials are used instead. |
@@ -35,13 +35,16 @@ The Firebase Admin SDK reads the `*_EMULATOR_HOST` variables directly; `ANTIPHON
 
 ## Service-to-service auth
 
+Applications (BFFs, workers) are the intended callers of the posts/audio surface. Each authenticates with its own service token and asserts the acting end user per request — the full contract lives in [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
+
 | Variable | Purpose |
 |---|---|
+| `ANTIPHONY_APP_TOKENS` | Comma-separated `appId:token` pairs (tokens ≥32 chars). A caller presenting a matching `Authorization: Bearer <token>` is that app: its tenancy (`originAppId`) comes from the credential, and it asserts the acting user via `X-Antiphony-Acting-Actor` (+ optional `X-Antiphony-Acting-Actor-Did`). Store as a secret. |
 | `SYSTEM_AUTH_TOKEN` | Shared secret for the `/api/v1/system/*` routes. The system-auth middleware expects `Authorization: Bearer <SYSTEM_AUTH_TOKEN>` and **fails closed** (503) if the variable is unset — these routes are service-to-service plumbing, not public API. Store it as a secret, not in plaintext config. |
 
 ## Deployment
 
-The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/main/apps/core-api/README.md) for deploy notes.
+The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.
 
 `core-api` is a plain Node service with no platform-specific dependencies, so other targets work too:
 

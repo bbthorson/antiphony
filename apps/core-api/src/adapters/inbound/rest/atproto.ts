@@ -10,20 +10,13 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   POST /disconnect — remove the linked AT Proto identity from the
  *                       authenticated user's profile.
  *
- * Scope as of PR-F3b stage 2: only `disconnect` lives here. The OAuth
- * flow endpoints (`authorize`, `callback`, `client-metadata.json`) stay
- * on apps/web because the OAuth callback URL is registered with the PDS
- * and tied to apps/web's origin — moving them is a separate, larger
- * effort tracked under `specs/4c-atproto-prompts.md`.
+ * Only `disconnect` lives here. The OAuth flow endpoints (`authorize`,
+ * `callback`, `client-metadata.json`) stay on the product app (the BFF)
+ * because the OAuth callback URL is registered with the PDS and tied to
+ * that app's origin.
  *
- * OpenAPI scope (sub-PR 4 of `specs/drafts/openapi-generation.md`):
- * `disconnect` is the only client-callable surface here, so it's the
- * only route documented. The OAuth-flow routes are intentionally
- * plain-Hono — they're redirect-based handshakes a third-party API
- * client can't drive directly.
- *
- * Parity source: apps/web/src/app/api/v1/atproto/disconnect/route.ts
- * (deleted in this PR — `web-only-deferred` → `core-only`).
+ * OpenAPI scope: `disconnect` is the only client-callable surface here,
+ * so it's the only route documented.
  */
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });

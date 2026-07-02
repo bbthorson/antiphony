@@ -6,11 +6,6 @@ import { ProfileViewBasicSchema } from './views';
 /**
  * Antiphony canonical audio-post contract (`dev.antiphony.*`).
  *
- * This is the NEW data model from `specs/antiphony-data-model.md`, added
- * ADDITIVELY alongside the legacy `PromptRecord`/`ReplyRecord` (Stream 1).
- * Nothing here touches the old shapes; Vox Pop keeps running on them until the
- * Stream 4 migration deletes the legacy schemas + `com.voxpop.*` lexicons.
- *
  * Mirrors the lexicons in `lexicons/dev/antiphony/`. Key model decisions:
  *  - ONE post collection; `reply` presence discriminates prompt-vs-reply.
  *  - The audio is a standard `embed.audio`; transcript is platform enrichment
@@ -55,7 +50,7 @@ export type ReplyRef = z.infer<typeof ReplyRefSchema>;
  */
 export const AudioEmbedSchema = z.object({
     $type: z.literal('dev.antiphony.embed.audio'),
-    /** The audio bytes as a content-addressed storage ref (CID/path). */
+    /** The audio bytes as a content-addressed blob ref (`ref.$link` = CID). */
     audio: BlobRefSchema,
     /** Duration in MILLISECONDS (platform-wide unit; not seconds). */
     durationMs: z.number().int().min(0).optional(),
@@ -124,6 +119,13 @@ export type AudioEmbedView = z.infer<typeof AudioEmbedViewSchema>;
 export const AudioPostRecordSchema = z.object({
     /** Storage id (rkey/doc id). */
     id: z.string(),
+    /**
+     * Content CID of the canonical lexicon record (CIDv1, dag-cbor, sha2-256
+     * — the AT Protocol record-CID rule). Computed at write time over the
+     * lexicon projection (public fields only, NOT the storage/tenancy fields
+     * below), so StrongRefs built from it are verifiable content addresses.
+     */
+    cid: z.string(),
 
     // --- Tenancy + facets (storage-indexed; NOT in the lexicon) ---
     /** Origin app that created this record — the multi-tenant isolation key. */
@@ -142,7 +144,7 @@ export const AudioPostRecordSchema = z.object({
      * opened the branch. Set on replies (deduped, 1–2 ids); absent on prompts
      * (a prompt's repliers are the app's audience policy, not a fixed pair).
      * Inherited down the branch so reply gating is an O(1) field check, never a
-     * thread walk. See `specs/antiphony-data-model.md` §6 "Reply gating".
+     * thread walk.
      */
     threadParticipants: z.array(z.string()).optional(),
 
@@ -248,7 +250,8 @@ export type PostRecordPublic = z.infer<typeof PostRecordPublicSchema>;
 export const AudioPostViewSchema = z.object({
     /** at:// URI (or internal ref) identifying the post. */
     uri: z.string(),
-    cid: z.string().optional(),
+    /** Content CID of the canonical record (see `AudioPostRecordSchema.cid`). */
+    cid: z.string(),
     kind: z.enum(['prompt', 'reply']),
     author: ProfileViewBasicSchema,
     record: PostRecordPublicSchema,

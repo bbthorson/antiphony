@@ -6,11 +6,9 @@ import { secureHeaders } from 'hono/secure-headers';
  *
  * core-api serves **only JSON** (and proxied audio bytes) — it never renders
  * HTML, runs no inline scripts, and embeds no third-party content. That lets it
- * adopt a far stricter posture than apps/web's HTML CSP (which has to allowlist
- * Firebase/Google/reCAPTCHA for the browser app). Cloning apps/web's policy here
- * would be needlessly permissive — see `specs/architecture.md` § "Security
- * headers" and the Post-4a follow-up in `specs/decoupling-migration.md`
- * (tech-debt: "CSP hardening on apps/core-api", issue #656).
+ * adopt a far stricter posture than a browser app's HTML CSP (which has to
+ * allowlist scripts, frames, and third-party origins); cloning such a policy
+ * here would be needlessly permissive for a JSON-only API tier.
  *
  * Posture:
  *   - **CSP `default-src 'none'`** — the response document may load nothing.

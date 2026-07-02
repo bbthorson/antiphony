@@ -4,12 +4,11 @@ import tseslint from "typescript-eslint";
 /**
  * ESLint config for `@antiphony/shared`.
  *
- * **Dependency direction** (Plan A, A6): `@antiphony/shared` is the contract
- * package at the bottom of the dependency graph — records, views, and the Zod
- * request/response codecs consumed by core-api, web, mobile, and functions. It
- * must not import from any `apps/*` (that would invert the graph and make the
- * contract depend on a consumer). Dependencies flow up *from* shared, never
- * down into it. See specs/plan-a-core-api-contract.md.
+ * **Dependency direction**: `@antiphony/shared` is the contract package at
+ * the bottom of the dependency graph — records, views, and the Zod
+ * request/response codecs every other workspace consumes. It must not import
+ * from any `apps/*` (that would invert the graph and make the contract depend
+ * on a consumer). Dependencies flow up *from* shared, never down into it.
  */
 export default [
     {
@@ -25,14 +24,9 @@ export default [
                         group: [
                             "@/*",
                             "../../apps/**", "../apps/**", "**/apps/**",
-                            "@vox-pop/web", "@vox-pop/web/*",
                             "@antiphony/core-api", "@antiphony/core-api/*",
-                            "@vox-pop/relationships", "@vox-pop/relationships/*",
-                            "@vox-pop/mobile", "@vox-pop/mobile/*",
-                            "@vox-pop/embed", "@vox-pop/embed/*",
-                            "@vox-pop/telephony", "@vox-pop/telephony/*",
                         ],
-                        message: "packages/shared must not import from apps/* — it is the contract package at the bottom of the dependency graph. See specs/plan-a-core-api-contract.md (A6)."
+                        message: "packages/shared must not import from apps/* — it is the contract package at the bottom of the dependency graph."
                     }
                 ]
             }],

@@ -534,6 +534,7 @@
                             },
                             "required": [
                               "uri",
+                              "cid",
                               "kind",
                               "author",
                               "record",
@@ -705,13 +706,23 @@
                             ]
                           },
                           "ref": {
-                            "type": "string"
+                            "type": "object",
+                            "properties": {
+                              "$link": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "$link"
+                            ]
                           },
                           "mimeType": {
                             "type": "string"
                           },
                           "size": {
-                            "type": "number"
+                            "type": "integer",
+                            "minimum": 0
                           }
                         },
                         "required": [
@@ -1306,6 +1317,7 @@
                       },
                       "required": [
                         "uri",
+                        "cid",
                         "kind",
                         "author",
                         "record",
@@ -1723,6 +1735,7 @@
                             },
                             "required": [
                               "uri",
+                              "cid",
                               "kind",
                               "author",
                               "record",
@@ -1967,63 +1980,6 @@
                         "usageIntent": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "rssSummary": {
-                          "type": "object",
-                          "properties": {
-                            "title": {
-                              "type": "string"
-                            },
-                            "description": {
-                              "type": "string"
-                            },
-                            "items": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "title": {
-                                    "type": "string"
-                                  },
-                                  "link": {
-                                    "type": "string"
-                                  },
-                                  "content": {
-                                    "type": "string"
-                                  },
-                                  "pubDate": {
-                                    "type": "string"
-                                  }
-                                }
-                              }
-                            },
-                            "lastFetchedAt": {
-                              "anyOf": [
-                                {},
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            }
-                          }
-                        },
-                        "promptAudioUrl": {
-                          "type": "string"
-                        },
-                        "totalPrompts": {
-                          "type": "number"
-                        },
-                        "totalReplies": {
-                          "type": "number"
-                        },
-                        "favoritePromptId": {
-                          "type": "string"
                         },
                         "phoneNumber": {
                           "type": "string",
@@ -3115,10 +3071,6 @@
                                     "type": "string"
                                   }
                                 ]
-                              },
-                              "rssFeedUrl": {
-                                "type": "string",
-                                "nullable": true
                               }
                             },
                             "required": [
@@ -3369,63 +3321,6 @@
                             "usageIntent": {
                               "type": "string",
                               "nullable": true
-                            },
-                            "rssSummary": {
-                              "type": "object",
-                              "properties": {
-                                "title": {
-                                  "type": "string"
-                                },
-                                "description": {
-                                  "type": "string"
-                                },
-                                "items": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "title": {
-                                        "type": "string"
-                                      },
-                                      "link": {
-                                        "type": "string"
-                                      },
-                                      "content": {
-                                        "type": "string"
-                                      },
-                                      "pubDate": {
-                                        "type": "string"
-                                      }
-                                    }
-                                  }
-                                },
-                                "lastFetchedAt": {
-                                  "anyOf": [
-                                    {},
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                }
-                              }
-                            },
-                            "promptAudioUrl": {
-                              "type": "string"
-                            },
-                            "totalPrompts": {
-                              "type": "number"
-                            },
-                            "totalReplies": {
-                              "type": "number"
-                            },
-                            "favoritePromptId": {
-                              "type": "string"
                             },
                             "phoneNumber": {
                               "type": "string",
@@ -3884,10 +3779,10 @@
           "Audio"
         ],
         "summary": "Upload audio (authenticated)",
-        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores under `audio/<uid>/...` and returns its URL. Anonymous embed uploads use `POST /api/v1/audio/upload-pending` instead.",
+        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post.",
         "responses": {
           "200": {
-            "description": "Stored audio URL",
+            "description": "Stored audio blob ref",
             "content": {
               "application/json": {
                 "schema": {
@@ -3902,13 +3797,46 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "audioUrl": {
-                          "type": "string",
-                          "description": "Canonical storage URL of the stored object"
+                        "blob": {
+                          "type": "object",
+                          "properties": {
+                            "$type": {
+                              "type": "string",
+                              "enum": [
+                                "blob"
+                              ]
+                            },
+                            "ref": {
+                              "type": "object",
+                              "properties": {
+                                "$link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "$link"
+                              ]
+                            },
+                            "mimeType": {
+                              "type": "string"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "$type",
+                            "ref",
+                            "mimeType",
+                            "size"
+                          ],
+                          "description": "Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed's `audio`."
                         }
                       },
                       "required": [
-                        "audioUrl"
+                        "blob"
                       ]
                     }
                   },
@@ -4021,12 +3949,12 @@
           "Audio"
         ],
         "summary": "Resolve audio to a signed URL",
-        "description": "Validates the requested object path against the served prefixes (`audio/`, `prompts/`, `replies/`) and, for reply audio, that the parent prompt exists, then 302-redirects to a short-lived signed URL (~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.",
+        "description": "Validates the requested object path against the served prefixes (`blobs/`, `audio/`, `prompts/`, `replies/`) and, for reply audio, that the parent prompt exists, then 302-redirects to a short-lived signed URL (~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.",
+              "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under `blobs/`, `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.",
               "example": "https://storage.googleapis.com/<bucket>/replies/<promptId>/<userId>_<ts>.webm"
             },
             "required": false,

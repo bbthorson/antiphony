@@ -1,23 +1,9 @@
 /**
- * Vox Pop core-api — Hono HTTP service.
+ * Antiphony core-api — Hono HTTP service.
  *
- * Phase 4a deployment target: the `/api/v1/*` surface extracted from
- * `apps/web` and hosted as a standalone backend. See
- * [`specs/decoupling-migration.md`](../../../specs/decoupling-migration.md)
- * § Phase 4 for context.
- *
- * ## Current state (PR #2)
- *
- * Middleware wired: request-id propagation, error handling, rate limiting.
- * Firebase Admin bootstrap available on first query. One real endpoint:
- * `GET /api/v1/handles` (public sitemap enumeration).
- *
- * ## Planned (PR #3+)
- *
- * Remaining 65 route handlers port incrementally from
- * `apps/web/src/app/api/v1/*`. Auth middleware + bearer-token bridge lands
- * alongside the first authenticated endpoint. The `CORE_API_BASE_URL`
- * env-var flip in apps/web comes once enough endpoints are live.
+ * The standalone `/api/v1/*` backend. Route wiring, middleware order, and
+ * the OpenAPI document all live in `app.ts`; this file is only the runtime
+ * `serve()` entry point.
  */
 
 import { serve } from '@hono/node-server';

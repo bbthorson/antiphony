@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { ConflictError } from 'shared/errors';
 import { UpdateProfileRequestSchema } from 'shared/api-codecs';
+import { httpsUrl } from 'shared/types/records';
 import { ProfileViewSelfSchema } from 'shared/types/views';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
@@ -29,7 +30,8 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
 // schema today; lifting them there is a separate cleanup.
 const UpdateUserSchema = UpdateProfileRequestSchema.extend({
     email: z.string().email().optional(),
-    rssFeedUrl: z.string().url().optional(),
+    // http(s)-only like every other user-supplied URL (stored-XSS hardening).
+    rssFeedUrl: httpsUrl().optional(),
 }).partial();
 
 const DeleteSchema = z.object({
@@ -310,9 +312,7 @@ app.openapi(claimHandleRoute, async (c) => {
             }
 
             // Rename case: delete the orphaned `handles/{oldHandle}` doc so
-            // it can be reclaimed (by this user or another). Pre-fix bug —
-            // flagged by Gemini on PR #380 and tracked in
-            // `memory/project_handle_rename_orphan_bug.md`. Skip when:
+            // it can be reclaimed (by this user or another). Skip when:
             //   - First claim ever (no prior handle on the user doc).
             //   - No-op affirmation (new handle equals old, e.g. a UI that
             //     re-POSTs on focus).

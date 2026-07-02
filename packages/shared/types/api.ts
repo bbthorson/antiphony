@@ -1,12 +1,14 @@
 import { z } from 'zod';
-import { ProfileViewBasicSchema, ProfileViewSelfSchema } from './views';
+import { ProfileViewBasicSchema } from './views';
 
 // #region DTOs (Public API Contracts)
 // =================================================================================================
 
 /**
- * Public Profile DTO — the public-facing profile shape.
- * Equivalent to ProfileViewBasicSchema plus a few enrichment fields.
+ * Public Profile DTO — the public-facing profile shape returned by the
+ * `/users` discovery list. Same shape as `ProfileViewBasicSchema` (the
+ * `bluesky` re-extend is kept only so the DTO name survives in the OpenAPI
+ * output for that route).
  */
 export const PublicProfileDtoSchema = ProfileViewBasicSchema.extend({
     bluesky: z.object({
@@ -15,13 +17,6 @@ export const PublicProfileDtoSchema = ProfileViewBasicSchema.extend({
     }).optional(),
 });
 export type PublicProfileDto = z.infer<typeof PublicProfileDtoSchema>;
-
-/**
- * Actor View — the full view returned to the authenticated user about themselves.
- * Uses ProfileViewSelfSchema which includes private settings but not admin fields.
- */
-export const ActorViewSchema = ProfileViewSelfSchema;
-export type ActorView = z.infer<typeof ActorViewSchema>;
 
 // #endregion
 

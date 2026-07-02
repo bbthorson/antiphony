@@ -1,5 +1,6 @@
 import type { CreateAudioPostRequest } from '@antiphony/shared/api-codecs';
 import type { AudioPostView } from '@antiphony/shared/types/audio';
+import type { BlobRef } from '@antiphony/shared/types/blob';
 
 /**
  * Typed client for the Antiphony core-api `/posts` + `/audio` surface.
@@ -52,20 +53,20 @@ export class AntiphonyClient {
     }
 
     /**
-     * Upload audio bytes. core-api stores them and returns the canonical
-     * storage URL that goes into the embed's `audio.ref`.
+     * Upload audio bytes. core-api stores them content-addressed and returns
+     * the canonical blob ref — pass it verbatim as the embed's `audio`.
      */
-    async uploadAudio(blob: Blob, filename: string): Promise<string> {
+    async uploadAudio(blob: Blob, filename: string): Promise<BlobRef> {
         const form = new FormData();
         // Re-wrap with a clean MIME (MediaRecorder appends `;codecs=opus`,
         // which the upload allowlist rejects on exact match).
         const cleanType = blob.type.split(';')[0] || 'audio/webm';
         form.append('file', new Blob([blob], { type: cleanType }), filename);
-        const data = await this.request<{ audioUrl: string }>('/api/v1/audio/upload', {
+        const data = await this.request<{ blob: BlobRef }>('/api/v1/audio/upload', {
             method: 'POST',
             body: form,
         });
-        return data.audioUrl;
+        return data.blob;
     }
 
     /** Create a `dev.antiphony.audio.post`. Returns the new post id. */

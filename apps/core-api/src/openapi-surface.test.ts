@@ -6,7 +6,7 @@ import { app } from './app.js';
 import { extractSurface } from './lib/openapi-surface.js';
 
 /**
- * Plan A (A5) — public-surface contract guard.
+ * Public-surface contract guard.
  *
  * Rebuilds the public API surface (path + method set) from the live routes and
  * fails if it has drifted from the committed `openapi.surface.json` snapshot.
@@ -15,9 +15,9 @@ import { extractSurface } from './lib/openapi-surface.js';
  * surface changes become deliberate, reviewed acts.
  *
  * This guards the surface *shape* only, not field-level contract detail within
- * an endpoint (that's Plan D). See `specs/plan-a-core-api-contract.md`.
+ * an endpoint (that class of drift is covered by versioning `@antiphony/shared`).
  */
-describe('public API surface (A5 contract guard)', () => {
+describe('public API surface (contract guard)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const snapshotPath = resolve(here, '..', 'openapi.surface.json');
 

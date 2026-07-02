@@ -1,78 +1,68 @@
-# Contributing to Vox Pop
+# Contributing to Antiphony
 
-Thanks for your interest in contributing! Vox Pop follows an open-core model — the base voice messaging platform is open source, while premium features (AI, voice isolation, etc.) are proprietary. See [FEATURES.md](FEATURES.md) for the full breakdown.
+Thanks for your interest in contributing! Antiphony is open-source call-and-response
+audio infrastructure: AT Protocol-shaped records (`dev.antiphony.*` lexicons), a REST
+API for storing and retrieving audio posts, and audio enrichment (transcripts).
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 22 (see `.nvmrc`)
+- Node.js 22 (see `.nvmrc` / the pinned Volta setting)
 - npm
-- A Firebase project (or use emulators for local dev)
+- Java on your PATH (for the Firebase emulators)
 
 ### Setup
-
-Before starting, ensure you have Node 22 (or use the pinned Volta/NVM settings) and Java on your PATH.
 
 ```bash
 git clone https://github.com/bbthorson/antiphony.git
 cd antiphony
 npm install
 
-# Check prerequisites (Node, Java, Firebase CLI, free ports)
-npm run doctor
+# Terminal 1: Firebase emulators (auth, firestore, storage)
+npx firebase emulators:start --project demo-antiphony
 
-# Boot the full development stack (emulators + core-api + Next.js web + seed data)
-npm run dev:stack
+# Terminal 2: core-api against the emulators (port 8090)
+npm run dev
+
+# Optional, terminal 3: the reference client on http://localhost:3002
+npm run dev -w @antiphony/reference
 ```
-
-Then open `http://localhost:3000` and sign in locally using the dev tester credentials:
-
-```bash
-curl -X POST http://localhost:3000/api/auth/dev-login
-```
-
 
 ### Project Structure
 
 ```
-apps/web/          — Next.js web application
-apps/mobile/       — Expo React Native app
-apps/core-api/     — Hono open-core API service
-functions/         — Firebase Cloud Functions
-packages/core/     — Open-core service interfaces + classes
-packages/shared/   — Shared types, Zod schemas, errors
-specs/             — Internal architecture / design intent
-docs/              — External / operational reference (this file lives here)
+apps/core-api/        — Hono REST API (this app); Firebase-backed adapters
+apps/docs/            — Astro/Starlight docs site (docs.antiphony.dev)
+apps/reference/       — Minimal reference client that drives the public contract
+packages/core/        — Portable domain services + ports (no Firebase imports)
+packages/shared/      — Published contract: Zod schemas, codecs, NSIDs
+lexicons/dev/antiphony/ — AT Protocol lexicon definitions (source of truth)
 ```
 
 ## Development Workflow
 
 1. Fork the repo and create a branch from `master`
 2. Make your changes
-3. Run `npm run build` to verify the build passes
-4. Run `npx vitest run` for tests
+3. `npm run typecheck && npm run lint && npm test`
+4. If you changed a route contract, regenerate the OpenAPI spec:
+   `npm run gen:openapi` (the file is committed)
 5. Open a pull request
-
-## Open-Core Tier Boundaries
-
-Code marked with `@proprietary` in JSDoc comments depends on paid third-party services (Google Gemini, ElevenLabs, Firebase Cloud Messaging) and is part of the hosted platform, not the open-source core.
-
-**When contributing:**
-- **Tier 1 (Open Core)** code should not import from Tier 2 services. Core recording, replies, users, and organizations should work without AI or paid service dependencies.
-- **Tier 2 (Proprietary)** features run in Cloud Functions or behind feature-gated API routes. They degrade gracefully when API keys are missing.
-
-If you're unsure which tier your change falls into, just ask in the PR.
 
 ## Code Style
 
 - TypeScript strict mode everywhere
-- Zod schemas for all request/response validation
-- Use the existing `ServiceError` hierarchy for errors (`NotFoundError`, `ForbiddenError`, etc.)
-- Auth goes through `protectedRoute()` — never manually construct Bearer headers in components
-- Keep it simple. Functional > Perfect.
+- Zod schemas for all request/response validation; record shapes mirror the
+  lexicons in `lexicons/dev/antiphony/`
+- Every JSON response uses the envelope: `{ success: true, data }` /
+  `{ success: false, error, requestId }` (lint-enforced via `eslint-rules/`)
+- Use the `ServiceError` hierarchy from `@antiphony/shared` (`NotFoundError`,
+  `ForbiddenError`, …) — the error-handler middleware maps them to HTTP statuses
+- `packages/core` must stay free of Firebase imports (lint-enforced); backend
+  bindings live in `apps/core-api/src/adapters/outbound/`
 
 ## Reporting Issues
 
-- Use GitHub Issues for bugs and feature requests
-- For security vulnerabilities, see [SECURITY.md](SECURITY.md)
+Use [GitHub Issues](https://github.com/bbthorson/antiphony/issues) for bugs and
+feature requests. For security vulnerabilities, please email the maintainer
+instead of opening a public issue.
