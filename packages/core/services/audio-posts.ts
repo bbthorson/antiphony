@@ -8,6 +8,7 @@ import {
     type TranscriptEnrichmentRecord,
     type ViewerState,
 } from 'shared/types/audio';
+import { EMBED_NSID } from 'shared/nsid';
 import type { ProfileViewBasic } from 'shared/types/views';
 import { ForbiddenError, NotFoundError } from 'shared/errors';
 import type {
@@ -26,8 +27,8 @@ import { NSID } from 'shared/nsid';
  *  1. `kind` is derived from `reply` presence at write time (cheap index).
  *  2. The transcript is platform enrichment, **lifted into the embed view at
  *     read time** — never stored on the canonical record.
- *  3. The stored audio is a canonical storage URL (`BlobRef.ref`); the view
- *     carries a short-lived signed playback URL.
+ *  3. The stored audio is a content CID (`BlobRef.ref.$link`); the view
+ *     carries a short-lived signed playback URL resolved from it.
  */
 
 export interface CreateAudioPostInput {
@@ -78,6 +79,50 @@ export function parsePostId(uri: string): string | null {
     return id && id.trim() ? id : null;
 }
 
+/**
+ * Project the post's public lexicon fields into the canonical
+ * `dev.antiphony.audio.post` record shape — the object whose DAG-CBOR
+ * encoding the record CID is computed over.
+ *
+ * Rules that keep the CID deterministic and atproto-faithful:
+ *  - Public lexicon fields ONLY — storage/tenancy fields (`id`,
+ *    `originAppId`, `authorId`, `kind`, `threadParticipants`) never enter
+ *    the hash, so re-indexing can't change a record's identity.
+ *  - Absent optionals are OMITTED (never `undefined`/`null` placeholders).
+ *  - `createdAt` is the ISO-8601 string, as the lexicon stores it.
+ *  - `selfLabels` is expanded to the lexicon's
+ *    `com.atproto.label.defs#selfLabels` union shape.
+ */
+export function canonicalPostRecord(input: {
+    text: string;
+    title?: string;
+    embed?: AudioEmbed;
+    reply?: ReplyRef;
+    langs?: string[];
+    selfLabels?: string[];
+    createdAt: Date;
+}): Record<string, unknown> {
+    return {
+        $type: NSID.AudioPost,
+        text: input.text,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.embed !== undefined
+            ? { embed: { ...input.embed, $type: EMBED_NSID.Audio } }
+            : {}),
+        ...(input.reply !== undefined ? { reply: input.reply } : {}),
+        ...(input.langs !== undefined ? { langs: input.langs } : {}),
+        ...(input.selfLabels !== undefined && input.selfLabels.length > 0
+            ? {
+                  labels: {
+                      $type: 'com.atproto.label.defs#selfLabels',
+                      values: input.selfLabels.map((val) => ({ val })),
+                  },
+              }
+            : {}),
+        createdAt: input.createdAt.toISOString(),
+    };
+}
+
 export class AudioPostService {
     constructor(private readonly deps: AudioPostDependencies) {}
 
@@ -89,14 +134,34 @@ export class AudioPostService {
     async createPost(input: CreateAudioPostInput): Promise<AudioPostRecord> {
         const kind: AudioPostRecord['kind'] = input.reply ? 'reply' : 'prompt';
 
-        // Reply gating (§6): resolve the parent to authorize the reply and derive
+        // Reply gating: resolve the parent to authorize the reply and derive
         // the branch participant pair. Prompts have no parent, so they skip this.
         const threadParticipants = input.reply
             ? await this.resolveReplyParticipants(input.originAppId, input.authorId, input.reply)
             : undefined;
 
+        const createdAt = this.deps.now();
+        // Replies carry no title (record invariant); only prompts do.
+        const title = kind === 'prompt' ? input.title : undefined;
+
+        // Record CID — computed over the canonical lexicon projection (public
+        // fields only) BEFORE persisting, so the stored record and every
+        // StrongRef built from it carry a verifiable content address.
+        const cid = await this.deps.cidForRecord(
+            canonicalPostRecord({
+                text: input.text,
+                title,
+                embed: input.embed,
+                reply: input.reply,
+                langs: input.langs,
+                selfLabels: input.selfLabels,
+                createdAt,
+            }),
+        );
+
         const record = AudioPostRecordSchema.parse({
             id: this.deps.newPostId(),
+            cid,
             originAppId: input.originAppId,
             authorId: input.authorId,
             authorDid: input.authorDid,
@@ -104,13 +169,12 @@ export class AudioPostService {
             kind,
             threadParticipants,
             text: input.text,
-            // Replies carry no title (record invariant); only prompts do.
-            title: kind === 'prompt' ? input.title : undefined,
+            title,
             embed: input.embed,
             reply: input.reply,
             langs: input.langs,
             selfLabels: input.selfLabels,
-            createdAt: this.deps.now(),
+            createdAt,
         });
 
         await this.deps.savePost(record);
@@ -226,12 +290,15 @@ export class AudioPostService {
 
         // --- Hydrated audio embed (signed URL + lifted transcript) ---
         // Guard the nested audio ref defensively: although a parsed record with
-        // an `embed` always carries `audio.ref` (schema-enforced), the hydrator
-        // is a read boundary that may see records from other code paths.
+        // an `embed` always carries `audio.ref.$link` (schema-enforced), the
+        // hydrator is a read boundary that may see records from other code paths.
         const embedRecord = record.embed;
         let embed: AudioEmbedView | undefined;
-        if (embedRecord?.audio?.ref) {
-            const signedUrl = await this.deps.signAudioUrl(embedRecord.audio.ref);
+        if (embedRecord?.audio?.ref?.$link) {
+            const signedUrl = await this.deps.signAudioUrl(
+                record.originAppId,
+                embedRecord.audio.ref.$link,
+            );
             if (signedUrl) {
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
@@ -254,7 +321,7 @@ export class AudioPostService {
 
         return {
             uri,
-            cid: record.id,
+            cid: record.cid,
             kind: record.kind,
             author,
             record: {

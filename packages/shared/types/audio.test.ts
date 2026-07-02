@@ -17,7 +17,7 @@ const STRONGREF = { uri: 'at://did:plc:abc/dev.antiphony.audio.post/3kj', cid: '
 
 const AUDIO_EMBED = {
     $type: 'dev.antiphony.embed.audio' as const,
-    audio: { $type: 'blob' as const, ref: 'bafyaudio', mimeType: 'audio/webm', size: 1024 },
+    audio: { $type: 'blob' as const, ref: { $link: 'bafyaudio' }, mimeType: 'audio/webm', size: 1024 },
     durationMs: 12500,
     alt: 'A spoken reply',
     waveform: [0, 50, 100, 25],
@@ -41,7 +41,7 @@ describe('StrongRef / ReplyRef', () => {
 describe('AudioEmbed (record) + AudioEmbedView (hydrated)', () => {
     it('round-trips the stored embed (blob, no transcript)', () => {
         const parsed = AudioEmbedSchema.parse(AUDIO_EMBED);
-        expect(parsed.audio.ref).toBe('bafyaudio');
+        expect(parsed.audio.ref.$link).toBe('bafyaudio');
         expect(parsed.durationMs).toBe(12500);
         // The stored embed has no transcript field — it's lifted onto the view.
         expect('transcript' in parsed).toBe(false);
@@ -75,7 +75,8 @@ describe('TimedTranscript', () => {
 describe('AudioPostRecord (single collection; reply-presence discriminator)', () => {
     const base = {
         id: 'post1',
-        originAppId: 'vox-pop',
+        cid: 'bafyreipost1',
+        originAppId: 'demo-app',
         authorId: 'user1',
         text: 'What did you think?',
         embed: AUDIO_EMBED,
@@ -136,6 +137,7 @@ describe('AudioPostView (record + viewer state)', () => {
     it('round-trips a hydrated view with embed view + viewer', () => {
         const view = {
             uri: 'at://did:plc:abc/dev.antiphony.audio.post/3kj',
+            cid: 'bafyreiview',
             kind: 'prompt' as const,
             author: { id: 'user1', handle: 'brad' },
             record: { text: 'Q?', title: 'A question', createdAt: new Date('2026-06-26T00:00:00Z') },
@@ -185,7 +187,7 @@ describe('CreateAudioPostRequest codec', () => {
 
 describe('cross-field invariants (Gemini #680)', () => {
     const base = {
-        id: 'p', originAppId: 'vox-pop', authorId: 'u', embed: AUDIO_EMBED,
+        id: 'p', cid: 'bafyreip', originAppId: 'demo-app', authorId: 'u', embed: AUDIO_EMBED,
         text: 'x', createdAt: new Date('2026-06-26T00:00:00Z'),
     };
 

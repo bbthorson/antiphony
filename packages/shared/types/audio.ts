@@ -50,7 +50,7 @@ export type ReplyRef = z.infer<typeof ReplyRefSchema>;
  */
 export const AudioEmbedSchema = z.object({
     $type: z.literal('dev.antiphony.embed.audio'),
-    /** The audio bytes as a content-addressed storage ref (CID/path). */
+    /** The audio bytes as a content-addressed blob ref (`ref.$link` = CID). */
     audio: BlobRefSchema,
     /** Duration in MILLISECONDS (platform-wide unit; not seconds). */
     durationMs: z.number().int().min(0).optional(),
@@ -119,6 +119,13 @@ export type AudioEmbedView = z.infer<typeof AudioEmbedViewSchema>;
 export const AudioPostRecordSchema = z.object({
     /** Storage id (rkey/doc id). */
     id: z.string(),
+    /**
+     * Content CID of the canonical lexicon record (CIDv1, dag-cbor, sha2-256
+     * — the AT Protocol record-CID rule). Computed at write time over the
+     * lexicon projection (public fields only, NOT the storage/tenancy fields
+     * below), so StrongRefs built from it are verifiable content addresses.
+     */
+    cid: z.string(),
 
     // --- Tenancy + facets (storage-indexed; NOT in the lexicon) ---
     /** Origin app that created this record — the multi-tenant isolation key. */
@@ -243,7 +250,8 @@ export type PostRecordPublic = z.infer<typeof PostRecordPublicSchema>;
 export const AudioPostViewSchema = z.object({
     /** at:// URI (or internal ref) identifying the post. */
     uri: z.string(),
-    cid: z.string().optional(),
+    /** Content CID of the canonical record (see `AudioPostRecordSchema.cid`). */
+    cid: z.string(),
     kind: z.enum(['prompt', 'reply']),
     author: ProfileViewBasicSchema,
     record: PostRecordPublicSchema,

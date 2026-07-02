@@ -9,6 +9,7 @@ import {
     saveIdempotencyResult,
     IdempotencyInProgressError,
 } from '../../../lib/idempotency.js';
+import { getOriginAppId } from '../../../lib/origin-app.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
@@ -26,21 +27,9 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * legacy `/prompts` + `/replies` + `/organizations` surface has been removed.
  *
  * **Tenancy:** every read/write is scoped to a single `originAppId`, resolved
- * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `antiphony`). Real
- * multi-app auth (API keys / app claims) is a later, separate effort; for now
- * the deploy is single-tenant and the origin app is stamped server-side.
+ * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `antiphony`) — see
+ * `lib/origin-app.ts`. The origin app is always stamped server-side.
  */
-
-/** Default tenancy key when the deploy doesn't configure one. */
-const DEFAULT_ORIGIN_APP_ID = 'antiphony';
-
-/**
- * Resolve the origin-app tenancy key for this deploy. Read per-request (not
- * captured at module load) so tests and per-env overrides take effect.
- */
-function getOriginAppId(): string {
-    return process.env.ANTIPHONY_ORIGIN_APP_ID?.trim() || DEFAULT_ORIGIN_APP_ID;
-}
 
 /**
  * Recover the internal post id from a hydrated view's `at://` uri (the id is

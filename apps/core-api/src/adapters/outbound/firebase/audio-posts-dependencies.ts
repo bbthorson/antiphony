@@ -8,6 +8,8 @@ import {
 import { toProfileViewBasic, type ProfileViewBasic } from 'shared/types/views';
 import { COLLECTIONS, NSID } from 'shared/nsid';
 import { logger } from '../../../lib/logger.js';
+import { cidForRecord } from '../../../lib/cid.js';
+import { blobObjectPath } from '../../../lib/blob-path.js';
 import { StorageService, firebaseCoreServices } from './core-services-firebase.js';
 import type {
     AudioPostDependencies,
@@ -176,11 +178,11 @@ export const firebaseAudioPostDependencies: AudioPostDependencies = {
         return map;
     },
 
-    async signAudioUrl(canonicalUrl: string): Promise<string | null> {
-        if (!canonicalUrl || !canonicalUrl.trim()) return null;
-        // The stored ref is a canonical storage URL; derive its object path and
-        // mint a short-lived signed URL (same machinery as the audio proxy).
-        const objectPath = StorageService.extractObjectPath(canonicalUrl);
+    async signAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
+        // The stored ref is a content CID; the object path is DERIVED from it
+        // (tenancy-scoped, deterministic — see lib/blob-path.ts), then a
+        // short-lived signed URL is minted (same machinery as the audio proxy).
+        const objectPath = blobObjectPath(originAppId, blobCid);
         if (!objectPath) return null;
         try {
             return await StorageService.getSignedUrl(objectPath);
@@ -189,6 +191,8 @@ export const firebaseAudioPostDependencies: AudioPostDependencies = {
             return null;
         }
     },
+
+    cidForRecord,
 
     now(): Date {
         return new Date();

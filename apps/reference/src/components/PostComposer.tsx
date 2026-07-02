@@ -37,16 +37,13 @@ export function PostComposer({ client, onCreated }: { client: AntiphonyClient; o
 
                 setStage('uploading');
                 const filename = `recording.${recording.mimeType.split('/')[1] ?? 'webm'}`;
-                const audioUrl = await client.uploadAudio(recording.blob, filename);
+                // The server hashes the bytes and returns the canonical blob
+                // ref (CID + mimeType + size) — embed it verbatim.
+                const audioBlob = await client.uploadAudio(recording.blob, filename);
 
                 embed = {
                     $type: 'dev.antiphony.embed.audio',
-                    audio: {
-                        $type: 'blob',
-                        ref: audioUrl,
-                        mimeType: recording.mimeType,
-                        size: recording.blob.size,
-                    },
+                    audio: audioBlob,
                     durationMs: recording.durationMs,
                     alt: alt.trim() || undefined,
                     waveform,

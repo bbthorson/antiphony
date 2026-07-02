@@ -74,11 +74,20 @@ export interface AudioPostDependencies {
     getAuthorsByIds(ids: string[]): Promise<Map<string, ProfileViewBasic>>;
 
     /**
-     * Resolve a stored canonical audio URL (a `BlobRef.ref`) to a short-lived,
-     * playable signed URL. Returns null when the URL can't be resolved to a
-     * storage object.
+     * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a short-lived,
+     * playable signed URL, scoped to the owning origin app (the blob lives at
+     * a tenancy-scoped path derived from the CID). Returns null when the CID
+     * can't be resolved to a storage object.
      */
-    signAudioUrl(canonicalUrl: string): Promise<string | null>;
+    signAudioUrl(originAppId: string, blobCid: string): Promise<string | null>;
+
+    /**
+     * Compute the content CID for a canonical lexicon record — DAG-CBOR
+     * encoding, CIDv1, sha2-256 (the AT Protocol record-CID rule). Lives on
+     * the dependency port so `@antiphony/core` stays free of codec/runtime
+     * deps; the binding implements it with `multiformats` + `@ipld/dag-cbor`.
+     */
+    cidForRecord(canonicalRecord: Record<string, unknown>): Promise<string>;
 
     /** Current server time as a `Date`. */
     now(): Date;
