@@ -286,6 +286,16 @@ describe('canonicalPostRecord (record-CID projection)', () => {
         const canonical = canonicalPostRecord({ text: 'x', selfLabels: [], createdAt });
         expect(canonical).not.toHaveProperty('labels');
     });
+
+    it('drops explicitly-undefined embed optionals (DAG-CBOR rejects undefined)', () => {
+        const canonical = canonicalPostRecord({
+            text: 'x',
+            embed: { ...AUDIO_EMBED, durationMs: undefined, alt: undefined, waveform: undefined },
+            createdAt,
+        });
+        const embed = canonical.embed as Record<string, unknown>;
+        expect(Object.keys(embed).sort()).toEqual(['$type', 'audio']);
+    });
 });
 
 describe('getPostView / getReplies pass-through', () => {

@@ -106,8 +106,19 @@ export function canonicalPostRecord(input: {
         $type: NSID.AudioPost,
         text: input.text,
         ...(input.title !== undefined ? { title: input.title } : {}),
+        // Field-by-field (not a spread): a spread would carry explicitly-
+        // `undefined` optionals through, and DAG-CBOR encoding throws on
+        // `undefined` — omission is the only valid "absent".
         ...(input.embed !== undefined
-            ? { embed: { ...input.embed, $type: EMBED_NSID.Audio } }
+            ? {
+                  embed: {
+                      $type: EMBED_NSID.Audio,
+                      audio: input.embed.audio,
+                      ...(input.embed.durationMs !== undefined ? { durationMs: input.embed.durationMs } : {}),
+                      ...(input.embed.alt !== undefined ? { alt: input.embed.alt } : {}),
+                      ...(input.embed.waveform !== undefined ? { waveform: input.embed.waveform } : {}),
+                  },
+              }
             : {}),
         ...(input.reply !== undefined ? { reply: input.reply } : {}),
         ...(input.langs !== undefined ? { langs: input.langs } : {}),
