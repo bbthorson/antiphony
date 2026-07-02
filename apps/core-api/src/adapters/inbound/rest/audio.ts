@@ -14,9 +14,6 @@ import { errorResponse, envelopeValidationHook } from '../../../lib/openapi-enve
  * `replies/{promptId}/...` path points at a prompt that exists.
  * Returns a 302 redirect to a time-limited signed URL (1-hour expiry
  * default, cached to the client for 50 min).
- *
- * Parity with: apps/web/src/app/api/v1/audio/route.ts. Phase 1 of the
- * signed-URL migration — see `specs/signed-url-migration.md`.
  */
 
 const prefixedPath = (p: string): boolean =>

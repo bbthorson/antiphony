@@ -8,9 +8,6 @@ import type { ProfileViewBasic } from 'shared/types/views';
  * the Firestore-backed binding lives in
  * `apps/core-api/src/adapters/outbound/firebase/audio-posts-dependencies.ts`.
  *
- * Added ADDITIVELY in Stream 1 PR2 — it does not touch the legacy
- * `PromptDependencies`/`HydrationDependencies`. See `specs/antiphony-roadmap.md`.
- *
  * **Tenancy:** every read takes `originAppId` — the multi-tenant isolation
  * key. The binding scopes all queries by it so one origin app can never read
  * another's posts.

@@ -7,7 +7,7 @@ The lexicons are the heart of Antiphony. They are the **AT Protocol record defin
 
 If you read one thing before building on Antiphony, read this.
 
-The source of truth is the JSON in [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/main/lexicons/dev/antiphony). This page is the guided tour.
+The source of truth is the JSON in [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony). This page is the guided tour.
 
 ## Design stance
 

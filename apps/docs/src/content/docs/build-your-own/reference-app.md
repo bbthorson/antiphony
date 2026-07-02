@@ -5,7 +5,7 @@ description: A read of apps/reference — a real, buildable consumer of Antiphon
 
 `apps/reference` (`@antiphony/reference`) is a small Vite + React SPA that drives the **entire** Antiphony loop against `apps/core-api` using only `@antiphony/shared` types and the public REST surface. It is deliberately **unbranded** — the point is to prove the *protocol* is usable by a client that carries no product's design language. It's both the contract's acceptance harness and the seed for a shared capture kit.
 
-The source is in [`apps/reference/`](https://github.com/bbthorson/antiphony/tree/main/apps/reference); this page walks the parts that matter.
+The source is in [`apps/reference/`](https://github.com/bbthorson/antiphony/tree/master/apps/reference); this page walks the parts that matter.
 
 ## The whole loop in four calls
 
@@ -95,7 +95,7 @@ PORT=8090 ANTIPHONY_USE_EMULATOR=true GCLOUD_PROJECT=demo-antiphony \
 npm run dev -w @antiphony/reference
 ```
 
-Open the app, record, and watch it round-trip create → fetch → render. The full run notes (including running against the live API) are in [`apps/reference/README.md`](https://github.com/bbthorson/antiphony/blob/main/apps/reference/README.md).
+Open the app, record, and watch it round-trip create → fetch → render. The full run notes (including running against the live API) are in [`apps/reference/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/reference/README.md).
 
 ## What to copy for your own app
 

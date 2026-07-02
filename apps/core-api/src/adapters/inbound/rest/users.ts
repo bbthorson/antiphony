@@ -18,10 +18,9 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *                      viewer gets full profile; others get
  *                      `ProfileViewBasic`).
  *
- * OpenAPI metadata declared on every route — first family converted as
- * the toolchain pilot per `specs/drafts/openapi-generation.md`. Handler
- * bodies preserve their existing manual validation; the `createRoute`
- * wrapper is metadata-only here, no `request:` validators yet.
+ * OpenAPI metadata declared on every route. Handler bodies preserve their
+ * existing manual validation; the `createRoute` wrapper is metadata-only
+ * here, no `request:` validators yet.
  */
 
 const ListQuerySchema = z.object({

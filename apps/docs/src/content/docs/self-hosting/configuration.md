@@ -41,7 +41,7 @@ The Firebase Admin SDK reads the `*_EMULATOR_HOST` variables directly; `ANTIPHON
 
 ## Deployment
 
-The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/main/apps/core-api/README.md) for deploy notes.
+The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.
 
 `core-api` is a plain Node service with no platform-specific dependencies, so other targets work too:
 

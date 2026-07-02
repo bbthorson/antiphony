@@ -29,14 +29,14 @@ export const OPENAPI_INFO = {
 
 /**
  * The approved tag set for the public contract — the single source of truth
- * for "what is public" (Plan A, A4). A route belongs in the documented surface
- * **iff** it is instrumented via `app.openapi(createRoute(...))` and carries one
- * of these tags. Adding a tag here is a deliberate widening of the contract;
+ * for "what is public". A route belongs in the documented surface **iff** it
+ * is instrumented via `app.openapi(createRoute(...))` and carries one of
+ * these tags. Adding a tag here is a deliberate widening of the contract;
  * do not introduce a tag without a corresponding surface review.
  *
  * Each entry maps to a class in the design rule (primitive / query /
  * public-projection); compositions and app-coupled routes stay on plain `Hono`
- * and never appear here. See `specs/plan-a-core-api-contract.md`.
+ * and never appear here.
  */
 export const OPENAPI_TAGS = [
     { name: 'Users', description: 'Actor identity primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },

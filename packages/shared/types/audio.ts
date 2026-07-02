@@ -6,11 +6,6 @@ import { ProfileViewBasicSchema } from './views';
 /**
  * Antiphony canonical audio-post contract (`dev.antiphony.*`).
  *
- * This is the NEW data model from `specs/antiphony-data-model.md`, added
- * ADDITIVELY alongside the legacy `PromptRecord`/`ReplyRecord` (Stream 1).
- * Nothing here touches the old shapes; Vox Pop keeps running on them until the
- * Stream 4 migration deletes the legacy schemas + `com.voxpop.*` lexicons.
- *
  * Mirrors the lexicons in `lexicons/dev/antiphony/`. Key model decisions:
  *  - ONE post collection; `reply` presence discriminates prompt-vs-reply.
  *  - The audio is a standard `embed.audio`; transcript is platform enrichment
@@ -142,7 +137,7 @@ export const AudioPostRecordSchema = z.object({
      * opened the branch. Set on replies (deduped, 1–2 ids); absent on prompts
      * (a prompt's repliers are the app's audience policy, not a fixed pair).
      * Inherited down the branch so reply gating is an O(1) field check, never a
-     * thread walk. See `specs/antiphony-data-model.md` §6 "Reply gating".
+     * thread walk.
      */
     threadParticipants: z.array(z.string()).optional(),
 

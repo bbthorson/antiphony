@@ -10,8 +10,7 @@
 //   - When a service needs a backend, it brings its `...Dependencies` port
 //     interface with it; the concrete binding stays in the adapter layer.
 //
-// AuthPort — Step 1 of `specs/drafts/auth-hardening.md`. Pure contract
-// (Zod schemas + interface + Result type); no implementation, no
-// runtime dependency on any auth backend. Adapters (Firebase / Stub /
-// future DID) live in `apps/web/src/lib/auth/` and satisfy this port.
+// AuthPort — pure contract (Zod schemas + interface + Result type); no
+// implementation, no runtime dependency on any auth backend. Adapters
+// (Firebase / Stub / future DID) live in consuming apps and satisfy this port.
 export * from './ports/auth-port';

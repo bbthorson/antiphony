@@ -3,15 +3,14 @@ import { z } from 'zod';
 /**
  * AuthPort — the canonical contract for client-side authentication.
  *
- * Step 1 of `specs/drafts/auth-hardening.md`. This file defines the
- * shape; no consumers yet. Steps 2+ implement adapters
+ * This file defines the shape; no consumers yet. Later steps implement adapters
  * (`FirebaseAuthAdapter`, `StubAuthAdapter`, future `DidAuthAdapter`)
  * and migrate callers off the current ad-hoc `useAuth()` shape +
  * silent `Promise<string | null>` token API.
  *
  * ## Why this file exists
  *
- * Bugs 1/2/3 from `specs/drafts/post-roadmap-followups.md` all traced
+ * The auth bugs that motivated this port all traced
  * back to the same auth design seams:
  *   - Silent `null` from `getToken()` overloaded across 4 distinct
  *     meanings (not signed in / hydrating / refresh failed / lost mid-call)

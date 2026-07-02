@@ -12,8 +12,6 @@
   },
   "dependencies": {
     "@antiphony/shared": "*",
-    "ipaddr.js": "^1.9.1",
-    "rss-parser": "^3.13.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

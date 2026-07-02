@@ -26,20 +26,19 @@ import { systemAtprotoSigninRoute } from './adapters/inbound/rest/system-atproto
  *   `https://example.com,https://app.example.com,http://localhost:9002`
  *
  * Whitespace around entries is trimmed; empty entries are dropped. If the
- * env var is unset or all entries are empty, falls back to a single
- * `http://localhost:9002` entry — the apps/web dev port per `CLAUDE.md` §
- * Quick Start. Production deployments MUST set the env var explicitly via
- * apphosting.yaml; the localhost-only default exists so a self-hoster's
- * first `npm run dev` works without manual configuration.
+ * env var is unset or all entries are empty, falls back to the reference
+ * app's dev origin (`http://localhost:3002` — see apps/reference/vite.config.ts).
+ * Production deployments MUST set the env var explicitly via apphosting.yaml;
+ * the localhost-only default exists so a self-hoster's first `npm run dev`
+ * works without manual configuration.
  *
  * Exported for unit tests.
  */
 export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWED_ORIGINS): string[] {
-    // Local-dev fallback when ALLOWED_ORIGINS is unset: the legacy emulator
-    // origin (:9002) plus apps/public (:3002), whose browser-direct audio
-    // upload (POST /api/v1/audio/upload) needs CORS even in dev. See
-    // specs/apps-public-split.md § Gotcha 5.
-    const fallback = ['http://localhost:9002', 'http://localhost:3002'];
+    // Local-dev fallback when ALLOWED_ORIGINS is unset: apps/reference
+    // (:3002), whose browser-direct audio upload (POST /api/v1/audio/upload)
+    // needs CORS even in dev.
+    const fallback = ['http://localhost:3002'];
     if (!raw) return fallback;
     const entries = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
     return entries.length > 0 ? entries : fallback;
@@ -61,7 +60,7 @@ export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWE
  *      and error responses carry the headers.
  *   3. CORS — scoped to `/api/v1/*`; runs before route handlers so preflight
  *      OPTIONS requests are answered immediately. Allowlist comes from
- *      ALLOWED_ORIGINS env var. See specs/client-caller-split.md.
+ *      ALLOWED_ORIGINS env var.
  *   4. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit.
  *   5. error-handler — installed via `app.onError` so it catches throws
@@ -79,11 +78,9 @@ export function app(): OpenAPIHono {
     a.use('*', securityHeaders());
 
     // 3. CORS — allowlist for browser-direct calls. Allowlist comes from the
-    //    ALLOWED_ORIGINS env var (comma-separated). See parseAllowedOrigins
-    //    above and apps/core-api/apphosting.yaml. Phase 1 of the
-    //    client-caller-split flip (specs/client-caller-split.md). Server-side
-    //    RSC traffic via CORE_API_BASE_URL is same-process and unaffected by
-    //    CORS. Scoped to /api/v1/* so health probes don't get the headers.
+    //    ALLOWED_ORIGINS env var (comma-separated); see parseAllowedOrigins
+    //    above and apphosting.yaml. Server-to-server callers are unaffected.
+    //    Scoped to /api/v1/* so health probes don't get the headers.
     a.use(
         '/api/v1/*',
         cors({
@@ -104,7 +101,7 @@ export function app(): OpenAPIHono {
     // 4. Health + service identity. No rate limit (probes hit these).
     a.get('/', (c) =>
         c.json({
-            service: 'vox-pop-core-api',
+            service: 'antiphony-core-api',
             version: '0.1.0',
             status: 'ok',
             requestId: c.get('requestId'),
@@ -135,9 +132,8 @@ export function app(): OpenAPIHono {
     // precedence — Hono dispatches by registration order.
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
-    // PR-F3b stage 1: apps/web's rate-limit shim calls this endpoint
-    // (system-auth) instead of touching Firestore directly, so apps/web
-    // doesn't need firebase-admin for rate-limiting.
+    // System-auth'd rate-limit check for trusted sibling services (e.g. the
+    // Vox Pop BFF) so they can rate-limit without touching Firestore directly.
     a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
     a.route('/api/v1/atproto', atprotoRoute);
     a.route('/api/v1/system/atproto-state', systemAtprotoStateRoute);
@@ -150,7 +146,7 @@ export function app(): OpenAPIHono {
     //    registered via `app.openapi(createRoute(...), handler)` appear
     //    in the spec. Public-doc scope: `/users`, `/resolve`, `/posts`,
     //    `/audio`, `/atproto`. Transport/utility/system routes intentionally
-    //    stay plain-Hono. See `specs/drafts/openapi-generation.md`.
+    //    stay plain-Hono.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
     // 7. Error handler — last, via `onError` so it catches throws from

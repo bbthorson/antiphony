@@ -26,13 +26,13 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * legacy `/prompts` + `/replies` + `/organizations` surface has been removed.
  *
  * **Tenancy:** every read/write is scoped to a single `originAppId`, resolved
- * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `vox-pop`). Real
+ * from configuration (`ANTIPHONY_ORIGIN_APP_ID`, default `antiphony`). Real
  * multi-app auth (API keys / app claims) is a later, separate effort; for now
  * the deploy is single-tenant and the origin app is stamped server-side.
  */
 
 /** Default tenancy key when the deploy doesn't configure one. */
-const DEFAULT_ORIGIN_APP_ID = 'vox-pop';
+const DEFAULT_ORIGIN_APP_ID = 'antiphony';
 
 /**
  * Resolve the origin-app tenancy key for this deploy. Read per-request (not

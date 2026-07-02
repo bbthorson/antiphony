@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
+import { httpsUrl } from './types/records';
 
 /**
  * Create-request codec for the canonical Antiphony `dev.antiphony.audio.post`
@@ -45,17 +46,22 @@ export const UpdateProfileRequestSchema = z.object({
   usageIntent: z.string().max(200).nullable().optional(),
   /**
    * Personal website surfaced on the public profile. Accepts a URL, empty
-   * string, or null from the client; normalizes empty string → null so the
-   * value stored on `UserRecord` (which requires `.url() | null`) round-trips
-   * cleanly through `UserRecordSchema.parse` on subsequent reads.
+   * string, or null from the client; normalizes empty string → null.
+   *
+   * Validated with `httpsUrl()` — the SAME refinement `UserRecordSchema`
+   * applies on read. The write codec must never be laxer than the read
+   * schema: a bare `.url()` here accepts `javascript:`/`data:` values that
+   * bypass the stored-XSS hardening and then fail `UserRecordSchema`
+   * parsing on every subsequent read of the record.
    */
-  website: z.union([z.string().url(), z.literal(''), z.null()])
+  website: z.union([httpsUrl(), z.literal(''), z.null()])
     .optional()
     .transform((v) => (v === '' ? null : v)),
-  /** Up to 5 public links (label + URL) shown under the bio. */
+  /** Up to 5 public links (label + URL) shown under the bio. http(s)-only,
+   *  matching `UserRecordSchema.links` (see `website` note above). */
   links: z.array(z.object({
     label: z.string().min(1).max(40),
-    url: z.string().url(),
+    url: httpsUrl(),
   })).max(5).optional(),
   /** When true, surfaces the linked Bluesky identity on the public profile. */
   showBlueskyPublicly: z.boolean().optional(),

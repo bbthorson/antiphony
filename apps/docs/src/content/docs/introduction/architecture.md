@@ -55,7 +55,7 @@ One Antiphony deployment can serve more than one app. The tenancy boundary is th
 
 ## Where the AT Protocol fits
 
-Identity interop and the record shapes are the heart of the open core. The lexicons live as JSON under [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/main/lexicons/dev/antiphony) and are mirrored by the Zod schemas in `packages/shared`. The record→lexicon transform is pure and lives in `packages/core/services/`; PDS I/O and the OAuth client (the publishing side) live in the hosted layer. See [The Antiphony lexicons](/lexicons/overview/) for the contract itself.
+Identity interop and the record shapes are the heart of the open core. The lexicons live as JSON under [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony) and are mirrored by the Zod schemas in `packages/shared`. The record→lexicon transform is pure and lives in `packages/core/services/`; PDS I/O and the OAuth client (the publishing side) live in the hosted layer. See [The Antiphony lexicons](/lexicons/overview/) for the contract itself.
 
 ## Where next?
 

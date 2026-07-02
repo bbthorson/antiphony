@@ -12,19 +12,15 @@ import { logger } from '../../../lib/logger.js';
  *   POST /mint-session-cookie — exchange a Firebase ID token for a
  *                                session cookie value.
  *
- * **Requires system-auth, NOT user-auth.** The caller is apps/web's
- * `ensureSessionCookie` shim, which receives the ID token from the
- * browser (in the `Authorization` header) and forwards it here. End
- * users must never hit this endpoint — it would let an attacker
- * mint long-lived session cookies for any ID token they control.
+ * **Requires system-auth, NOT user-auth.** The caller is a trusted sibling
+ * service (the product BFF), which receives the ID token from the browser
+ * (in the `Authorization` header) and forwards it here. End users must
+ * never hit this endpoint — it would let an attacker mint long-lived
+ * session cookies for any ID token they control.
  *
- * PR-F3b stage 4: moves the `firebase-admin`-backed
- * `adminAuth.createSessionCookie(...)` call out of apps/web. After this
- * stage `apps/web/src/lib/api/session-management.ts` no longer imports
- * `firebase-admin`. The `/auth/session` route itself stays on apps/web
- * because the cookie has to be set on apps/web's response (per-origin
- * cookie semantics — see specs/auth-architecture.md § Cross-Origin
- * Topology).
+ * The session-cookie-setting route itself stays on the calling app because
+ * the cookie has to be set on that app's response (per-origin cookie
+ * semantics).
  *
  * ## Body shape
  *

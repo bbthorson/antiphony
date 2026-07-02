@@ -19,12 +19,10 @@ import { NSID } from 'shared/nsid';
 
 /**
  * AudioPostService — CRUD + batched hydration for the Antiphony canonical
- * `dev.antiphony.audio.post` model (Stream 1 PR2). Self-contained and fully
- * additive: it does NOT touch the legacy `PromptService`/`HydrationService`,
- * so Vox Pop keeps running on the old `/prompts` + `/replies` surface while
- * the new `/posts` surface is validated on its own.
+ * `dev.antiphony.audio.post` model.
  *
- * Three model rules this service enforces (see `specs/antiphony-data-model.md`):
+ * Three model rules this service enforces (documented on the lexicons docs
+ * page, apps/docs/src/content/docs/lexicons/overview.md):
  *  1. `kind` is derived from `reply` presence at write time (cheap index).
  *  2. The transcript is platform enrichment, **lifted into the embed view at
  *     read time** — never stored on the canonical record.
