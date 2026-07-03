@@ -44,12 +44,20 @@ export class AudioProcessingService {
             return;
         }
 
-        const originalBytes = await this.deps.readBlobBytes(originAppId, audioCid);
-        const originalMime = post.embed?.audio?.mimeType ?? 'application/octet-stream';
+        // Source audio to work from. If denoise already completed on a prior
+        // run (idempotent retry with transcribe still pending), start from the
+        // cleaned variant — otherwise transcription would fall back to the
+        // noisy original.
+        const sourceCid =
+            post.processing.denoise === 'ready' && post.processing.denoisedBlobCid
+                ? post.processing.denoisedBlobCid
+                : audioCid;
+        const sourceBytes = await this.deps.readBlobBytes(originAppId, sourceCid);
+        const sourceMime = post.embed?.audio?.mimeType ?? 'application/octet-stream';
         // Audio the transcriber reads — reassigned to the cleaned variant if
-        // denoise succeeds, so transcription runs on the better audio.
-        let working: { bytes: Uint8Array; mimeType: string } | null = originalBytes
-            ? { bytes: originalBytes, mimeType: originalMime }
+        // denoise runs in THIS pass, so transcription always uses the best audio.
+        let working: { bytes: Uint8Array; mimeType: string } | null = sourceBytes
+            ? { bytes: sourceBytes, mimeType: sourceMime }
             : null;
 
         // --- Denoise (first, so transcription can use the cleaned audio) ---

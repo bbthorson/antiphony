@@ -24,6 +24,11 @@ function transcriptsCollection() {
     return getAdminDb().collection(COLLECTIONS[NSID.AudioTranscript]);
 }
 
+/** Single clock for this binding, so every timestamp it stamps is consistent. */
+function now(): Date {
+    return new Date();
+}
+
 export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = {
     // Reuse the post surface's tenancy-checked read (wrapped so the binding is
     // resolved at call time, not module-eval — these two modules form a cycle).
@@ -55,7 +60,7 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
     async patchProcessingState(_originAppId, postId, patch) {
         // Dotted field paths update just these leaves of the `processing` map,
         // leaving sibling stages untouched.
-        const update: Record<string, unknown> = { 'processing.updatedAt': new Date() };
+        const update: Record<string, unknown> = { 'processing.updatedAt': now() };
         if (patch.transcribe !== undefined) update['processing.transcribe'] = patch.transcribe;
         if (patch.denoise !== undefined) update['processing.denoise'] = patch.denoise;
         if (patch.denoisedBlobCid !== undefined) update['processing.denoisedBlobCid'] = patch.denoisedBlobCid;
@@ -66,7 +71,5 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
         return transcriptsCollection().doc().id;
     },
 
-    now(): Date {
-        return new Date();
-    },
+    now,
 };

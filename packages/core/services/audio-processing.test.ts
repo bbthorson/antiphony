@@ -107,6 +107,26 @@ describe('AudioProcessingService.process', () => {
         expect(Array.from(call.bytes)).toEqual([9, 9]);
     });
 
+    it('transcribes the cleaned audio when denoise already completed on a prior run', async () => {
+        // Idempotent retry: denoise settled last time, transcribe still pending.
+        const post = makePost({
+            processing: { transcribe: 'pending', denoise: 'ready', denoisedBlobCid: CLEANED_CID, updatedAt: new Date() },
+        });
+        const { deps, patches, saved } = makeDeps(post, {
+            readBlobBytes: vi.fn(async (_app, cid) =>
+                cid === CLEANED_CID ? new Uint8Array([9, 9]) : new Uint8Array([1, 2, 3]),
+            ),
+        });
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        // Denoise is NOT re-run (already ready); transcription reads the cleaned bytes.
+        expect(deps.writeDerivedBlob).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(1);
+        const call = vi.mocked(p.transcriber!.transcribe).mock.calls[0][0];
+        expect(Array.from(call.bytes)).toEqual([9, 9]);
+        expect(patches).toContainEqual({ transcribe: 'ready' });
+    });
+
     it('marks a requested stage skipped when its provider is absent', async () => {
         const post = makePost({ processing: { transcribe: 'pending', denoise: 'pending', updatedAt: new Date() } });
         const { deps, patches, saved } = makeDeps(post);
