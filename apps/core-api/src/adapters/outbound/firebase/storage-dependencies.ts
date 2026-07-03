@@ -35,6 +35,18 @@ export const firebaseBlobStore: BlobStore = {
         return url;
     },
 
+    async download(objectPath) {
+        const file = getAdminStorage().bucket().file(objectPath);
+        try {
+            const [bytes] = await file.download();
+            return bytes;
+        } catch (err) {
+            // 404 → object doesn't exist; surface as null. Other errors rethrow.
+            if ((err as { code?: number }).code === 404) return null;
+            throw err;
+        }
+    },
+
     extractObjectPath(url) {
         // Pattern 1 (current): https://storage.googleapis.com/{bucket}/{path}
         const gcsMatch = url.match(/^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+)$/);

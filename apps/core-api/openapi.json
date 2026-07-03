@@ -508,6 +508,29 @@
                                     "required": [
                                       "segments"
                                     ]
+                                  },
+                                  "processing": {
+                                    "type": "object",
+                                    "properties": {
+                                      "transcribe": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "denoise": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      }
+                                    }
                                   }
                                 },
                                 "required": [
@@ -811,6 +834,17 @@
                     "type": "array",
                     "items": {
                       "type": "string"
+                    }
+                  },
+                  "processing": {
+                    "type": "object",
+                    "properties": {
+                      "transcribe": {
+                        "type": "boolean"
+                      },
+                      "denoise": {
+                        "type": "boolean"
+                      }
                     }
                   }
                 }
@@ -1291,6 +1325,29 @@
                               "required": [
                                 "segments"
                               ]
+                            },
+                            "processing": {
+                              "type": "object",
+                              "properties": {
+                                "transcribe": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending",
+                                    "ready",
+                                    "failed",
+                                    "skipped"
+                                  ]
+                                },
+                                "denoise": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending",
+                                    "ready",
+                                    "failed",
+                                    "skipped"
+                                  ]
+                                }
+                              }
                             }
                           },
                           "required": [
@@ -1709,6 +1766,29 @@
                                     "required": [
                                       "segments"
                                     ]
+                                  },
+                                  "processing": {
+                                    "type": "object",
+                                    "properties": {
+                                      "transcribe": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "denoise": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      }
+                                    }
                                   }
                                 },
                                 "required": [

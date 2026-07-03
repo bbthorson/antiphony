@@ -28,6 +28,13 @@ export interface BlobStore {
     getSignedUrl(objectPath: string, expiresMs: number): Promise<string>;
 
     /**
+     * Download an object's raw bytes by object path. Returns null when the
+     * object doesn't exist. Used by the audio-processing worker to read blob
+     * bytes for transcription / denoise.
+     */
+    download(objectPath: string): Promise<Buffer | null>;
+
+    /**
      * Extract the storage object path from a full provider URL. Returns
      * null if the URL doesn't match any of this provider's known patterns.
      * Implementations MAY support multiple formats (e.g., both the current
