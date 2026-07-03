@@ -32,7 +32,7 @@ fields; the BFF never sends core a profile.
 
 **Keep (core contract):**
 
-- `POST/GET /api/v1/posts`, `GET /posts/{id}`, `GET /posts/{id}/replies`
+- `POST/GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`
 - `GET /api/v1/audio`, `POST /api/v1/audio/upload`
 - `POST /api/v1/actors/register`, `GET /api/v1/actors/{actorId}` — the actor↔DID mapping (landed B4). **Stays in core** as authorship attribution that travels with the exportable corpus (see [`atproto-authority-model.md`](./atproto-authority-model.md); this settles the earlier "maybe move to the BFF" question — no).
 - `POST /api/v1/system/rate-limit` — service-to-service helper (the BFF rate-limits without touching Firestore)
@@ -137,6 +137,9 @@ B3:
 
 1. **Delete** the moved routes (above) and their handlers/tests; unmount from `app.ts`.
 2. **Breaking `AudioPostView.author` change** — `ProfileViewBasic` embed → `{ id, did? }`.
+   Both fields are already on `AudioPostRecord` (`authorId`/`authorDid`), so this also
+   **removes `getAuthorsByIds` from `AudioPostDependencies`** and the profile-fetch in
+   hydration (`audio-posts.ts:301-302,353`) — one fewer dependency and one fewer DB query.
 3. **Trim `@antiphony/shared`** (views/api/UserRecord) → **0.4.0** (major; breaking).
    - **Cross-repo prerequisite:** the Vox Pop BFF currently imports `ProfileViewSchema`
      live from `@antiphony/shared`. It must vendor its own profile view *before* this trim,
@@ -144,7 +147,9 @@ B3:
 4. **Docs/OpenAPI cleanup** (the slice scoped in from the API-docs discussion): the
    generated `/api/reference` stops rendering the moved surface; the API overview stops
    presenting `/users`, `/atproto`, `/resolve` as anything (they're gone, not "legacy").
-   Regenerate `openapi.json` + `openapi.surface.json` in the same PR.
+   Regenerate `openapi.json` + `openapi.surface.json` in the same PR. Also update the stale
+   "Public-doc scope" comment in `app.ts` (~line 150) that still lists `/users`, `/resolve`,
+   `/atproto`.
 5. **Validate cross-repo:** 0.4.0 is not "done" until the Vox Pop BFF consumes the trimmed
    contract and re-implements the moved surface against its own store. B3 and that BFF work
    are coupled, not serial.

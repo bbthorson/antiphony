@@ -68,7 +68,11 @@ the acting end-user has ever linked an identity.
   DID-or-authorId URI "canonical." **Do this while it's free** — beta, no live Vox Pop users.
 - `parsePostId` (`audio-posts.ts:83`): validate the StrongRef authority matches the caller's
   tenant app DID at parse time (defense-in-depth over the tenancy check already in
-  `resolveReplyParticipants`).
+  `resolveReplyParticipants`). `parsePostId` is a pure last-segment extractor today, so this
+  is a **signature change**: either extend it to take the expected app DID / tenant context,
+  or add a separate `parseAndValidatePostUri(uri, appDid)` helper and leave `parsePostId`
+  pure. Prefer the separate helper — keeps the inverse-of-`buildPostUri` extractor pure and
+  makes the authority check an explicit, greppable call.
 - rkeys (`newPostId()`): guarantee unique-per-tenant, ideally TID-shaped so ecosystem sort
   tools work.
 
