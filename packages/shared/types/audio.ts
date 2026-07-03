@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BlobRefSchema } from './blob';
 import { FirestoreTimestampSchema } from './records';
 import { ProfileViewBasicSchema } from './views';
+import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
 
 /**
  * Antiphony canonical audio-post contract (`dev.antiphony.*`).
@@ -100,6 +101,14 @@ export const AudioEmbedViewSchema = z.object({
     waveform: z.array(z.number().int().min(0).max(100)).max(1000).optional(),
     /** Lifted from the transcript enrichment record; absent until transcription completes. */
     transcript: TimedTranscriptSchema.optional(),
+    /**
+     * Per-stage audio-processing status (transcribe / denoise), when the app
+     * opted into processing on create. Absent otherwise. A `pending` stage
+     * means the client should poll (or re-render) for the result. When
+     * `denoise === 'ready'`, `url` above already resolves to the cleaned
+     * audio variant. See `types/processing.ts`.
+     */
+    processing: ProcessingViewSchema.optional(),
 });
 export type AudioEmbedView = z.infer<typeof AudioEmbedViewSchema>;
 
@@ -147,6 +156,13 @@ export const AudioPostRecordSchema = z.object({
      * thread walk.
      */
     threadParticipants: z.array(z.string()).optional(),
+    /**
+     * Async audio-processing state (transcribe / denoise), present iff the app
+     * opted into processing on create. Mutated by the processing worker after
+     * the post is created — storage-layer, NOT in the lexicon or the record
+     * CID. See `types/processing.ts`.
+     */
+    processing: ProcessingStateSchema.optional(),
 
     // --- Lexicon fields (public contract) ---
     /** User-authored text (bsky-semantic). May be empty for pure-audio posts. NEVER the transcript. */

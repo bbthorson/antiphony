@@ -24,6 +24,9 @@ export interface StorageService {
      */
     getSignedUrl(objectPath: string, expiresMs?: number): Promise<string>;
 
+    /** Download an object's raw bytes by object path, or null if it doesn't exist. */
+    download(objectPath: string): Promise<Buffer | null>;
+
     /** Extract the storage object path from a full URL, or null if unrecognized. */
     extractObjectPath(url: string): string | null;
 }
@@ -40,6 +43,9 @@ export function makeStorageService(blob: BlobStore): StorageService {
         },
         getSignedUrl(objectPath, expiresMs = SIGNED_URL_EXPIRY_MS) {
             return blob.getSignedUrl(objectPath, expiresMs);
+        },
+        download(objectPath) {
+            return blob.download(objectPath);
         },
         extractObjectPath(url) {
             return blob.extractObjectPath(url);

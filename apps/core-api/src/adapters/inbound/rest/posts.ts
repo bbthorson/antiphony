@@ -10,6 +10,7 @@ import {
     IdempotencyInProgressError,
 } from '../../../lib/idempotency.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
+import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
@@ -289,10 +290,16 @@ app.openapi(createRouteDef, async (c) => {
         );
     }
 
-    const { text, title, embed, reply, langs, selfLabels } = validation.data;
+    const { text, title, embed, reply, langs, selfLabels, processing } = validation.data;
+
+    const originAppId = getOriginAppId(c);
+    // Resolve the opt-in request against this deployment's capabilities: each
+    // requested stage starts `pending` (worker will do it) or `skipped` (no
+    // provider configured). Stored on the record; surfaced on the view.
+    const initialProcessing = resolveInitialProcessing(processing);
 
     const created = await audioPostService.createPost({
-        originAppId: getOriginAppId(c),
+        originAppId,
         authorId: uid,
         // App-asserted AT Protocol DID (service path only) — trusted within
         // the app's tenancy; see specs/service-auth.md.
@@ -303,7 +310,14 @@ app.openapi(createRouteDef, async (c) => {
         reply,
         langs,
         selfLabels,
+        processing: initialProcessing,
     });
+
+    // Kick off processing for any stage that's actually pending. In inline
+    // mode this awaits; the durable Cloud Tasks trigger lands in a later PR.
+    if (hasPendingStage(initialProcessing)) {
+        await dispatchProcessing(originAppId, created.id);
+    }
 
     const responseBody = { success: true as const, data: { postId: created.id } };
     await saveIdempotencyResult(c, uid, responseBody);

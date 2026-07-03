@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
+import { ProcessingRequestSchema } from './types/processing';
 import { httpsUrl } from './types/records';
 
 /**
@@ -21,6 +22,13 @@ export const CreateAudioPostRequestSchema = z.object({
   langs: z.array(z.string()).max(3).optional(),
   /** Author self-label values (content warnings). */
   selfLabels: z.array(z.string()).optional(),
+  /**
+   * Opt-in audio processing for this post's audio (transcribe / denoise).
+   * Both default off. Stages the deployment can't provide come back marked
+   * `skipped` on the view rather than failing the create. See
+   * `types/processing.ts`.
+   */
+  processing: ProcessingRequestSchema.optional(),
 })
   // A reply is a caption on someone else's prompt — it carries no title.
   .refine((d) => !(d.reply && d.title), {

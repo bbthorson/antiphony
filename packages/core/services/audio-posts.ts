@@ -10,6 +10,7 @@ import {
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
 import type { ProfileViewBasic } from 'shared/types/views';
+import type { ProcessingStageStatus } from 'shared/types/processing';
 import { ForbiddenError, NotFoundError } from 'shared/errors';
 import type {
     AudioPostDependencies,
@@ -52,6 +53,13 @@ export interface CreateAudioPostInput {
     langs?: string[];
     /** Author self-label values. */
     selfLabels?: string[];
+    /**
+     * Resolved initial per-stage processing status (B5), when the app opted
+     * into processing. The caller (route) resolves the request against the
+     * deployment's capabilities into `pending`/`skipped`; the service just
+     * stamps `updatedAt` and stores it. Absent ⇒ no processing.
+     */
+    processing?: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus };
 }
 
 /**
@@ -170,6 +178,14 @@ export class AudioPostService {
             }),
         );
 
+        // Initial processing state (B5) — the caller already resolved the
+        // request against deployment capabilities into per-stage
+        // pending/skipped; we just stamp the clock. Storage-layer, not in the
+        // CID above.
+        const processing = input.processing
+            ? { ...input.processing, updatedAt: createdAt }
+            : undefined;
+
         const record = AudioPostRecordSchema.parse({
             id: this.deps.newPostId(),
             cid,
@@ -179,6 +195,7 @@ export class AudioPostService {
             orgId: input.orgId ?? undefined,
             kind,
             threadParticipants,
+            processing,
             text: input.text,
             title,
             embed: input.embed,
@@ -306,10 +323,14 @@ export class AudioPostService {
         const embedRecord = record.embed;
         let embed: AudioEmbedView | undefined;
         if (embedRecord?.audio?.ref?.$link) {
-            const signedUrl = await this.deps.signAudioUrl(
-                record.originAppId,
-                embedRecord.audio.ref.$link,
-            );
+            // Playback resolves to the DENOISED variant once it's ready; the
+            // record's own `audio.ref.$link` stays the immutable original CID.
+            const proc = record.processing;
+            const playbackCid =
+                proc?.denoise === 'ready' && proc.denoisedBlobCid
+                    ? proc.denoisedBlobCid
+                    : embedRecord.audio.ref.$link;
+            const signedUrl = await this.deps.signAudioUrl(record.originAppId, playbackCid);
             if (signedUrl) {
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
@@ -318,6 +339,11 @@ export class AudioPostService {
                     alt: embedRecord.alt,
                     waveform: embedRecord.waveform,
                     transcript: transcriptMap.get(uri)?.transcript,
+                    // Surface per-stage processing status (no internal fields)
+                    // when the app opted in; absent otherwise.
+                    processing: proc
+                        ? { transcribe: proc.transcribe, denoise: proc.denoise }
+                        : undefined,
                 };
             }
         }
