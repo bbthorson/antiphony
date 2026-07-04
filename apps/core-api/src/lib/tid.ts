@@ -44,25 +44,55 @@ export function encodeTid(timestampMicros: number, clockId: number): string {
 }
 
 // Per-process monotonic state. Date.now() is millisecond-precision, so a sub-ms
-// counter keeps successive TIDs strictly increasing within a single millisecond,
-// and max(now, last) stops them from moving backwards if the wall clock does.
+// counter fills the 1000 microseconds each millisecond holds; `lastMillis` is the
+// last logical millisecond emitted (a logical clock, not necessarily the wall clock).
 let lastMillis = 0;
 let subMillisCount = 0;
-// The clock id is drawn once per process; two processes minting in the very
-// same microsecond only collide when they also happened to draw the same id.
-const CLOCK_ID = Math.floor(Math.random() * 32);
+// The clock id is the TID's low 10 bits, drawn once per process from the full
+// 0–1023 range (2 base32 chars hold 1024 values, per the TID spec). Two processes
+// minting in the very same microsecond collide only when they also drew the same
+// id — 1/1024, not the 1/32 a 5-bit id would give.
+const CLOCK_ID = Math.floor(Math.random() * 1024);
+
+/** Microseconds per millisecond — the sub-ms counter's budget before it must roll over. */
+const MICROS_PER_MS = 1000;
 
 /**
  * Mint the next TID for this process: monotonic, time-sortable, 13 chars.
+ *
+ * Because Date.now() is only millisecond-precision, a sub-ms counter enumerates
+ * the microseconds within a millisecond. If more than 1000 TIDs are minted in a
+ * single wall-clock millisecond the counter would exceed that budget, so we roll
+ * the surplus into the next *logical* millisecond and keep the counter in
+ * `[0, 999]`. This makes the clock run slightly ahead of the wall clock under
+ * sustained load, but it never repeats or moves backwards — which a naive
+ * `now*1000 + count` would do once the wall clock caught up to the overflowed
+ * microsecond range. `max(now, lastMillis)` likewise absorbs a backwards drift.
+ *
  * Validated against the reference syntax before returning, so a malformed key
- * (e.g. a far-future timestamp that overflows the field) fails loud at mint
- * time rather than becoming a bad `at://` authority downstream.
+ * (e.g. a far-future timestamp overflowing the field) fails loud at mint time
+ * rather than becoming a bad `at://` authority downstream.
  */
 export function newTid(): string {
     const now = Math.max(Date.now(), lastMillis);
-    subMillisCount = now === lastMillis ? subMillisCount + 1 : 0;
-    lastMillis = now;
-    const tid = encodeTid(now * 1000 + subMillisCount, CLOCK_ID);
+    if (now === lastMillis) {
+        // Same (or backwards-drifted) millisecond: advance to the next microsecond
+        // slot, rolling into the next logical ms once this one's 1000 are spent.
+        if (++subMillisCount >= MICROS_PER_MS) {
+            lastMillis += 1;
+            subMillisCount = 0;
+        }
+    } else {
+        lastMillis = now;
+        subMillisCount = 0;
+    }
+    const tid = encodeTid(lastMillis * MICROS_PER_MS + subMillisCount, CLOCK_ID);
     ensureValidTid(tid);
     return tid;
+}
+
+/** Test-only: reset the per-process monotonic clock so a test can drive `Date.now` deterministically. */
+export function resetTidClockForTest(): void {
+    lastMillis = 0;
+    subMillisCount = 0;
 }
