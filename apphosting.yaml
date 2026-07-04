@@ -67,15 +67,33 @@ env:
       value: "antiphony"
       availability:
           - RUNTIME
+    # App-DID custody host (specs/atproto-authority-model.md). Turns ON the boot
+    # gate's host-match check: validateAllPins resolves each tenant's did:web at
+    # startup and REFUSES TO START unless its #atproto_pds endpoint points here
+    # (fail-closed). NOT secret. Also couples boot to each pinned domain being
+    # reachable — a did:web outage during a restart blocks boot (by design).
+    - variable: ANTIPHONY_PDS_HOST
+      value: "api.antiphony.dev"
+      availability:
+          - RUNTIME
+    # Per-tenant app-DID pins: comma-separated `originAppId:did`. NOT secret —
+    # these are public DIDs. Must stay in sync with ANTIPHONY_APP_TOKENS (a
+    # tenant needs an entry in BOTH; boot warns on drift). Add bardcast here once
+    # its domain/did.json is live.
+    - variable: ANTIPHONY_APP_DIDS
+      value: "voxpop:did:web:voxpop.audio"
+      availability:
+          - RUNTIME
     # Service-to-service app credentials (specs/service-auth.md): comma-
     # separated `appId:token` pairs, tokens ≥32 chars. SECRET — wire through
-    # Secret Manager, never a plaintext value here. Uncomment once the first
-    # BFF credential is issued:
+    # Secret Manager, never a plaintext value here. Set the value (e.g.
+    # `voxpop:<64-hex-token>`) BEFORE this deploys, or boot fails on the missing
+    # secret ref:
     #   firebase apphosting:secrets:set antiphony-app-tokens
-    # - variable: ANTIPHONY_APP_TOKENS
-    #   secret: antiphony-app-tokens
-    #   availability:
-    #       - RUNTIME
+    - variable: ANTIPHONY_APP_TOKENS
+      secret: antiphony-app-tokens
+      availability:
+          - RUNTIME
     # CORS allowlist for browser-direct calls (the reference app's audio upload).
     # Comma-separated full origins. Starts with the App Hosting default domain
     # for the `antiphony-core-api` backend; ADD the custom domain (e.g.
