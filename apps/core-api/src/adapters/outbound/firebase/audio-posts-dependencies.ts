@@ -10,6 +10,7 @@ import { COLLECTIONS, NSID } from 'shared/nsid';
 import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
+import { newTid } from '../../../lib/tid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { StorageService, firebaseCoreServices } from './core-services-firebase.js';
 import type {
@@ -66,8 +67,12 @@ async function startAfterCursor(
 }
 
 export const firebaseAudioPostDependencies: AudioPostDependencies = {
+    // Mint a TID (the AT-Proto record-key format) rather than a Firestore
+    // auto-id: it becomes the `rkey` in `at://{appDid}/{collection}/{rkey}`, so
+    // the id must be an honest, time-sortable record key a real PDS would emit.
+    // Also used verbatim as the Firestore document id (13 lowercase alnum chars).
     newPostId(): string {
-        return postsCollection().doc().id;
+        return newTid();
     },
 
     // Serves from the boot-validated pin snapshot (lib/app-did.ts); throws for

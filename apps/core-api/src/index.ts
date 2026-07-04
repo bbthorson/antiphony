@@ -9,7 +9,8 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { app as createApp } from './app.js';
-import { validateAllPins } from './lib/app-did.js';
+import { validateAllPins, checkTenantRegistryDrift } from './lib/app-did.js';
+import { parseAppTokens } from './middleware/service-auth.js';
 import { APP_CONFIG } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
 
@@ -30,6 +31,11 @@ async function main(): Promise<void> {
         );
     }
     await validateAllPins({ expectedPdsHost: APP_CONFIG.PDS_HOST });
+
+    // Warn (don't fail) on drift between the auth-token and app-DID registries —
+    // a tenant configured in one but not the other is a misconfiguration surfaced
+    // at boot rather than at its first request.
+    checkTenantRegistryDrift(parseAppTokens().map((a) => a.appId));
 
     const app = createApp();
     serve({ fetch: app.fetch, port }, (info) => {
