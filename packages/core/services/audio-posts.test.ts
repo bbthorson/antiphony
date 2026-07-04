@@ -76,6 +76,11 @@ describe('parsePostId', () => {
         expect(parsePostId('at://did:web:voxpop.com', APP_DID)).toBeNull();
         expect(parsePostId('https://voxpop.com/x/y/p1', APP_DID)).toBeNull();
     });
+
+    it('rejects a ref to a different collection (cross-collection spoofing)', () => {
+        // Right authority, wrong collection ⇒ null, so it can't masquerade as a post.
+        expect(parsePostId('at://did:web:voxpop.com/app.bsky.feed.post/p1', APP_DID)).toBeNull();
+    });
 });
 
 describe('createPost', () => {

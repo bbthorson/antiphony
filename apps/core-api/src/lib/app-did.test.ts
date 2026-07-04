@@ -109,6 +109,16 @@ describe('didWebToUrl', () => {
     it('returns null for a non-did:web DID', () => {
         expect(didWebToUrl('did:plc:abc')).toBeNull();
     });
+
+    it('returns null (never throws) for malformed percent-encoding', () => {
+        expect(didWebToUrl('did:web:%zz')).toBeNull();
+    });
+
+    it('rejects a decoded host/path that smuggles path or userinfo characters', () => {
+        // %2F -> '/', %40 -> '@' — would escape the host or inject userinfo.
+        expect(didWebToUrl('did:web:evil.com%2Fpath')).toBeNull();
+        expect(didWebToUrl('did:web:evil.com%40real.com')).toBeNull();
+    });
 });
 
 describe('atprotoPdsEndpoint', () => {
@@ -132,6 +142,18 @@ describe('atprotoPdsEndpoint', () => {
         expect(atprotoPdsEndpoint({ service: [] })).toBeNull();
         expect(atprotoPdsEndpoint({})).toBeNull();
         expect(atprotoPdsEndpoint(null)).toBeNull();
+    });
+
+    it('skips null / non-object service entries without crashing', () => {
+        expect(
+            atprotoPdsEndpoint({
+                service: [
+                    null,
+                    'nope',
+                    { id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' },
+                ],
+            }),
+        ).toBe('https://pds.example');
     });
 });
 
@@ -182,5 +204,14 @@ describe('validateAppDid', () => {
         });
         expect(r.ok).toBe(false);
         if (!r.ok) expect(r.reason).toMatch(/pds-endpoint-host-mismatch/);
+    });
+
+    it('fails closed when the fetch itself throws (timeout / network error)', async () => {
+        const fetchImpl = vi.fn(async () => {
+            throw new Error('timeout');
+        }) as unknown as typeof fetch;
+        const r = await validateAppDid('did:web:voxpop.com', { fetchImpl });
+        expect(r.ok).toBe(false);
+        if (!r.ok) expect(r.reason).toMatch(/did-doc-fetch-failed/);
     });
 });

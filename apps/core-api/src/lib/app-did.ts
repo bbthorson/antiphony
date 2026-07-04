@@ -68,22 +68,40 @@ function parseAppDidsUncached(raw: string | undefined): Map<string, string> {
 
 // --- Validation (async, off the hot path) ----------------------------------
 
+/** Time-box each did:web resolve so a hanging endpoint can't block the boot gate. */
+const DID_FETCH_TIMEOUT_MS = 5000;
+
+/** True if a decoded DID segment smuggles a char that would escape the host/path. */
+function escapesHostOrPath(s: string): boolean {
+    return s.includes('/') || s.includes('\\') || s.includes('?') || s.includes('#') || s.includes('@');
+}
+
 /**
  * Derive the `did:web` document URL:
  *   `did:web:host`        → `https://host/.well-known/did.json`
  *   `did:web:host:a:b`    → `https://host/a/b/did.json`
  * Percent-encoded colons in the host (`did:web:localhost%3A8080`) are decoded.
- * Returns `null` for a non-`did:web` DID.
+ * Returns `null` for a non-`did:web` DID, malformed percent-encoding, or a
+ * decoded segment that would escape the host/path (`/`, `\`, `?`, `#`, `@`).
  */
 export function didWebToUrl(did: string): string | null {
     const DID_WEB = 'did:web:';
     if (!did.startsWith(DID_WEB)) return null;
     const idParts = did.slice(DID_WEB.length).split(':');
     if (!idParts[0]) return null;
-    const host = decodeURIComponent(idParts[0]);
-    const pathParts = idParts.slice(1).map(decodeURIComponent);
-    const path = pathParts.length > 0 ? `/${pathParts.join('/')}/did.json` : '/.well-known/did.json';
-    return `https://${host}${path}`;
+    // decodeURIComponent throws (URIError) on malformed percent-encoding; a bad
+    // DID must fail closed as "unresolvable", never crash a caller or the boot gate.
+    try {
+        const host = decodeURIComponent(idParts[0]);
+        const pathParts = idParts.slice(1).map(decodeURIComponent);
+        // A smuggled `/`, `\`, `?`, `#`, or `@` (userinfo) would point the fetch
+        // somewhere other than the DID's own host — reject it.
+        if (escapesHostOrPath(host) || pathParts.some(escapesHostOrPath)) return null;
+        const path = pathParts.length > 0 ? `/${pathParts.join('/')}/did.json` : '/.well-known/did.json';
+        return `https://${host}${path}`;
+    } catch {
+        return null;
+    }
 }
 
 interface DidService {
@@ -101,6 +119,8 @@ export function atprotoPdsEndpoint(doc: unknown): string | null {
     const services = (doc as { service?: DidService[] })?.service;
     if (!Array.isArray(services)) return null;
     for (const svc of services) {
+        // A malformed doc may carry null / non-object entries — skip, don't crash.
+        if (!svc || typeof svc !== 'object') continue;
         const isPds =
             svc.type === 'AtprotoPersonalDataServer' ||
             (typeof svc.id === 'string' && svc.id.endsWith('#atproto_pds'));
@@ -129,7 +149,9 @@ export async function validateAppDid(
     const doFetch = opts.fetchImpl ?? fetch;
     let doc: unknown;
     try {
-        const res = await doFetch(url);
+        // Time-box the resolve so a hanging did:web endpoint can't block boot;
+        // a timeout throws and is caught below, failing the pin closed.
+        const res = await doFetch(url, { signal: AbortSignal.timeout(DID_FETCH_TIMEOUT_MS) });
         if (!res.ok) return { ok: false, did, reason: `did-doc-http-${res.status}` };
         doc = await res.json();
     } catch (err) {

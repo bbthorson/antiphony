@@ -94,10 +94,13 @@ export function parsePostId(uri: string, expectedAppDid: string): string | null 
     // Segments: [authority, collection, rkey]. filter(Boolean) drops empty
     // segments so a trailing slash (or `//`) doesn't yield an empty id.
     const segments = uri.slice(AT.length).split('/').filter(Boolean);
-    if (segments.length < 3) return null;
+    // A well-formed post uri is exactly [authority, collection, rkey].
+    if (segments.length !== 3) return null;
     // Authority MUST be the tenant's own app DID — reject cross-tenant/forged refs.
     if (segments[0] !== expectedAppDid) return null;
-    const rkey = segments[segments.length - 1];
+    // Collection MUST be the audio-post collection — reject cross-collection spoofing.
+    if (segments[1] !== NSID.AudioPost) return null;
+    const rkey = segments[2];
     return rkey && rkey.trim() ? rkey : null;
 }
 
