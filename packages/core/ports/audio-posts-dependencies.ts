@@ -30,7 +30,12 @@ export interface AudioPostThreadOptions {
 }
 
 export interface AudioPostDependencies {
-    /** Generate a new unique post id without creating the document. */
+    /**
+     * Generate a new unique post id without creating the document. The id is the
+     * `rkey` in the post's `at://{appDid}/{collection}/{rkey}` uri, so the binding
+     * mints an AT-Proto record key (a time-sortable TID) — needing a clock +
+     * randomness is exactly why id generation lives here on the port, not in core.
+     */
     newPostId(): string;
 
     /**

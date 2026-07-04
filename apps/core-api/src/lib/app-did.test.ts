@@ -5,6 +5,7 @@ import {
     getAppDid,
     getValidatedPin,
     resetValidatedPinsForTest,
+    checkTenantRegistryDrift,
     didWebToUrl,
     atprotoPdsEndpoint,
     validateAppDid,
@@ -88,6 +89,51 @@ describe('validateAllPins + getAppDid', () => {
         const snap = await validateAllPins({ raw: '' });
         expect(snap.size).toBe(0);
         expect(() => getAppDid('vox-pop')).toThrow(/no validated app DID/);
+    });
+});
+
+describe('checkTenantRegistryDrift', () => {
+    const doc = (id: string) => ({
+        id,
+        service: [
+            { id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://api.antiphony.dev' },
+        ],
+    });
+    const fetchOk = (body: unknown) =>
+        vi.fn(async () => ({ ok: true, json: async () => body })) as unknown as typeof fetch;
+
+    const seedPins = () =>
+        validateAllPins({
+            raw: 'vox-pop:did:web:voxpop.com',
+            fetchImpl: fetchOk(doc('did:web:voxpop.com')),
+        });
+
+    it('reports no drift when the token and pin registries agree', async () => {
+        await seedPins();
+        expect(checkTenantRegistryDrift(['vox-pop'])).toEqual({
+            tokensWithoutPin: [],
+            pinsWithoutToken: [],
+        });
+    });
+
+    it('flags a tenant that has a token but no validated app-DID pin', async () => {
+        await seedPins();
+        const drift = checkTenantRegistryDrift(['vox-pop', 'bardcast']);
+        expect(drift.tokensWithoutPin).toEqual(['bardcast']);
+        expect(drift.pinsWithoutToken).toEqual([]);
+    });
+
+    it('flags a validated pin that has no auth token (unreachable pin)', async () => {
+        await seedPins();
+        const drift = checkTenantRegistryDrift([]);
+        expect(drift.tokensWithoutPin).toEqual([]);
+        expect(drift.pinsWithoutToken).toEqual(['vox-pop']);
+    });
+
+    it('dedupes repeated token app-ids (rotation window)', async () => {
+        await seedPins();
+        // Same appId twice (two live tokens mid-rotation) is not drift.
+        expect(checkTenantRegistryDrift(['vox-pop', 'vox-pop']).tokensWithoutPin).toEqual([]);
     });
 });
 

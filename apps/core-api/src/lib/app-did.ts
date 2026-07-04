@@ -1,3 +1,4 @@
+import { isValidDid } from '@atproto/syntax';
 import { logger } from './logger.js';
 
 /**
@@ -57,8 +58,11 @@ function parseAppDidsUncached(raw: string | undefined): Map<string, string> {
             logger.error({ entry: trimmed.slice(0, 24) }, '[app-did] malformed ANTIPHONY_APP_DIDS entry; ignoring');
             continue;
         }
-        if (!did.startsWith('did:')) {
-            logger.error({ appId }, '[app-did] app authority is not a DID (must start with "did:"); ignoring entry');
+        // Gate the pinned authority with the reference DID syntax validator, not
+        // just a `did:` prefix — a syntactically bad DID fails closed here with a
+        // clear reason, before it ever reaches did:web resolution.
+        if (!isValidDid(did)) {
+            logger.error({ appId }, '[app-did] app authority is not a valid DID; ignoring entry');
             continue;
         }
         pins.set(appId, did);
@@ -256,6 +260,46 @@ export function getAppDid(originAppId: string): string {
 /** The full validated snapshot for a tenant (document + pds endpoint), or `null`. */
 export function getValidatedPin(originAppId: string): ValidatedPin | null {
     return validatedPins?.get(originAppId) ?? null;
+}
+
+/**
+ * Cross-check the two per-tenant registries that must agree for a tenant to
+ * work end-to-end: auth tokens (`ANTIPHONY_APP_TOKENS`: originAppId → token)
+ * and app-DID pins (`ANTIPHONY_APP_DIDS`: originAppId → app DID). A tenant in
+ * one but not the other is config drift:
+ *  - **token, no pin** — it can authenticate, but every post write/read fails
+ *    closed (`getAppDid` throws) since we can't build its `at://` authority.
+ *  - **pin, no token** — the validated pin is unreachable (nothing authenticates
+ *    into that tenancy).
+ *
+ * Logged as **warnings, not fatal**: an app may legitimately authenticate
+ * without touching the posts surface, and one tenant's gap must not down the
+ * whole deploy (unlike a *bad* pin, which `validateAllPins` fails closed on).
+ * Takes the token app-ids as a param so this module stays decoupled from
+ * `service-auth`. Call at boot after `validateAllPins()`; returns the drift for
+ * diagnostics/tests.
+ */
+export function checkTenantRegistryDrift(tokenAppIds: Iterable<string>): {
+    tokensWithoutPin: string[];
+    pinsWithoutToken: string[];
+} {
+    const tokens = new Set(tokenAppIds);
+    const pins = new Set(validatedPins?.keys() ?? []);
+    const tokensWithoutPin = [...tokens].filter((id) => !pins.has(id));
+    const pinsWithoutToken = [...pins].filter((id) => !tokens.has(id));
+    for (const originAppId of tokensWithoutPin) {
+        logger.warn(
+            { originAppId },
+            '[app-did] tenant has an auth token but no validated app-DID pin — it can authenticate but every post read/write fails closed; add it to ANTIPHONY_APP_DIDS',
+        );
+    }
+    for (const originAppId of pinsWithoutToken) {
+        logger.warn(
+            { originAppId },
+            '[app-did] tenant has an app-DID pin but no auth token — the pin is unreachable; add it to ANTIPHONY_APP_TOKENS or drop the pin',
+        );
+    }
+    return { tokensWithoutPin, pinsWithoutToken };
 }
 
 /** Test-only: clear the in-memory snapshot so each test starts from an unvalidated state. */
