@@ -9,6 +9,7 @@ import { toProfileViewBasic, type ProfileViewBasic } from 'shared/types/views';
 import { COLLECTIONS, NSID } from 'shared/nsid';
 import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
+import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { StorageService, firebaseCoreServices } from './core-services-firebase.js';
 import type {
@@ -67,6 +68,12 @@ async function startAfterCursor(
 export const firebaseAudioPostDependencies: AudioPostDependencies = {
     newPostId(): string {
         return postsCollection().doc().id;
+    },
+
+    // Serves from the boot-validated pin snapshot (lib/app-did.ts); throws for
+    // an unpinned/unvalidated tenant. Keeps `@antiphony/core` config-free.
+    getAppDid(originAppId: string): string {
+        return resolveAppDid(originAppId);
     },
 
     async savePost(record: AudioPostRecord): Promise<void> {

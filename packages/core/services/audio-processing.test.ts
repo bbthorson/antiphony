@@ -8,6 +8,9 @@ import type { ProcessingState } from 'shared/types/processing';
 const AUDIO_CID = 'bafkreioriginal';
 const CLEANED_CID = 'bafkreicleaned';
 
+/** Deterministic per-tenant app DID for the fake — stands in for the boot-validated pin. */
+const appDidFor = (originAppId: string) => `did:web:${originAppId}.example`;
+
 function makePost(over: Partial<AudioPostRecord> = {}): AudioPostRecord {
     return {
         id: 'p1',
@@ -33,6 +36,7 @@ function makeDeps(post: AudioPostRecord | null, over: Partial<AudioProcessingDep
     let derivedCounter = 0;
     const deps: AudioProcessingDependencies = {
         getPostById: vi.fn(async () => post),
+        getAppDid: vi.fn((originAppId: string) => appDidFor(originAppId)),
         readBlobBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
         writeDerivedBlob: vi.fn(async () => (derivedCounter++ === 0 ? CLEANED_CID : `bafkrei${derivedCounter}`)),
         saveTranscript: vi.fn(async (r: TranscriptEnrichmentRecord) => { saved.push(r); }),
@@ -82,7 +86,7 @@ describe('AudioProcessingService.process', () => {
         await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
         expect(saved).toHaveLength(1);
-        expect(saved[0].subject).toEqual({ uri: buildPostUri(post), cid: post.cid });
+        expect(saved[0].subject).toEqual({ uri: buildPostUri(appDidFor(post.originAppId), post.id), cid: post.cid });
         expect(saved[0].transcript.text).toBe('hello');
         expect(saved[0].model).toBe('stub-1');
         expect(patches).toContainEqual({ transcribe: 'ready' });

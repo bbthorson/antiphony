@@ -33,6 +33,15 @@ export interface AudioPostDependencies {
     /** Generate a new unique post id without creating the document. */
     newPostId(): string;
 
+    /**
+     * Resolve a tenant (`originAppId`) to the **app DID** that is the `at://`
+     * authority for every record it writes (`at://{appDid}/{collection}/{rkey}`).
+     * Fail-closed: throws for an unpinned or unvalidated tenant, since a post
+     * uri cannot be well-formed without a proven DID authority. Backed by the
+     * boot-validated pin snapshot in the adapter — core never reads config.
+     */
+    getAppDid(originAppId: string): string;
+
     /** Persist a canonical post record (upsert). */
     savePost(record: AudioPostRecord): Promise<void>;
 

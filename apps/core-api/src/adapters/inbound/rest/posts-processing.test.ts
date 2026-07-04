@@ -122,6 +122,24 @@ process.env.ANTIPHONY_PROCESSING_INLINE = 'true';
 const { app } = await import('../../../app.js');
 const { cidForBytes } = await import('../../../lib/cid.js');
 
+// Seed the boot-validated app-DID snapshot the way index.ts does at startup —
+// app() doesn't run the boot gate, so the test populates it directly with a
+// fake did:web document (no network I/O). Without this, hydration's getAppDid
+// throws for the 'test-app' tenant.
+const { validateAllPins } = await import('../../../lib/app-did.js');
+await validateAllPins({
+    raw: 'test-app:did:web:test-app.example',
+    fetchImpl: (async () => ({
+        ok: true,
+        json: async () => ({
+            id: 'did:web:test-app.example',
+            service: [
+                { id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://api.antiphony.dev' },
+            ],
+        }),
+    })) as unknown as typeof fetch,
+});
+
 const ORIGINAL_LINK = 'bafkreioriginalaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const EMBED = {
     $type: 'dev.antiphony.embed.audio',
