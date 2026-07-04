@@ -16,6 +16,14 @@ export interface AudioProcessingDependencies {
     getPostById(originAppId: string, postId: string): Promise<AudioPostRecord | null>;
 
     /**
+     * Resolve a tenant (`originAppId`) to its **app DID** — the `at://`
+     * authority used when building the transcript's subject uri. Fail-closed
+     * for an unpinned/unvalidated tenant. Backed by the boot-validated pin
+     * snapshot in the adapter; mirrors `AudioPostDependencies.getAppDid`.
+     */
+    getAppDid(originAppId: string): string;
+
+    /**
      * Read a stored blob's raw bytes by content CID, tenancy-scoped. Null if
      * absent. (MIME type isn't returned — the caller already has it from the
      * record's `embed.audio.mimeType`, so this avoids a metadata round-trip.)

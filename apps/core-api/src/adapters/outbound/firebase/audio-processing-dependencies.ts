@@ -5,6 +5,7 @@ import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { StorageService } from './core-services-firebase.js';
 import { firebaseAudioPostDependencies } from './audio-posts-dependencies.js';
+import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
 
 export type { AudioProcessingDependencies };
@@ -34,6 +35,11 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
     // resolved at call time, not module-eval — these two modules form a cycle).
     getPostById: (originAppId, postId) =>
         firebaseAudioPostDependencies.getPostById(originAppId, postId),
+
+    // Same boot-validated pin snapshot the post surface resolves through.
+    getAppDid(originAppId: string): string {
+        return resolveAppDid(originAppId);
+    },
 
     async readBlobBytes(originAppId, blobCid) {
         const path = blobObjectPath(originAppId, blobCid);

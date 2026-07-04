@@ -104,7 +104,7 @@ export class AudioProcessingService {
                     });
                     await this.deps.saveTranscript({
                         id: this.deps.newTranscriptId(),
-                        subject: { uri: buildPostUri(post), cid: post.cid },
+                        subject: { uri: buildPostUri(this.deps.getAppDid(originAppId), post.id), cid: post.cid },
                         transcript: result.transcript,
                         lang: result.lang,
                         model: result.model,

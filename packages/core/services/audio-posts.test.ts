@@ -21,11 +21,15 @@ const AUDIO_EMBED = {
 
 const AUTHOR: ProfileViewBasic = { id: 'u1', handle: 'alice', displayName: 'Alice' };
 
+/** Deterministic per-tenant app DID for the fake — stands in for the boot-validated pin. */
+const appDidFor = (originAppId: string) => `did:web:${originAppId}.example`;
+
 function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDependencies {
     let counter = 0;
     const saved: AudioPostRecord[] = [];
     return {
         newPostId: vi.fn(() => `post-${++counter}`),
+        getAppDid: vi.fn((originAppId: string) => appDidFor(originAppId)),
         savePost: vi.fn(async (r: AudioPostRecord) => { saved.push(r); }),
         getPostById: vi.fn(async () => null),
         queryByAuthor: vi.fn(async () => []),
@@ -46,20 +50,36 @@ function promptInput(over: Partial<CreateAudioPostInput> = {}): CreateAudioPostI
 }
 
 describe('buildPostUri', () => {
-    it('uses the DID when present, else the author id, with the post id as the last segment', () => {
-        expect(buildPostUri({ id: 'p1', authorId: 'u1', authorDid: 'did:plc:abc' }))
-            .toBe('at://did:plc:abc/dev.antiphony.audio.post/p1');
-        expect(buildPostUri({ id: 'p1', authorId: 'u1' }))
-            .toBe('at://u1/dev.antiphony.audio.post/p1');
+    it('uses the app DID as the at:// authority (not the author), post id as the last segment', () => {
+        expect(buildPostUri('did:web:voxpop.com', 'p1'))
+            .toBe('at://did:web:voxpop.com/dev.antiphony.audio.post/p1');
     });
 });
 
 describe('parsePostId', () => {
-    it('extracts the id (last segment), tolerating a trailing slash; null when empty', () => {
-        expect(parsePostId('at://did:plc:abc/dev.antiphony.audio.post/p1')).toBe('p1');
-        expect(parsePostId('at://did:plc:abc/dev.antiphony.audio.post/p1/')).toBe('p1');
-        expect(parsePostId(buildPostUri({ id: 'p9', authorId: 'u1' }))).toBe('p9');
-        expect(parsePostId('')).toBeNull();
+    const APP_DID = 'did:web:voxpop.com';
+
+    it('extracts the rkey when the authority matches, tolerating a trailing slash; null when empty', () => {
+        expect(parsePostId('at://did:web:voxpop.com/dev.antiphony.audio.post/p1', APP_DID)).toBe('p1');
+        expect(parsePostId('at://did:web:voxpop.com/dev.antiphony.audio.post/p1/', APP_DID)).toBe('p1');
+        expect(parsePostId(buildPostUri(APP_DID, 'p9'), APP_DID)).toBe('p9');
+        expect(parsePostId('', APP_DID)).toBeNull();
+    });
+
+    it('rejects a StrongRef whose authority is a different (cross-tenant/forged) app DID', () => {
+        // Same rkey, wrong authority ⇒ null, so it can't resolve inside our tenant.
+        expect(parsePostId('at://did:web:evil.com/dev.antiphony.audio.post/p1', APP_DID)).toBeNull();
+        expect(parsePostId(buildPostUri('did:web:bardcast.com', 'p1'), APP_DID)).toBeNull();
+    });
+
+    it('rejects a malformed uri (non-at://, or missing collection/rkey)', () => {
+        expect(parsePostId('at://did:web:voxpop.com', APP_DID)).toBeNull();
+        expect(parsePostId('https://voxpop.com/x/y/p1', APP_DID)).toBeNull();
+    });
+
+    it('rejects a ref to a different collection (cross-collection spoofing)', () => {
+        // Right authority, wrong collection ⇒ null, so it can't masquerade as a post.
+        expect(parsePostId('at://did:web:voxpop.com/app.bsky.feed.post/p1', APP_DID)).toBeNull();
     });
 });
 
@@ -88,7 +108,8 @@ describe('createPost', () => {
     });
 
     it('derives kind=reply and drops any title when a reply ref is present', async () => {
-        const ref = { uri: 'at://u1/dev.antiphony.audio.post/root', cid: 'root' };
+        // Parent authority must be the tenant's own app DID (post is originAppId 'vox-pop').
+        const ref = { uri: buildPostUri(appDidFor('vox-pop'), 'root'), cid: 'root' };
         (deps.getPostById as ReturnType<typeof vi.fn>).mockResolvedValue({
             id: 'root', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
             text: 'the prompt', createdAt: new Date('2026-06-20T00:00:00Z'),
@@ -114,7 +135,7 @@ describe('reply gating (createPost, §6)', () => {
     const rootRef = { uri: 'at://creator/dev.antiphony.audio.post/root', cid: 'root' };
 
     function replyTo(parent: AudioPostRecord, authorId: string): CreateAudioPostInput {
-        const parentRef = { uri: buildPostUri(parent), cid: parent.id };
+        const parentRef = { uri: buildPostUri(appDidFor(parent.originAppId), parent.id), cid: parent.id };
         return promptInput({ authorId, text: 'a reply', reply: { root: rootRef, parent: parentRef } });
     }
 
@@ -138,6 +159,19 @@ describe('reply gating (createPost, §6)', () => {
     it('404s when the parent is missing or cross-tenant, and saves nothing', async () => {
         setParent(null);
         await expect(svc.createPost(replyTo(prompt, 'responder'))).rejects.toMatchObject({ status: 404 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reply whose parent StrongRef carries a foreign (cross-tenant) authority', async () => {
+        // The parent post EXISTS (getPostById would return it), but the ref's
+        // authority is another tenant's app DID. The parse-time authority check
+        // rejects it BEFORE the lookup, so a forged cross-tenant StrongRef can't
+        // open a branch inside this tenant.
+        setParent(prompt);
+        const forged = { uri: buildPostUri('did:web:bardcast.com', prompt.id), cid: prompt.id };
+        const input = promptInput({ authorId: 'responder', text: 'a reply', reply: { root: rootRef, parent: forged } });
+        await expect(svc.createPost(input)).rejects.toMatchObject({ status: 404 });
+        expect(deps.getPostById).not.toHaveBeenCalled();
         expect(deps.savePost).not.toHaveBeenCalled();
     });
 
@@ -179,8 +213,9 @@ describe('hydrateAudioPosts', () => {
     it('signs the audio url and lifts the transcript onto the embed view', async () => {
         const rec = record();
         const transcript = { segments: [{ startMs: 0, endMs: 500, text: 'hi' }], text: 'hi' };
+        const recUri = buildPostUri(appDidFor(rec.originAppId), rec.id);
         (deps.getTranscriptsBySubjectUris as ReturnType<typeof vi.fn>).mockResolvedValue(
-            new Map([[buildPostUri(rec), { id: 't1', subject: { uri: buildPostUri(rec), cid: 'p1' }, transcript, createdAt: new Date() }]]),
+            new Map([[recUri, { id: 't1', subject: { uri: recUri, cid: 'p1' }, transcript, createdAt: new Date() }]]),
         );
 
         const [view] = await svc.hydrateAudioPosts([rec], null);
