@@ -42,7 +42,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     feedService: {},
     hydrationService: {},
     rssService: {},
-    firebaseCoreServices: {},
     StorageService: {},
 }));
 

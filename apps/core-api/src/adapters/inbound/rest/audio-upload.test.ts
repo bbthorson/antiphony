@@ -15,7 +15,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     promptService: {},
     replyService: {},
     organizationService: {},
-    firebaseCoreServices: {},
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({

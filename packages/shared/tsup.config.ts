@@ -31,11 +31,9 @@ const entry = [
   'utils/index.ts',
   'observability/index.ts',
   'observability/report-error.ts',
-  'types/api.ts',
   'types/audio.ts',
   'types/blob.ts',
   'types/records.ts',
-  'types/views.ts',
 ];
 
 const common: Options = {
