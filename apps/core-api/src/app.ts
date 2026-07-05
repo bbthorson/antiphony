@@ -5,9 +5,6 @@ import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { postsRoute } from './adapters/inbound/rest/posts.js';
-import { usersRoute } from './adapters/inbound/rest/users.js';
-import { usersMeRoute } from './adapters/inbound/rest/users-me.js';
-import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
@@ -116,14 +113,6 @@ export function app(): OpenAPIHono {
     // 5. API routes.
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
-    // Users routes all mount at /api/v1/users; route files distinguish by
-    // path tail (`/me` vs `/:handle` vs `/:handle/profile`). Register the more
-    // specific `/me` mount FIRST so Hono prefers it over the `/:handle`
-    // parameter match (handle="me" would otherwise hit usersRoute and 404 on
-    // user lookup).
-    a.route('/api/v1/users/me', usersMeRoute);
-    a.route('/api/v1/users', usersRoute);
-    a.route('/api/v1/users', usersProfileRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
     // more-specific upload sub-route BEFORE the proxy so it takes
     // precedence — Hono dispatches by registration order.

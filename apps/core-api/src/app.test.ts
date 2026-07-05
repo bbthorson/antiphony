@@ -40,7 +40,7 @@ describe('parseAllowedOrigins', () => {
 });
 
 describe('OpenAPI document', () => {
-    it('serves a well-formed spec at /openapi.json with the /users/* family present', async () => {
+    it('serves a well-formed spec at /openapi.json with the canonical surface present', async () => {
         const a = app();
         const res = await a.fetch(new Request('http://localhost/openapi.json'));
         expect(res.status).toBe(200);
@@ -49,13 +49,9 @@ describe('OpenAPI document', () => {
         expect(doc.info?.title).toBe('Antiphony Core API');
 
         const paths = Object.keys(doc.paths ?? {});
-        // The canonical Antiphony surface: actor identity (/users),
-        // audio posts (/posts), and audio storage (/audio). When new routes
-        // join the documented contract, spot-check them here.
-        expect(paths).toContain('/api/v1/users');
-        expect(paths).toContain('/api/v1/users/me');
-        expect(paths).toContain('/api/v1/users/{handle}');
-        expect(paths).toContain('/api/v1/users/{handle}/profile');
+        // The canonical Antiphony surface: audio posts (/posts) and audio
+        // storage (/audio). When new routes join the documented contract,
+        // spot-check them here.
         expect(paths).toContain('/api/v1/posts');
         expect(paths).toContain('/api/v1/posts/{postId}');
         expect(paths).toContain('/api/v1/posts/{postId}/replies');
@@ -64,7 +60,11 @@ describe('OpenAPI document', () => {
         expect(paths).not.toContain('/api/v1/prompts');
         expect(paths).not.toContain('/api/v1/replies');
         expect(paths).not.toContain('/api/v1/organizations');
-        expect(paths.length).toBeGreaterThanOrEqual(12);
+        // Account/profile management moved to the BFF — the Users family is gone.
+        expect(paths).not.toContain('/api/v1/users');
+        expect(paths).not.toContain('/api/v1/users/me');
+        expect(paths).not.toContain('/api/v1/users/{handle}');
+        expect(paths.length).toBeGreaterThanOrEqual(5);
     });
 
     it('describes authentication in info.description', async () => {
