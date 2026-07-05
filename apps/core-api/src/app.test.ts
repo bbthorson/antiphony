@@ -49,19 +49,17 @@ describe('OpenAPI document', () => {
         expect(doc.info?.title).toBe('Antiphony Core API');
 
         const paths = Object.keys(doc.paths ?? {});
-        // The canonical Antiphony surface: actor identity (/users, /resolve),
+        // The canonical Antiphony surface: actor identity (/users),
         // audio posts (/posts), and audio storage (/audio). When new routes
         // join the documented contract, spot-check them here.
         expect(paths).toContain('/api/v1/users');
         expect(paths).toContain('/api/v1/users/me');
         expect(paths).toContain('/api/v1/users/{handle}');
         expect(paths).toContain('/api/v1/users/{handle}/profile');
-        expect(paths).toContain('/api/v1/resolve/{handle}');
         expect(paths).toContain('/api/v1/posts');
         expect(paths).toContain('/api/v1/posts/{postId}');
         expect(paths).toContain('/api/v1/posts/{postId}/replies');
         expect(paths).toContain('/api/v1/audio/upload');
-        expect(paths).toContain('/api/v1/atproto/disconnect');
         // Legacy prompt/reply/org surface is gone.
         expect(paths).not.toContain('/api/v1/prompts');
         expect(paths).not.toContain('/api/v1/replies');
