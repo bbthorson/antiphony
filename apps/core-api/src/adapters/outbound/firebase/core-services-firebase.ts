@@ -1,11 +1,9 @@
 import { UserService } from '@antiphony/core/services/users';
 import { AudioPostService } from '@antiphony/core/services/audio-posts';
-import { ActorIdentityService } from '@antiphony/core/services/actor-identity';
 import { makeStorageService } from '@antiphony/core/services/storage';
 import type { CoreServices } from '@antiphony/core/ports/core-services';
 import { firebaseUserDependencies } from './users-dependencies.js';
 import { firebaseAudioPostDependencies } from './audio-posts-dependencies.js';
-import { firebaseActorIdentityDependencies } from './actor-identity-dependencies.js';
 import { firebaseBlobStore } from './storage-dependencies.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -42,10 +40,6 @@ export const userService = new UserService(firebaseUserDependencies, logger);
 // Self-contained: it owns its own dependencies binding. The binding routes
 // author hydration through `firebaseCoreServices.users`.
 export const audioPostService = new AudioPostService(firebaseAudioPostDependencies);
-
-// ActorIdentityService — the optional actor↔DID mapping (B4-prep). Owns its
-// own collection (`actor_identities`); see shared/types/actor-identity.ts.
-export const actorIdentityService = new ActorIdentityService(firebaseActorIdentityDependencies);
 
 /**
  * Firebase-wired StorageService. Not part of CoreServices (none of the core
