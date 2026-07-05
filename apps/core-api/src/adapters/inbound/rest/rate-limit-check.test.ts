@@ -46,10 +46,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     StorageService: {},
 }));
 
-vi.mock('../../../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: { verifyToken: vi.fn() },
-}));
-
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({ collection: () => ({ doc: () => ({}) }) }),
     getAdmin: () => ({}),

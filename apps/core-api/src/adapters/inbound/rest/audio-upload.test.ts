@@ -18,10 +18,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     firebaseCoreServices: {},
 }));
 
-vi.mock('../../../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: { verifyToken: vi.fn() },
-}));
-
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
         collection: () => ({ doc: () => ({}) }),
@@ -40,11 +36,20 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     isUsingEmulator: () => false,
 }));
 
+// The uploader authenticates as the application `antiphony` (the default
+// tenancy — these tests assert the `blobs/antiphony/...` storage path) via a
+// service token, asserting an acting actor with X-Antiphony-Acting-Actor.
+const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
+process.env.ANTIPHONY_APP_TOKENS = `antiphony:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
 const { StorageService } = await import('../../outbound/firebase/core-services-firebase.js');
-const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
+
+const AUTH = {
+    authorization: `Bearer ${SERVICE_TOKEN}`,
+    'x-antiphony-acting-actor': 'uploader',
+};
 
 function makeFormData(file: File | null): FormData {
     const fd = new FormData();
@@ -66,11 +71,9 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('400s when no "file" field is present', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-1' });
-
         const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
-            headers: { authorization: 'Bearer ok' },
+            headers: AUTH,
             body: makeFormData(null),
         });
 
@@ -80,11 +83,9 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('400s when mime type is not in the allowlist', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-2' });
-
         const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
-            headers: { authorization: 'Bearer ok' },
+            headers: AUTH,
             body: makeFormData(
                 new File([new Uint8Array(10)], 'evil.exe', { type: 'application/octet-stream' }),
             ),
@@ -96,13 +97,12 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('400s when file exceeds 25MB', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-3' });
         // 26 MB of zeros — over the 25 MB cap.
         const big = new Uint8Array(26 * 1024 * 1024);
 
         const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
-            headers: { authorization: 'Bearer ok' },
+            headers: AUTH,
             body: makeFormData(new File([big], 'big.m4a', { type: 'audio/m4a' })),
         });
 
@@ -112,13 +112,12 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('stores at the CID-derived tenancy path and returns the canonical blob ref', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-4' });
         vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
 
         const bytes = new Uint8Array(100);
         const res = await app().request('/api/v1/audio/upload', {
             method: 'POST',
-            headers: { authorization: 'Bearer ok' },
+            headers: AUTH,
             body: makeFormData(new File([bytes], 'clip.m4a', { type: 'audio/m4a' })),
         });
 
@@ -142,13 +141,12 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('returns the same CID for identical bytes (content addressing)', async () => {
-        vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid: 'uploader-5' });
         vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
 
         async function upload(): Promise<string> {
             const res = await app().request('/api/v1/audio/upload', {
                 method: 'POST',
-                headers: { authorization: 'Bearer ok' },
+                headers: AUTH,
                 body: makeFormData(new File([new Uint8Array([1, 2, 3])], 'a.m4a', { type: 'audio/m4a' })),
             });
             const body = await res.json();

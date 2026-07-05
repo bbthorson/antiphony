@@ -22,10 +22,6 @@ vi.mock('../../../lib/idempotency.js', () => ({
     IdempotencyInProgressError: class extends Error {},
 }));
 
-vi.mock('../../../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: { verifyToken: vi.fn() },
-}));
-
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({ collection: () => ({ doc: () => ({}) }) }),
     getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
@@ -34,12 +30,16 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     isUsingEmulator: () => false,
 }));
 
+// The caller authenticates as an application via a service token; the app id
+// `test-app` matches ANTIPHONY_ORIGIN_APP_ID so credential + default tenancy
+// agree. The acting end user arrives via the X-Antiphony-Acting-Actor header.
+const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
+process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
 const { audioPostService } = await import('../../outbound/firebase/core-services-firebase.js');
-const { sessionVerifier } = await import('../../../lib/auth/session-verifier.js');
 const { checkIdempotency } = await import('../../../lib/idempotency.js');
 
 const VIEW = {
@@ -56,11 +56,19 @@ function asView(v: unknown) {
     return v as Awaited<ReturnType<typeof audioPostService.getPostView>>;
 }
 
+// The acting actor asserted on the next authenticated request. Tests call
+// `authAs(uid)` before a request; `authHeaders()` reads it at call time.
+let actingActor = 'u1';
 function authAs(uid: string) {
-    vi.mocked(sessionVerifier.verifyToken).mockResolvedValue({ uid } as Awaited<ReturnType<typeof sessionVerifier.verifyToken>>);
+    actingActor = uid;
 }
-
-const AUTH = { headers: { Authorization: 'Bearer t' } };
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+    return {
+        Authorization: `Bearer ${SERVICE_TOKEN}`,
+        'x-antiphony-acting-actor': actingActor,
+        ...extra,
+    };
+}
 
 describe('/api/v1/posts', () => {
     beforeEach(() => {
@@ -85,7 +93,7 @@ describe('/api/v1/posts', () => {
 
             const res = await app().request('/api/v1/posts', {
                 method: 'POST',
-                headers: { ...AUTH.headers, 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ text: 'a question', title: 'Headline' }),
             });
 
@@ -102,7 +110,7 @@ describe('/api/v1/posts', () => {
             const ref = { uri: 'at://u1/dev.antiphony.audio.post/root', cid: 'root' };
             const res = await app().request('/api/v1/posts', {
                 method: 'POST',
-                headers: { ...AUTH.headers, 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ text: '', title: 'nope', reply: { root: ref, parent: ref } }),
             });
             expect(res.status).toBe(400);
@@ -113,7 +121,7 @@ describe('/api/v1/posts', () => {
             authAs('u1');
             const res = await app().request('/api/v1/posts', {
                 method: 'POST',
-                headers: { ...AUTH.headers, 'Content-Type': 'application/json' },
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ text: '   ' }),
             });
             expect(res.status).toBe(400);
@@ -143,7 +151,7 @@ describe('/api/v1/posts', () => {
         it('lists the viewer posts and sets nextCursor only on a full page', async () => {
             authAs('u1');
             vi.mocked(audioPostService.getPostsForAuthor).mockResolvedValue([asView(VIEW)!]);
-            const res = await app().request('/api/v1/posts?limit=1', AUTH);
+            const res = await app().request('/api/v1/posts?limit=1', { headers: authHeaders() });
             expect(res.status).toBe(200);
             const body = await res.json();
             expect(body.data.items).toHaveLength(1);
