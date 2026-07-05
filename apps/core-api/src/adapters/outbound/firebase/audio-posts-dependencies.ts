@@ -5,14 +5,13 @@ import {
     type AudioPostRecord,
     type TranscriptEnrichmentRecord,
 } from 'shared/types/audio';
-import { toProfileViewBasic, type ProfileViewBasic } from 'shared/types/views';
 import { COLLECTIONS, NSID } from 'shared/nsid';
 import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { newTid } from '../../../lib/tid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
-import { StorageService, firebaseCoreServices } from './core-services-firebase.js';
+import { StorageService } from './core-services-firebase.js';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -172,20 +171,6 @@ export const firebaseAudioPostDependencies: AudioPostDependencies = {
                 // Last write wins if a post somehow has multiple transcripts.
                 map.set(parsed.data.subject.uri, parsed.data);
             }
-        }
-        return map;
-    },
-
-    async getAuthorsByIds(ids: string[]): Promise<Map<string, ProfileViewBasic>> {
-        const map = new Map<string, ProfileViewBasic>();
-        const unique = Array.from(new Set(ids.filter((id) => id && id.trim())));
-        if (unique.length === 0) return map;
-
-        // Route author hydration through the users CoreServices binding (public
-        // projection — no private data) and narrow to the basic public shape.
-        const profiles = await firebaseCoreServices.users.getUsersByIds(unique);
-        for (const profile of profiles) {
-            map.set(profile.id, toProfileViewBasic(profile));
         }
         return map;
     },

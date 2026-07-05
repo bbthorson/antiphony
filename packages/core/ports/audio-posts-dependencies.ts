@@ -1,5 +1,4 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
-import type { ProfileViewBasic } from 'shared/types/views';
 
 /**
  * AudioPostDependencies is the portable interface the `AudioPostService`
@@ -80,12 +79,6 @@ export interface AudioPostDependencies {
      * reads from here — never from the canonical record.
      */
     getTranscriptsBySubjectUris(uris: string[]): Promise<Map<string, TranscriptEnrichmentRecord>>;
-
-    /**
-     * Batch-fetch author profiles (already projected to the public basic shape)
-     * keyed by user id. Missing authors are absent from the Map.
-     */
-    getAuthorsByIds(ids: string[]): Promise<Map<string, ProfileViewBasic>>;
 
     /**
      * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a short-lived,
