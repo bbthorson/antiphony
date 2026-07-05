@@ -83,6 +83,8 @@ attribution facet outside the record CID — exactly as
     `X-Antiphony-Acting-Actor`** as the *only* auth — drop the Firebase / session
     language entirely.
   - `OPENAPI_TAGS`: drop `Users`, `Actors`, and the identity-linking `Auth` tag.
+    Also fix the `Audio` tag — it advertises an "anonymous upload" endpoint, but
+    `audio-upload` is `requireAuth`; there is no anonymous write.
 - **Docs:** `lexicons/overview.md` still describes a pre-Model-B "actor-id URI
   authority" fallback that was already removed — correct it to the app-DID
   authority (independent of this trim, but land it here).
@@ -108,15 +110,34 @@ This removes, from `middleware/auth.ts`:
 - Antiphony's dependency on Firebase **Auth** token verification (Firestore /
   Storage admin usage is unaffected).
 
-After this, auth is: **service token → app** (tenancy + optional acting-actor);
-no service token → anonymous on `optionalAuth`, `401` on `requireAuth`.
+After this, auth has **two orthogonal axes**:
 
-**Sub-question — tokenless public reads.** With the Firebase path gone, the only
-remaining tokenless caller is an anonymous public read (`optionalAuth`, no token),
-which falls back to the default tenancy (`ANTIPHONY_ORIGIN_APP_ID`). Recommended
-follow-up: require the service token on all data routes so the token always
-establishes *which* tenant is being read, and drop the ambiguous default-tenant
-fallback. Flagged, not decided here — the Firebase removal stands on its own.
+- **Service token → tenant** (`originAppId`) — **required on every data route**.
+- **Acting-actor header → viewer** — the *optional* axis: present for writes and
+  viewer-state, absent for public reads.
+
+So a public read (a logged-out visitor viewing a post) is *token present,
+acting-actor absent* — there is no such thing as a tokenless data request. "Public"
+means "no viewer," not "no tenant."
+
+### Tokenless reads — decided 2026-07-05: require the token (Option A)
+
+The service token is required on **all data routes**, public reads included. A
+data request with no token → `401`.
+
+- The three public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,\n  + audio resolve) move from `optionalAuth` (token-optional) to a\n  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +\n  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open — they\n  carry no tenancy.
+- **Remove the default-tenant fallback:** delete `DEFAULT_ORIGIN_APP_ID` /
+  `ANTIPHONY_ORIGIN_APP_ID` from `lib/origin-app.ts` and drop the env var from
+  `apphosting.yaml`. Today a tokenless read silently resolves against the
+  `antiphony` default tenant (which holds no real data — hence the 404 on the
+  earlier tokenless probe); that ambiguity goes away.
+
+Rationale: every data request now names its tenant (hard tenancy invariant), a
+misconfigured caller fails loud with a `401` instead of silently reading the
+wrong/empty tenant, and it matches the BFF-fronted model (the token is a
+server-side secret; untrusted clients always go through a BFF). If a genuinely
+public, directly-consumed content plane is ever needed, it is an **explicit,
+opt-in, per-tenant public-read scope** — never a silent default tenant.
 
 ## Rollout
 
