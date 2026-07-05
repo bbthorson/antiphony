@@ -4,7 +4,6 @@ import { OPENAPI_INFO, OPENAPI_TAGS } from './lib/openapi-info.js';
 import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
-import { resolveRoute } from './adapters/inbound/rest/resolve.js';
 import { postsRoute } from './adapters/inbound/rest/posts.js';
 import { actorsRoute } from './adapters/inbound/rest/actors.js';
 import { usersRoute } from './adapters/inbound/rest/users.js';
@@ -13,7 +12,6 @@ import { usersProfileRoute } from './adapters/inbound/rest/users-profile.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
-import { atprotoRoute } from './adapters/inbound/rest/atproto.js';
 import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
 import { systemAtprotoSessionRoute } from './adapters/inbound/rest/system-atproto-session.js';
 import { systemAuthMintRoute } from './adapters/inbound/rest/system-auth-mint.js';
@@ -117,7 +115,6 @@ export function app(): OpenAPIHono {
     );
 
     // 5. API routes.
-    a.route('/api/v1/resolve', resolveRoute);
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
     // The optional actor↔DID mapping a connecting app may register
@@ -139,7 +136,6 @@ export function app(): OpenAPIHono {
     // System-auth'd rate-limit check for trusted sibling services (e.g. the
     // Vox Pop BFF) so they can rate-limit without touching Firestore directly.
     a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
-    a.route('/api/v1/atproto', atprotoRoute);
     a.route('/api/v1/system/atproto-state', systemAtprotoStateRoute);
     a.route('/api/v1/system/atproto-session', systemAtprotoSessionRoute);
     a.route('/api/v1/system/auth', systemAuthMintRoute);
