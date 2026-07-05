@@ -125,11 +125,7 @@ means "no viewer," not "no tenant."
 The service token is required on **all data routes**, public reads included. A
 data request with no token → `401`.
 
-- The two public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,
-  + audio resolve) move from `optionalAuth` (token-optional) to a
-  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +
-  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open — they
-  carry no tenancy.
+- The three public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,\n  + audio resolve) move from `optionalAuth` (token-optional) to a\n  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +\n  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open — they\n  carry no tenancy.
 - **Remove the default-tenant fallback:** delete `DEFAULT_ORIGIN_APP_ID` /
   `ANTIPHONY_ORIGIN_APP_ID` from `lib/origin-app.ts` and drop the env var from
   `apphosting.yaml`. Today a tokenless read silently resolves against the
