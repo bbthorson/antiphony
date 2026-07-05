@@ -16,7 +16,7 @@ public contract:
 
 | Group | Endpoints | Verdict |
 |---|---|---|
-| **Posts** | list-mine, create, `GET /{id}`, `/{id}/replies` | ✅ **Keep** — the core |
+| **Posts** | list-mine, create, `GET /{postId}`, `/{postId}/replies` | ✅ **Keep** — the core |
 | **Audio** | `GET /audio` (sign URL), `POST /audio/upload` | ✅ **Keep** — audio hygiene/storage |
 | **Users** | list profiles, list handles, `me` (get/patch/delete), claim/check handle, `GET /{handle}`, `/{handle}/profile` | ❌ **Remove** — account/profile management is the BFF's job |
 | **Actors** | `register`, `GET /{actorId}` | ❌ **Remove** — DID is asserted per-request, not registered |
@@ -41,18 +41,18 @@ identity into a service that is supposed to hold none.
 references:
 
 ```jsonc
-// before (hydrated — removed)
-"author": { "did": "…", "handle": "…", "displayName": "…", "avatar": "…" }
+// before — a hydrated ProfileViewBasic (removed)
+"author": { "id": "…", "handle": "…", "displayName": "…", "avatarUrl": "…", "bio": "…" }
 
-// after (opaque — Path 1)
+// after — opaque refs (Path 1)
 "authorId":  "sLhaGagvW5NEw6Vc4BMtdyuBlTb2",   // the app's own user id (attribution facet)
 "authorDid": "did:web:voxpop.audio"            // present only when the caller asserted one
 ```
 
 - Antiphony returns the ids it was given at write time (`authorId` = the acting
   actor; `authorDid` = the app-asserted DID). It performs **no profile lookup**.
-- The **BFF hydrates** display identity (handle, name, avatar) from its own store
-  by joining on `authorId` — data it already owns. For a list of posts this is a
+- The **BFF hydrates** display identity (handle, displayName, avatarUrl) from its
+  own store by joining on `authorId` — data it already owns. For a list of posts this is a
   single cheap batch lookup on the side that holds the data.
 - A post whose author has no public identity (e.g. a phone-only replier) simply
   has no BFF-side profile to hydrate — it renders author-less, which is correct.
@@ -68,10 +68,10 @@ attribution facet outside the record CID — exactly as
   (1) route modules and their mounts.
 - **Hydration:** `getAuthorsByIds` and the `author` projection in the post-view
   builder; the `users` collection reads for view assembly.
-- **Storage:** the `users` collection / public-profile projection and the handle
-  registry become dead — including the 2 profiles seeded during the voxpop
-  migration (author hydration moves to the BFF; the phone-only replier was
-  already profile-less, so it is unchanged).
+- **Storage:** the `users` collection (public-profile projection) and the
+  `handles` collection (handle uniqueness/resolution) become dead — including the
+  2 profiles seeded during the voxpop migration (author hydration moves to the
+  BFF; the phone-only replier was already profile-less, so it is unchanged).
 - **Auth path:** the Firebase ID-token / session `sessionVerifier` fallback in
   `middleware/auth.ts` and the `viewerSession` context var (see *Auth:
   service-token only* below). `service-auth.md` gets a follow-up amendment noting
