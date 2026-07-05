@@ -105,109 +105,11 @@
                                   "reply"
                                 ]
                               },
-                              "author": {
-                                "type": "object",
-                                "properties": {
-                                  "id": {
-                                    "type": "string"
-                                  },
-                                  "handle": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "displayName": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "avatarUrl": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "bio": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "website": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "links": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "object",
-                                      "properties": {
-                                        "label": {
-                                          "type": "string"
-                                        },
-                                        "url": {
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "label",
-                                        "url"
-                                      ]
-                                    }
-                                  },
-                                  "bluesky": {
-                                    "type": "object",
-                                    "properties": {
-                                      "handle": {
-                                        "type": "string"
-                                      },
-                                      "did": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "handle",
-                                      "did"
-                                    ]
-                                  },
-                                  "stats": {
-                                    "type": "object",
-                                    "properties": {
-                                      "followers": {
-                                        "type": "number",
-                                        "default": 0
-                                      },
-                                      "following": {
-                                        "type": "number",
-                                        "default": 0
-                                      },
-                                      "prompts": {
-                                        "type": "number",
-                                        "default": 0
-                                      }
-                                    }
-                                  },
-                                  "badges": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "isVerified": {
-                                    "type": "boolean"
-                                  },
-                                  "createdAt": {
-                                    "anyOf": [
-                                      {},
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "string"
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "id"
-                                ]
+                              "authorId": {
+                                "type": "string"
+                              },
+                              "authorDid": {
+                                "type": "string"
                               },
                               "record": {
                                 "type": "object",
@@ -410,7 +312,7 @@
                               "uri",
                               "cid",
                               "kind",
-                              "author",
+                              "authorId",
                               "record",
                               "viewer"
                             ]
@@ -922,109 +824,11 @@
                             "reply"
                           ]
                         },
-                        "author": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "handle": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "displayName": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "avatarUrl": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "bio": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "website": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "links": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "label": {
-                                    "type": "string"
-                                  },
-                                  "url": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "label",
-                                  "url"
-                                ]
-                              }
-                            },
-                            "bluesky": {
-                              "type": "object",
-                              "properties": {
-                                "handle": {
-                                  "type": "string"
-                                },
-                                "did": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "handle",
-                                "did"
-                              ]
-                            },
-                            "stats": {
-                              "type": "object",
-                              "properties": {
-                                "followers": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "following": {
-                                  "type": "number",
-                                  "default": 0
-                                },
-                                "prompts": {
-                                  "type": "number",
-                                  "default": 0
-                                }
-                              }
-                            },
-                            "badges": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "isVerified": {
-                              "type": "boolean"
-                            },
-                            "createdAt": {
-                              "anyOf": [
-                                {},
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "id"
-                          ]
+                        "authorId": {
+                          "type": "string"
+                        },
+                        "authorDid": {
+                          "type": "string"
                         },
                         "record": {
                           "type": "object",
@@ -1227,7 +1031,7 @@
                         "uri",
                         "cid",
                         "kind",
-                        "author",
+                        "authorId",
                         "record",
                         "viewer"
                       ]
@@ -1363,109 +1167,11 @@
                                   "reply"
                                 ]
                               },
-                              "author": {
-                                "type": "object",
-                                "properties": {
-                                  "id": {
-                                    "type": "string"
-                                  },
-                                  "handle": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "displayName": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "avatarUrl": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "bio": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "website": {
-                                    "type": "string",
-                                    "nullable": true
-                                  },
-                                  "links": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "object",
-                                      "properties": {
-                                        "label": {
-                                          "type": "string"
-                                        },
-                                        "url": {
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "label",
-                                        "url"
-                                      ]
-                                    }
-                                  },
-                                  "bluesky": {
-                                    "type": "object",
-                                    "properties": {
-                                      "handle": {
-                                        "type": "string"
-                                      },
-                                      "did": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "handle",
-                                      "did"
-                                    ]
-                                  },
-                                  "stats": {
-                                    "type": "object",
-                                    "properties": {
-                                      "followers": {
-                                        "type": "number",
-                                        "default": 0
-                                      },
-                                      "following": {
-                                        "type": "number",
-                                        "default": 0
-                                      },
-                                      "prompts": {
-                                        "type": "number",
-                                        "default": 0
-                                      }
-                                    }
-                                  },
-                                  "badges": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "isVerified": {
-                                    "type": "boolean"
-                                  },
-                                  "createdAt": {
-                                    "anyOf": [
-                                      {},
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "string"
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "id"
-                                ]
+                              "authorId": {
+                                "type": "string"
+                              },
+                              "authorDid": {
+                                "type": "string"
                               },
                               "record": {
                                 "type": "object",
@@ -1668,7 +1374,7 @@
                               "uri",
                               "cid",
                               "kind",
-                              "author",
+                              "authorId",
                               "record",
                               "viewer"
                             ]

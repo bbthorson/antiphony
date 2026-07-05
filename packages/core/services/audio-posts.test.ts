@@ -2,13 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AudioPostService, buildPostUri, parsePostId, canonicalPostRecord, type CreateAudioPostInput } from './audio-posts';
 import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
-import type { ProfileViewBasic } from 'shared/types/views';
 
 /**
  * Pure unit tests for AudioPostService — no Firebase. A hand-rolled
  * in-memory `AudioPostDependencies` exercises the create/hydrate logic:
  * kind derivation, transcript lift, signed-URL resolution, viewer state,
- * batching (one author/transcript round per call), and origin-app scoping.
+ * batching (one transcript round per call), and origin-app scoping.
  */
 
 const AUDIO_EMBED = {
@@ -18,8 +17,6 @@ const AUDIO_EMBED = {
     alt: 'spoken word',
     waveform: [0, 30, 90],
 };
-
-const AUTHOR: ProfileViewBasic = { id: 'u1', handle: 'alice', displayName: 'Alice' };
 
 /** Deterministic per-tenant app DID for the fake — stands in for the boot-validated pin. */
 const appDidFor = (originAppId: string) => `did:web:${originAppId}.example`;
@@ -35,7 +32,6 @@ function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDepe
         queryByAuthor: vi.fn(async () => []),
         queryReplies: vi.fn(async () => []),
         getTranscriptsBySubjectUris: vi.fn(async () => new Map<string, TranscriptEnrichmentRecord>()),
-        getAuthorsByIds: vi.fn(async () => new Map([[AUTHOR.id, AUTHOR]])),
         signAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `signed::${originAppId}::${blobCid}`),
         cidForRecord: vi.fn(async () => 'bafyreitestcid'),
         now: vi.fn(() => new Date('2026-06-26T00:00:00Z')),
@@ -282,17 +278,25 @@ describe('hydrateAudioPosts', () => {
         expect(stranger.viewer.replyDisabledReason).toBe('not_a_participant');
     });
 
-    it('batches author + transcript loads once for the whole set (no N+1)', async () => {
+    it('batches the transcript load once for the whole set (no N+1)', async () => {
         await svc.hydrateAudioPosts([record({ id: 'a' }), record({ id: 'b' }), record({ id: 'c' })], null);
-        expect(deps.getAuthorsByIds).toHaveBeenCalledTimes(1);
         expect(deps.getTranscriptsBySubjectUris).toHaveBeenCalledTimes(1);
     });
 
-    it('falls back to a synthetic author when the profile is missing', async () => {
-        (deps.getAuthorsByIds as ReturnType<typeof vi.fn>).mockResolvedValue(new Map());
+    it('carries opaque author refs straight off the record (no profile lookup)', async () => {
+        const [view] = await svc.hydrateAudioPosts(
+            [record({ authorId: 'u1', authorDid: 'did:web:voxpop.audio' })],
+            null,
+        );
+        expect(view.authorId).toBe('u1');
+        expect(view.authorDid).toBe('did:web:voxpop.audio');
+        expect(view).not.toHaveProperty('author');
+    });
+
+    it('omits authorDid when the record carries none', async () => {
         const [view] = await svc.hydrateAudioPosts([record()], null);
-        expect(view.author.id).toBe('u1');
-        expect(view.author.displayName).toBe('Unknown User');
+        expect(view.authorId).toBe('u1');
+        expect(view.authorDid).toBeUndefined();
     });
 
     it('omits the embed when there is no audio', async () => {
@@ -309,7 +313,7 @@ describe('hydrateAudioPosts', () => {
 
     it('returns [] for an empty input without touching the loaders', async () => {
         expect(await svc.hydrateAudioPosts([], null)).toEqual([]);
-        expect(deps.getAuthorsByIds).not.toHaveBeenCalled();
+        expect(deps.getTranscriptsBySubjectUris).not.toHaveBeenCalled();
     });
 });
 

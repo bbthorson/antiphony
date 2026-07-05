@@ -9,7 +9,6 @@ import {
     type ViewerState,
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
-import type { ProfileViewBasic } from 'shared/types/views';
 import type { ProcessingStageStatus } from 'shared/types/processing';
 import { ForbiddenError, NotFoundError } from 'shared/errors';
 import type {
@@ -302,9 +301,11 @@ export class AudioPostService {
     }
 
     /**
-     * Batched hydration (records → views). Loads all authors and transcript
-     * enrichments in ONE round each (N+1 ban), then assembles per-record views:
-     * lifts the transcript, signs the audio URL, and computes viewer state.
+     * Batched hydration (records → views). Loads transcript enrichments in ONE
+     * round (N+1 ban), then assembles per-record views: lifts the transcript,
+     * signs the audio URL, and computes viewer state. Author identity is NOT
+     * hydrated — the view carries opaque `authorId`/`authorDid` refs and the
+     * caller BFF joins on them (see specs/core-surface.md).
      */
     async hydrateAudioPosts(
         records: AudioPostRecord[],
@@ -312,24 +313,19 @@ export class AudioPostService {
     ): Promise<AudioPostView[]> {
         if (records.length === 0) return [];
 
-        const authorIds = Array.from(new Set(records.map((r) => r.authorId)));
         // Resolve authority per-record: a hydration batch can span tenants, and
         // each record's uri is keyed on ITS tenant's app DID.
         const uris = records.map((r) => buildPostUri(this.deps.getAppDid(r.originAppId), r.id));
 
-        const [authorMap, transcriptMap] = await Promise.all([
-            this.deps.getAuthorsByIds(authorIds),
-            this.deps.getTranscriptsBySubjectUris(uris),
-        ]);
+        const transcriptMap = await this.deps.getTranscriptsBySubjectUris(uris);
 
         return Promise.all(
-            records.map((record) => this.hydrateOne(record, authorMap, transcriptMap, viewerUid)),
+            records.map((record) => this.hydrateOne(record, transcriptMap, viewerUid)),
         );
     }
 
     private async hydrateOne(
         record: AudioPostRecord,
-        authorMap: Map<string, ProfileViewBasic>,
         transcriptMap: Map<string, TranscriptEnrichmentRecord>,
         viewerUid: string | null,
     ): Promise<AudioPostView> {
@@ -367,19 +363,14 @@ export class AudioPostService {
             }
         }
 
-        // Synthetic stub for a missing author so the view still renders, mirroring
-        // the legacy reply hydrator's fallback.
-        const author: ProfileViewBasic = authorMap.get(record.authorId) ?? {
-            id: record.authorId,
-            handle: null,
-            displayName: 'Unknown User',
-        };
-
         return {
             uri,
             cid: record.cid,
             kind: record.kind,
-            author,
+            // Opaque attribution refs, straight off the record — no profile
+            // lookup. The BFF hydrates display identity by joining on authorId.
+            authorId: record.authorId,
+            authorDid: record.authorDid,
             record: {
                 text: record.text,
                 title: record.title,

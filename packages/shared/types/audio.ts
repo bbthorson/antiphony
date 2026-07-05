@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BlobRefSchema } from './blob';
 import { FirestoreTimestampSchema } from './records';
-import { ProfileViewBasicSchema } from './views';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
 
 /**
@@ -258,10 +257,16 @@ export type PostRecordPublic = z.infer<typeof PostRecordPublicSchema>;
 
 /**
  * `AudioPostView` — the hydrated, client-facing shape (the bsky `postView`
- * analogue): record content + author + hydrated embed + per-viewer state.
- * Produced by the (batched) hydrator; the default/public view, with
- * owner-extra arriving via `viewer` + separate authed endpoints, not fat
- * records.
+ * analogue): record content + opaque author references + hydrated embed +
+ * per-viewer state. Produced by the (batched) hydrator; the default/public
+ * view, with owner-extra arriving via `viewer` + separate authed endpoints,
+ * not fat records.
+ *
+ * Author identity is carried as **opaque references**, never a hydrated
+ * profile: `authorId` is the app's own user id (attribution facet) and
+ * `authorDid` is present only when the caller asserted one. Antiphony holds no
+ * user data — the caller BFF hydrates display identity by joining on
+ * `authorId` (see specs/core-surface.md, "The author model").
  */
 export const AudioPostViewSchema = z.object({
     /** at:// URI (or internal ref) identifying the post. */
@@ -269,7 +274,10 @@ export const AudioPostViewSchema = z.object({
     /** Content CID of the canonical record (see `AudioPostRecordSchema.cid`). */
     cid: z.string(),
     kind: z.enum(['prompt', 'reply']),
-    author: ProfileViewBasicSchema,
+    /** The acting actor's app-scoped id — an opaque attribution ref, not a profile. */
+    authorId: z.string(),
+    /** The author's app-asserted AT Protocol DID, when the caller provided one. */
+    authorDid: z.string().optional(),
     record: PostRecordPublicSchema,
     /** Hydrated audio embed (signed URL + lifted transcript). */
     embed: AudioEmbedViewSchema.optional(),
