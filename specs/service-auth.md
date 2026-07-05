@@ -31,16 +31,18 @@ request is tenancy-scoped but viewer-less (public projection, `canReply: false`)
 
 ### Tenancy resolution
 
-`originAppId` is **derived from the credential**, never from the request body
-or an env default. A request authenticated as app `vox-pop` can only read and
-write `vox-pop`-tenancy records and blobs. The `ANTIPHONY_ORIGIN_APP_ID` env
-var remains only as the fallback for the legacy end-user mode below.
+`originAppId` is **derived from the credential**, never from the request body.
+A request authenticated as app `vox-pop` can only read and write
+`vox-pop`-tenancy records and blobs. The `ANTIPHONY_ORIGIN_APP_ID` env var is
+the tenancy only for an anonymous read (`optionalAuth` with no service token) —
+a self-hoster's single-tenant default.
 
 ### Error semantics
 
 | Condition | Response |
 | :--- | :--- |
-| Unknown/malformed bearer token | `401` `{ success:false, error:{ message } }` (falls through to end-user token verification first — see below) |
+| Unknown/malformed bearer token on a `requireAuth` route | `401` `{ success:false, error:{ message: 'Invalid service token' } }` |
+| Unknown/malformed bearer token on an `optionalAuth` route | treated as anonymous (no error) — a stale credential must not block a public read |
 | Service token on a `requireAuth` route with no `X-Antiphony-Acting-Actor` | `401`, message names the missing header |
 | Service token shorter than 32 chars in config | entry refused at startup (fail-closed for that app), logged |
 
@@ -63,27 +65,27 @@ This is deliberately env-level for v1 (single-digit app count). A registry
 collection with hashed keys + self-serve issuance is the planned upgrade path;
 the middleware is the swap point.
 
-## Resolution order (implementation)
+## Resolution (implementation)
 
-For a bearer token on `/api/v1/posts*` and `/api/v1/audio*`:
+The **service token is the only accepted credential** (see
+[`core-surface.md`](./core-surface.md), "Auth: service-token only"). For a
+bearer token on `/api/v1/posts*` and `/api/v1/audio*`:
 
-1. **Service-token match** (constant-time, against `ANTIPHONY_APP_TOKENS`):
-   sets `originAppId` from the matched app, `viewerUid` from
-   `X-Antiphony-Acting-Actor` (or `null`), `actingActorDid` from its header.
-2. **Fallback — end-user mode**: the token is verified as a Firebase ID
-   token / session cookie (the pre-existing path). `originAppId` falls back to
-   `ANTIPHONY_ORIGIN_APP_ID`. This keeps the hosted reference app and local
-   emulator flow working (a browser demo can't hold a service secret) and is
-   the compatibility path for existing callers. It is per-deploy behavior, not
-   part of the service contract.
+- **Service-token match** (constant-time, against `ANTIPHONY_APP_TOKENS`):
+  sets `originAppId` from the matched app, `viewerUid` from
+  `X-Antiphony-Acting-Actor` (or `null`), `actingActorDid` from its header.
+- **No match**: `requireAuth` returns `401`; `optionalAuth` proceeds as an
+  anonymous read (tenancy = `ANTIPHONY_ORIGIN_APP_ID`).
 
-Service tokens are long random strings that can never parse as Firebase JWTs,
-so trying the service match first is safe and adds no verification cost.
+The inherited Firebase ID-token / session-cookie fallback was removed:
+Antiphony is headless, so every caller is an application that presents a
+service token — verifying end-user tokens would recouple the service to a
+specific Firebase project. The reference app is itself just another caller.
 
 ## Non-goals (v1)
 
 - Per-actor authorization inside a tenancy (the app is trusted for its users).
 - DID verification (the app performed the OAuth ceremony; Antiphony records
-  the assertion — see the actor-registration work in phase B3).
+  the asserted `authorDid` on the post, outside the record CID).
 - Request signing / mTLS / GCP OIDC — possible hardening later; the
   middleware is the single swap point.

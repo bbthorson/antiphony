@@ -1,26 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 
 /**
  * Tests for the auth middleware (`optionalAuth` + `requireAuth`).
  *
- * Mocks `sessionVerifier` so tests control the verify outcome without
- * touching Firebase. Fresh Hono app per test so handlers can assert on
- * `c.var.viewerUid` / `c.var.viewerSession` in isolation.
+ * The service token is the only accepted credential (specs/core-surface.md,
+ * "Auth: service-token only"). Tests configure `ANTIPHONY_APP_TOKENS` and
+ * drive requests with a `Bearer <service-token>` header plus the
+ * `X-Antiphony-Acting-Actor` assertion. Fresh Hono app per test so handlers
+ * can assert on `c.var` in isolation.
  */
 
-const verifyToken = vi.fn();
-
-vi.mock('../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: {
-        verifyToken: (token: string) => verifyToken(token),
-    },
-}));
-
-// Silence logger.
+// A configured service token (≥32 chars) for the fake app `test-app`.
+const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
+process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.LOG_LEVEL = 'silent';
 
-const { optionalAuth, requireAuth } = await import('./auth.js');
+const { optionalAuth, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
+    await import('./auth.js');
 const { requestId } = await import('./request-id.js');
 
 /**
@@ -34,24 +31,31 @@ function makeApp(middleware: 'optional' | 'required') {
     app.get('/probe', middleware === 'optional' ? optionalAuth() : requireAuth(), (c) => {
         return c.json({
             viewerUid: c.get('viewerUid'),
-            viewerSessionUid: c.get('viewerSession')?.uid ?? null,
+            originAppId: c.get('originAppId'),
+            actingActorDid: c.get('actingActorDid'),
         });
     });
     return app;
 }
 
-describe('optionalAuth', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
+/** Headers for an authenticated service call asserting `actor`. */
+function svc(actor?: string, did?: string): Record<string, string> {
+    const headers: Record<string, string> = { authorization: `Bearer ${SERVICE_TOKEN}` };
+    if (actor !== undefined) headers[ACTING_ACTOR_HEADER] = actor;
+    if (did !== undefined) headers[ACTING_ACTOR_DID_HEADER] = did;
+    return headers;
+}
 
-    it('treats a missing Authorization header as anonymous (viewerUid: null)', async () => {
+describe('optionalAuth', () => {
+    it('treats a missing Authorization header as anonymous', async () => {
         const res = await makeApp('optional').request('/probe');
 
         expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body).toEqual({ viewerUid: null, viewerSessionUid: null });
-        expect(verifyToken).not.toHaveBeenCalled();
+        expect(await res.json()).toEqual({
+            viewerUid: null,
+            originAppId: null,
+            actingActorDid: null,
+        });
     });
 
     it('treats a malformed Authorization header (no Bearer prefix) as anonymous', async () => {
@@ -60,72 +64,59 @@ describe('optionalAuth', () => {
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.viewerUid).toBeNull();
-        expect(verifyToken).not.toHaveBeenCalled();
+        expect((await res.json()).viewerUid).toBeNull();
     });
 
-    it('attaches viewerUid when the bearer token verifies', async () => {
-        verifyToken.mockResolvedValue({ uid: 'u-123', email: 'alice@example.com' });
-
+    it('treats an unrecognized bearer token as anonymous (no 401)', async () => {
         const res = await makeApp('optional').request('/probe', {
-            headers: { authorization: 'Bearer valid-token' },
-        });
-
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body).toEqual({ viewerUid: 'u-123', viewerSessionUid: 'u-123' });
-        expect(verifyToken).toHaveBeenCalledWith('valid-token');
-    });
-
-    it('treats an invalid token as anonymous (no 401)', async () => {
-        verifyToken.mockRejectedValue(new Error('token expired'));
-
-        const res = await makeApp('optional').request('/probe', {
-            headers: { authorization: 'Bearer expired-token' },
-        });
-
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.viewerUid).toBeNull();
-    });
-
-    it('exposes the full verified session (custom claims) on viewerSession', async () => {
-        verifyToken.mockResolvedValue({
-            uid: 'u-999',
-            currentOrg: 'org-abc',
-            customRole: 'admin',
-        });
-
-        const app = new Hono();
-        app.use('*', requestId());
-        app.get('/probe', optionalAuth(), (c) => {
-            const session = c.get('viewerSession');
-            return c.json({
-                uid: session?.uid ?? null,
-                currentOrg: session?.currentOrg ?? null,
-                customRole: session?.customRole ?? null,
-            });
-        });
-
-        const res = await app.request('/probe', {
-            headers: { authorization: 'Bearer x' },
+            headers: { authorization: 'Bearer not-a-configured-token' },
         });
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({
-            uid: 'u-999',
-            currentOrg: 'org-abc',
-            customRole: 'admin',
+            viewerUid: null,
+            originAppId: null,
+            actingActorDid: null,
         });
+    });
+
+    it('decorates the context on a valid service token + acting-actor', async () => {
+        const res = await makeApp('optional').request('/probe', {
+            headers: svc('actor-1', 'did:web:voxpop.audio'),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+            viewerUid: 'actor-1',
+            originAppId: 'test-app',
+            actingActorDid: 'did:web:voxpop.audio',
+        });
+    });
+
+    it('authenticates the app with no acting-actor (viewerUid null, tenancy set)', async () => {
+        const res = await makeApp('optional').request('/probe', {
+            headers: svc(),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+            viewerUid: null,
+            originAppId: 'test-app',
+            actingActorDid: null,
+        });
+    });
+
+    it('ignores a DID assertion when no acting-actor is present', async () => {
+        const res = await makeApp('optional').request('/probe', {
+            headers: svc(undefined, 'did:web:voxpop.audio'),
+        });
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).actingActorDid).toBeNull();
     });
 });
 
 describe('requireAuth', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-    });
-
     it('returns 401 when the Authorization header is missing', async () => {
         const res = await makeApp('required').request('/probe');
 
@@ -134,7 +125,6 @@ describe('requireAuth', () => {
         expect(body.success).toBe(false);
         expect(body.error.message).toBe('Authentication required');
         expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
-        expect(verifyToken).not.toHaveBeenCalled();
     });
 
     it('returns 401 on a malformed Authorization header', async () => {
@@ -145,38 +135,36 @@ describe('requireAuth', () => {
         expect(res.status).toBe(401);
     });
 
-    it('returns 401 on an invalid token', async () => {
-        verifyToken.mockRejectedValue(new Error('token expired'));
-
+    it('returns 401 on a token that is not a recognized service token', async () => {
         const res = await makeApp('required').request('/probe', {
-            headers: { authorization: 'Bearer expired-token' },
+            headers: { authorization: 'Bearer not-a-configured-token' },
         });
 
         expect(res.status).toBe(401);
-        const body = await res.json();
-        expect(body.error.message).toBe('Invalid or expired session');
+        expect((await res.json()).error.message).toBe('Invalid service token');
     });
 
-    it('passes through when the token verifies', async () => {
-        verifyToken.mockResolvedValue({ uid: 'u-abc' });
-
+    it('returns 401 when the service token is valid but no acting-actor is asserted', async () => {
         const res = await makeApp('required').request('/probe', {
-            headers: { authorization: 'Bearer good-token' },
+            headers: svc(),
+        });
+
+        expect(res.status).toBe(401);
+        expect((await res.json()).error.message).toBe(
+            'X-Antiphony-Acting-Actor header required for this endpoint',
+        );
+    });
+
+    it('passes through on a valid service token + acting-actor', async () => {
+        const res = await makeApp('required').request('/probe', {
+            headers: svc('actor-abc'),
         });
 
         expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body).toEqual({ viewerUid: 'u-abc', viewerSessionUid: 'u-abc' });
-    });
-
-    it('trims whitespace in the bearer token', async () => {
-        verifyToken.mockResolvedValue({ uid: 'u-def' });
-
-        const res = await makeApp('required').request('/probe', {
-            headers: { authorization: 'Bearer   padded-token   ' },
+        expect(await res.json()).toEqual({
+            viewerUid: 'actor-abc',
+            originAppId: 'test-app',
+            actingActorDid: null,
         });
-
-        expect(res.status).toBe(200);
-        expect(verifyToken).toHaveBeenCalledWith('padded-token');
     });
 });

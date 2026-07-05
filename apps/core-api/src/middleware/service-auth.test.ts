@@ -1,20 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
 /**
  * Tests for the service-to-service auth path (`specs/service-auth.md`):
  * `parseAppTokens` config parsing + the service branch inside
  * `optionalAuth`/`requireAuth` (tenancy from credential, acting-actor
- * assertion, fallthrough to end-user verification).
+ * assertion). The service token is the only accepted credential — a
+ * non-matching token is rejected, never verified as an end-user token.
  */
-
-const verifyToken = vi.fn();
-
-vi.mock('../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: {
-        verifyToken: (token: string) => verifyToken(token),
-    },
-}));
 
 process.env.LOG_LEVEL = 'silent';
 
@@ -68,7 +61,6 @@ describe('parseAppTokens', () => {
 
 describe('service-token auth path', () => {
     beforeEach(() => {
-        vi.resetAllMocks();
         process.env.ANTIPHONY_APP_TOKENS = `vox-pop:${TOKEN}`;
     });
     afterEach(() => {
@@ -91,8 +83,6 @@ describe('service-token auth path', () => {
             actingActorDid: 'did:plc:abc',
             resolvedOrigin: 'vox-pop',
         });
-        // Service path never touches the end-user verifier.
-        expect(verifyToken).not.toHaveBeenCalled();
     });
 
     it('401s on requireAuth when the app omits the acting-actor header', async () => {
@@ -127,31 +117,36 @@ describe('service-token auth path', () => {
         expect((await res.json()).actingActorDid).toBeNull();
     });
 
-    it('falls through to end-user verification for non-matching tokens', async () => {
-        verifyToken.mockResolvedValue({ uid: 'firebase-user' });
+    it('rejects a non-matching token with 401 on requireAuth (no end-user fallback)', async () => {
         const res = await makeApp('required').request('/probe', {
-            headers: { authorization: 'Bearer some-firebase-id-token' },
+            headers: { authorization: 'Bearer some-non-service-token' },
+        });
+        expect(res.status).toBe(401);
+        expect((await res.json()).error.message).toBe('Invalid service token');
+    });
+
+    it('treats a non-matching token as anonymous on optionalAuth', async () => {
+        const res = await makeApp('optional').request('/probe', {
+            headers: { authorization: 'Bearer some-non-service-token' },
         });
         expect(res.status).toBe(200);
         const body = await res.json();
-        expect(body.viewerUid).toBe('firebase-user');
-        // End-user mode: tenancy falls back to the env default.
+        expect(body.viewerUid).toBeNull();
+        // Anonymous read: no credential tenancy, so it falls back to the env default.
         expect(body.originAppId).toBeNull();
         expect(body.resolvedOrigin).toBe('antiphony');
-        expect(verifyToken).toHaveBeenCalledWith('some-firebase-id-token');
     });
 
-    it('does not honor acting-actor headers on the end-user path', async () => {
-        verifyToken.mockResolvedValue({ uid: 'firebase-user' });
-        const res = await makeApp('required').request('/probe', {
+    it('does not honor acting-actor headers without a valid service token', async () => {
+        const res = await makeApp('optional').request('/probe', {
             headers: {
-                authorization: 'Bearer some-firebase-id-token',
+                authorization: 'Bearer some-non-service-token',
                 'x-antiphony-acting-actor': 'spoofed-actor',
                 'x-antiphony-acting-actor-did': 'did:plc:spoof',
             },
         });
         const body = await res.json();
-        expect(body.viewerUid).toBe('firebase-user');
+        expect(body.viewerUid).toBeNull();
         expect(body.actingActorDid).toBeNull();
     });
 });

@@ -100,10 +100,6 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     isUsingEmulator: () => false,
 }));
 
-vi.mock('../../../lib/auth/session-verifier.js', () => ({
-    sessionVerifier: { verifyToken: vi.fn(async () => ({ uid: 'u1' })) },
-}));
-
 vi.mock('../../../lib/idempotency.js', () => ({
     checkIdempotency: vi.fn(async () => null),
     saveIdempotencyResult: vi.fn(async () => undefined),
@@ -115,8 +111,12 @@ vi.mock('../../../middleware/rate-limit.js', () => ({
     rateLimit: () => async (_c: unknown, next: () => Promise<void>) => { await next(); },
 }));
 
+// The caller authenticates as the application `test-app` via a service token;
+// the acting end user (`u1`) is asserted with X-Antiphony-Acting-Actor.
+const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
+process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.ANTIPHONY_PROCESSING_INLINE = 'true';
 
 const { app } = await import('../../../app.js');
@@ -146,7 +146,11 @@ const EMBED = {
     audio: { $type: 'blob', ref: { $link: ORIGINAL_LINK }, mimeType: 'audio/webm', size: 2048 },
     durationMs: 4200,
 };
-const AUTH = { Authorization: 'Bearer t', 'Content-Type': 'application/json' };
+const AUTH = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+    'x-antiphony-acting-actor': 'u1',
+    'Content-Type': 'application/json',
+};
 
 async function createPost(body: Record<string, unknown>): Promise<string> {
     const res = await app().request('/api/v1/posts', {
@@ -169,7 +173,6 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
         docs.clear();
         autoId = 0;
         delete process.env.ANTIPHONY_PROCESSING_STUB;
-        delete process.env.ANTIPHONY_APP_TOKENS;
     });
     afterEach(() => {
         delete process.env.ANTIPHONY_PROCESSING_STUB;
