@@ -116,13 +116,15 @@ and CIDs are **real content addresses** computed by the AT Protocol rules:
   every reply's `reply.root`/`reply.parent` StrongRef — is therefore a
   verifiable content address.
 
-One known deviation remains, documented so integrators aren't surprised:
+One thing to know about identity so integrators aren't surprised:
 
-- **`at://` URI authority.** When a post's author has no linked DID, the URI
-  authority is an internal actor id rather than a DID or handle
-  (`at://<actorId>/dev.antiphony.audio.post/<rkey>`). Real DIDs replace this
-  as identity federation lands; the URI *structure* is already correct, so
-  consuming code won't need to change shape.
+- **`at://` URI authority is the tenant app DID.** Antiphony is the repo owner
+  (app-as-repo-owner — see the [authority model](/introduction/architecture/)),
+  so a post's URI authority is always the tenant's own `did:web`
+  (`at://did:web:<tenant>/dev.antiphony.audio.post/<rkey>`), never an internal
+  id or handle. The acting user's own identity, when the caller asserts one,
+  rides alongside as the `authorDid` attribution facet — outside the record CID,
+  distinct from the URI authority.
 
 ## Where next?
 

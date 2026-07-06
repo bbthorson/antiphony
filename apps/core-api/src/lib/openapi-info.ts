@@ -8,18 +8,16 @@
  */
 export const OPENAPI_INFO = {
     title: 'Antiphony Core API',
-    version: '0.1.0',
+    version: '0.2.0',
     description: [
-        'Open-source REST surface for Antiphony — actor identity, canonical audio posts, audio storage, and the auth surface that links them.',
+        'Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.',
         '',
         '## Authentication',
         '',
-        'Every authenticated endpoint accepts a bearer token via the `Authorization: Bearer <token>` header. Two token types are accepted interchangeably:',
+        'The **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.',
         '',
-        '- **Firebase ID token** — issued by the Firebase Auth client SDK. Short-lived (~1 hour); refresh client-side.',
-        '- **Firebase session cookie** — issued by the hosted dashboard via `POST /api/v1/auth/session` (apps/web only; per-origin Set-Cookie semantics). Longer-lived; useful for server-rendered clients.',
-        '',
-        'Both verify against the same Firebase project. Public endpoints accept missing/invalid tokens but project to the public view shape.',
+        '- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.',
+        '- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths resolved to short-lived signed URLs.',
         '',
         '## Envelope',
         '',
@@ -39,8 +37,6 @@ export const OPENAPI_INFO = {
  * and never appear here.
  */
 export const OPENAPI_TAGS = [
-    { name: 'Users', description: 'Actor identity primitives, the viewer\'s own profile, and public identity projections (profiles, handle resolution).' },
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
-    { name: 'Audio', description: 'Audio storage primitives — the signed-URL proxy and the authenticated / anonymous upload endpoints.' },
-    { name: 'Auth', description: 'Identity-linking primitives (AT Protocol connect/disconnect).' },
+    { name: 'Audio', description: 'Audio storage primitives — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint.' },
 ] as const;
