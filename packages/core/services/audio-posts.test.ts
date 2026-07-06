@@ -197,7 +197,7 @@ describe('reply gating (createPost, §6)', () => {
     it('lets a branch participant continue, inheriting the pair', async () => {
         const reply = {
             id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
-            threadParticipants: ['creator', 'responder'], text: 'a reply',
+            threadParticipants: ['creator', 'responder'], rootAuthorId: 'creator', text: 'a reply',
             reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
         } as AudioPostRecord;
         setParent(reply);

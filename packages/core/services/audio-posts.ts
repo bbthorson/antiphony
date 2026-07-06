@@ -288,9 +288,8 @@ export class AudioPostService {
      * down the branch exactly like `threadParticipants`:
      *  - parent is the **prompt** ⇒ the prompt IS the root, so `rootAuthorId =
      *    parent.authorId`.
-     *  - parent is a **reply** ⇒ inherit `parent.rootAuthorId` (stamped on every
-     *    reply; falls back to the branch's first participant for any legacy reply
-     *    written before the facet existed).
+     *  - parent is a **reply** ⇒ inherit `parent.rootAuthorId` (the record schema
+     *    stamps it on every reply, so a reply parent always carries it).
      * This keeps the root recipient a pure function of the already-fetched
      * parent — no dependency on `reply.root.uri`'s authority, no thread walk.
      */
@@ -321,7 +320,13 @@ export class AudioPostService {
         if (!participants.includes(authorId)) {
             throw new ForbiddenError('Only the thread participants can reply here');
         }
-        return { participants, rootAuthorId: parent.rootAuthorId ?? participants[0] };
+        // The record schema requires `rootAuthorId` on every reply, so a reply
+        // parent read back through `getPostById` always carries it. Assert the
+        // invariant at this type boundary rather than substitute a wrong id.
+        if (parent.rootAuthorId === undefined) {
+            throw new Error('Invariant: reply parent is missing its rootAuthorId facet');
+        }
+        return { participants, rootAuthorId: parent.rootAuthorId };
     }
 
     /**
