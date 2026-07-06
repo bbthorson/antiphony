@@ -156,6 +156,14 @@ export const AudioPostRecordSchema = z.object({
      */
     threadParticipants: z.array(z.string()).optional(),
     /**
+     * Author of this reply's thread ROOT (the prompt) — the reply's recipient,
+     * the person whose "replies to me" feed it lands in. Denormalized at write
+     * time so "replies whose root author is X" is a cheap composite-index query
+     * (see `queryByRootAuthor`). Set on replies (`kind === 'reply'`); absent on
+     * prompts. Storage-layer facet, NOT in the public lexicon or the record CID.
+     */
+    rootAuthorId: z.string().optional(),
+    /**
      * Async audio-processing state (transcribe / denoise), present iff the app
      * opted into processing on create. Mutated by the processing worker after
      * the post is created — storage-layer, NOT in the lexicon or the record
@@ -181,10 +189,15 @@ export const AudioPostRecordSchema = z.object({
 }).refine(
     // `kind` is denormalized from `reply` presence at write time; enforce the
     // invariant so an inconsistent record can't be written or read silently.
-    // A reply has `reply` and no `title`; a prompt has neither a `reply`.
-    (r) => (r.kind === 'reply' ? !!r.reply && r.title === undefined : !r.reply),
+    // A reply has `reply`, no `title`, and a stamped `rootAuthorId` (its
+    // recipient facet); a prompt has none of those.
+    (r) =>
+        r.kind === 'reply'
+            ? !!r.reply && r.title === undefined && r.rootAuthorId !== undefined
+            : !r.reply && r.rootAuthorId === undefined,
     {
-        message: "kind must match reply presence: 'reply' ⇒ reply set & no title; 'prompt' ⇒ no reply",
+        message:
+            "kind must match reply presence: 'reply' ⇒ reply set, no title, rootAuthorId set; 'prompt' ⇒ no reply, no rootAuthorId",
         path: ['kind'],
     },
 );

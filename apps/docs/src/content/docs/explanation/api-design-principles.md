@@ -9,7 +9,7 @@ The whole thing reduces to one sentence: **the core ships primitives; connectors
 
 ## 1. Primitives, not compositions
 
-An endpoint exposes a **resource and an operation on it** — create a post, get a post, list a post's replies. It does *not* expose an assembled experience. An "inbox," a "dashboard," an "onboarding flow" are compositions a connector sequences from primitives; they are deliberately *not* endpoints. There is no `GET /inbox` — you build one from the post primitives (a viewer's posts, a thread's replies).
+An endpoint exposes a **resource and an operation on it** — create a post, get a post, list a post's replies. It does *not* expose an assembled experience. An "inbox," a "dashboard," an "onboarding flow" are compositions a connector sequences from primitives; they are deliberately *not* endpoints. There is no `GET /inbox` — you build one from the post primitives (a viewer's posts, a thread's replies, and the replies *addressed to* an author via `GET /api/v1/posts?rootAuthor=…`); the read/unread and archived layers that make it an inbox live in the connector.
 
 The test for a proposed endpoint: *would two different connectors want this exact shape?* A primitive (the replies-on-a-post list) is reused by every surface. A composition (one app's home screen) is reused by none — it belongs in that app, or in a backend-for-frontend in front of it, not in the core.
 

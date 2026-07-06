@@ -10,7 +10,7 @@ import {
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
 import type { ProcessingStageStatus } from 'shared/types/processing';
-import { ForbiddenError, NotFoundError } from 'shared/errors';
+import { ForbiddenError, NotFoundError, ValidationError } from 'shared/errors';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -170,9 +170,10 @@ export class AudioPostService {
         const kind: AudioPostRecord['kind'] = input.reply ? 'reply' : 'prompt';
 
         // Reply gating: resolve the parent to authorize the reply and derive
-        // the branch participant pair. Prompts have no parent, so they skip this.
-        const threadParticipants = input.reply
-            ? await this.resolveReplyParticipants(input.originAppId, input.authorId, input.reply)
+        // the branch metadata (participant pair + rootAuthorId recipient facet).
+        // Prompts have no parent, so they skip this.
+        const branch = input.reply
+            ? await this.resolveReplyBranch(input.originAppId, input.authorId, input.reply)
             : undefined;
 
         const createdAt = this.deps.now();
@@ -210,7 +211,8 @@ export class AudioPostService {
             authorDid: input.authorDid,
             orgId: input.orgId ?? undefined,
             kind,
-            threadParticipants,
+            threadParticipants: branch?.participants,
+            rootAuthorId: branch?.rootAuthorId,
             processing,
             text: input.text,
             title,
@@ -226,9 +228,52 @@ export class AudioPostService {
     }
 
     /**
-     * Authorize a reply and compute its branch participant pair (§6 "Reply
-     * gating"). Throws when the parent is missing/cross-tenant (404) or the
-     * author isn't allowed to reply (403).
+     * Re-stamp a post's async processing state and return the updated record —
+     * the write half of the "trigger enrichment after the fact" PATCH. Only the
+     * post's **author** may do it. `resolved` is the per-stage state the caller
+     * already resolved against deployment capabilities (`pending`/`skipped`);
+     * this merges it over any existing state (so re-requesting `denoise` never
+     * clobbers a `ready` `transcribe`) and stamps `updatedAt`.
+     *
+     * `processing` is storage-layer (NOT in the lexicon or the record CID), so
+     * this mutates NO public field and the record's content address is
+     * unchanged — the post keeps its identity. Content edits are deliberately
+     * out of scope: they would change the CID.
+     */
+    async setProcessing(
+        originAppId: string,
+        id: string,
+        actorUid: string,
+        resolved: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus },
+    ): Promise<AudioPostRecord> {
+        const record = await this.deps.getPostById(originAppId, id);
+        if (!record) {
+            throw new NotFoundError('Post not found');
+        }
+        if (record.authorId !== actorUid) {
+            throw new ForbiddenError('Only the author can trigger processing');
+        }
+        if (!record.embed) {
+            throw new ValidationError('Post has no audio to process');
+        }
+
+        const updated: AudioPostRecord = {
+            ...record,
+            processing: {
+                ...record.processing,
+                ...resolved,
+                updatedAt: this.deps.now(),
+            },
+        };
+        await this.deps.savePost(updated);
+        return updated;
+    }
+
+    /**
+     * Authorize a reply and resolve its branch metadata (§6 "Reply gating"):
+     * the participant pair AND the `rootAuthorId` recipient facet. Throws when
+     * the parent/root is missing/cross-tenant (404) or the author isn't allowed
+     * to reply (403).
      *
      * - parent is the **prompt** (thread-root): any authenticated author may
      *   answer (the app's default audience policy); the branch opens with
@@ -237,12 +282,23 @@ export class AudioPostService {
      *   continue — the pair is inherited unchanged. Keying off the branch pair
      *   (not `parent.author`) is what lets the creator ↔ responder back-and-forth
      *   continue past the second turn.
+     *
+     * `rootAuthorId` is the author of the thread ROOT (the prompt) — the reply's
+     * recipient. It's derived from the parent WITHOUT an extra read, inherited
+     * down the branch exactly like `threadParticipants`:
+     *  - parent is the **prompt** ⇒ the prompt IS the root, so `rootAuthorId =
+     *    parent.authorId`.
+     *  - parent is a **reply** ⇒ inherit `parent.rootAuthorId` (stamped on every
+     *    reply; falls back to the branch's first participant for any legacy reply
+     *    written before the facet existed).
+     * This keeps the root recipient a pure function of the already-fetched
+     * parent — no dependency on `reply.root.uri`'s authority, no thread walk.
      */
-    private async resolveReplyParticipants(
+    private async resolveReplyBranch(
         originAppId: string,
         authorId: string,
         reply: ReplyRef,
-    ): Promise<string[]> {
+    ): Promise<{ participants: string[]; rootAuthorId: string }> {
         const parentId = parsePostId(reply.parent.uri, this.deps.getAppDid(originAppId));
         const parent = parentId ? await this.deps.getPostById(originAppId, parentId) : null;
         if (!parent) {
@@ -252,15 +308,20 @@ export class AudioPostService {
         if (parent.kind === 'prompt') {
             // Top-level reply: the audience answers the call. Deduped so a
             // creator replying to their own prompt collapses to a single id.
-            return Array.from(new Set([parent.authorId, authorId]));
+            // The prompt is the thread root, so its author is the recipient.
+            return {
+                participants: Array.from(new Set([parent.authorId, authorId])),
+                rootAuthorId: parent.authorId,
+            };
         }
 
-        // Reply to a reply: participant-only. Inherit the established pair.
+        // Reply to a reply: participant-only. Inherit the established pair AND
+        // the root-author facet from the parent branch.
         const participants = parent.threadParticipants ?? [parent.authorId];
         if (!participants.includes(authorId)) {
             throw new ForbiddenError('Only the thread participants can reply here');
         }
-        return participants;
+        return { participants, rootAuthorId: parent.rootAuthorId ?? participants[0] };
     }
 
     /**
@@ -286,6 +347,22 @@ export class AudioPostService {
         options?: AudioPostQueryOptions,
     ): Promise<AudioPostView[]> {
         const records = await this.deps.queryByAuthor(originAppId, authorId, options);
+        return this.hydrateAudioPosts(records, viewerUid);
+    }
+
+    /**
+     * List replies whose thread ROOT was authored by `rootAuthorId`
+     * (origin-app-scoped), hydrated, reverse-chronological. The storage
+     * primitive a caller BFF composes into a "replies to me" / inbox feed —
+     * Antiphony itself stays product-agnostic.
+     */
+    async getRepliesByRootAuthor(
+        originAppId: string,
+        rootAuthorId: string,
+        viewerUid: string | null,
+        options?: AudioPostQueryOptions,
+    ): Promise<AudioPostView[]> {
+        const records = await this.deps.queryByRootAuthor(originAppId, rootAuthorId, options);
         return this.hydrateAudioPosts(records, viewerUid);
     }
 

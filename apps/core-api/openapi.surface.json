@@ -5,6 +5,7 @@
     "GET /api/v1/posts",
     "GET /api/v1/posts/{postId}",
     "GET /api/v1/posts/{postId}/replies",
+    "PATCH /api/v1/posts/{postId}",
     "POST /api/v1/audio/upload",
     "POST /api/v1/posts"
   ]

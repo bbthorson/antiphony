@@ -25,8 +25,8 @@
         "tags": [
           "Posts"
         ],
-        "summary": "List the authenticated viewer's audio posts",
-        "description": "Paginated list of audio posts authored by the viewer within this deploy's origin app. Optional `kind` filter (`prompt`|`reply`). Cursor-paginated by post id.",
+        "summary": "List audio posts (the viewer's own, or replies addressed to an author)",
+        "description": "Paginated list of audio posts within this deploy's origin app. By default, the posts authored by the viewer (optionally filtered by `kind`). With `rootAuthor` set, instead returns the replies whose thread root was authored by that id — \"replies addressed to author X\", the raw feed a connector composes into an inbox. Cursor-paginated by post id.",
         "parameters": [
           {
             "schema": {
@@ -55,10 +55,19 @@
                 "prompt",
                 "reply"
               ],
-              "description": "Restrict to prompts or replies"
+              "description": "Restrict to prompts or replies (ignored when `rootAuthor` is set)"
             },
             "required": false,
             "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Return replies addressed to this author (thread-root author) instead of the viewer's own posts"
+            },
+            "required": false,
+            "name": "rootAuthor",
             "in": "query"
           }
         ],
@@ -1032,6 +1041,485 @@
                   "required": [
                     "success",
                     "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Trigger audio enrichment on a post",
+        "description": "(Re)runs async audio processing (transcribe / denoise) on an existing post. The body accepts **only** a `processing` opt-in — no lexicon fields are editable, because those feed the record CID (its content identity); processing state is storage-layer, so this changes no CID. Author-only: the acting viewer must be the post author. Returns the re-hydrated `AudioPostView`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The post id"
+            },
+            "required": true,
+            "name": "postId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "processing": {
+                    "type": "object",
+                    "properties": {
+                      "transcribe": {
+                        "type": "boolean"
+                      },
+                      "denoise": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "processing"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Post updated; re-hydrated view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "uri": {
+                          "type": "string"
+                        },
+                        "cid": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "prompt",
+                            "reply"
+                          ]
+                        },
+                        "authorId": {
+                          "type": "string"
+                        },
+                        "authorDid": {
+                          "type": "string"
+                        },
+                        "record": {
+                          "type": "object",
+                          "properties": {
+                            "text": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "reply": {
+                              "type": "object",
+                              "properties": {
+                                "root": {
+                                  "type": "object",
+                                  "properties": {
+                                    "uri": {
+                                      "type": "string",
+                                      "pattern": "^at:\\/\\/.+"
+                                    },
+                                    "cid": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "uri",
+                                    "cid"
+                                  ]
+                                },
+                                "parent": {
+                                  "type": "object",
+                                  "properties": {
+                                    "uri": {
+                                      "type": "string",
+                                      "pattern": "^at:\\/\\/.+"
+                                    },
+                                    "cid": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "uri",
+                                    "cid"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "root",
+                                "parent"
+                              ]
+                            },
+                            "langs": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "selfLabels": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "createdAt": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "text",
+                            "createdAt"
+                          ]
+                        },
+                        "embed": {
+                          "type": "object",
+                          "properties": {
+                            "$type": {
+                              "type": "string",
+                              "enum": [
+                                "dev.antiphony.embed.audio#view"
+                              ]
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "durationMs": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "alt": {
+                              "type": "string",
+                              "maxLength": 10000
+                            },
+                            "waveform": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              "maxItems": 1000
+                            },
+                            "transcript": {
+                              "type": "object",
+                              "properties": {
+                                "segments": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "startMs": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "endMs": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "startMs",
+                                      "endMs",
+                                      "text"
+                                    ]
+                                  }
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "segments"
+                              ]
+                            },
+                            "processing": {
+                              "type": "object",
+                              "properties": {
+                                "transcribe": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending",
+                                    "ready",
+                                    "failed",
+                                    "skipped"
+                                  ]
+                                },
+                                "denoise": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending",
+                                    "ready",
+                                    "failed",
+                                    "skipped"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "$type",
+                            "url"
+                          ]
+                        },
+                        "viewer": {
+                          "type": "object",
+                          "properties": {
+                            "isAuthor": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "canReply": {
+                              "type": "boolean",
+                              "default": false
+                            },
+                            "replyDisabledReason": {
+                              "type": "string",
+                              "enum": [
+                                "unauthenticated",
+                                "not_a_participant"
+                              ]
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "uri",
+                        "cid",
+                        "kind",
+                        "authorId",
+                        "record",
+                        "viewer"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (no processing stage requested / no audio to process)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the post author",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
                   ]
                 }
               }

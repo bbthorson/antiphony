@@ -30,6 +30,7 @@ function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDepe
         savePost: vi.fn(async (r: AudioPostRecord) => { saved.push(r); }),
         getPostById: vi.fn(async () => null),
         queryByAuthor: vi.fn(async () => []),
+        queryByRootAuthor: vi.fn(async () => []),
         queryReplies: vi.fn(async () => []),
         getTranscriptsBySubjectUris: vi.fn(async () => new Map<string, TranscriptEnrichmentRecord>()),
         signAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `signed::${originAppId}::${blobCid}`),
@@ -144,6 +145,28 @@ describe('reply gating (createPost, §6)', () => {
         const rec = await svc.createPost(replyTo(prompt, 'responder'));
         expect(rec.kind).toBe('reply');
         expect([...(rec.threadParticipants ?? [])].sort()).toEqual(['creator', 'responder']);
+    });
+
+    it('stamps rootAuthorId = the prompt author on a top-level reply, with no extra read', async () => {
+        setParent(prompt);
+        const rec = await svc.createPost(replyTo(prompt, 'responder'));
+        // The prompt IS the thread root → its author is the recipient facet.
+        expect(rec.rootAuthorId).toBe('creator');
+        // Only the parent was fetched — the root is derived, not looked up.
+        expect(deps.getPostById).toHaveBeenCalledTimes(1);
+    });
+
+    it('inherits rootAuthorId down the branch on a reply-to-reply (no extra read)', async () => {
+        const parentReply = {
+            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            threadParticipants: ['creator', 'responder'], rootAuthorId: 'creator',
+            text: 'a reply', reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
+        } as AudioPostRecord;
+        setParent(parentReply);
+        const rec = await svc.createPost(replyTo(parentReply, 'creator'));
+        // Inherited from parent.rootAuthorId, not re-derived from the root uri.
+        expect(rec.rootAuthorId).toBe('creator');
+        expect(deps.getPostById).toHaveBeenCalledTimes(1);
     });
 
     it('collapses a creator self-reply to a single participant', async () => {
@@ -374,5 +397,82 @@ describe('getPostView / getReplies pass-through', () => {
         const svc = new AudioPostService(deps);
         await svc.getReplies('vox-pop', 'at://u1/dev.antiphony.audio.post/root', null, { limit: 10 });
         expect(deps.queryReplies).toHaveBeenCalledWith('vox-pop', 'at://u1/dev.antiphony.audio.post/root', { limit: 10 });
+    });
+});
+
+describe('getRepliesByRootAuthor', () => {
+    const replyRecord = {
+        id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+        threadParticipants: ['creator', 'responder'], rootAuthorId: 'creator',
+        text: 'a reply', embed: AUDIO_EMBED,
+        reply: {
+            root: { uri: 'at://did:web:vox-pop.example/dev.antiphony.audio.post/root', cid: 'root' },
+            parent: { uri: 'at://did:web:vox-pop.example/dev.antiphony.audio.post/root', cid: 'root' },
+        },
+        createdAt: new Date('2026-06-26T00:00:00Z'),
+    } as AudioPostRecord;
+
+    it('queries by rootAuthor within the origin app and hydrates the results', async () => {
+        const deps = makeDeps({ queryByRootAuthor: vi.fn(async () => [replyRecord]) });
+        const svc = new AudioPostService(deps);
+
+        const views = await svc.getRepliesByRootAuthor('vox-pop', 'creator', 'creator', { limit: 25, cursorId: 'r0' });
+
+        expect(deps.queryByRootAuthor).toHaveBeenCalledWith('vox-pop', 'creator', { limit: 25, cursorId: 'r0' });
+        expect(views).toHaveLength(1);
+        expect(views[0].kind).toBe('reply');
+        // Hydration ran (signed url resolved) — same path as the other reads.
+        expect(views[0].embed?.url).toBe(`signed::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
+    });
+
+    it('returns [] when the author addresses no replies', async () => {
+        const deps = makeDeps(); // queryByRootAuthor defaults to []
+        const svc = new AudioPostService(deps);
+        expect(await svc.getRepliesByRootAuthor('vox-pop', 'nobody', null)).toEqual([]);
+    });
+});
+
+describe('setProcessing', () => {
+    const post = {
+        id: 'p1', originAppId: 'vox-pop', authorId: 'u1', kind: 'prompt',
+        text: 'hi', embed: AUDIO_EMBED, createdAt: new Date('2026-06-26T00:00:00Z'),
+    } as AudioPostRecord;
+
+    function depsWith(record: AudioPostRecord | null) {
+        return makeDeps({ getPostById: vi.fn(async () => record) });
+    }
+
+    it('merges the resolved stages over existing state and stamps updatedAt', async () => {
+        const existing = { ...post, processing: { transcribe: 'ready', updatedAt: new Date('2026-06-01T00:00:00Z') } } as AudioPostRecord;
+        const deps = depsWith(existing);
+        const svc = new AudioPostService(deps);
+
+        const updated = await svc.setProcessing('vox-pop', 'p1', 'u1', { denoise: 'pending' });
+
+        // denoise added; the already-ready transcribe is NOT clobbered.
+        expect(updated.processing).toMatchObject({ transcribe: 'ready', denoise: 'pending' });
+        expect(updated.processing?.updatedAt).toEqual(new Date('2026-06-26T00:00:00Z'));
+        expect(deps.savePost).toHaveBeenCalledWith(updated);
+    });
+
+    it('404s when the post is missing (or cross-tenant)', async () => {
+        const svc = new AudioPostService(depsWith(null));
+        await expect(svc.setProcessing('vox-pop', 'nope', 'u1', { transcribe: 'pending' }))
+            .rejects.toMatchObject({ status: 404 });
+    });
+
+    it('403s when the actor is not the post author, and saves nothing', async () => {
+        const deps = depsWith(post);
+        const svc = new AudioPostService(deps);
+        await expect(svc.setProcessing('vox-pop', 'p1', 'someone-else', { transcribe: 'pending' }))
+            .rejects.toMatchObject({ status: 403 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('400s when the post has no audio to process', async () => {
+        const deps = depsWith({ ...post, embed: undefined } as AudioPostRecord);
+        const svc = new AudioPostService(deps);
+        await expect(svc.setProcessing('vox-pop', 'p1', 'u1', { transcribe: 'pending' }))
+            .rejects.toMatchObject({ status: 400 });
     });
 });
