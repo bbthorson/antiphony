@@ -90,17 +90,37 @@ describe('AudioPostRecord (single collection; reply-presence discriminator)', ()
         expect(parsed.title).toBe('A question');
     });
 
-    it('round-trips a reply-kind post (with reply StrongRefs)', () => {
+    it('round-trips a reply-kind post (with reply StrongRefs + rootAuthorId)', () => {
         const parsed = AudioPostRecordSchema.parse({
             ...base,
             kind: 'reply',
             text: '',
             reply: { root: STRONGREF, parent: STRONGREF },
+            rootAuthorId: 'prompt-author',
         });
         expect(parsed.kind).toBe('reply');
         expect(parsed.reply?.root.cid).toBe('bafyabc');
+        // The recipient facet (thread-root author) is stamped on replies.
+        expect(parsed.rootAuthorId).toBe('prompt-author');
         // Reply text may be empty (pure-audio reply).
         expect(parsed.text).toBe('');
+    });
+
+    it('rejects a reply missing the rootAuthorId recipient facet', () => {
+        expect(() =>
+            AudioPostRecordSchema.parse({
+                ...base,
+                kind: 'reply',
+                text: '',
+                reply: { root: STRONGREF, parent: STRONGREF },
+            }),
+        ).toThrow(/rootAuthorId/);
+    });
+
+    it('rejects a prompt that carries a rootAuthorId (reply-only facet)', () => {
+        expect(() =>
+            AudioPostRecordSchema.parse({ ...base, kind: 'prompt', rootAuthorId: 'someone' }),
+        ).toThrow(/rootAuthorId/);
     });
 
     it('requires the tenancy key (originAppId)', () => {

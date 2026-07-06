@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { AudioPostViewSchema } from 'shared/types/audio';
-import { CreateAudioPostRequestSchema } from 'shared/api-codecs';
+import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { audioPostService } from '../../outbound/firebase/core-services-firebase.js';
@@ -22,6 +22,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   GET    /:postId           — single hydrated AudioPostView (optional auth)
  *   GET    /:postId/replies   — thread: replies to the post (paginated)
  *   POST   /                  — create a post (idempotency-capable)
+ *   PATCH  /:postId           — (re)trigger audio enrichment (processing only)
  *
  * This is the canonical content surface: a single post collection where
  * `reply` presence discriminates a prompt (thread root) from a reply. The
@@ -46,6 +47,12 @@ const ListQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(20),
     cursor: z.string().min(1).optional(),
     kind: z.enum(['prompt', 'reply']).optional(),
+    // Facet filter: replies whose thread ROOT was authored by this id — i.e.
+    // "replies addressed to author X". A different slice of the same posts
+    // collection than the viewer's own posts (the default). Mutually exclusive
+    // with the viewer-authored view: when set, the list is NOT scoped to the
+    // viewer as author, and `kind` is implied `reply` (so it's ignored).
+    rootAuthor: z.string().min(1).optional(),
 });
 
 const ListResponseSchema = z.object({
@@ -65,16 +72,19 @@ const listRoute = createRoute({
     method: 'get',
     path: '/',
     tags: ['Posts'],
-    summary: "List the authenticated viewer's audio posts",
+    summary: "List audio posts (the viewer's own, or replies addressed to an author)",
     description:
-        "Paginated list of audio posts authored by the viewer within this deploy's origin app. " +
-        'Optional `kind` filter (`prompt`|`reply`). Cursor-paginated by post id.',
+        "Paginated list of audio posts within this deploy's origin app. By default, the posts authored " +
+        'by the viewer (optionally filtered by `kind`). With `rootAuthor` set, instead returns the replies ' +
+        'whose thread root was authored by that id — "replies addressed to author X", the raw feed a ' +
+        'connector composes into an inbox. Cursor-paginated by post id.',
     middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
     request: {
         query: z.object({
             limit: z.coerce.number().int().min(1).max(100).optional().openapi({ description: '1–100 (default 20)' }),
             cursor: z.string().optional().openapi({ description: 'Pagination cursor — the last post id from the prior page' }),
-            kind: z.enum(['prompt', 'reply']).optional().openapi({ description: 'Restrict to prompts or replies' }),
+            kind: z.enum(['prompt', 'reply']).optional().openapi({ description: 'Restrict to prompts or replies (ignored when `rootAuthor` is set)' }),
+            rootAuthor: z.string().optional().openapi({ description: 'Return replies addressed to this author (thread-root author) instead of the viewer\'s own posts' }),
         }),
     },
     responses: {
@@ -91,6 +101,7 @@ app.openapi(listRoute, async (c) => {
         limit: c.req.query('limit'),
         cursor: c.req.query('cursor'),
         kind: c.req.query('kind'),
+        rootAuthor: c.req.query('rootAuthor'),
     });
     if (!queryResult.success) {
         return c.json(
@@ -98,13 +109,22 @@ app.openapi(listRoute, async (c) => {
             400,
         );
     }
-    const { limit, cursor, kind } = queryResult.data;
+    const { limit, cursor, kind, rootAuthor } = queryResult.data;
+    const originAppId = getOriginAppId(c);
 
-    const items = await audioPostService.getPostsForAuthor(getOriginAppId(c), uid, uid, {
-        limit,
-        cursorId: cursor,
-        kind,
-    });
+    // `rootAuthor` selects a different slice of the collection: replies addressed
+    // to that author (the `rootAuthorId` facet), NOT the viewer's own posts. The
+    // default view stays viewer-authored (`authorId == uid`).
+    const items = rootAuthor
+        ? await audioPostService.getRepliesByRootAuthor(originAppId, rootAuthor, uid, {
+              limit,
+              cursorId: cursor,
+          })
+        : await audioPostService.getPostsForAuthor(originAppId, uid, uid, {
+              limit,
+              cursorId: cursor,
+              kind,
+          });
 
     return c.json({
         success: true as const,
@@ -325,6 +345,87 @@ app.openapi(createRouteDef, async (c) => {
     await saveIdempotencyResult(c, uid, responseBody);
 
     return c.json(responseBody, 200);
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /:postId — (re)trigger audio enrichment (processing opt-in ONLY)
+// ---------------------------------------------------------------------------
+
+const patchRoute = createRoute({
+    method: 'patch',
+    path: '/{postId}',
+    tags: ['Posts'],
+    summary: 'Trigger audio enrichment on a post',
+    description:
+        '(Re)runs async audio processing (transcribe / denoise) on an existing post. The body accepts ' +
+        '**only** a `processing` opt-in — no lexicon fields are editable, because those feed the record ' +
+        'CID (its content identity); processing state is storage-layer, so this changes no CID. ' +
+        'Author-only: the acting viewer must be the post author. Returns the re-hydrated `AudioPostView`.',
+    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    request: {
+        params: z.object({
+            postId: z.string().openapi({ description: 'The post id' }),
+        }),
+        body: {
+            content: { 'application/json': { schema: PatchAudioPostRequestSchema } },
+        },
+    },
+    responses: {
+        200: jsonResponse(AudioPostViewSchema, 'Post updated; re-hydrated view'),
+        400: errorResponse('Validation failed (no processing stage requested / no audio to process)'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse('Not the post author'),
+        404: errorResponse('Post not found'),
+    },
+});
+
+app.openapi(patchRoute, async (c) => {
+    const uid = c.get('viewerUid')!;
+    const postId = c.req.param('postId');
+    const originAppId = getOriginAppId(c);
+
+    let rawData: unknown;
+    try {
+        rawData = await c.req.json();
+    } catch {
+        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
+    }
+
+    const validation = PatchAudioPostRequestSchema.safeParse(rawData);
+    if (!validation.success) {
+        return c.json(
+            errorEnvelope(c, 'Validation failed', { issues: validation.error.issues }),
+            400,
+        );
+    }
+
+    // Resolve the opt-in against this deployment's capabilities (pending/skipped).
+    // Undefined ⇒ the request named no stage (or only `false`s) — a no-op PATCH.
+    const resolved = resolveInitialProcessing(validation.data.processing);
+    if (!resolved) {
+        return c.json(
+            errorEnvelope(c, 'Request must enable at least one processing stage'),
+            400,
+        );
+    }
+
+    // Author check + persist happen in the service (throws 403/404/400 mapped by
+    // the error handler). Content address is unchanged — processing is storage-layer.
+    await audioPostService.setProcessing(originAppId, postId, uid, resolved);
+
+    // Kick off any stage that's actually pending. Inline mode awaits; the
+    // durable Cloud Tasks trigger lands in a later PR (same seam as create).
+    if (hasPendingStage(resolved)) {
+        await dispatchProcessing(originAppId, postId);
+    }
+
+    // Re-read fresh so the view reflects any inline processing results.
+    const view = await audioPostService.getPostView(originAppId, postId, uid);
+    if (!view) {
+        return c.json(errorEnvelope(c, 'Post not found'), 404);
+    }
+
+    return c.json({ success: true as const, data: view }, 200);
 });
 
 export { app as postsRoute };

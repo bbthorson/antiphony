@@ -12,7 +12,9 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
         createPost: vi.fn(),
         getPostView: vi.fn(),
         getPostsForAuthor: vi.fn(),
+        getRepliesByRootAuthor: vi.fn(),
         getReplies: vi.fn(),
+        setProcessing: vi.fn(),
     },
 }));
 
@@ -176,6 +178,25 @@ describe('/api/v1/posts', () => {
             const res = await app().request('/api/v1/posts');
             expect(res.status).toBe(401);
         });
+
+        it('with rootAuthor, returns replies addressed to that author (not the viewer\'s own)', async () => {
+            authAs('viewer');
+            const replyView = { ...VIEW, uri: 'at://x/dev.antiphony.audio.post/r1', kind: 'reply' as const };
+            vi.mocked(audioPostService.getRepliesByRootAuthor).mockResolvedValue([asView(replyView)!]);
+
+            const res = await app().request('/api/v1/posts?rootAuthor=creator&limit=1', { headers: authHeaders() });
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body.data.items[0].kind).toBe('reply');
+            expect(body.data.nextCursor).toBe('r1');
+            // Queries the rootAuthorId facet with the explicit author; the viewer
+            // (acting actor) is passed through for viewer state, NOT as the author.
+            expect(audioPostService.getRepliesByRootAuthor).toHaveBeenCalledWith(
+                'test-app', 'creator', 'viewer', expect.objectContaining({ limit: 1 }),
+            );
+            // The default viewer-authored query is NOT used in this mode.
+            expect(audioPostService.getPostsForAuthor).not.toHaveBeenCalled();
+        });
     });
 
     describe('GET /:postId/replies', () => {
@@ -198,6 +219,62 @@ describe('/api/v1/posts', () => {
             const res = await app().request('/api/v1/posts/p1/replies', READ_AUTH);
             expect(res.status).toBe(200);
             expect(audioPostService.getReplies).toHaveBeenCalledWith('test-app', VIEW.uri, null, expect.objectContaining({ limit: 50 }));
+        });
+    });
+
+    describe('PATCH /:postId', () => {
+        it('401s without an acting actor (requireAuth)', async () => {
+            const res = await app().request('/api/v1/posts/p1', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ processing: { transcribe: true } }),
+            });
+            expect(res.status).toBe(401);
+            expect(audioPostService.setProcessing).not.toHaveBeenCalled();
+        });
+
+        it('triggers processing for the author and returns the re-hydrated view', async () => {
+            authAs('u1');
+            vi.mocked(audioPostService.setProcessing).mockResolvedValue(
+                { id: 'p1' } as Awaited<ReturnType<typeof audioPostService.setProcessing>>,
+            );
+            vi.mocked(audioPostService.getPostView).mockResolvedValue(asView(VIEW));
+
+            const res = await app().request('/api/v1/posts/p1', {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ processing: { transcribe: true } }),
+            });
+
+            expect(res.status).toBe(200);
+            const body = await res.json();
+            expect(body.data.uri).toBe(VIEW.uri);
+            // Author is the acting actor; the resolved per-stage state is passed through.
+            expect(audioPostService.setProcessing).toHaveBeenCalledWith(
+                'test-app', 'p1', 'u1', expect.objectContaining({ transcribe: expect.any(String) }),
+            );
+        });
+
+        it('400s a no-op patch that enables no stage, without calling the service', async () => {
+            authAs('u1');
+            const res = await app().request('/api/v1/posts/p1', {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ processing: { transcribe: false } }),
+            });
+            expect(res.status).toBe(400);
+            expect(audioPostService.setProcessing).not.toHaveBeenCalled();
+        });
+
+        it('400s when the body omits processing entirely (schema)', async () => {
+            authAs('u1');
+            const res = await app().request('/api/v1/posts/p1', {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ text: 'edit me' }),
+            });
+            expect(res.status).toBe(400);
+            expect(audioPostService.setProcessing).not.toHaveBeenCalled();
         });
     });
 });

@@ -56,7 +56,8 @@ describe('OpenAPI document', () => {
         expect(paths).toContain('/api/v1/posts/{postId}');
         expect(paths).toContain('/api/v1/posts/{postId}/replies');
         expect(paths).toContain('/api/v1/audio/upload');
-        // Legacy prompt/reply/org surface is gone.
+        // Legacy prompt/reply/org surface is gone. ("Replies addressed to author
+        // X" is a facet on /posts — `?rootAuthor=` — not a resurrected /replies.)
         expect(paths).not.toContain('/api/v1/prompts');
         expect(paths).not.toContain('/api/v1/replies');
         expect(paths).not.toContain('/api/v1/organizations');

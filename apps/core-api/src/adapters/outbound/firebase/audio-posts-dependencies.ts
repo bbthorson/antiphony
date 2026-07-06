@@ -119,6 +119,26 @@ export const firebaseAudioPostDependencies: AudioPostDependencies = {
         return parsePostDocs(await q.get());
     },
 
+    async queryByRootAuthor(
+        originAppId: string,
+        rootAuthorId: string,
+        options?: AudioPostQueryOptions,
+    ): Promise<AudioPostRecord[]> {
+        if (!originAppId?.trim() || !rootAuthorId?.trim()) return [];
+        const { limit = 20, cursorId } = options ?? {};
+
+        // `rootAuthorId` is reply-only (stamped at write), so this composite
+        // query is inherently restricted to replies — no `kind` predicate.
+        let q: FirebaseFirestore.Query = postsCollection()
+            .where('originAppId', '==', originAppId)
+            .where('rootAuthorId', '==', rootAuthorId)
+            .orderBy('createdAt', 'desc')
+            .limit(limit);
+        q = await startAfterCursor(q, cursorId);
+
+        return parsePostDocs(await q.get());
+    },
+
     async queryReplies(
         originAppId: string,
         parentUri: string,

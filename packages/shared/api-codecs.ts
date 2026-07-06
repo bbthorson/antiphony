@@ -43,6 +43,22 @@ export const CreateAudioPostRequestSchema = z.object({
 export type CreateAudioPostRequest = z.infer<typeof CreateAudioPostRequestSchema>;
 
 /**
+ * Patch-request codec for the canonical Antiphony `dev.antiphony.audio.post`
+ * model. **Processing opt-in is the ONLY thing a PATCH may change** — it
+ * re-triggers async audio enrichment (transcribe / denoise) on an existing
+ * post. No lexicon fields are editable here: those feed the record CID (its
+ * content address / identity), so a content edit would mint a different record.
+ * Processing state is storage-layer, so this changes no CID. See
+ * `types/processing.ts`.
+ */
+export const PatchAudioPostRequestSchema = z.object({
+  /** Opt-in audio processing to (re)run for this post's audio. Required — a
+   *  PATCH with no processing request is a no-op and rejected as invalid. */
+  processing: ProcessingRequestSchema,
+});
+export type PatchAudioPostRequest = z.infer<typeof PatchAudioPostRequestSchema>;
+
+/**
  * Update-request codec for the authenticated actor's own profile
  * (`PATCH /api/v1/users/me`). Partial-update of identity fields only.
  */

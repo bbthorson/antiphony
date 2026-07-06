@@ -63,6 +63,18 @@ export interface AudioPostDependencies {
     ): Promise<AudioPostRecord[]>;
 
     /**
+     * List replies whose thread ROOT was authored by `rootAuthorId`, within an
+     * origin app, newest first, cursor-paginated. `rootAuthorId` is stamped only
+     * on replies, so this query is inherently reply-only (no `kind` filter). The
+     * "replies to author X" primitive; a caller BFF composes it into an inbox.
+     */
+    queryByRootAuthor(
+        originAppId: string,
+        rootAuthorId: string,
+        options?: AudioPostQueryOptions,
+    ): Promise<AudioPostRecord[]>;
+
+    /**
      * List replies whose `reply.parent.uri` matches `parentUri`, within an
      * origin app, oldest first (thread reading order), cursor-paginated.
      */
