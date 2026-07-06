@@ -71,6 +71,10 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
     };
 }
 
+// A tenancy-scoped read with no acting actor: the service token establishes the
+// tenant, viewerUid stays null (anonymous, viewer-less public projection).
+const READ_AUTH = { headers: { Authorization: `Bearer ${SERVICE_TOKEN}` } };
+
 describe('/api/v1/posts', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -130,20 +134,26 @@ describe('/api/v1/posts', () => {
     });
 
     describe('GET /:postId', () => {
-        it('returns the hydrated view (anonymous viewer allowed)', async () => {
+        it('returns the hydrated view (service token, anonymous viewer)', async () => {
             vi.mocked(audioPostService.getPostView).mockResolvedValue(asView(VIEW));
-            const res = await app().request('/api/v1/posts/p1');
+            const res = await app().request('/api/v1/posts/p1', READ_AUTH);
             expect(res.status).toBe(200);
             const body = await res.json();
             expect(body.data.uri).toBe(VIEW.uri);
             expect(body.data.embed.url).toContain('signed');
-            // Scoped to the configured origin app.
+            // Tenancy comes from the service credential; no acting actor ⇒ null viewer.
             expect(audioPostService.getPostView).toHaveBeenCalledWith('test-app', 'p1', null);
+        });
+
+        it('401s without a service token (reads are gated)', async () => {
+            const res = await app().request('/api/v1/posts/p1');
+            expect(res.status).toBe(401);
+            expect(audioPostService.getPostView).not.toHaveBeenCalled();
         });
 
         it('404s when the post is missing or belongs to another origin app', async () => {
             vi.mocked(audioPostService.getPostView).mockResolvedValue(asView(null));
-            const res = await app().request('/api/v1/posts/nope');
+            const res = await app().request('/api/v1/posts/nope', READ_AUTH);
             expect(res.status).toBe(404);
         });
     });
@@ -171,15 +181,21 @@ describe('/api/v1/posts', () => {
     describe('GET /:postId/replies', () => {
         it('404s when the parent post is missing', async () => {
             vi.mocked(audioPostService.getPostView).mockResolvedValue(asView(null));
-            const res = await app().request('/api/v1/posts/p1/replies');
+            const res = await app().request('/api/v1/posts/p1/replies', READ_AUTH);
             expect(res.status).toBe(404);
             expect(audioPostService.getReplies).not.toHaveBeenCalled();
+        });
+
+        it('401s without a service token', async () => {
+            const res = await app().request('/api/v1/posts/p1/replies');
+            expect(res.status).toBe(401);
+            expect(audioPostService.getPostView).not.toHaveBeenCalled();
         });
 
         it('keys the thread query on the parent view uri', async () => {
             vi.mocked(audioPostService.getPostView).mockResolvedValue(asView(VIEW));
             vi.mocked(audioPostService.getReplies).mockResolvedValue([]);
-            const res = await app().request('/api/v1/posts/p1/replies');
+            const res = await app().request('/api/v1/posts/p1/replies', READ_AUTH);
             expect(res.status).toBe(200);
             expect(audioPostService.getReplies).toHaveBeenCalledWith('test-app', VIEW.uri, null, expect.objectContaining({ limit: 50 }));
         });

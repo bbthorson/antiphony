@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { AudioPostViewSchema } from 'shared/types/audio';
 import { CreateAudioPostRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
-import { optionalAuth, requireAuth } from '../../../middleware/auth.js';
+import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { audioPostService } from '../../outbound/firebase/core-services-firebase.js';
 import {
     checkIdempotency,
@@ -130,8 +130,9 @@ const getByIdRoute = createRoute({
     summary: 'Get an audio post by id',
     description:
         'Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). ' +
-        'Scoped to the origin app — a post from another origin app reads as 404.',
-    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+        'Scoped to the origin app — a post from another origin app reads as 404. ' +
+        'Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
+    middleware: [requireServiceToken(), rateLimit(RATE_LIMITS.read)] as const,
     request: {
         params: z.object({
             postId: z.string().openapi({ description: 'The post id' }),
@@ -166,8 +167,9 @@ const repliesRoute = createRoute({
     summary: 'List replies to an audio post',
     description:
         'Returns the post\'s direct replies (posts whose `reply.parent` is this post), in thread order ' +
-        '(oldest first). Cursor-paginated. Scoped to the origin app.',
-    middleware: [optionalAuth(), rateLimit(RATE_LIMITS.read)] as const,
+        '(oldest first). Cursor-paginated. Scoped to the origin app. Requires a service token; omit ' +
+        '`X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
+    middleware: [requireServiceToken(), rateLimit(RATE_LIMITS.read)] as const,
     request: {
         params: z.object({
             postId: z.string().openapi({ description: 'The parent post id' }),

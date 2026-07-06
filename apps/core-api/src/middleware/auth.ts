@@ -3,17 +3,17 @@ import { matchServiceToken } from './service-auth.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
- * Auth bridge middleware. Two variants:
+ * Auth bridge middleware. Two variants — both require a valid service token
+ * (there is no tokenless path; every data route is gated):
  *
- *   - `optionalAuth()` — reads `Authorization: Bearer <token>` if present,
- *     resolves it as a service token, and attaches the acting actor to
- *     `c.var.viewerUid`. Absent or unrecognized tokens produce
- *     `viewerUid = null` (no error). Use on endpoints that have a public
- *     path and an owner-aware branch.
+ *   - `requireServiceToken()` — 401 on a missing/unrecognized token. Attaches
+ *     the acting actor to `c.var.viewerUid` from `X-Antiphony-Acting-Actor`,
+ *     which MAY be absent (`viewerUid = null` → anonymous, viewer-less read).
+ *     Use on tenancy-scoped reads with a public projection.
  *
- *   - `requireAuth()` — same resolution but returns 401 if the header is
- *     missing or the token is not a recognized service token. Use on
- *     endpoints that require an authenticated caller.
+ *   - `requireAuth()` — same, but additionally 401s when no acting actor is
+ *     asserted. Use on endpoints that need to know WHO is acting (writes,
+ *     viewer-scoped lists).
  *
  * ## Token resolution (specs/service-auth.md, specs/core-surface.md)
  *
@@ -33,8 +33,7 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * After either middleware runs:
  *   - `c.get('viewerUid'): string | null` — app-asserted acting user's id, or null.
  *   - `c.get('originAppId'): string | null` — tenancy key from the service
- *     credential, or null (caller then falls back to the env default via
- *     `getOriginAppId(c)`).
+ *     credential; always set on a gated route (null only pre-auth).
  *   - `c.get('actingActorDid'): string | null` — app-asserted AT Protocol
  *     DID of the acting user.
  */
@@ -104,39 +103,54 @@ function tryServiceAuth(
 }
 
 /**
- * Optional auth — never errors; just decorates the context. A missing or
- * unrecognized token yields anonymous state (a stale/wrong credential must
- * not block a public endpoint).
+ * Shared service-token gate for both required-auth middlewares. Extracts the
+ * bearer, rejects a missing or unrecognized token with a 401 (in the standard
+ * error-envelope shape), and decorates the context on success. Returns the
+ * 401 `Response` to short-circuit, or `null` when the caller should proceed.
  */
-export const optionalAuth = (): MiddlewareHandler => {
-    return async (c, next) => {
-        const token = extractBearer(c.req.header('authorization'));
-        if (token && tryServiceAuth(c, token)) {
-            return next();
-        }
+function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): Response | null {
+    const token = extractBearer(c.req.header('authorization'));
+    if (!token) {
         setAnonymous(c);
+        return c.json(errorEnvelope(c, 'Authentication required'), 401);
+    }
+    if (!tryServiceAuth(c, token)) {
+        setAnonymous(c);
+        return c.json(errorEnvelope(c, 'Invalid service token'), 401);
+    }
+    return null;
+}
+
+/**
+ * Require a valid service token, but NOT an acting actor. Use on tenancy-scoped
+ * reads that have a public (viewer-less) projection: the app must authenticate
+ * so the credential establishes *which tenant* is being read, but it may omit
+ * `X-Antiphony-Acting-Actor` for an anonymous read (`viewerUid = null` → public
+ * view). 401 on a missing header or a token that isn't a recognized service
+ * token.
+ *
+ * This is the tokenless-reads gate (specs/core-surface.md, "tokenless public
+ * reads"): every data route now carries a token, so tenancy is never inferred
+ * from a deploy-level default.
+ */
+export const requireServiceToken = (): MiddlewareHandler => {
+    return async (c, next) => {
+        const rejection = serviceTokenGate(c);
+        if (rejection) return rejection;
         return next();
     };
 };
 
 /**
- * Required auth — 401 on a missing header OR a token that is not a
- * recognized service token. Response shape follows the error-handler
- * middleware's format so clients can consume both transport-level and
- * handler-level auth failures the same way.
+ * Required auth — `requireServiceToken` plus an acting-actor assertion. 401 on
+ * a missing/unrecognized token OR a valid token with no `X-Antiphony-Acting-
+ * Actor`. Use on endpoints that need to know WHO is acting (writes,
+ * viewer-scoped lists).
  */
 export const requireAuth = (): MiddlewareHandler => {
     return async (c, next) => {
-        const token = extractBearer(c.req.header('authorization'));
-        if (!token) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Authentication required'), 401);
-        }
-
-        if (!tryServiceAuth(c, token)) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Invalid service token'), 401);
-        }
+        const rejection = serviceTokenGate(c);
+        if (rejection) return rejection;
 
         // requireAuth semantics need an acting user: an app calling a
         // viewer-required endpoint must say WHO is acting.

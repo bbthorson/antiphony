@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 /**
  * Tests for the service-to-service auth path (`specs/service-auth.md`):
  * `parseAppTokens` config parsing + the service branch inside
- * `optionalAuth`/`requireAuth` (tenancy from credential, acting-actor
+ * `requireServiceToken`/`requireAuth` (tenancy from credential, acting-actor
  * assertion). The service token is the only accepted credential — a
  * non-matching token is rejected, never verified as an end-user token.
  */
@@ -12,16 +12,16 @@ import { Hono } from 'hono';
 process.env.LOG_LEVEL = 'silent';
 
 const { parseAppTokens } = await import('./service-auth.js');
-const { optionalAuth, requireAuth } = await import('./auth.js');
+const { requireServiceToken, requireAuth } = await import('./auth.js');
 const { requestId } = await import('./request-id.js');
 const { getOriginAppId } = await import('../lib/origin-app.js');
 
 const TOKEN = 'a'.repeat(32) + '-vox-pop-service-token';
 
-function makeApp(middleware: 'optional' | 'required') {
+function makeApp(middleware: 'service' | 'required') {
     const app = new Hono();
     app.use('*', requestId());
-    app.get('/probe', middleware === 'optional' ? optionalAuth() : requireAuth(), (c) => {
+    app.get('/probe', middleware === 'service' ? requireServiceToken() : requireAuth(), (c) => {
         return c.json({
             viewerUid: c.get('viewerUid'),
             originAppId: c.get('originAppId'),
@@ -94,8 +94,8 @@ describe('service-token auth path', () => {
         expect(body.error.message).toContain('X-Antiphony-Acting-Actor');
     });
 
-    it('optionalAuth allows an anonymous tenancy-scoped read (token, no actor)', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('requireServiceToken allows an anonymous tenancy-scoped read (token, no actor)', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: { authorization: `Bearer ${TOKEN}` },
         });
         expect(res.status).toBe(200);
@@ -108,7 +108,7 @@ describe('service-token auth path', () => {
     });
 
     it('ignores a DID assertion without an actor', async () => {
-        const res = await makeApp('optional').request('/probe', {
+        const res = await makeApp('service').request('/probe', {
             headers: {
                 authorization: `Bearer ${TOKEN}`,
                 'x-antiphony-acting-actor-did': 'did:plc:abc',
@@ -125,28 +125,22 @@ describe('service-token auth path', () => {
         expect((await res.json()).error.message).toBe('Invalid service token');
     });
 
-    it('treats a non-matching token as anonymous on optionalAuth', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('rejects a non-matching token with 401 on requireServiceToken (no tokenless fallback)', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: { authorization: 'Bearer some-non-service-token' },
         });
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.viewerUid).toBeNull();
-        // Anonymous read: no credential tenancy, so it falls back to the env default.
-        expect(body.originAppId).toBeNull();
-        expect(body.resolvedOrigin).toBe('antiphony');
+        expect(res.status).toBe(401);
+        expect((await res.json()).error.message).toBe('Invalid service token');
     });
 
-    it('does not honor acting-actor headers without a valid service token', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('does not honor spoofed acting-actor headers on a non-matching token (401)', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: {
                 authorization: 'Bearer some-non-service-token',
                 'x-antiphony-acting-actor': 'spoofed-actor',
                 'x-antiphony-acting-actor-did': 'did:plc:spoof',
             },
         });
-        const body = await res.json();
-        expect(body.viewerUid).toBeNull();
-        expect(body.actingActorDid).toBeNull();
+        expect(res.status).toBe(401);
     });
 });

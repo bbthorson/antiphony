@@ -60,13 +60,6 @@ env:
       value: "info"
       availability:
           - RUNTIME
-    # Tenancy key FALLBACK for end-user (Firebase) mode — the reference app /
-    # demo path. Service-authenticated callers get their originAppId from
-    # their credential instead (see lib/origin-app.ts + specs/service-auth.md).
-    - variable: ANTIPHONY_ORIGIN_APP_ID
-      value: "antiphony"
-      availability:
-          - RUNTIME
     # App-DID custody host (specs/atproto-authority-model.md). Turns ON the boot
     # gate's host-match check: validateAllPins resolves each tenant's did:web at
     # startup and REFUSES TO START unless its #atproto_pds endpoint points here
