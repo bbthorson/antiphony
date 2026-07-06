@@ -139,7 +139,8 @@ describe('AudioPostView (record + viewer state)', () => {
             uri: 'at://did:plc:abc/dev.antiphony.audio.post/3kj',
             cid: 'bafyreiview',
             kind: 'prompt' as const,
-            author: { id: 'user1', handle: 'brad' },
+            authorId: 'user1',
+            authorDid: 'did:web:voxpop.audio',
             record: { text: 'Q?', title: 'A question', createdAt: new Date('2026-06-26T00:00:00Z') },
             embed: {
                 $type: 'dev.antiphony.embed.audio#view' as const,
@@ -150,7 +151,8 @@ describe('AudioPostView (record + viewer state)', () => {
         const parsed = AudioPostViewSchema.parse(view);
         expect(parsed.viewer.isAuthor).toBe(true);
         expect(parsed.embed?.url).toContain('signed');
-        expect(parsed.author.handle).toBe('brad');
+        expect(parsed.authorId).toBe('user1');
+        expect(parsed.authorDid).toBe('did:web:voxpop.audio');
     });
 
     it('defaults viewer.isAuthor to false', () => {

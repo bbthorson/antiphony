@@ -18,7 +18,7 @@ import type { Context } from 'hono';
  *
  * Usage:
  *   responses: {
- *     200: { content: { 'application/json': { schema: successEnvelope(ProfileViewSchema) } }, description: '...' },
+ *     200: { content: { 'application/json': { schema: successEnvelope(AudioPostViewSchema) } }, description: '...' },
  *   }
  */
 export function successEnvelope<T extends z.ZodTypeAny>(payload: T) {

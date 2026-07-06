@@ -11,7 +11,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const setBlueskyIdentity = vi.fn();
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     userService: { setBlueskyIdentity },
-    firebaseCoreServices: {},
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({

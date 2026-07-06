@@ -23,7 +23,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     hydrationService: {},
     feedService: {},
     rssService: {},
-    firebaseCoreServices: {},
 }));
 
 // firebase-admin mock: `getAdminDb().collection('prompts').doc(id).get()` is
