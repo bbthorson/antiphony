@@ -1,11 +1,19 @@
 # Core ↔ BFF boundary (the seam)
 
-**Status:** proposed, 2026-07-03. Defines the line B3 (the actor-shrink + breaking
-`@antiphony/shared` 0.4.0 trim) cuts along, and the contract the Vox Pop BFF composes
-against afterward. Companion to [`service-auth.md`](./service-auth.md) (the auth half of
-the seam), [`docs-content-scope.md`](./docs-content-scope.md) (the docs half), and
-[`atproto-authority-model.md`](./atproto-authority-model.md) (the identity/authority axis —
-**resolved** to app-as-repo-owner, which settles where actor↔DID lives; read it first).
+**Status:** proposed 2026-07-03; **largely implemented** by the core-surface trim
+(contract `0.2.0`). Defines the seam the Vox Pop BFF composes against. Companion to
+[`service-auth.md`](./service-auth.md) (the auth half), [`docs-content-scope.md`](./docs-content-scope.md)
+(the docs half), and [`atproto-authority-model.md`](./atproto-authority-model.md) (the
+identity/authority axis — **resolved** to app-as-repo-owner; read it first).
+
+> **Superseded on one axis — the Actors surface.** This doc argued the actor↔DID
+> mapping (`/api/v1/actors/register`, `GET /{actorId}`, `ActorIdentityRecord`)
+> *stays in core*. [`core-surface.md`](./core-surface.md) (Decided 2026-07-05) reversed
+> that: the DID is asserted **per request** (`X-Antiphony-Acting-Actor-Did`), not
+> registered, so the Actors routes, service, and `types/actor-identity.ts` were
+> **removed**. Authorship attribution now lives entirely on the post as the opaque
+> `authorId` / `authorDid` facets — there is no stored actor record. Read the
+> `actor↔DID` references below with that correction in mind.
 
 ## The principle
 
@@ -17,7 +25,7 @@ It knows *content*, *tenancy*, and *custody*; it does not know *people's present
 | Audio posts (`dev.antiphony.audio.post`), threads, reply gating | End-user **profiles** — display name, bio, avatar, tiers, settings |
 | Blobs (content-addressed), signed playback URLs, transcripts | **Handle** claiming, uniqueness, availability, sitemap enumeration |
 | Tenancy (`originAppId`) + the **app DID** (repo authority, per tenant) | The **OAuth ceremony** (authorize/callback) + end-user session machinery |
-| The **actor↔DID** mapping (`ActorIdentityRecord`) — as *authorship attribution*, part of the exportable corpus | The rich actor profile + any product enrichment |
+| Authorship attribution — the opaque `authorId` / `authorDid` facets stamped on each post (no stored actor record; see the superseding note above) | The rich actor profile + any product enrichment |
 | Service-to-service auth (`ANTIPHONY_APP_TOKENS`, acting-actor headers) | End-user auth (verifies its own users, then *asserts* the acting actor) |
 
 The join key across the seam is the **actor id**: the BFF asserts it via
@@ -34,8 +42,9 @@ fields; the BFF never sends core a profile.
 
 - `POST/GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`
 - `GET /api/v1/audio`, `POST /api/v1/audio/upload`
-- `POST /api/v1/actors/register`, `GET /api/v1/actors/{actorId}` — the actor↔DID mapping (landed B4). **Stays in core** as authorship attribution that travels with the exportable corpus (see [`atproto-authority-model.md`](./atproto-authority-model.md); this settles the earlier "maybe move to the BFF" question — no).
 - `POST /api/v1/system/rate-limit` — service-to-service helper (the BFF rate-limits without touching Firestore)
+
+*(The `/api/v1/actors/*` mapping this doc originally listed here was removed — see the superseding note at the top; attribution is now the per-request `authorId` / `authorDid` on posts.)*
 
 **Move to the BFF (remove from core in B3):**
 
@@ -47,7 +56,7 @@ fields; the BFF never sends core a profile.
   keeps handle only as a non-authoritative display snapshot; see below).
 - `POST /api/v1/atproto/disconnect` — mutates the user profile's linked identity.
 - `POST /api/v1/system/auth/mint-session-cookie` — end-user session machinery.
-- `PUT /api/v1/system/users/{uid}/bluesky-identity` — superseded by `/actors/register`.
+- `PUT /api/v1/system/users/{uid}/bluesky-identity` — profile-identity mutation; the BFF owns identity linking.
 - `POST /api/v1/system/atproto` (signin), `/system/atproto-state/*`, `/system/atproto-session/*`
   — server-side backing for the OAuth ceremony; the BFF holds its own OAuth state/session.
 
@@ -70,9 +79,10 @@ because a browser (`apps/web`) can't; a BFF can.
   i.e. **core post views leak full author profile data today**. Post-seam, core must not.
   Replace with an identity-only author: **`{ id, did? }`** (resolved below).
 
-**Keep:** `types/audio.ts` (minus the author change), `types/actor-identity.ts`,
-`types/processing.ts`, `types/blob.ts`, `types/records.ts` (minus `UserRecord`),
-`api-codecs.ts`, `nsid`, `errors`, `utils`, `observability`.
+**Keep:** `types/audio.ts` (minus the author change), `types/processing.ts`,
+`types/blob.ts`, `types/records.ts`, `api-codecs.ts`, `nsid`, `errors`, `utils`,
+`observability`. (`types/actor-identity.ts` was **removed**, not kept — see the
+superseding note at the top.)
 
 ## The join contract
 
@@ -126,12 +136,12 @@ actor X" — is served by the `authorId` facet and needs none of this.)
 Fully specified in [`service-auth.md`](./service-auth.md); not restated here. Two notes for
 B3:
 
-- That doc's non-goals say DID/actor registration is "phase B3" — it actually landed in
-  **B4** (`/api/v1/actors`). Correct the reference when B3 lands.
-- The **end-user Firebase fallback** (resolution order step 2) is explicitly "per-deploy
-  behavior, not part of the service contract" — the compatibility path for the browser
-  reference app. It is *not* removed by B3 (the reference app still needs it), but it is on
-  the eventual chopping block once every caller goes through a service token. Flag, don't cut.
+- DID/actor *registration* was ultimately **not** built as a core surface — the DID is
+  asserted per request instead (`X-Antiphony-Acting-Actor-Did`). See the superseding note
+  at the top.
+- The **end-user Firebase fallback** that this doc flagged "don't cut yet" has since been
+  **removed** — the service token is now the only accepted credential (`service-auth.md`),
+  and every data route is gated. There is no tokenless/end-user path left.
 
 ## What B3 executes
 

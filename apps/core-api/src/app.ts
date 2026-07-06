@@ -97,7 +97,9 @@ export function app(): OpenAPIHono {
     a.get('/', (c) =>
         c.json({
             service: 'antiphony-core-api',
-            version: '0.1.0',
+            // Single source of truth for the API contract version — see
+            // specs/api-versioning.md. Never re-type the literal here.
+            version: OPENAPI_INFO.version,
             status: 'ok',
             requestId: c.get('requestId'),
         }),
