@@ -782,7 +782,7 @@
           "Posts"
         ],
         "summary": "Get an audio post by id",
-        "description": "Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). Scoped to the origin app — a post from another origin app reads as 404.",
+        "description": "Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). Scoped to the origin app — a post from another origin app reads as 404. Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.",
         "parameters": [
           {
             "schema": {
@@ -1100,7 +1100,7 @@
           "Posts"
         ],
         "summary": "List replies to an audio post",
-        "description": "Returns the post's direct replies (posts whose `reply.parent` is this post), in thread order (oldest first). Cursor-paginated. Scoped to the origin app.",
+        "description": "Returns the post's direct replies (posts whose `reply.parent` is this post), in thread order (oldest first). Cursor-paginated. Scoped to the origin app. Requires a service token; omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.",
         "parameters": [
           {
             "schema": {

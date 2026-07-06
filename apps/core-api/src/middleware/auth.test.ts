@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 
 /**
- * Tests for the auth middleware (`optionalAuth` + `requireAuth`).
+ * Tests for the auth middleware (`requireServiceToken` + `requireAuth`).
  *
- * The service token is the only accepted credential (specs/core-surface.md,
- * "Auth: service-token only"). Tests configure `ANTIPHONY_APP_TOKENS` and
- * drive requests with a `Bearer <service-token>` header plus the
- * `X-Antiphony-Acting-Actor` assertion. Fresh Hono app per test so handlers
- * can assert on `c.var` in isolation.
+ * The service token is the only accepted credential and every data route is
+ * gated — there is no tokenless path (specs/core-surface.md). Tests configure
+ * `ANTIPHONY_APP_TOKENS` and drive requests with a `Bearer <service-token>`
+ * header plus the `X-Antiphony-Acting-Actor` assertion. Fresh Hono app per test
+ * so handlers can assert on `c.var` in isolation.
  */
 
 // A configured service token (≥32 chars) for the fake app `test-app`.
@@ -16,7 +16,7 @@ const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.LOG_LEVEL = 'silent';
 
-const { optionalAuth, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
+const { requireServiceToken, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
     await import('./auth.js');
 const { requestId } = await import('./request-id.js');
 
@@ -25,10 +25,10 @@ const { requestId } = await import('./request-id.js');
  * capture handler that echoes viewer state back in the body. Keeps tests
  * decoupled from the full app stack.
  */
-function makeApp(middleware: 'optional' | 'required') {
+function makeApp(middleware: 'service' | 'required') {
     const app = new Hono();
     app.use('*', requestId());
-    app.get('/probe', middleware === 'optional' ? optionalAuth() : requireAuth(), (c) => {
+    app.get('/probe', middleware === 'service' ? requireServiceToken() : requireAuth(), (c) => {
         return c.json({
             viewerUid: c.get('viewerUid'),
             originAppId: c.get('originAppId'),
@@ -46,42 +46,33 @@ function svc(actor?: string, did?: string): Record<string, string> {
     return headers;
 }
 
-describe('optionalAuth', () => {
-    it('treats a missing Authorization header as anonymous', async () => {
-        const res = await makeApp('optional').request('/probe');
+describe('requireServiceToken', () => {
+    it('returns 401 when the Authorization header is missing', async () => {
+        const res = await makeApp('service').request('/probe');
 
-        expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({
-            viewerUid: null,
-            originAppId: null,
-            actingActorDid: null,
-        });
+        expect(res.status).toBe(401);
+        expect((await res.json()).error.message).toBe('Authentication required');
     });
 
-    it('treats a malformed Authorization header (no Bearer prefix) as anonymous', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('returns 401 on a malformed Authorization header (no Bearer prefix)', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: { authorization: 'some-raw-token' },
         });
 
-        expect(res.status).toBe(200);
-        expect((await res.json()).viewerUid).toBeNull();
+        expect(res.status).toBe(401);
     });
 
-    it('treats an unrecognized bearer token as anonymous (no 401)', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('returns 401 on a token that is not a recognized service token', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: { authorization: 'Bearer not-a-configured-token' },
         });
 
-        expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({
-            viewerUid: null,
-            originAppId: null,
-            actingActorDid: null,
-        });
+        expect(res.status).toBe(401);
+        expect((await res.json()).error.message).toBe('Invalid service token');
     });
 
     it('decorates the context on a valid service token + acting-actor', async () => {
-        const res = await makeApp('optional').request('/probe', {
+        const res = await makeApp('service').request('/probe', {
             headers: svc('actor-1', 'did:web:voxpop.audio'),
         });
 
@@ -93,8 +84,8 @@ describe('optionalAuth', () => {
         });
     });
 
-    it('authenticates the app with no acting-actor (viewerUid null, tenancy set)', async () => {
-        const res = await makeApp('optional').request('/probe', {
+    it('allows an anonymous read: valid token, no acting-actor (viewerUid null, tenancy set)', async () => {
+        const res = await makeApp('service').request('/probe', {
             headers: svc(),
         });
 
@@ -107,7 +98,7 @@ describe('optionalAuth', () => {
     });
 
     it('ignores a DID assertion when no acting-actor is present', async () => {
-        const res = await makeApp('optional').request('/probe', {
+        const res = await makeApp('service').request('/probe', {
             headers: svc(undefined, 'did:web:voxpop.audio'),
         });
 
