@@ -103,35 +103,23 @@ function tryServiceAuth(
 }
 
 /**
- * Required auth — 401 on a missing header OR a token that is not a
- * recognized service token. Response shape follows the error-handler
- * middleware's format so clients can consume both transport-level and
- * handler-level auth failures the same way.
+ * Shared service-token gate for both required-auth middlewares. Extracts the
+ * bearer, rejects a missing or unrecognized token with a 401 (in the standard
+ * error-envelope shape), and decorates the context on success. Returns the
+ * 401 `Response` to short-circuit, or `null` when the caller should proceed.
  */
-export const requireAuth = (): MiddlewareHandler => {
-    return async (c, next) => {
-        const token = extractBearer(c.req.header('authorization'));
-        if (!token) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Authentication required'), 401);
-        }
-
-        if (!tryServiceAuth(c, token)) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Invalid service token'), 401);
-        }
-
-        // requireAuth semantics need an acting user: an app calling a
-        // viewer-required endpoint must say WHO is acting.
-        if (!c.get('viewerUid')) {
-            return c.json(
-                errorEnvelope(c, 'X-Antiphony-Acting-Actor header required for this endpoint'),
-                401,
-            );
-        }
-        return next();
-    };
-};
+function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): Response | null {
+    const token = extractBearer(c.req.header('authorization'));
+    if (!token) {
+        setAnonymous(c);
+        return c.json(errorEnvelope(c, 'Authentication required'), 401);
+    }
+    if (!tryServiceAuth(c, token)) {
+        setAnonymous(c);
+        return c.json(errorEnvelope(c, 'Invalid service token'), 401);
+    }
+    return null;
+}
 
 /**
  * Require a valid service token, but NOT an acting actor. Use on tenancy-scoped
@@ -147,14 +135,30 @@ export const requireAuth = (): MiddlewareHandler => {
  */
 export const requireServiceToken = (): MiddlewareHandler => {
     return async (c, next) => {
-        const token = extractBearer(c.req.header('authorization'));
-        if (!token) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Authentication required'), 401);
-        }
-        if (!tryServiceAuth(c, token)) {
-            setAnonymous(c);
-            return c.json(errorEnvelope(c, 'Invalid service token'), 401);
+        const rejection = serviceTokenGate(c);
+        if (rejection) return rejection;
+        return next();
+    };
+};
+
+/**
+ * Required auth — `requireServiceToken` plus an acting-actor assertion. 401 on
+ * a missing/unrecognized token OR a valid token with no `X-Antiphony-Acting-
+ * Actor`. Use on endpoints that need to know WHO is acting (writes,
+ * viewer-scoped lists).
+ */
+export const requireAuth = (): MiddlewareHandler => {
+    return async (c, next) => {
+        const rejection = serviceTokenGate(c);
+        if (rejection) return rejection;
+
+        // requireAuth semantics need an acting user: an app calling a
+        // viewer-required endpoint must say WHO is acting.
+        if (!c.get('viewerUid')) {
+            return c.json(
+                errorEnvelope(c, 'X-Antiphony-Acting-Actor header required for this endpoint'),
+                401,
+            );
         }
         return next();
     };
