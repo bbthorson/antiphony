@@ -30,16 +30,16 @@ const hasTraversalSegment = (p: string): boolean =>
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
-// `url` is declared optional so the OpenAPIHono validator doesn't pre-empt
-// the handler's own "Missing url" 400 (which carries a specific message the
-// embed + clients rely on). It is effectively REQUIRED — see the description
-// and the handler guard below.
+// `url` is declared optional in the ZOD schema so the OpenAPIHono validator
+// doesn't pre-empt the handler's own "Missing url" 400 (which carries a
+// specific message the embed + clients rely on). It IS required — the param
+// metadata says so for the generated doc; the handler guard below enforces it.
 const QuerySchema = z.object({
     url: z
         .string()
         .optional()
         .openapi({
-            param: { name: 'url', in: 'query' },
+            param: { name: 'url', in: 'query', required: true },
             description:
                 'REQUIRED. The canonical storage URL (or object path) of the audio to proxy. ' +
                 'Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.',

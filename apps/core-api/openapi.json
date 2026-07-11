@@ -2158,7 +2158,7 @@
               "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.",
               "example": "https://storage.googleapis.com/<bucket>/blobs/<originAppId>/<cid>"
             },
-            "required": false,
+            "required": true,
             "name": "url",
             "in": "query"
           }
