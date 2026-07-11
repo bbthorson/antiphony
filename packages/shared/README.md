@@ -24,24 +24,24 @@ Ships both ESM and CommonJS builds with correct type resolution under `node16`/`
 import { AudioPostRecordSchema, AudioPostViewSchema } from '@antiphony/shared';
 ```
 
-The root re-exports the most-used pieces (records, views, audio types, API types, codecs, NSIDs, errors, utils, observability). Granular subpaths are available too:
+The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, errors, utils, observability). Granular subpaths are available too:
 
 | Subpath | What's in it |
 | :--- | :--- |
-| `@antiphony/shared` | The common surface: records, views, audio + API types, `api-codecs`, `nsid`, `errors`, `utils`, `observability`. |
+| `@antiphony/shared` | The common surface: audio records + views, `api-codecs`, `nsid`, `errors`, `utils`, `observability`. |
 | `@antiphony/shared/api-codecs` | Request/response Zod codecs for the REST surface. |
 | `@antiphony/shared/nsid` | The `dev.antiphony.*` NSID constants. |
 | `@antiphony/shared/errors` | Shared error types and helpers. |
 | `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers). |
 | `@antiphony/shared/observability` | Logging/error-reporting helpers (`./observability/report-error` for just the reporter). |
-| `@antiphony/shared/types/*` | Individual type modules: `records`, `views`, `audio`, `blob`, `api`, `channels`, `storage`. |
+| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `processing`, `records`. |
 
 ## The records this models
 
 - **`dev.antiphony.audio.post`** — the single canonical content record. A post without a `reply` is a prompt; with a `reply` it's a reply.
 - **`dev.antiphony.embed.audio`** — the audio attachment (stored record + hydrated view with a signed playback URL).
 - **`dev.antiphony.audio.transcript`** — platform-enrichment transcript, lifted into the embed view at read time.
-- **`dev.antiphony.actor.profile`** — the actor profile.
+- **`dev.antiphony.actor.profile`** — the portable actor-profile shape. Lexicon-only: the core never stores it; the calling app owns profile data.
 
 See the [lexicon reference](https://docs.antiphony.dev/lexicons/overview/) for the full contract.
 

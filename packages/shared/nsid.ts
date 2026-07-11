@@ -13,10 +13,17 @@ export const NSID = {
     // See lexicons/dev/antiphony/ + packages/shared/types/audio.ts.
     AudioPost: 'dev.antiphony.audio.post',
     AudioTranscript: 'dev.antiphony.audio.transcript',
+    // Portable lexicon only — the core never stores actor profiles; the
+    // caller BFF is the sole authority for profile data (see
+    // specs/core-bff-boundary.md, "actor.profile lexicon"). Hence no
+    // COLLECTIONS entry below.
     ActorProfile: 'dev.antiphony.actor.profile',
 } as const;
 
 export type NsidValue = typeof NSID[keyof typeof NSID];
+
+/** The subset of record NSIDs the core actually stores. */
+export type StoredNsidValue = typeof NSID.AudioPost | typeof NSID.AudioTranscript;
 
 /**
  * Antiphony embed NSIDs. Embeds live inline on a post's `embed` field, not in
@@ -28,12 +35,12 @@ export const EMBED_NSID = {
 } as const;
 
 /**
- * Maps AT Protocol record-type NSIDs to Firestore collection names.
- * When migrating to a PDS, this mapping becomes the adapter layer.
+ * Maps the STORED AT Protocol record-type NSIDs to Firestore collection
+ * names. When migrating to a PDS, this mapping becomes the adapter layer.
+ * `actor.profile` is deliberately absent — portable schema, no core storage.
  */
-export const COLLECTIONS: Record<NsidValue, string> = {
-    // One post collection + the transcript enrichment namespace + actors.
+export const COLLECTIONS: Record<StoredNsidValue, string> = {
+    // One post collection + the transcript enrichment namespace.
     [NSID.AudioPost]: 'posts',
     [NSID.AudioTranscript]: 'audio_transcripts',
-    [NSID.ActorProfile]: 'users',
 };

@@ -3,7 +3,7 @@
  *
  * Pino (apps/core-api) satisfies this natively. The `defaultLogger` below
  * wraps console so service singletons that don't receive an injected logger
- * (e.g. `rssService`) still emit output rather than silently dropping logs.
+ * still emit output rather than silently dropping logs.
  *
  * Call convention mirrors pino:
  *   logger.info({ key: val }, 'message')   — structured context + message

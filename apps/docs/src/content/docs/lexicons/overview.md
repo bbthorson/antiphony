@@ -88,6 +88,8 @@ The audio analogue of `app.bsky.embed.recordWithMedia`: a post that both quotes 
 
 One record per actor at the well-known `self` rkey, mirroring `app.bsky.actor.profile`. Carries a public `handle` (distinct from the AT Protocol identity handle), an optional `usageIntent` (e.g. `Podcaster`, `Listener`), and an optional `rssFeed` URL.
 
+This one is **lexicon-only**: the core never stores, serves, or CRUDs it — profile data is owned by the calling app, and this shape exists so a federating or exporting deployment has a well-known record to project that profile into.
+
 ## How the records relate
 
 ```

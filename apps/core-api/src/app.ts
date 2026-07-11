@@ -131,9 +131,8 @@ export function app(): OpenAPIHono {
 
     // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
-    //    in the spec. Public-doc scope: `/users`, `/resolve`, `/posts`,
-    //    `/audio`, `/atproto`. Transport/utility/system routes
-    //    intentionally stay plain-Hono.
+    //    in the spec. Public-doc scope: `/posts` and `/audio`.
+    //    Transport/utility/system routes intentionally stay plain-Hono.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
     // 7. Error handler — last, via `onError` so it catches throws from

@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths resolved to short-lived signed URLs.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -2150,13 +2150,13 @@
           "Audio"
         ],
         "summary": "Resolve audio to a signed URL",
-        "description": "Validates the requested object path against the served prefixes (`blobs/`, `audio/`, `prompts/`, `replies/`) and, for reply audio, that the parent prompt exists, then 302-redirects to a short-lived signed URL (~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.",
+        "description": "Validates the requested object path against the served namespace (content-addressed `blobs/` paths) then 302-redirects to a short-lived signed URL (~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under `blobs/`, `audio/`, `prompts/`, or `replies/`. Returns 400 if absent.",
-              "example": "https://storage.googleapis.com/<bucket>/replies/<promptId>/<userId>_<ts>.webm"
+              "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.",
+              "example": "https://storage.googleapis.com/<bucket>/blobs/<originAppId>/<cid>"
             },
             "required": false,
             "name": "url",
@@ -2260,7 +2260,7 @@
             }
           },
           "404": {
-            "description": "Parent prompt or backing object not found",
+            "description": "Backing object not found",
             "content": {
               "application/json": {
                 "schema": {

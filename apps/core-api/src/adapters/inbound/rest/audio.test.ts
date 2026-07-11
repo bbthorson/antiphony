@@ -18,24 +18,13 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
         getSignedUrl: (path: string) => getSignedUrl(path),
     },
     userService: {},
-    promptService: {},
-    organizationService: {},
-    hydrationService: {},
-    feedService: {},
-    rssService: {},
+    audioPostService: {},
 }));
-
-// firebase-admin mock: `getAdminDb().collection('prompts').doc(id).get()` is
-// used by the reply-audio path to verify the parent prompt exists.
-const promptGetMock = vi.fn();
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
-        collection: (name: string) => ({
-            doc: (id: string) => ({
-                get: () => promptGetMock(name, id),
-            }),
-        }),
+        // Rate-limit middleware touches Firestore; give it inert stubs.
+        collection: () => ({ doc: () => ({}) }),
         runTransaction: async (fn: (t: unknown) => Promise<boolean>) =>
             fn({
                 get: async () => ({ exists: false, data: () => undefined }),
@@ -81,7 +70,7 @@ describe('GET /api/v1/audio', () => {
         });
     });
 
-    it('returns 403 when the extracted path is outside the allowlist prefixes', async () => {
+    it('returns 403 when the extracted path is outside the blobs/ namespace', async () => {
         extractObjectPath.mockReturnValue('secrets/keys.json');
         const res = await app().request('/api/v1/audio?url=https://example.com/secrets/keys.json');
         expect(res.status).toBe(403);
@@ -92,75 +81,56 @@ describe('GET /api/v1/audio', () => {
         });
     });
 
+    it('returns 403 for legacy (pre-blobs) storage prefixes', async () => {
+        // `audio/`, `prompts/`, and `replies/` were the Vox Pop-era layout;
+        // the served namespace is content-addressed `blobs/` only.
+        for (const path of ['audio/user-1/file.webm', 'prompts/p1.webm', 'replies/p1/u1.webm']) {
+            extractObjectPath.mockReturnValue(path);
+            const res = await app().request(
+                '/api/v1/audio?url=' +
+                    encodeURIComponent(`https://storage.googleapis.com/bucket/${path}`),
+            );
+            expect(res.status).toBe(403);
+        }
+    });
+
     it('returns 403 for path-traversal attempts even when the prefix matches', async () => {
-        // `audio/..` passes the `startsWith('audio/')` check but escapes
+        // `blobs/..` passes the `startsWith('blobs/')` check but escapes
         // the allowlist conceptually. Defense-in-depth — GCS's flat
         // namespace makes this non-exploitable, but a future storage
         // backend that interprets path segments (filesystem, etc.)
         // shouldn't be able to bypass the allowlist.
-        extractObjectPath.mockReturnValue('audio/../secrets/keys.json');
+        extractObjectPath.mockReturnValue('blobs/../secrets/keys.json');
         const res = await app().request(
             '/api/v1/audio?url=' +
-                encodeURIComponent('https://storage.googleapis.com/bucket/audio/../secrets/keys.json'),
+                encodeURIComponent('https://storage.googleapis.com/bucket/blobs/../secrets/keys.json'),
         );
         expect(res.status).toBe(403);
     });
 
-    it('redirects to a signed URL for a valid audio/ path', async () => {
-        extractObjectPath.mockReturnValue('audio/user-1/file.webm');
-        getSignedUrl.mockResolvedValue('https://signed.example.com/audio/user-1/file.webm?sig=xyz');
+    it('redirects to a signed URL for a valid blobs/ path', async () => {
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        getSignedUrl.mockResolvedValue('https://signed.example.com/blobs/app-1/bafyreicid?sig=xyz');
 
         const res = await app().request(
             '/api/v1/audio?url=' +
-                encodeURIComponent('https://storage.googleapis.com/bucket/audio/user-1/file.webm'),
+                encodeURIComponent('https://storage.googleapis.com/bucket/blobs/app-1/bafyreicid'),
             { redirect: 'manual' },
         );
 
         expect(res.status).toBe(302);
         expect(res.headers.get('location')).toBe(
-            'https://signed.example.com/audio/user-1/file.webm?sig=xyz',
+            'https://signed.example.com/blobs/app-1/bafyreicid?sig=xyz',
         );
         expect(res.headers.get('cache-control')).toContain('max-age=3000');
     });
 
-    it('returns 404 for replies/ paths whose parent prompt does not exist', async () => {
-        extractObjectPath.mockReturnValue('replies/missing-prompt/user_123.webm');
-        promptGetMock.mockResolvedValue({ exists: false });
-
-        const res = await app().request(
-            '/api/v1/audio?url=' + encodeURIComponent('https://storage.googleapis.com/bucket/replies/missing-prompt/user_123.webm'),
-        );
-
-        expect(res.status).toBe(404);
-        const body = await res.json();
-        expect(body).toMatchObject({
-            success: false,
-            error: { message: 'Not found' },
-        });
-    });
-
-    it('redirects for replies/ paths whose parent prompt exists', async () => {
-        extractObjectPath.mockReturnValue('replies/live-prompt/user_456.webm');
-        promptGetMock.mockResolvedValue({ exists: true });
-        getSignedUrl.mockResolvedValue('https://signed.example.com/replies/live-prompt/user_456.webm?sig=abc');
-
-        const res = await app().request(
-            '/api/v1/audio?url=' + encodeURIComponent('https://storage.googleapis.com/bucket/replies/live-prompt/user_456.webm'),
-            { redirect: 'manual' },
-        );
-
-        expect(res.status).toBe(302);
-        expect(res.headers.get('location')).toBe(
-            'https://signed.example.com/replies/live-prompt/user_456.webm?sig=abc',
-        );
-    });
-
     it('returns 404 when the signed-URL generation fails', async () => {
-        extractObjectPath.mockReturnValue('prompts/missing-object.webm');
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreimissing');
         getSignedUrl.mockRejectedValue(new Error('object not found'));
 
         const res = await app().request(
-            '/api/v1/audio?url=' + encodeURIComponent('https://storage.googleapis.com/bucket/prompts/missing-object.webm'),
+            '/api/v1/audio?url=' + encodeURIComponent('https://storage.googleapis.com/bucket/blobs/app-1/bafyreimissing'),
         );
 
         expect(res.status).toBe(404);

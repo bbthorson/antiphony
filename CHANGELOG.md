@@ -8,6 +8,48 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] — 2026-07-11
+
+The **legacy-cruft sweep**: finishes what the 0.2.0 core-surface trim started
+by removing the Vox Pop-era leftovers the route removal left behind — in the
+audio proxy, the shared contract package, and the identity-stub write path.
+Breaking only for paths/exports that nothing on the current surface produces.
+
+### Removed
+
+- **BREAKING — legacy storage prefixes on the audio proxy.** `GET /api/v1/audio`
+  now serves only the content-addressed blob namespace (`blobs/{originAppId}/{cid}`).
+  The Vox Pop-era `audio/`, `prompts/`, and `replies/` prefixes — and the
+  Firestore `prompts`-existence check on `replies/` paths — are gone; those
+  layouts were never written by this service.
+- **`@antiphony/shared` profile leftovers** (published as **0.4.0** — the trim
+  scoped in `specs/core-bff-boundary.md`, "What B3 executes" item 3):
+  `UserRecordSchema`/`UserRecord`, `UpdateProfileRequestSchema` (its
+  `PATCH /users/me` endpoint was removed in 0.2.0), and the `httpsUrl` helper
+  they used. `COLLECTIONS` no longer maps `dev.antiphony.actor.profile` to a
+  Firestore collection — the lexicon is portable-schema-only, per
+  `specs/core-bff-boundary.md` (core never stores actor profiles).
+- **Identity-stub social fields.** `ensureUserStub` no longer writes a
+  `stats: { followers, following, prompts }` block (written-but-never-read
+  Vox Pop social metadata), and the atproto-signin failure cleanup no longer
+  deletes a `prompts/inbox_{uid}` doc nothing creates. `UpdateProfileDto`
+  shrank to the fields the signin flow actually writes (`handle`,
+  `displayName`).
+- **Unused `rss-parser` dependency** in `apps/core-api` (Vox Pop RSS-ingestion
+  leftover).
+
+### Docs
+
+- API overview rewritten to the real surface: `/posts` + `/audio` only, the
+  removed `/actors` / `/users` / `/atproto` / `/resolve` sections dropped, and
+  auth documented as service-token-only (the stale Firebase end-user-token
+  path is gone).
+- `lexicons/overview.md` + `@antiphony/shared` README: `actor.profile` is
+  explicitly lexicon-only (no core storage); README subpath list matches the
+  modules that actually ship.
+- `apps/reference` updated for the 0.2.0 author shape (`authorId` instead of
+  the removed hydrated `author`).
+
 ## [0.2.0] — 2026-07-06
 
 The **core-surface trim**: Antiphony becomes a headless store for
