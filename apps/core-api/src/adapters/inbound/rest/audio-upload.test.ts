@@ -10,11 +10,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     StorageService: { uploadFile: vi.fn() },
-    feedService: {},
     userService: {},
-    promptService: {},
-    replyService: {},
-    organizationService: {},
+    audioPostService: {},
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({

@@ -29,7 +29,7 @@ const BodySchema = z.object({
 });
 
 /**
- * Derive a Vox Pop handle from a Bluesky handle.
+ * Derive a tenant-local handle from a Bluesky handle.
  * 'brad.bsky.social' → 'brad', 'user.custom.domain' → 'user'
  */
 function deriveHandle(blueskyHandle: string): string {
@@ -40,7 +40,7 @@ function deriveHandle(blueskyHandle: string): string {
 }
 
 /**
- * Try to claim a Vox Pop handle for a new user. Attempts base, base_2…base_5,
+ * Try to claim a handle for a new user. Attempts base, base_2…base_5,
  * then falls back to a uid-derived handle that can never collide.
  */
 async function claimHandleForNewUser(
@@ -122,7 +122,7 @@ app.post('/signin', requireSystemAuth(), async (c) => {
     }
 
     try {
-        // Creates the Firestore stub doc + General Inbox prompt
+        // Creates the Firestore identity-stub doc
         await userService.ensureUserExists(uid);
         // Claims the derived handle atomically and links the Bluesky identity
         const claimedHandle = await claimHandleForNewUser(uid, handle, did);
@@ -149,7 +149,6 @@ app.post('/signin', requireSystemAuth(), async (c) => {
                 batch.delete(db.collection('handles').doc(userData.handle));
             }
             batch.delete(db.collection('users').doc(uid));
-            batch.delete(db.collection('prompts').doc(`inbox_${uid}`));
             await batch.commit();
         } catch (cleanupErr) {
             logger.error({ cleanupErr, uid }, '[atproto-signin] failed to clean up orphan Firestore documents');

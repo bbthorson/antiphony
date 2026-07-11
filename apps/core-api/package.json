@@ -2,7 +2,7 @@
   "name": "@antiphony/core-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Vox Pop core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment. Phase 4a of the decoupling migration — see specs/decoupling-migration.md.",
+  "description": "Antiphony core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment — see specs/core-surface.md.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -25,7 +25,6 @@
     "hono": "^4.12.22",
     "multiformats": "^14.0.3",
     "pino": "^9.5.0",
-    "rss-parser": "^3.13.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

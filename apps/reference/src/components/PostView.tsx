@@ -26,7 +26,7 @@ export function PostView({ client, postId }: { client: AntiphonyClient; postId: 
     if (error) return <section className="card"><p className="error">{error}</p></section>;
     if (!view) return <section className="card"><p className="muted">Loading post {postId}…</p></section>;
 
-    const { author, record, embed, viewer, kind } = view;
+    const { authorId, record, embed, viewer, kind } = view;
 
     return (
         <section className="card">
@@ -36,7 +36,10 @@ export function PostView({ client, postId }: { client: AntiphonyClient; postId: 
             </div>
 
             <div className="meta">
-                <strong>{author.displayName || author.handle || author.id}</strong>
+                {/* Antiphony returns opaque author refs; a real BFF would join
+                    display identity from its own store. The reference app just
+                    shows the id. */}
+                <strong>{authorId}</strong>
                 {viewer.isAuthor && <span className="badge badge-you">you</span>}
                 <span className="muted"> · {formatCreatedAt(record.createdAt)}</span>
             </div>

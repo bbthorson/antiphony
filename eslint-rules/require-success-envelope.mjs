@@ -42,7 +42,7 @@ const rule = {
         },
         messages: {
             notEnvelope:
-                "Route JSON responses must use the standard envelope — `{ success: true, data }` (use `jsonData`) or `{ success: false, error }` (use `jsonError`) from `@vox-pop/web-api/route-envelope`. Found a non-envelope object literal (no `success` key). For a deliberately raw body (external spec document), assign it to a variable first.",
+                "Route JSON responses must use the standard envelope — `{ success: true, data }` or `{ success: false, error }` (see apps/core-api/src/lib/error-envelope.ts). Found a non-envelope object literal (no `success` key). For a deliberately raw body (external spec document), assign it to a variable first.",
         },
         schema: [],
     },

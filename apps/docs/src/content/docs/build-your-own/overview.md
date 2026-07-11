@@ -3,7 +3,7 @@ title: Build your own app
 description: What the open core gives you, and how to build your own surface on top of it.
 ---
 
-Antiphony is the infrastructure, not the app. It gives you the call-and-response building blocks — audio posts, replies, an optional actor↔DID mapping, transcription — and you build the experience, including accounts and profiles. [Vox Pop](https://voxpop.com) is one app built on it; this repo ships another (`apps/reference`). Nothing stops you from building a third — a mobile client, a custom embed, a Slack bot, a static site that lists a creator's prompts, a call-in voicemail wall.
+Antiphony is the infrastructure, not the app. It gives you the call-and-response building blocks — audio posts, replies, per-request actor/DID attribution, transcription — and you build the experience, including accounts and profiles. [Vox Pop](https://voxpop.com) is one app built on it; this repo ships another (`apps/reference`). Nothing stops you from building a third — a mobile client, a custom embed, a Slack bot, a static site that lists a creator's prompts, a call-in voicemail wall.
 
 This page covers **what the core gives you** and the **getting-started path** for building against it. For a worked example, see the [reference app walkthrough](/build-your-own/reference-app/).
 

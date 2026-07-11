@@ -222,7 +222,13 @@ export const TranscriptEnrichmentRecordSchema = z.object({
 export type TranscriptEnrichmentRecord = z.infer<typeof TranscriptEnrichmentRecordSchema>;
 
 /**
- * `dev.antiphony.actor.profile` — port of `com.voxpop.actor.profile`.
+ * `dev.antiphony.actor.profile` — portable actor-profile record shape.
+ *
+ * Lexicon-only: the core never stores, serves, or CRUDs this record — the
+ * caller BFF is the sole authority for profile data. The schema stays in
+ * `@antiphony/shared` so a federating/exporting deployment has a well-known
+ * shape to project a BFF-owned profile into (see specs/core-bff-boundary.md,
+ * "actor.profile lexicon", resolved 2026-07-03).
  */
 export const ActorProfileRecordSchema = z.object({
     handle: z.string().min(3).max(20).optional(),

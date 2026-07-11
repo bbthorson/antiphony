@@ -1,6 +1,6 @@
 {
   "name": "@antiphony/shared",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Shared types, Zod schemas, and codecs for Antiphony — open audio call-and-response infrastructure and AT Protocol lexicons.",
   "license": "MIT",
   "homepage": "https://docs.antiphony.dev",
@@ -17,48 +17,110 @@
   "types": "./dist/cjs/index.d.cts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/esm/index.d.ts", "default": "./dist/esm/index.js" },
-      "require": { "types": "./dist/cjs/index.d.cts", "default": "./dist/cjs/index.cjs" }
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
     },
     "./api-codecs": {
-      "import": { "types": "./dist/esm/api-codecs.d.ts", "default": "./dist/esm/api-codecs.js" },
-      "require": { "types": "./dist/cjs/api-codecs.d.cts", "default": "./dist/cjs/api-codecs.cjs" }
+      "import": {
+        "types": "./dist/esm/api-codecs.d.ts",
+        "default": "./dist/esm/api-codecs.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api-codecs.d.cts",
+        "default": "./dist/cjs/api-codecs.cjs"
+      }
     },
     "./nsid": {
-      "import": { "types": "./dist/esm/nsid.d.ts", "default": "./dist/esm/nsid.js" },
-      "require": { "types": "./dist/cjs/nsid.d.cts", "default": "./dist/cjs/nsid.cjs" }
+      "import": {
+        "types": "./dist/esm/nsid.d.ts",
+        "default": "./dist/esm/nsid.js"
+      },
+      "require": {
+        "types": "./dist/cjs/nsid.d.cts",
+        "default": "./dist/cjs/nsid.cjs"
+      }
     },
     "./errors": {
-      "import": { "types": "./dist/esm/errors/index.d.ts", "default": "./dist/esm/errors/index.js" },
-      "require": { "types": "./dist/cjs/errors/index.d.cts", "default": "./dist/cjs/errors/index.cjs" }
+      "import": {
+        "types": "./dist/esm/errors/index.d.ts",
+        "default": "./dist/esm/errors/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/errors/index.d.cts",
+        "default": "./dist/cjs/errors/index.cjs"
+      }
     },
     "./utils": {
-      "import": { "types": "./dist/esm/utils/index.d.ts", "default": "./dist/esm/utils/index.js" },
-      "require": { "types": "./dist/cjs/utils/index.d.cts", "default": "./dist/cjs/utils/index.cjs" }
+      "import": {
+        "types": "./dist/esm/utils/index.d.ts",
+        "default": "./dist/esm/utils/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/utils/index.d.cts",
+        "default": "./dist/cjs/utils/index.cjs"
+      }
     },
     "./observability": {
-      "import": { "types": "./dist/esm/observability/index.d.ts", "default": "./dist/esm/observability/index.js" },
-      "require": { "types": "./dist/cjs/observability/index.d.cts", "default": "./dist/cjs/observability/index.cjs" }
+      "import": {
+        "types": "./dist/esm/observability/index.d.ts",
+        "default": "./dist/esm/observability/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/observability/index.d.cts",
+        "default": "./dist/cjs/observability/index.cjs"
+      }
     },
     "./observability/report-error": {
-      "import": { "types": "./dist/esm/observability/report-error.d.ts", "default": "./dist/esm/observability/report-error.js" },
-      "require": { "types": "./dist/cjs/observability/report-error.d.cts", "default": "./dist/cjs/observability/report-error.cjs" }
+      "import": {
+        "types": "./dist/esm/observability/report-error.d.ts",
+        "default": "./dist/esm/observability/report-error.js"
+      },
+      "require": {
+        "types": "./dist/cjs/observability/report-error.d.cts",
+        "default": "./dist/cjs/observability/report-error.cjs"
+      }
     },
     "./types/*": {
-      "import": { "types": "./dist/esm/types/*.d.ts", "default": "./dist/esm/types/*.js" },
-      "require": { "types": "./dist/cjs/types/*.d.cts", "default": "./dist/cjs/types/*.cjs" }
+      "import": {
+        "types": "./dist/esm/types/*.d.ts",
+        "default": "./dist/esm/types/*.js"
+      },
+      "require": {
+        "types": "./dist/cjs/types/*.d.cts",
+        "default": "./dist/cjs/types/*.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
   "typesVersions": {
     "*": {
-      "api-codecs": ["./dist/cjs/api-codecs.d.cts"],
-      "nsid": ["./dist/cjs/nsid.d.cts"],
-      "errors": ["./dist/cjs/errors/index.d.cts"],
-      "utils": ["./dist/cjs/utils/index.d.cts"],
-      "observability": ["./dist/cjs/observability/index.d.cts"],
-      "observability/report-error": ["./dist/cjs/observability/report-error.d.cts"],
-      "types/*": ["./dist/cjs/types/*.d.cts"]
+      "api-codecs": [
+        "./dist/cjs/api-codecs.d.cts"
+      ],
+      "nsid": [
+        "./dist/cjs/nsid.d.cts"
+      ],
+      "errors": [
+        "./dist/cjs/errors/index.d.cts"
+      ],
+      "utils": [
+        "./dist/cjs/utils/index.d.cts"
+      ],
+      "observability": [
+        "./dist/cjs/observability/index.d.cts"
+      ],
+      "observability/report-error": [
+        "./dist/cjs/observability/report-error.d.cts"
+      ],
+      "types/*": [
+        "./dist/cjs/types/*.d.cts"
+      ]
     }
   },
   "files": [

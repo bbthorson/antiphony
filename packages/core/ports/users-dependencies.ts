@@ -13,17 +13,15 @@
  * `updateUserProfile` method rather than exposing a generic `runTransaction`.
  */
 
+/**
+ * The narrow write surface the atproto-signin onboarding flow needs: a handle
+ * claim plus a display-name snapshot. The core holds no other profile data —
+ * bio/avatar/links and the rest of the profile surface are BFF-owned (see
+ * specs/core-surface.md).
+ */
 export interface UpdateProfileDto {
     handle?: string;
     displayName?: string | null;
-    bio?: string;
-    avatarUrl?: string | null;
-    /** Personal website surfaced on the public profile. */
-    website?: string | null;
-    /** Up to 5 public links (label + URL) shown under the bio. */
-    links?: Array<{ label: string; url: string }>;
-    /** When true, surfaces a linked Bluesky identity on the public profile. */
-    showBlueskyPublicly?: boolean;
     updatedAt?: Date;
     id?: string;
     createdAt?: Date;
@@ -40,8 +38,6 @@ export interface UserDependencies {
     /**
      * Create a stub user document if it doesn't already exist.
      * Returns true if the stub was created; false if a user already existed.
-     * Callers use the return value to decide whether to run first-time
-     * side-effects (e.g., creating the General Inbox prompt).
      */
     ensureUserStub(uid: string): Promise<boolean>;
 

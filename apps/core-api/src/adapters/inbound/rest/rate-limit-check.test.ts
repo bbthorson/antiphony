@@ -32,16 +32,10 @@ vi.mock('../../../middleware/rate-limit.js', async () => {
     };
 });
 
-// Other firebase-admin-touching mocks — same pattern as system-replies.test.ts.
+// Other firebase-admin-touching mocks.
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    replyService: {},
-    callForwardingService: {},
     userService: {},
-    organizationService: {},
-    promptService: {},
-    feedService: {},
-    hydrationService: {},
-    rssService: {},
+    audioPostService: {},
     StorageService: {},
 }));
 

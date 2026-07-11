@@ -46,7 +46,6 @@ export const firebaseUserDependencies: UserDependencies = {
                 id: uid,
                 handle: '',
                 createdAt: admin.firestore.Timestamp.now(),
-                stats: { followers: 0, following: 0, prompts: 0 },
             });
             return true;
         } catch (err) {
