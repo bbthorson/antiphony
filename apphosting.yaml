@@ -73,8 +73,14 @@ env:
     # these are public DIDs. Must stay in sync with ANTIPHONY_APP_TOKENS (a
     # tenant needs an entry in BOTH; boot warns on drift). Add bardcast here once
     # its domain/did.json is live.
+    # `voxpop` moved off did:web:voxpop.audio (2026-07-12): the apex is now the
+    # handle of the Vox Pop *account* (did:plc:zp6xkzxo5uzgstgiy77iiz5j), so the
+    # app DID lives on its own subdomain rather than having one domain name two
+    # identities. Changing this value rewrites the authority of every post URI —
+    # stored StrongRefs must be migrated in lockstep (parsePostId rejects any
+    # authority that isn't the pinned app DID).
     - variable: ANTIPHONY_APP_DIDS
-      value: "voxpop:did:web:voxpop.audio"
+      value: "voxpop:did:web:did.voxpop.audio"
       availability:
           - RUNTIME
     # Service-to-service app credentials (specs/service-auth.md): comma-
