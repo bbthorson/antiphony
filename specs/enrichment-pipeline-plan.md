@@ -106,7 +106,7 @@ Foundation; everything below depends on it.
 - **`settlePendingAsSkipped` loops over `PROCESSING_STAGES`** rather than naming two
   stages, for the same reason.
 
-### 2. ElevenLabs transcriber adapter
+### 2. ElevenLabs transcriber adapter ✅ done 2026-07-18
 
 Narrowest real-provider slice; validates the port against a live API.
 
@@ -116,12 +116,30 @@ Narrowest real-provider slice; validates the port against a live API.
 - **Versions:** none (no contract or exported-type change).
 - **Done when:** inline mode produces a real transcript from real audio.
 
-### 3. ElevenLabs denoiser adapter
+**Deviation:** Scribe returns the detected language as **ISO-639-3** (`eng`), but the
+lexicon's `lang` is BCP-47 and typed as a bare `z.string()` — an unnormalized code would
+have landed silently inside an immutable record CID. The adapter normalizes via
+`Intl.getCanonicalLocales`.
+
+### 3. ElevenLabs denoiser adapter ✅ done 2026-07-18
 
 - New adapter satisfying `DenoiserPort`, calling **Voice Isolator**.
 - Writes the cleaned variant via `writeDerivedBlob`, settles `processedBlobCid`.
 - **Versions:** none.
 - **Done when:** inline mode produces an audibly cleaned variant; original CID untouched.
+
+**Deviations, and one open cost:**
+
+- **The documented response shape is wrong.** [The docs](https://elevenlabs.io/docs/api-reference/audio-isolation/convert)
+  specify `application/json` with an empty body; the endpoint actually returns audio
+  bytes. The adapter reads the mimeType off the *response* rather than assuming one, and
+  throws on an empty body.
+- **The form field is `audio`**, not `file` as in Scribe. The two endpoints differ.
+- **Voice Isolator transcodes to 320kbps MP3 regardless of input — ~2.5× storage
+  inflation, and there is no way to avoid it at the API.** The only format parameter,
+  `file_format`, describes the *input* (`pcm_s16le_16` for lower latency). Re-encoding is
+  therefore a local concern; **deferred to step 5**, which brings in an in-process decode
+  dependency anyway. Doing it sooner would mean adding a codec solely for a size fix.
 
 ### 4. Auto-recompute
 
@@ -142,6 +160,8 @@ Needs ≥2 stages real (2 and 3) to be meaningful.
 - Fixed conservative policy: **leading/trailing only**, leave interior gaps, pad rather
   than cutting to the first sample of speech. Threshold/pad are adapter implementation
   detail, not contract.
+- **Also re-encode the variant here** (see step 3): this step's decode dependency is what
+  makes undoing Voice Isolator's 320kbps inflation cheap.
 - Runs **after** denoise, composing into the same `processedBlobCid`; sets
   `processedDurationMs`.
 - **Versions:** contract → patch.
