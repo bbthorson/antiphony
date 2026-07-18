@@ -128,7 +128,11 @@ async function main(): Promise<void> {
     console.log('');
     if (conflicted > 0) {
         console.log(`${conflicted} post(s) already had processedBlobCid set to a different value;`);
-        console.log('the newer value was kept and the legacy field dropped.');
+        console.log(
+            APPLY
+                ? 'the newer value was kept and the legacy field dropped.'
+                : 'the newer value would be kept and the legacy field dropped.',
+        );
     }
     if (skipped > 0) {
         console.log(`${skipped} post(s) were skipped and STILL CARRY the legacy field —`);
