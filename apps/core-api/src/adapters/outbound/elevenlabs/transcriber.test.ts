@@ -136,12 +136,17 @@ describe('elevenLabsTranscriber request', () => {
         process.env.ELEVENLABS_API_KEY = 'test-key';
         vi.stubGlobal('fetch', fetchMock);
         fetchMock.mockReset();
-        fetchMock.mockResolvedValue({
-            ok: true,
-            status: 200,
-            json: async () => ({ language_code: 'eng', text: 'hi.', words: [{ text: 'hi.', start: 0, end: 1, type: 'word' }] }),
-            text: async () => '',
-        } as unknown as Response);
+        // A real `Response`, not a duck-typed literal: the client drains the
+        // body itself, and a stub carrying only the methods today's caller
+        // happens to use hides that from the test. Built per call because a
+        // body can only be read once.
+        fetchMock.mockImplementation(
+            async () =>
+                new Response(
+                    JSON.stringify({ language_code: 'eng', text: 'hi.', words: [{ text: 'hi.', start: 0, end: 1, type: 'word' }] }),
+                    { status: 200, headers: { 'content-type': 'application/json' } },
+                ),
+        );
     });
 
     afterEach(() => {
@@ -156,6 +161,14 @@ describe('elevenLabsTranscriber request', () => {
 
     it('strips the region subtag from a BCP-47 hint', async () => {
         await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en-US' });
+        expect(formOf().get('language_code')).toBe('en');
+    });
+
+    it('strips the region subtag from an underscore-separated hint', async () => {
+        // `langs` is a bare `z.string()`, so a POSIX-style `en_US` validates at
+        // the API boundary and lands in an immutable record. Forwarding it
+        // whole would 400 and lose the transcript.
+        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en_US' });
         expect(formOf().get('language_code')).toBe('en');
     });
 

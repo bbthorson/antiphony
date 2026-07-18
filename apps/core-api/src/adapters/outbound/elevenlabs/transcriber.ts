@@ -59,7 +59,10 @@ export const elevenLabsTranscriber: TranscriberPort = {
         // after splitting: a whitespace-only hint is truthy but yields a blank
         // `language_code`, which fails the whole request with a 400 — losing a
         // transcript over a bad hint that is safe to simply omit.
-        const langCode = input.langHint?.split('-')[0]?.trim().toLowerCase();
+        // Split on `_` too: `langs` is a bare `z.string()`, so a POSIX-style
+        // `en_US` validates and reaches an immutable record. Splitting on `-`
+        // alone would forward it whole and lose the transcript to a 400.
+        const langCode = input.langHint?.split(/[-_]/)[0]?.trim().toLowerCase();
         if (langCode) {
             form.append('language_code', langCode);
         }

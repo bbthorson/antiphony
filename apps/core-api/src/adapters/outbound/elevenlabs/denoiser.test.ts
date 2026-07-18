@@ -14,15 +14,15 @@ import { elevenLabsDenoiser } from './denoiser.js';
 
 const MP3_BYTES = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00]); // "ID3.."
 
+// A real `Response`, not a duck-typed literal. The client reconstructs the
+// response after draining it, so a fake `headers` bag that only answers `get`
+// would survive the test while losing every header in production.
 function mockResponse(body: Uint8Array, contentType: string | null, status = 200) {
-    return {
-        ok: status >= 200 && status < 300,
+    return new Response(new Uint8Array(body), {
         status,
         statusText: 'OK',
-        headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? contentType : null) },
-        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
-        text: async () => '',
-    } as unknown as Response;
+        ...(contentType ? { headers: { 'content-type': contentType } } : {}),
+    });
 }
 
 const fetchMock = vi.fn();
@@ -95,10 +95,7 @@ describe('elevenLabsDenoiser', () => {
     });
 
     it('throws with the status on a provider error', async () => {
-        fetchMock.mockResolvedValue({
-            ...mockResponse(new Uint8Array(), null, 422),
-            text: async () => 'unprocessable',
-        } as unknown as Response);
+        fetchMock.mockResolvedValue(new Response('unprocessable', { status: 422 }));
         await expect(
             elevenLabsDenoiser.denoise({ bytes: MP3_BYTES, mimeType: 'audio/wav' }),
         ).rejects.toThrow(/422/);

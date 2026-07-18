@@ -68,7 +68,20 @@ export async function postForm(
         if (!res.ok) {
             throw new ElevenLabsError(res.status, endpoint, await res.text().catch(() => ''));
         }
-        return res;
+        // Drain the body here, while the abort signal is still live. `fetch`
+        // resolves at the response headers, so returning `res` directly would
+        // leave the download — up to ~250 MB of isolated audio — outside the
+        // timeout this function exists to impose. Both callers buffer the whole
+        // body anyway, so this moves the read rather than adding a copy.
+        const buffer = await res.arrayBuffer();
+        // 204/205 forbid a body; `new Response(buffer, { status })` throws on
+        // them even when the buffer is empty.
+        const nullBody = res.status === 204 || res.status === 205;
+        return new Response(nullBody ? null : buffer, {
+            status: res.status,
+            statusText: res.statusText,
+            headers: res.headers,
+        });
     } finally {
         clearTimeout(timer);
     }
@@ -80,9 +93,10 @@ export async function postForm(
  * it from the MIME type rather than sending a bare blob.
  */
 export function audioFile(bytes: Uint8Array, mimeType: string, name = 'audio'): File {
-    // `Uint8Array` is not itself a valid BlobPart under exactOptionalPropertyTypes
-    // in every lib target; a fresh copy keeps this independent of the caller's
-    // buffer lifetime too.
+    // The copy is load-bearing, not defensive: `Uint8Array` is generic over
+    // `ArrayBufferLike`, and `BlobPart` wants `ArrayBuffer` specifically, so a
+    // possibly-SharedArrayBuffer-backed view does not typecheck. Re-wrapping
+    // narrows it, and incidentally decouples us from the caller's buffer.
     const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
     return new File([blob], `${name}.${extensionForMime(mimeType)}`, { type: mimeType });
 }
