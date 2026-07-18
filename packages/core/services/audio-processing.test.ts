@@ -58,6 +58,16 @@ function providers(over: Partial<ProcessingProviders> = {}): ProcessingProviders
     return {
         transcriber: { transcribe: vi.fn(async () => stubTranscript) },
         denoiser: { denoise: vi.fn(async () => ({ bytes: new Uint8Array([9, 9]), mimeType: 'audio/webm' })) },
+        // Re-encodes to mp3 and shortens, mirroring the real adapter: the
+        // trimmer is where the 320kbps inflation is undone, so a result whose
+        // mimeType matched its input would not exercise the interesting path.
+        trimmer: {
+            trim: vi.fn(async () => ({
+                bytes: new Uint8Array([7]),
+                mimeType: 'audio/mpeg',
+                durationMs: 3100,
+            })),
+        },
         ...over,
     };
 }
@@ -273,6 +283,87 @@ describe('AudioProcessingService.process', () => {
         const { deps, patches } = makeDeps(post, { readBlobBytes: vi.fn(async () => null) });
         await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
         expect(patches).toContainEqual({ transcribe: 'failed' });
+    });
+
+    describe('trim', () => {
+        it('settles the variant with its duration and re-encoded type', async () => {
+            const { deps, patches } = makeDeps(makePost({
+                processing: { trim: 'pending', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual({
+                trim: 'ready',
+                processedBlobCid: CLEANED_CID,
+                processedMimeType: 'audio/mpeg',
+                processedDurationMs: 3100,
+            });
+        });
+
+        it('trims the DENOISED bytes, composing both stages into one variant', async () => {
+            // The property that makes denoise+trim one artifact rather than
+            // two: trim reads `working`, which denoise reassigned in this pass.
+            const { deps, patches } = makeDeps(makePost({
+                processing: { denoise: 'pending', trim: 'pending', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(Array.from(vi.mocked(p.trimmer!.trim).mock.calls[0][0].bytes)).toEqual([9, 9]);
+            // Two writes, but the LAST settle is the composed variant — the
+            // trimmed bytes, not the denoiser's intermediate output.
+            const settled = patches.filter((patch) => patch.processedBlobCid).at(-1);
+            expect(settled?.processedMimeType).toBe('audio/mpeg');
+            expect(settled?.processedDurationMs).toBe(3100);
+        });
+
+        it('runs after denoise, never before', async () => {
+            // Ordering is load-bearing: silence detection needs the noise floor
+            // gone, so trimming first would find nothing to trim.
+            const { deps, patches } = makeDeps(makePost({
+                processing: { denoise: 'pending', trim: 'pending', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches.findIndex((patch) => patch.denoise === 'ready')).toBeLessThan(
+                patches.findIndex((patch) => patch.trim === 'ready'),
+            );
+        });
+
+        it('marks trim skipped when no trimmer is wired', async () => {
+            const { deps, patches } = makeDeps(makePost({
+                processing: { trim: 'pending', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, providers({ trimmer: undefined })).process('vox-pop', 'p1');
+
+            expect(patches).toEqual([{ trim: 'skipped' }]);
+        });
+
+        it('marks trim failed when the trimmer throws, leaving the variant alone', async () => {
+            const failing = providers({
+                trimmer: { trim: vi.fn(async () => { throw new Error('decode failed'); }) },
+            });
+            const { deps, patches } = makeDeps(makePost({
+                processing: { trim: 'pending', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, failing).process('vox-pop', 'p1');
+
+            expect(patches).toEqual([{ trim: 'failed' }]);
+            expect(deps.writeDerivedBlob).not.toHaveBeenCalled();
+        });
+
+        it('recomputes a ready transcript after trimming', async () => {
+            // Trim is byte-mutating, so it invalidates derived artifacts the
+            // same way denoise does — with no denoise involved at all.
+            const { deps, patches, saved } = makeDeps(makePost({
+                processing: { trim: 'pending', transcribe: 'ready', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(true);
+            expect(saved).toHaveLength(1);
+            // Transcribed from the TRIMMED bytes, not the pre-trim audio.
+            expect(Array.from(vi.mocked(p.transcriber!.transcribe).mock.calls[0][0].bytes)).toEqual([7]);
+        });
     });
 
     describe('auto-recompute', () => {

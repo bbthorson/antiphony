@@ -41,12 +41,12 @@ describe('processingCapabilities', () => {
 
     it('reports the provider-backed stages available when the stubs are wired', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        // `trim`/`waveform` stay false — they have no port yet (plan steps 5-6),
-        // so requesting them resolves to `skipped` rather than hanging `pending`.
+        // `waveform` stays false — no port yet (plan step 6), so requesting it
+        // resolves to `skipped` rather than hanging `pending`.
         expect(processingCapabilities()).toEqual({
             transcribe: true,
             denoise: true,
-            trim: false,
+            trim: true,
             waveform: false,
         });
     });

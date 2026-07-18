@@ -1,5 +1,6 @@
 import type { TranscriberPort } from '@antiphony/core/ports/transcription';
 import type { DenoiserPort } from '@antiphony/core/ports/audio-denoiser';
+import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
 
 /**
  * Processing providers (B5).
@@ -31,5 +32,21 @@ export const stubTranscriber: TranscriberPort = {
 export const stubDenoiser: DenoiserPort = {
     async denoise(input) {
         return { bytes: input.bytes, mimeType: input.mimeType };
+    },
+};
+
+/**
+ * Placeholder trimmer — passes the bytes through unchanged and reports a
+ * duration of 0.
+ *
+ * Deliberately does NOT echo a plausible duration: a stub that invents one
+ * would let `processedDurationMs` look settled in dev while no decoding has
+ * happened, which is exactly the kind of "valid-looking but wrong" state the
+ * denoiser's mime-type trap produced against a real provider. Zero is
+ * obviously a stub.
+ */
+export const stubTrimmer: TrimmerPort = {
+    async trim(input) {
+        return { bytes: input.bytes, mimeType: input.mimeType, durationMs: 0 };
     },
 };

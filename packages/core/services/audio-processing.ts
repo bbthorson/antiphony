@@ -9,12 +9,14 @@ import {
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
+import type { TrimmerPort } from '../ports/audio-trimmer';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { buildPostUri } from './audio-posts';
 
 export interface ProcessingProviders {
     transcriber?: TranscriberPort;
     denoiser?: DenoiserPort;
+    trimmer?: TrimmerPort;
 }
 
 /** Which stages a deployment can actually perform, given its wired providers. */
@@ -34,9 +36,9 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
     return {
         transcribe: !!providers.transcriber,
         denoise: !!providers.denoiser,
-        // Ports arrive in steps 5-6. Until then a request for either settles
-        // `skipped` rather than hanging `pending`.
-        trim: false,
+        trim: !!providers.trimmer,
+        // Port arrives in step 6. Until then a request settles `skipped`
+        // rather than hanging `pending`.
         waveform: false,
     };
 }
@@ -151,6 +153,45 @@ export class AudioProcessingService {
                     });
                 } catch {
                     await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
+                }
+            }
+        }
+
+        // --- Trim (after denoise: silence detection needs the noise floor gone) ---
+        //
+        // Composes into the SAME processedBlobCid rather than adding a second
+        // variant: `working` already holds the denoised bytes when denoise ran
+        // in this pass, so trimming them chains the two byte-mutating stages
+        // into one artifact.
+        if (post.processing.trim === 'pending') {
+            if (!this.providers.trimmer) {
+                await this.deps.patchProcessingState(originAppId, postId, { trim: 'skipped' });
+            } else if (!working) {
+                await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
+            } else {
+                try {
+                    const trimmed = await this.providers.trimmer.trim({
+                        bytes: working.bytes,
+                        mimeType: working.mimeType,
+                    });
+                    const processedBlobCid = await this.deps.writeDerivedBlob(
+                        originAppId,
+                        trimmed.bytes,
+                        trimmed.mimeType,
+                    );
+                    working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
+                    variantChanged = true;
+                    await this.deps.patchProcessingState(originAppId, postId, {
+                        trim: 'ready',
+                        processedBlobCid,
+                        processedMimeType: trimmed.mimeType,
+                        // The first stage that makes the variant's duration
+                        // genuinely differ from the record's immutable
+                        // `embed.durationMs`. Step 7 reconciles the two.
+                        processedDurationMs: trimmed.durationMs,
+                    });
+                } catch {
+                    await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
                 }
             }
         }
