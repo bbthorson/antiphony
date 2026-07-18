@@ -27,6 +27,31 @@ every deployment until later steps land.
   into a single processed variant before the derived stages read it. Request
   stages individually to override.
 
+### Migration
+
+> **Only affects a deployment that ran audio processing before this release.**
+> If yours never wired a provider, it has no affected records and there is
+> nothing to do — the script below will tell you so.
+
+The `denoisedBlobCid` → `processedBlobCid` rename **has no automatic upgrade
+path, and its failure mode is silent.** `AudioPostRecordSchema` no longer
+declares the old key and Zod strips unknown keys without erroring, so on an
+affected deployment nothing throws: every already-denoised post quietly
+reverts to serving its **original, un-denoised audio**, and the cleaned blob is
+orphaned in storage. No log line, no failed stage.
+
+Run the one-shot migration after deploying:
+
+```bash
+# report only, writes nothing (default)
+npm run migrate:processed-blob-cid -w @antiphony/core-api
+
+# perform the migration
+npm run migrate:processed-blob-cid -w @antiphony/core-api -- --apply
+```
+
+It is idempotent, batched, and needs the same credentials as the server.
+
 ### Changed
 
 - **`@antiphony/shared` → 0.5.0** (package axis, not the contract): the stored

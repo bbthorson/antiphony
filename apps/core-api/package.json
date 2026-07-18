@@ -9,6 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "node esbuild.config.mjs && npm run gen:openapi",
     "gen:openapi": "tsx scripts/generate-openapi.ts",
+    "migrate:processed-blob-cid": "tsx scripts/migrate-processed-blob-cid.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
