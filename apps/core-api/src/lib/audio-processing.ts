@@ -9,6 +9,7 @@ import { firebaseAudioProcessingDependencies } from '../adapters/outbound/fireba
 import { stubTranscriber, stubDenoiser } from '../adapters/outbound/firebase/processing-providers.js';
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
+import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
 import { logger } from './logger.js';
 
 /**
@@ -36,7 +37,7 @@ function resolveProviders(): ProcessingProviders {
     // Real providers select off the API key alone — no separate enable flag to
     // keep in sync with it. Key present ⇒ the stage is available.
     if (elevenLabsApiKey()) {
-        return { transcriber: elevenLabsTranscriber };
+        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser };
     }
     return {};
 }

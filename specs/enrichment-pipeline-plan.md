@@ -117,7 +117,7 @@ Narrowest real-provider slice; validates the port against a live API.
 - **Done when:** inline mode produces a real transcript from real audio.
   ✅ Verified live: 3-sentence sample → 3 correctly-timed segments, schema-valid.
 
-**Found only by the live call:**
+**Found only by the live call — the docs are wrong twice:**
 
 - **Scribe returns ISO-639-3 (`eng`), not BCP-47.** The transcript lexicon specifies
   BCP-47 (`en`) and `lang` is a bare `z.string()`, so the raw code validates and would
@@ -125,6 +125,9 @@ Narrowest real-provider slice; validates the port against a live API.
   boundary via `Intl.getCanonicalLocales`, which also correctly leaves `yue`/`haw`
   alone (no two-letter form exists, so three letters already IS canonical). **No test
   would have caught this** — it is a contract violation the type system permits.
+- **The isolation endpoint's documented response is wrong** (claims an empty JSON
+  object for an endpoint that returns audio). Verify step 3 empirically; do not code
+  to that page.
 
 **Other decisions:**
 
@@ -144,12 +147,45 @@ Narrowest real-provider slice; validates the port against a live API.
 - Live verification is a scratchpad script, deliberately not a vitest file: `npm test`
   must never bill anyone.
 
-### 3. ElevenLabs denoiser adapter
+### 3. ElevenLabs denoiser adapter ✅ code done 2026-07-18 — *one open decision*
 
 - New adapter satisfying `DenoiserPort`, calling **Voice Isolator**.
 - Writes the cleaned variant via `writeDerivedBlob`, settles `processedBlobCid`.
 - **Versions:** none.
 - **Done when:** inline mode produces an audibly cleaned variant; original CID untouched.
+  ⚠️ Mechanics verified live (real `voxpop` WebM → valid 6.09s MP3). **Audible quality
+  unconfirmed** — nobody has listened to the output yet.
+
+**The endpoint TRANSCODES — the finding that shaped this adapter:**
+
+Whatever goes in, **MP3 (`audio/mpeg`) comes out**. Verified twice: WAV → MP3, and a
+real WebM → MP3. The docs do not mention it (they describe the response as an empty
+JSON object, which is simply wrong for an endpoint returning audio).
+
+So the adapter reads `mimeType` from the RESPONSE and never echoes the input. Echoing
+it — the obvious implementation, and what the pass-through stub correctly does — would
+store MP3 bytes labelled `audio/webm`. Blobs are content-addressed and served to
+browsers by signed URL **with their stored content type**, so that fails as silently
+broken playback: no exception, no failed stage, nothing in the logs.
+
+**Open: the output is 320 kbps CBR mono, and inflates storage ~2.5×.**
+
+A 95 KB WebM came back as 239 KB MP3. Two costs, neither yet decided:
+
+- **Storage** grows ~2.5× for every denoised post, permanently (the original is kept —
+  it is the record's immutable content address).
+- **Quality**: Opus → MP3 is lossy-on-lossy generational loss. 320 kbps makes it about
+  as good as re-encoding gets, but it is not free, and audio *is* the product.
+
+Options: accept it; check whether the API exposes an output-format parameter (docs are
+unreliable here — verify empirically); or re-encode locally, which pulls in the
+in-process audio decode that § Deployment portability warns blocks a Cloudflare move.
+**Not blocking steps 4–7.**
+
+Also note: **the lexicon caps audio at 100 MB**, and a 100 MB upload could exceed
+250 MB after isolation. The variant is a derived blob and not itself bound by the
+lexicon cap, but it interacts with the whole-blob-into-memory concern in
+`enrichment-pipeline.md` § Deployment portability.
 
 ### 4. Auto-recompute
 
