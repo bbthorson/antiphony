@@ -106,7 +106,7 @@ Foundation; everything below depends on it.
 - **`settlePendingAsSkipped` loops over `PROCESSING_STAGES`** rather than naming two
   stages, for the same reason.
 
-### 2. ElevenLabs transcriber adapter
+### 2. ElevenLabs transcriber adapter ✅ done 2026-07-18
 
 Narrowest real-provider slice; validates the port against a live API.
 
@@ -115,6 +115,34 @@ Narrowest real-provider slice; validates the port against a live API.
 - Map real segment timings into `TimedTranscript`. Keep vendor concepts out of the port.
 - **Versions:** none (no contract or exported-type change).
 - **Done when:** inline mode produces a real transcript from real audio.
+  ✅ Verified live: 3-sentence sample → 3 correctly-timed segments, schema-valid.
+
+**Found only by the live call:**
+
+- **Scribe returns ISO-639-3 (`eng`), not BCP-47.** The transcript lexicon specifies
+  BCP-47 (`en`) and `lang` is a bare `z.string()`, so the raw code validates and would
+  have been written into an immutable published record. Normalized at the adapter
+  boundary via `Intl.getCanonicalLocales`, which also correctly leaves `yue`/`haw`
+  alone (no two-letter form exists, so three letters already IS canonical). **No test
+  would have caught this** — it is a contract violation the type system permits.
+
+**Other decisions:**
+
+- **Word timings are grouped into sentences.** Scribe returns per-WORD timings; one
+  segment per word is schema-valid and useless to a caption renderer. Grouping is on
+  sentence-final punctuation (incl. CJK forms — an ASCII-only check emits one segment
+  for a whole Japanese clip) with a 12s hard cut so unpunctuated dictation cannot
+  collapse into a single whole-clip segment. Adapter policy, not contract.
+- **Provider selection is the key's presence alone** — no separate enable flag to drift
+  out of sync with it. `ANTIPHONY_PROCESSING_STUB=true` still wins, so a key in the
+  developer's shell cannot accidentally bill.
+- **Env is test state.** `posts-processing.test.ts` has a "no provider ⇒ skipped" case
+  that runs with the stub OFF — with a real key in the shell it would have resolved
+  `pending` and fired a live billed call from `npm test`. Both test files now
+  save/clear/restore `ELEVENLABS_API_KEY`. **Steps 3, 5, and 6 each add a provider and
+  need the same treatment.**
+- Live verification is a scratchpad script, deliberately not a vitest file: `npm test`
+  must never bill anyone.
 
 ### 3. ElevenLabs denoiser adapter
 

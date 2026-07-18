@@ -1,14 +1,32 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { resolveInitialProcessing, hasPendingStage, processingCapabilities } from './audio-processing.js';
 
 /**
  * Unit tests for the processing composition seam — the pure capability
  * resolution + initial-state logic (no I/O). Env-driven, so each test sets
- * ANTIPHONY_PROCESSING_STUB explicitly and clears it after.
+ * the flags it needs explicitly.
+ *
+ * `ELEVENLABS_API_KEY` is cleared around every test, not just after: a real
+ * key in the developer's shell would otherwise make capabilities report
+ * `transcribe: true` and flip these assertions depending on whose machine
+ * they run on. Provider selection is env-driven, so env is test state.
  */
 
+const PROVIDER_ENV = ['ANTIPHONY_PROCESSING_STUB', 'ELEVENLABS_API_KEY'] as const;
+const saved: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+    for (const key of PROVIDER_ENV) {
+        saved[key] = process.env[key];
+        delete process.env[key];
+    }
+});
+
 afterEach(() => {
-    delete process.env.ANTIPHONY_PROCESSING_STUB;
+    for (const key of PROVIDER_ENV) {
+        if (saved[key] === undefined) delete process.env[key];
+        else process.env[key] = saved[key];
+    }
 });
 
 describe('processingCapabilities', () => {

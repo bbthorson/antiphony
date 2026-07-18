@@ -7,6 +7,8 @@ import {
 } from 'shared/types/processing';
 import { firebaseAudioProcessingDependencies } from '../adapters/outbound/firebase/audio-processing-dependencies.js';
 import { stubTranscriber, stubDenoiser } from '../adapters/outbound/firebase/processing-providers.js';
+import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
+import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { logger } from './logger.js';
 
 /**
@@ -26,10 +28,16 @@ import { logger } from './logger.js';
 export type ProcessingCapabilities = Record<ProcessingStage, boolean>;
 
 function resolveProviders(): ProcessingProviders {
+    // Stub wins when explicitly set, so a dev/test env with a real key lying
+    // around in the shell cannot accidentally bill a live provider.
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
         return { transcriber: stubTranscriber, denoiser: stubDenoiser };
     }
-    // Real ElevenLabs providers slot in here in steps 2-3.
+    // Real providers select off the API key alone — no separate enable flag to
+    // keep in sync with it. Key present ⇒ the stage is available.
+    if (elevenLabsApiKey()) {
+        return { transcriber: elevenLabsTranscriber };
+    }
     return {};
 }
 
