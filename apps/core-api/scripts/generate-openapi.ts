@@ -56,7 +56,12 @@ try {
         target: 'node22',
         format: 'esm',
         outfile: runnerOut,
-        external: ['firebase-admin', 'pino', 'pino-pretty', 'rss-parser'],
+        // `ffmpeg-static` is CJS and reads `__dirname` at module scope to locate
+        // its bundled binary. Inlined into an ESM bundle that identifier does
+        // not exist and the runner dies on import — before emitting any spec.
+        // Left external it loads as real CJS via the banner's `createRequire`,
+        // same as the other binary-shipping deps here.
+        external: ['firebase-admin', 'pino', 'pino-pretty', 'rss-parser', 'ffmpeg-static'],
         tsconfig: resolve(projectRoot, 'tsconfig.json'),
         absWorkingDir: projectRoot,
         logLevel: 'silent',

@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { readFileSync } from 'node:fs';
 
 /**
  * esbuild production bundle for core-api.
@@ -18,6 +19,12 @@ import { build } from 'esbuild';
  *     present at runtime; keeping it external avoids bundling ~50MB.
  *   - `pino` — imports platform-specific worker scripts via `require()`
  *     which don't bundle cleanly.
+ *   - `ffmpeg-static` — CJS that resolves its bundled binary through
+ *     `path.join(__dirname, ...)` at module scope. Inlined into this ESM
+ *     bundle that identifier does not exist, so the process dies on startup
+ *     before serving anything. It also points at a path inside
+ *     `node_modules`, which only means anything if the package is really
+ *     there — bundling it could never have worked.
  *
  * Everything else (Hono, @hono/node-server, zod, @antiphony/core,
  * @antiphony/shared) bundles. Bundled output is ~500KB-1MB; cold start is
@@ -34,7 +41,7 @@ await build({
     target: 'node22',
     format: 'esm',
     outfile: 'dist/index.js',
-    external: ['firebase-admin', 'pino', 'pino-pretty'],
+    external: ['firebase-admin', 'pino', 'pino-pretty', 'ffmpeg-static'],
     // esbuild needs the tsconfig to honor the path aliases (shared/*, @antiphony/core/*).
     tsconfig: 'tsconfig.json',
     sourcemap: true,
@@ -48,13 +55,37 @@ await build({
         'process.env.COMMIT_SHA': JSON.stringify(process.env.COMMIT_SHA ?? 'dev'),
         'process.env.BUILD_TIME': JSON.stringify(new Date().toISOString()),
     },
-    // ESM bundles need to hint to Node that __filename/__dirname don't exist.
-    // Not using them ourselves, but some bundled deps might — banner injects
-    // the createRequire shim so dynamic `require()` calls from bundled CJS
-    // libs work.
+    // Banner shims `require` so dynamic `require()` from bundled CJS libs works.
+    //
+    // It deliberately does NOT shim `__dirname`/`__filename`. A dep that reads
+    // those is locating a file relative to its own package, and in a bundle
+    // there is no such directory — pointing them at `dist/` would resolve to
+    // something that isn't there and turn a startup crash into a silent
+    // misbehavior. Such deps belong in `external` instead; see `ffmpeg-static`.
+    // The assertion below enforces that.
     banner: {
         js: "import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);",
     },
 });
+
+// Fail the build if a CJS-only identifier survived into the ESM bundle.
+//
+// `ffmpeg-static` shipped a bundle that died on its first line of module
+// evaluation, and nothing caught it: no test loads `dist/`, so the whole suite
+// stayed green through two PRs and a review while the deployable artifact could
+// not boot. This is the cheapest place to notice — the identifier is either in
+// the output or it isn't.
+const bundled = readFileSync('dist/index.js', 'utf8');
+const leaked = ['__dirname', '__filename'].filter((id) =>
+    new RegExp(`(^|[^\\w$.])${id}\\b`).test(bundled),
+);
+if (leaked.length > 0) {
+    console.error(
+        `[esbuild] ${leaked.join(', ')} leaked into the ESM bundle — it will throw ` +
+            `ReferenceError on startup.\nThe dependency using it must be added to ` +
+            `\`external\` in this file, not shimmed via the banner.`,
+    );
+    process.exit(1);
+}
 
 console.log('[esbuild] dist/index.js built');
