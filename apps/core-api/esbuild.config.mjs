@@ -1,5 +1,4 @@
 import { build } from 'esbuild';
-import { readFileSync } from 'node:fs';
 
 /**
  * esbuild production bundle for core-api.
@@ -34,7 +33,7 @@ import { readFileSync } from 'node:fs';
  * original TS files.
  */
 
-await build({
+const options = {
     entryPoints: ['src/index.ts'],
     bundle: true,
     platform: 'node',
@@ -66,16 +65,42 @@ await build({
     banner: {
         js: "import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);",
     },
-});
+};
+
+await build(options);
 
 // Fail the build if a CJS-only identifier survived into the ESM bundle.
 //
 // `ffmpeg-static` shipped a bundle that died on its first line of module
 // evaluation, and nothing caught it: no test loads `dist/`, so the whole suite
 // stayed green through two PRs and a review while the deployable artifact could
-// not boot. This is the cheapest place to notice — the identifier is either in
-// the output or it isn't.
-const bundled = readFileSync('dist/index.js', 'utf8');
+// not boot. This is the cheapest place to notice.
+//
+// The scan runs over a MINIFIED rebuild, not the shipped bundle. The shipped
+// one keeps comments (`minify: false`, so stack traces stay readable), and a
+// bundled dependency is free to mention `__dirname` in a comment or a string
+// without ever referencing it — a text match there would fail the build over
+// nothing. Minifying first drops comments and tree-shakes unused literals,
+// while a real reference always survives: `__dirname` is undeclared in ESM, and
+// esbuild cannot rename a global it never bound. So this trades away most false
+// positives and no detection.
+//
+// Residual: a string literal that is genuinely reachable and spells the
+// identifier exactly would still trip this. Left as-is deliberately — a false
+// positive is a loud build failure someone reads in a minute, a false negative
+// is an artifact that cannot boot, and this guard exists because the second one
+// already shipped once.
+const { outputFiles } = await build({
+    ...options,
+    outfile: undefined,
+    outdir: undefined,
+    write: false,
+    minify: true,
+    legalComments: 'none',
+    sourcemap: false,
+    logLevel: 'silent',
+});
+const bundled = outputFiles[0].text;
 const leaked = ['__dirname', '__filename'].filter((id) =>
     new RegExp(`(^|[^\\w$.])${id}\\b`).test(bundled),
 );
