@@ -1,3 +1,4 @@
+import admin from 'firebase-admin';
 import { getAdminDb } from '../../../lib/firebase-admin.js';
 import { COLLECTIONS, NSID } from 'shared/nsid';
 import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
@@ -74,6 +75,40 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
             if (value !== undefined) update[`processing.${key}`] = value;
         }
         await postsCollection().doc(postId).update(update);
+    },
+
+    async claimProcessingLease(_originAppId, postId, leaseUntil) {
+        // One transaction, so the read of the existing lease and the write of
+        // the new one cannot interleave with another runner doing the same.
+        // Read-then-write outside a transaction would let both runners observe
+        // "unheld" and both proceed — the exact race this closes.
+        return getAdminDb().runTransaction(async (t) => {
+            const ref = postsCollection().doc(postId);
+            const snap = await t.get(ref);
+            if (!snap.exists) return false;
+            const processing = snap.data()?.processing as
+                | { leaseUntil?: { toMillis?: () => number } }
+                | undefined;
+            // No processing state means nothing to claim. Claiming anyway
+            // would CREATE the `processing` map on a post that never requested
+            // any, and the service treats a present map as "processing was
+            // requested" — so a no-op job would permanently change how the
+            // post reads.
+            if (!processing) return false;
+            const heldUntil = processing.leaseUntil?.toMillis?.();
+            // Strictly-greater: a lease expiring exactly now is expired.
+            if (heldUntil && heldUntil > Date.now()) return false;
+            t.update(ref, { 'processing.leaseUntil': leaseUntil });
+            return true;
+        });
+    },
+
+    async releaseProcessingLease(_originAppId, postId) {
+        // Deleted rather than set to a past time, so the absent case and the
+        // released case are one state instead of two that read differently.
+        await postsCollection()
+            .doc(postId)
+            .update({ 'processing.leaseUntil': admin.firestore.FieldValue.delete() });
     },
 
     newTranscriptId(): string {

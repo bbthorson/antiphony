@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Real SDK, not the mocked `firebase-admin.js` wrapper — needed only to
+// recognise the `FieldValue.delete()` sentinel in the in-memory store below.
+import admin from 'firebase-admin';
 
 /**
  * End-to-end integration test for B5 audio processing: drives the REAL
@@ -26,6 +29,30 @@ function setNested(target: Record<string, unknown>, path: string, value: unknown
     obj[parts[parts.length - 1]] = value;
 }
 
+/**
+ * Recognise `admin.firestore.FieldValue.delete()`. Uses the sentinel's own
+ * `isEqual` (the documented comparison) rather than a name or shape check, so
+ * it keeps working if the SDK changes the class behind it.
+ */
+function isDeleteSentinel(v: unknown): boolean {
+    const candidate = v as { isEqual?: (o: unknown) => boolean } | null;
+    return (
+        typeof candidate?.isEqual === 'function' &&
+        candidate.isEqual(admin.firestore.FieldValue.delete())
+    );
+}
+
+function deleteNested(target: Record<string, unknown>, path: string) {
+    const parts = path.split('.');
+    let obj = target;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const next = obj[parts[i]] as Record<string, unknown> | undefined;
+        if (!next) return;
+        obj = obj[parts[i]] = { ...next };
+    }
+    delete obj[parts[parts.length - 1]];
+}
+
 function getNested(data: Record<string, unknown> | undefined, path: string): unknown {
     return path.split('.').reduce<unknown>((acc, p) => (acc as Record<string, unknown>)?.[p], data);
 }
@@ -42,7 +69,13 @@ function makeDocRef(name: string, id: string) {
         update: async (data: Record<string, unknown>) => {
             const cur = { ...(docs.get(key) ?? {}) };
             for (const [k, v] of Object.entries(data)) {
-                if (k.includes('.')) setNested(cur, k, v);
+                // `FieldValue.delete()` REMOVES the field in real Firestore.
+                // Storing the sentinel as a value instead leaves a field whose
+                // shape matches no schema — which is how the lease release
+                // first showed up here: a `leaseUntil` holding the sentinel
+                // failed the timestamp parse and 404'd the whole post.
+                if (isDeleteSentinel(v)) deleteNested(cur, k);
+                else if (k.includes('.')) setNested(cur, k, v);
                 else cur[k] = v;
             }
             docs.set(key, cur);
@@ -76,8 +109,25 @@ const db = {
     collection: (name: string) => makeCollection(name),
     getAll: async (...refs: Array<{ get: () => Promise<unknown> }>) =>
         Promise.all(refs.map((r) => r.get())),
+    // Transactional reads/writes delegate to the same in-memory docs the
+    // non-transactional ones use. The previous stub answered every `get` with
+    // `exists: false`, which was harmless while idempotency (mocked out here)
+    // was the only caller — but the processing lease reads the POST through
+    // this path, and a post that reads as absent is a lease that is never
+    // granted, so inline processing would silently do nothing.
     runTransaction: async (fn: (t: unknown) => Promise<unknown>) =>
-        fn({ get: async () => ({ exists: false, data: () => undefined }), set: () => undefined, update: () => undefined }),
+        fn({
+            get: async (ref: { get: () => Promise<unknown> }) => ref.get(),
+            // `opts` must be forwarded: callers pass `{ merge: true }`, and
+            // dropping it turns a merge into a full replace that silently
+            // discards every field not in the patch.
+            set: (
+                ref: { set: (d: Record<string, unknown>, o?: { merge?: boolean }) => void },
+                d: Record<string, unknown>,
+                opts?: { merge?: boolean },
+            ) => ref.set(d, opts),
+            update: (ref: { update: (d: Record<string, unknown>) => void }, d: Record<string, unknown>) => ref.update(d),
+        }),
 };
 
 // --- In-memory Storage -----------------------------------------------------
