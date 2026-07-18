@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
 import ffmpegStatic from 'ffmpeg-static';
 import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
 import {
@@ -33,16 +34,35 @@ const MAX_BUFFER = 512 * 1024 * 1024;
 
 export const OUTPUT_MIME = 'audio/webm';
 
+let probed: { path: string; ok: boolean } | undefined;
+
 /**
- * Whether an ffmpeg binary is resolvable, checked when providers are wired.
+ * Whether an ffmpeg binary is resolvable AND executable, checked when providers
+ * are wired.
  *
  * Without this the trim capability would advertise `true` on a platform
- * `ffmpeg-static` has no build for, then fail every post at run time. A
- * capability that lies is worse than one that is absent: the stage settles
- * `failed` per post instead of an honest `skipped`.
+ * `ffmpeg-static` has no build for — or for a typo'd `ANTIPHONY_FFMPEG_PATH` —
+ * then fail every post at run time. A capability that lies is worse than one
+ * that is absent: the stage settles `failed` per post instead of an honest
+ * `skipped`.
  */
 export function ffmpegAvailable(): boolean {
-    return !!(process.env.ANTIPHONY_FFMPEG_PATH || ffmpegStatic);
+    const path = process.env.ANTIPHONY_FFMPEG_PATH || ffmpegStatic;
+    if (!path) return false;
+    // Memoized per path so a per-request capability check is not a syscall
+    // every time, while a changed env var still re-probes.
+    if (probed?.path === path) return probed.ok;
+    let ok = false;
+    try {
+        // Existence is not enough — a path that is present but not executable
+        // fails identically at run time, which is the case this guards.
+        accessSync(path, constants.X_OK);
+        ok = true;
+    } catch {
+        ok = false;
+    }
+    probed = { path, ok };
+    return ok;
 }
 
 function ffmpegPath(): string {
@@ -103,15 +123,33 @@ export const ffmpegTrimmer: TrimmerPort = {
 
         const window = computeTrimWindow(durationMs, parseSilences(detect.stderr));
 
-        // Pass 2 — cut and re-encode. `-ss`/`-to` before `-i` would seek the
-        // container, which is not possible on a pipe, so they follow the input
+        // Nothing to cut, and already in the target format — which is exactly
+        // what a re-run of an already-trimmed variant looks like. Re-encoding
+        // here would be Opus→Opus for no gain, losing a generation every time
+        // trim is re-requested. Pass the bytes through instead.
+        //
+        // A denoised variant reaches this point as 320kbps MP3, so it does NOT
+        // match and still gets the re-encode that undoes the inflation.
+        const nothingToCut = window.startMs === 0 && window.endMs === durationMs;
+        if (nothingToCut && input.mimeType === OUTPUT_MIME) {
+            return { bytes: input.bytes, mimeType: input.mimeType, durationMs: Math.round(durationMs) };
+        }
+
+        // Pass 2 — cut and re-encode. `-ss` before `-i` would seek the
+        // container, which is not possible on a pipe, so it follows the input
         // and ffmpeg decodes-and-discards to the start point.
+        //
+        // `-t` (duration) rather than `-to` (stop position): with an
+        // output-side `-ss`, whether `-to` measures from the input timeline or
+        // the seek point has varied across ffmpeg versions, and
+        // ANTIPHONY_FFMPEG_PATH allows a different one. A duration means the
+        // same thing everywhere.
         const cut = await runFfmpeg(
             [
                 '-hide_banner',
                 '-i', 'pipe:0',
                 '-ss', String(window.startMs / 1000),
-                '-to', String(window.endMs / 1000),
+                '-t', String((window.endMs - window.startMs) / 1000),
                 '-ac', '1',
                 '-c:a', 'libopus',
                 '-b:a', '48k',
@@ -128,10 +166,28 @@ export const ffmpegTrimmer: TrimmerPort = {
             throw new Error('ffmpeg produced an empty trimmed variant');
         }
 
+        // Read the duration back off the ENCODED bytes rather than trusting the
+        // requested window. Opus frames are 20ms, so a window that is not a
+        // frame multiple lands a frame away from what was asked for — and this
+        // value becomes `processedDurationMs`, which step 7 serves to clients
+        // as the post's duration.
+        //
+        // A third pass, but on the encoded output (tens of KB, not the input),
+        // and the only source that is actually authoritative: the cut pass
+        // writes to a pipe, so it never reports a container duration, and its
+        // `time=` progress counter stops short of the true end — measured at
+        // 3290ms for a file both the container header and a full decode agree
+        // is 3300ms.
+        const probe = await runFfmpeg(['-hide_banner', '-i', 'pipe:0', '-f', 'null', '-'], cut.stdout);
+        const measuredMs = parseDurationMs(probe.stderr);
+
         return {
             bytes: new Uint8Array(cut.stdout),
             mimeType: OUTPUT_MIME,
-            durationMs: Math.round(window.endMs - window.startMs),
+            // Fall back to the window if the probe cannot read it: a duration
+            // off by a frame beats failing a stage that already produced good
+            // audio.
+            durationMs: Math.round(measuredMs ?? window.endMs - window.startMs),
         };
     },
 };

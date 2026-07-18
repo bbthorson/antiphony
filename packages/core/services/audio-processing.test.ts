@@ -392,6 +392,50 @@ describe('AudioProcessingService.process', () => {
             expect(patches.some((patch) => patch.trim === 'pending')).toBe(false);
         });
 
+        it('keeps the variant when a pending link has no runner', async () => {
+            // Denoise re-requested after the key went away, with a trim already
+            // applied. Letting the unrunnable denoise set the restart point
+            // would rebuild from the original and re-trim raw audio, destroying
+            // the denoised variant and putting nothing in its place.
+            const noDenoiser = providers({ denoiser: undefined });
+            const { deps, patches } = makeDeps(makePost({
+                processing: {
+                    denoise: 'pending',
+                    trim: 'ready',
+                    processedBlobCid: CLEANED_CID,
+                    updatedAt: new Date(),
+                },
+            }));
+            await new AudioProcessingService(deps, noDenoiser).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual({ denoise: 'skipped' });
+            // The variant is untouched: nothing re-ran, nothing was written.
+            expect(deps.writeDerivedBlob).not.toHaveBeenCalled();
+            expect(p.trimmer!.trim).not.toHaveBeenCalled();
+            expect(patches.some((patch) => patch.processedBlobCid)).toBe(false);
+        });
+
+        it('never downgrades a ready link the chain cannot re-run', async () => {
+            // #42's rule, inside the chain: denoise re-runs, but trim is ready
+            // with no trimmer. Marking it would settle it `skipped` — "never
+            // attempted" — for work that was in fact done.
+            const noTrimmer = providers({ trimmer: undefined });
+            const { deps, patches } = makeDeps(makePost({
+                processing: {
+                    denoise: 'pending',
+                    trim: 'ready',
+                    processedBlobCid: CLEANED_CID,
+                    updatedAt: new Date(),
+                },
+            }));
+            await new AudioProcessingService(deps, noTrimmer).process('vox-pop', 'p1');
+
+            expect(patches.some((patch) => patch.trim === 'skipped')).toBe(false);
+            expect(patches.some((patch) => patch.trim === 'pending')).toBe(false);
+            // Denoise still ran — it has a runner.
+            expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
+
         it('marks trim skipped when no trimmer is wired', async () => {
             const { deps, patches } = makeDeps(makePost({
                 processing: { trim: 'pending', updatedAt: new Date() },
