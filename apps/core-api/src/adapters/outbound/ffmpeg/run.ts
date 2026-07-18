@@ -70,7 +70,21 @@ export function runFfmpeg(
                 // ffmpeg writes everything informational to stderr, so a
                 // non-zero exit is the only reliable failure signal.
                 if (error) {
-                    reject(new Error(`ffmpeg failed: ${stderr.toString().slice(-500)}`));
+                    // stderr is always a Buffer here, never undefined — but it
+                    // is EMPTY for any failure that happens before ffmpeg runs
+                    // or that kills it from outside, which made this message
+                    // read as a bare "ffmpeg failed: " with no cause at all.
+                    //
+                    // The reachable case is the timeout: `ffmpegAvailable()`
+                    // probes X_OK at wiring time, so ENOENT/EACCES are largely
+                    // guarded, but nothing guards a large file exceeding
+                    // DEFAULT_TIMEOUT_MS — and that is exactly when an operator
+                    // most needs the reason.
+                    const detail = stderr.toString().slice(-500);
+                    const cause = error.killed
+                        ? `timed out after ${DEFAULT_TIMEOUT_MS}ms (${error.signal ?? 'killed'})`
+                        : error.message;
+                    reject(new Error(`ffmpeg failed: ${cause}${detail ? ` — ${detail}` : ''}`));
                     return;
                 }
                 resolve({ stdout, stderr: stderr.toString() });

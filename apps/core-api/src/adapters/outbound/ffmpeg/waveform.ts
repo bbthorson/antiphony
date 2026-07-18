@@ -51,10 +51,17 @@ export const ffmpegWaveform: WaveformPort = {
         // its backing ArrayBuffer, and Int16Array demands 2-byte alignment —
         // an odd offset throws. Copy in that case rather than assume; the
         // common path is already aligned and views in place.
+        //
+        // `new Uint8Array(buf)` rather than `Buffer.from(buf)`: both copy, but
+        // Buffer's copy lands in Node's shared pool at whatever offset the
+        // allocator picks (16, 32, 1320… — even, but only because the pool
+        // aligns to 8 bytes, which is an implementation detail, not a promise).
+        // The typed-array constructor is spec-guaranteed to produce a fresh
+        // ArrayBuffer at byteOffset 0, which is the property actually needed.
         const aligned =
             decoded.stdout.byteOffset % BYTES_PER_SAMPLE === 0
                 ? decoded.stdout
-                : Buffer.from(decoded.stdout);
+                : new Uint8Array(decoded.stdout);
 
         // Floor the length: a final odd byte is a truncated sample, and
         // including it would read one byte past the PCM into whatever follows.
