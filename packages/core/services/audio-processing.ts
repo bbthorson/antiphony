@@ -88,23 +88,44 @@ export class AudioProcessingService {
             return;
         }
 
-        // Source audio to work from.
+        // Byte-mutating stages form an ORDERED CHAIN (denoise → trim) that
+        // composes into one variant, so re-running any link decides both where
+        // to read from and which other links must re-run.
         //
-        // If a byte-mutating stage is pending, it is about to (re)run, and the
-        // variant it would read is its OWN prior output — denoising already
-        // denoised audio compounds artifacts and bills a second time. Byte-
-        // mutating stages compose from the original, so a re-run restarts
-        // there and rebuilds the variant.
-        //
-        // Otherwise start from the processed variant when one exists: the
-        // idempotent-retry case (denoise settled last pass, transcribe still
-        // pending) must not fall back to the noisy original.
-        const rerunningByteMutating = BYTE_MUTATING_STAGES.some(
+        // Find the earliest link that is pending. Everything from there on has
+        // to run: an earlier stage re-running changes the input to every later
+        // one, so a later stage sitting `ready` describes audio that no longer
+        // exists — the same argument as derived recompute below, applied within
+        // the chain instead of after it.
+        const firstPending = BYTE_MUTATING_STAGES.findIndex(
             (stage) => post.processing?.[stage] === 'pending',
         );
-        const sourceCid = !rerunningByteMutating && post.processing.processedBlobCid
+
+        // Re-running the chain's FIRST link rebuilds from the original: its own
+        // prior output is what the variant holds, and denoising already
+        // denoised audio compounds artifacts and bills a second time. Re-running
+        // a LATER link starts from the variant, which already holds every
+        // earlier link's output — reading the original there would silently
+        // discard them (a trim-only re-run would drop the denoise).
+        //
+        // No link pending at all is the idempotent-retry case (denoise settled
+        // last pass, transcribe still pending); it must not fall back to the
+        // noisy original either.
+        const sourceCid = firstPending !== 0 && post.processing.processedBlobCid
             ? post.processing.processedBlobCid
             : audioCid;
+
+        // Ready links after the first pending one are re-applied, not skipped.
+        // Only `pending` (requested) and `ready` (previously applied, and whose
+        // input just changed) qualify — a `skipped` or `failed` link stays that
+        // way rather than being silently activated by a neighbour's re-run.
+        const chainToRun: ProcessingStage[] =
+            firstPending === -1
+                ? []
+                : BYTE_MUTATING_STAGES.slice(firstPending).filter((stage) => {
+                      const status = post.processing?.[stage];
+                      return status === 'pending' || status === 'ready';
+                  });
         const sourceBytes = await this.deps.readBlobBytes(originAppId, sourceCid);
         // The mime type must describe the bytes actually read. A provider may
         // transcode (ElevenLabs Voice Isolator returns MP3 whatever it is
@@ -124,8 +145,21 @@ export class AudioProcessingService {
         // which is what invalidates the derived artifacts below.
         let variantChanged = false;
 
+        // A `ready` link being re-applied is marked `pending` BEFORE it runs,
+        // for the same reason derived recompute is: if this pass dies partway,
+        // a retry must find outstanding work. Left `ready`, it would compute
+        // `firstPending === -1` on the retry and re-run nothing, stranding a
+        // variant that is missing that link forever.
+        const reapplied: ProcessingStageMap = {};
+        for (const stage of chainToRun) {
+            if (post.processing[stage] === 'ready') reapplied[stage] = 'pending';
+        }
+        if (Object.keys(reapplied).length > 0) {
+            await this.deps.patchProcessingState(originAppId, postId, reapplied);
+        }
+
         // --- Denoise (first, so transcription can use the cleaned audio) ---
-        if (post.processing.denoise === 'pending') {
+        if (chainToRun.includes('denoise')) {
             if (!this.providers.denoiser) {
                 await this.deps.patchProcessingState(originAppId, postId, { denoise: 'skipped' });
             } else if (!working) {
@@ -163,7 +197,7 @@ export class AudioProcessingService {
         // variant: `working` already holds the denoised bytes when denoise ran
         // in this pass, so trimming them chains the two byte-mutating stages
         // into one artifact.
-        if (post.processing.trim === 'pending') {
+        if (chainToRun.includes('trim')) {
             if (!this.providers.trimmer) {
                 await this.deps.patchProcessingState(originAppId, postId, { trim: 'skipped' });
             } else if (!working) {

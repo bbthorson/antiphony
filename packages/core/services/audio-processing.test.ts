@@ -329,6 +329,69 @@ describe('AudioProcessingService.process', () => {
             );
         });
 
+        it('trims the denoised variant when denoise settled in an EARLIER pass', async () => {
+            // The composition bug step 5 introduces: `trim: 'pending'` makes
+            // `rerunningByteMutating` true, which resets the source to the
+            // ORIGINAL. Denoise is already `ready` so it does not re-run, and
+            // trim would silently operate on the noisy original — discarding
+            // the denoised audio while the state still claims denoise `ready`.
+            const { deps } = makeDeps(
+                makePost({
+                    processing: {
+                        denoise: 'ready',
+                        trim: 'pending',
+                        processedBlobCid: CLEANED_CID,
+                        processedMimeType: 'audio/webm',
+                        updatedAt: new Date(),
+                    },
+                }),
+                {
+                    readBlobBytes: vi.fn(async (_app: string, cid: string) =>
+                        cid === CLEANED_CID ? new Uint8Array([9, 9]) : new Uint8Array([1, 2, 3]),
+                    ),
+                },
+            );
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(Array.from(vi.mocked(p.trimmer!.trim).mock.calls[0][0].bytes)).toEqual([9, 9]);
+        });
+
+        it('re-applies a ready trim when denoise re-runs ahead of it', async () => {
+            // The mirror of the case above. Denoise re-running rebuilds the
+            // variant from the original, so a trim sitting `ready` describes
+            // audio that no longer exists — leaving it alone would serve an
+            // untrimmed variant while the state claims trim `ready`.
+            const { deps, patches } = makeDeps(makePost({
+                processing: {
+                    denoise: 'pending',
+                    trim: 'ready',
+                    processedBlobCid: CLEANED_CID,
+                    updatedAt: new Date(),
+                },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(p.trimmer!.trim).toHaveBeenCalledTimes(1);
+            // Marked pending before re-running, so a pass that dies partway
+            // leaves outstanding work rather than a `ready` link that is gone.
+            expect(patches.some((patch) => patch.trim === 'pending')).toBe(true);
+            expect(patches.findIndex((patch) => patch.trim === 'pending')).toBeLessThan(
+                patches.findIndex((patch) => patch.trim === 'ready'),
+            );
+        });
+
+        it('does not activate a skipped link when a neighbour re-runs', async () => {
+            // `skipped` means the deployment cannot do it; a neighbour's re-run
+            // is not a reason to start.
+            const { deps, patches } = makeDeps(makePost({
+                processing: { denoise: 'pending', trim: 'skipped', updatedAt: new Date() },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(p.trimmer!.trim).not.toHaveBeenCalled();
+            expect(patches.some((patch) => patch.trim === 'pending')).toBe(false);
+        });
+
         it('marks trim skipped when no trimmer is wired', async () => {
             const { deps, patches } = makeDeps(makePost({
                 processing: { trim: 'pending', updatedAt: new Date() },
