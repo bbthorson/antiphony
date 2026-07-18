@@ -218,7 +218,10 @@ Needs ≥2 stages real (2 and 3) to be meaningful.
 
 **A derived stage with no runner keeps `ready`; it is never downgraded.**
 
-Steps 5–7 inherit this rule, step 6 most directly. When a variant changes and a derived
+**Step 6 inherits this rule** — waveform is the only remaining stage in `DERIVED_STAGES`.
+Step 5 is byte-mutating and step 7 is not a processing stage at all, so neither is
+governed by it (step 5 instead *triggers* it, per the third bullet below). When a
+variant changes and a derived
 stage is `ready` but this deployment has no runner for it, the stage is **excluded from
 the recompute set** rather than marked `pending`. Marking it would settle it `skipped`
 — "never attempted" — while the artifact it already produced stays saved and readable.
