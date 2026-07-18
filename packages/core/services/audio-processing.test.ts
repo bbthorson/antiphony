@@ -293,8 +293,8 @@ describe('AudioProcessingService.process', () => {
 
             // Marked pending before the re-run: a pass that dies mid-recompute
             // must leave outstanding work, not a `ready` stale transcript.
-            expect(patches).toContainEqual({ transcribe: 'pending' });
-            expect(patches).toContainEqual({ transcribe: 'ready' });
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(true);
+            expect(patches.some((patch) => patch.transcribe === 'ready')).toBe(true);
             expect(patches.findIndex((patch) => patch.transcribe === 'pending')).toBeLessThan(
                 patches.findIndex((patch) => patch.transcribe === 'ready'),
             );
@@ -310,9 +310,32 @@ describe('AudioProcessingService.process', () => {
 
             expect(saved).toEqual([]);
             expect(p.transcriber!.transcribe).not.toHaveBeenCalled();
-            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(false);
             // Denoise itself still ran — opting out of recompute is not opting
             // out of the stage that triggered it.
+            expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
+
+        it('never downgrades a ready stage the deployment cannot recompute', async () => {
+            // A denoiser with no transcriber. Recomputing `transcribe` would
+            // mark it pending, find no runner, and settle it `skipped` — i.e.
+            // "never attempted", while the transcript of the OLD audio is still
+            // saved and readable. Leaving it `ready` is stale but true.
+            //
+            // Currently unreachable via resolveProviders (both providers share
+            // one API key), but trim in step 5 is local compute: it sets
+            // variantChanged with no key configured, and so no transcriber.
+            const denoiseOnly = providers({ transcriber: undefined });
+            const { deps, patches, saved } = makeDeps(recomputeCase());
+            await new AudioProcessingService(deps, denoiseOnly).process('vox-pop', 'p1');
+
+            // Per-key, not toContainEqual: recompute writes ONE patch covering
+            // every stage in the set, so a whole-object match stops seeing a
+            // regression the moment a second derived stage is live.
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(false);
+            expect(patches.some((patch) => patch.transcribe === 'skipped')).toBe(false);
+            expect(saved).toEqual([]);
+            // The stage that could run still did.
             expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
         });
 

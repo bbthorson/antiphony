@@ -1,4 +1,9 @@
-import { AudioProcessingService, type ProcessingProviders } from '@antiphony/core/services/audio-processing';
+import {
+    AudioProcessingService,
+    capabilitiesOf,
+    type ProcessingCapabilities,
+    type ProcessingProviders,
+} from '@antiphony/core/services/audio-processing';
 import {
     PROCESSING_STAGES,
     type ProcessingRequest,
@@ -26,8 +31,12 @@ import { logger } from './logger.js';
  *     requested stages settle as `skipped`.
  */
 
-/** Which stages this deployment can actually perform right now. */
-export type ProcessingCapabilities = Record<ProcessingStage, boolean>;
+/**
+ * Which stages this deployment can actually perform right now. Defined in core
+ * alongside `capabilitiesOf`; re-exported here so existing importers of this
+ * module are unaffected.
+ */
+export type { ProcessingCapabilities };
 
 function resolveProviders(): ProcessingProviders {
     // Stub wins when explicitly set, so a dev/test env with a real key lying
@@ -44,18 +53,16 @@ function resolveProviders(): ProcessingProviders {
 }
 
 /**
- * Which stages this deployment can actually perform right now. `trim` and
- * `waveform` have no port yet (steps 5-6), so they are always false — a
- * request for them resolves to `skipped`, never a stage that hangs `pending`.
+ * Which stages this deployment can actually perform right now.
+ *
+ * Delegates to `capabilitiesOf` rather than mapping providers to stages again:
+ * `AudioProcessingService` filters its recompute set through the same function,
+ * and a second copy here would let the two disagree — a stage advertised as
+ * runnable but never recomputed serves a permanently stale artifact under a
+ * `ready` status.
  */
 export function processingCapabilities(): ProcessingCapabilities {
-    const p = resolveProviders();
-    return {
-        transcribe: !!p.transcriber,
-        denoise: !!p.denoiser,
-        trim: false,
-        waveform: false,
-    };
+    return capabilitiesOf(resolveProviders());
 }
 
 /**
