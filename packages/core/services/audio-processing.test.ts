@@ -293,8 +293,8 @@ describe('AudioProcessingService.process', () => {
 
             // Marked pending before the re-run: a pass that dies mid-recompute
             // must leave outstanding work, not a `ready` stale transcript.
-            expect(patches).toContainEqual({ transcribe: 'pending' });
-            expect(patches).toContainEqual({ transcribe: 'ready' });
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(true);
+            expect(patches.some((patch) => patch.transcribe === 'ready')).toBe(true);
             expect(patches.findIndex((patch) => patch.transcribe === 'pending')).toBeLessThan(
                 patches.findIndex((patch) => patch.transcribe === 'ready'),
             );
@@ -310,7 +310,7 @@ describe('AudioProcessingService.process', () => {
 
             expect(saved).toEqual([]);
             expect(p.transcriber!.transcribe).not.toHaveBeenCalled();
-            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(false);
             // Denoise itself still ran — opting out of recompute is not opting
             // out of the stage that triggered it.
             expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
@@ -329,7 +329,10 @@ describe('AudioProcessingService.process', () => {
             const { deps, patches, saved } = makeDeps(recomputeCase());
             await new AudioProcessingService(deps, denoiseOnly).process('vox-pop', 'p1');
 
-            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            // Per-key, not toContainEqual: recompute writes ONE patch covering
+            // every stage in the set, so a whole-object match stops seeing a
+            // regression the moment a second derived stage is live.
+            expect(patches.some((patch) => patch.transcribe === 'pending')).toBe(false);
             expect(patches.some((patch) => patch.transcribe === 'skipped')).toBe(false);
             expect(saved).toEqual([]);
             // The stage that could run still did.

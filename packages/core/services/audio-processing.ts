@@ -9,11 +9,36 @@ import {
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
+import { type Logger, defaultLogger } from '../ports/logger';
 import { buildPostUri } from './audio-posts';
 
 export interface ProcessingProviders {
     transcriber?: TranscriberPort;
     denoiser?: DenoiserPort;
+}
+
+/** Which stages a deployment can actually perform, given its wired providers. */
+export type ProcessingCapabilities = Record<ProcessingStage, boolean>;
+
+/**
+ * The single mapping from wired providers to runnable stages. Both the
+ * deployment's advertised capabilities and this service's recompute filter
+ * derive from here — two copies drift, and a copy that says a stage is
+ * runnable when the recompute filter says it is not yields a stage that runs
+ * on request but is never refreshed when its variant changes.
+ *
+ * The `Record<ProcessingStage, …>` return type is the guard: adding a stage to
+ * `PROCESSING_STAGES` makes this literal a compile error until it is handled.
+ */
+export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabilities {
+    return {
+        transcribe: !!providers.transcriber,
+        denoise: !!providers.denoiser,
+        // Ports arrive in steps 5-6. Until then a request for either settles
+        // `skipped` rather than hanging `pending`.
+        trim: false,
+        waveform: false,
+    };
 }
 
 /**
@@ -37,10 +62,16 @@ export interface ProcessingProviders {
  * `TranscriberPort`/`DenoiserPort`, and all storage is `AudioProcessingDependencies`.
  */
 export class AudioProcessingService {
+    /** Derived once from the wired providers; see `capabilitiesOf`. */
+    private readonly capabilities: ProcessingCapabilities;
+
     constructor(
         private readonly deps: AudioProcessingDependencies,
         private readonly providers: ProcessingProviders,
-    ) {}
+        private readonly logger: Logger = defaultLogger,
+    ) {
+        this.capabilities = capabilitiesOf(providers);
+    }
 
     async process(originAppId: string, postId: string): Promise<void> {
         const post = await this.deps.getPostById(originAppId, postId);
@@ -138,6 +169,16 @@ export class AudioProcessingService {
         // `reprocess: false` opts out, leaving the stale artifact and its
         // `ready` status in place — the app's explicit choice not to re-bill.
         //
+        // `post.processing?.` rather than `post.processing.`: the line-48 guard
+        // narrows in the method body, but TS discards that narrowing inside a
+        // callback, since the property is mutable and the callback could run
+        // later. Same reason as the `.some()` above. Removing it does not
+        // compile.
+        const superseded =
+            variantChanged && post.processing.reprocess !== false
+                ? DERIVED_STAGES.filter((stage) => post.processing?.[stage] === 'ready')
+                : [];
+
         // A stage this deployment cannot run is excluded rather than marked
         // pending. Marking it would settle it `skipped` below, downgrading a
         // `ready` stage to "never attempted" while its now-stale artifact stays
@@ -146,12 +187,20 @@ export class AudioProcessingService {
         // reason. Reachable as soon as a byte-mutating stage runs locally
         // (trim, step 5), since that sets `variantChanged` with no API key and
         // so no transcriber.
-        const recompute =
-            variantChanged && post.processing.reprocess !== false
-                ? DERIVED_STAGES.filter(
-                      (stage) => post.processing?.[stage] === 'ready' && this.hasRunnerFor(stage),
-                  )
-                : [];
+        const recompute = superseded.filter((stage) => this.hasRunnerFor(stage));
+
+        // Logged because the state cannot record it: the stage stays `ready`
+        // over an artifact that no longer matches the audio, and nothing
+        // distinguishes it from a fresh one. Recompute only re-fires when the
+        // variant changes again, so restoring the provider does not repair
+        // these on its own — this line is the only way to enumerate them.
+        const stranded = superseded.filter((stage) => !this.hasRunnerFor(stage));
+        if (stranded.length > 0) {
+            this.logger.warn(
+                { originAppId, postId, stages: stranded },
+                '[audio-processing] variant changed but no runner; leaving stale artifact ready',
+            );
+        }
 
         if (recompute.length > 0) {
             const patch: ProcessingStageMap = {};
@@ -193,21 +242,16 @@ export class AudioProcessingService {
     }
 
     /**
-     * Whether this deployment can actually run a stage. Only consulted for the
-     * recompute set: an explicitly requested stage with no runner still settles
-     * `skipped`, which is accurate there — nothing was ever produced.
+     * Whether this deployment can actually run a derived stage. Only consulted
+     * for the recompute set: an explicitly requested stage with no runner still
+     * settles `skipped`, which is accurate there — nothing was ever produced.
+     *
+     * Narrowed to derived stages because that is the only call site; a
+     * byte-mutating stage passed here would be a compile error rather than a
+     * silently unreachable branch.
      */
-    private hasRunnerFor(stage: ProcessingStage): boolean {
-        switch (stage) {
-            case 'transcribe':
-                return !!this.providers.transcriber;
-            case 'denoise':
-                return !!this.providers.denoiser;
-            // Ports arrive in steps 5-6; no runner exists yet.
-            case 'trim':
-            case 'waveform':
-                return false;
-        }
+    private hasRunnerFor(stage: (typeof DERIVED_STAGES)[number]): boolean {
+        return this.capabilities[stage];
     }
 
     /** Settle any still-pending stage as skipped (used when the post has no audio). */
