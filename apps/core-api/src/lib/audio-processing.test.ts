@@ -30,27 +30,26 @@ afterEach(() => {
 });
 
 describe('processingCapabilities', () => {
-    it('reports only the local stage with no API key configured', () => {
-        // Trim is local compute, so it needs no key — it is available on its
-        // binary alone. This is what makes a variant change possible with no
-        // transcriber present, the condition the recompute filter handles.
+    it('reports both local stages with no API key configured', () => {
+        // Trim and waveform are local compute, so they need no key — they are
+        // available on their binary alone. Trim is what makes a variant change
+        // possible with no transcriber present, the condition the recompute
+        // filter handles; waveform is what it recomputes.
         expect(processingCapabilities()).toEqual({
             transcribe: false,
             denoise: false,
             trim: true,
-            waveform: false,
+            waveform: true,
         });
     });
 
-    it('reports the provider-backed stages available when the stubs are wired', () => {
+    it('reports every stage available when the stubs are wired', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        // `waveform` stays false — no port yet (plan step 6), so requesting it
-        // resolves to `skipped` rather than hanging `pending`.
         expect(processingCapabilities()).toEqual({
             transcribe: true,
             denoise: true,
             trim: true,
-            waveform: false,
+            waveform: true,
         });
     });
 });

@@ -68,6 +68,7 @@ function providers(over: Partial<ProcessingProviders> = {}): ProcessingProviders
                 durationMs: 3100,
             })),
         },
+        waveform: { waveform: vi.fn(async () => ({ peaks: [0, 50, 100] })) },
         ...over,
     };
 }
@@ -575,6 +576,105 @@ describe('AudioProcessingService.process', () => {
                 expect(patches.filter((patch) => patch[stage] === 'pending')).toEqual([]);
             }
             expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('waveform', () => {
+        it('writes the peaks and the ready status in one patch', async () => {
+            const post = makePost({ processing: { waveform: 'pending', updatedAt: new Date() } });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            // One patch, not two. Split, a crash between them leaves `ready`
+            // over absent peaks and no pending stage to make a retry fix it.
+            expect(patches).toEqual([{ waveform: 'ready', waveformPeaks: [0, 50, 100] }]);
+        });
+
+        it('computes over the processed variant, not the original', async () => {
+            // The whole point of running after the byte-mutating chain: peaks
+            // of the original would describe audio the post no longer serves.
+            const post = makePost({
+                processing: { denoise: 'pending', waveform: 'pending', updatedAt: new Date() },
+            });
+            const { deps } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            const call = vi.mocked(p.waveform!.waveform).mock.calls[0][0];
+            expect(Array.from(call.bytes)).toEqual([9, 9]);
+        });
+
+        it('recomputes when a byte-mutating stage changes the variant', async () => {
+            const post = makePost({
+                processing: { trim: 'pending', waveform: 'ready', updatedAt: new Date() },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches.findIndex((patch) => patch.waveform === 'pending')).toBeLessThan(
+                patches.findIndex((patch) => patch.waveform === 'ready'),
+            );
+            // Trim re-encodes to mp3, so the peaks must come from those bytes.
+            const call = vi.mocked(p.waveform!.waveform).mock.calls[0][0];
+            expect(Array.from(call.bytes)).toEqual([7]);
+            expect(call.mimeType).toBe('audio/mpeg');
+        });
+
+        it('settles skipped when no waveform provider is wired', async () => {
+            const post = makePost({ processing: { waveform: 'pending', updatedAt: new Date() } });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, providers({ waveform: undefined })).process(
+                'vox-pop',
+                'p1',
+            );
+
+            // `skipped`, never a permanent `pending` that reads as work in
+            // flight — nothing was produced, so that reading is accurate.
+            expect(patches).toEqual([{ waveform: 'skipped' }]);
+        });
+
+        it('leaves stale peaks ready when the variant changes with no runner', async () => {
+            // The stranded case from step 4, now reachable for waveform:
+            // marking it pending would settle it `skipped` — "never attempted"
+            // — while the peaks it already produced stay saved and readable.
+            const post = makePost({
+                processing: { trim: 'pending', waveform: 'ready', updatedAt: new Date() },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, providers({ waveform: undefined })).process(
+                'vox-pop',
+                'p1',
+            );
+
+            expect(patches.some((patch) => patch.waveform !== undefined)).toBe(false);
+        });
+
+        it('fails the stage without touching the peaks when the provider throws', async () => {
+            const post = makePost({ processing: { waveform: 'pending', updatedAt: new Date() } });
+            const { deps, patches } = makeDeps(post);
+            const failing = providers({
+                waveform: { waveform: vi.fn(async () => { throw new Error('decode failed'); }) },
+            });
+            await new AudioProcessingService(deps, failing).process('vox-pop', 'p1');
+
+            // No `waveformPeaks` key at all: a failed decode must leave the
+            // client's original peaks in place rather than blanking them.
+            expect(patches).toEqual([{ waveform: 'failed' }]);
+        });
+
+        it('does not suppress peaks when transcribe fails', async () => {
+            // Both are derived and neither reads the other's artifact, so the
+            // two must settle independently.
+            const post = makePost({
+                processing: { transcribe: 'pending', waveform: 'pending', updatedAt: new Date() },
+            });
+            const { deps, patches } = makeDeps(post);
+            const failing = providers({
+                transcriber: { transcribe: vi.fn(async () => { throw new Error('api down'); }) },
+            });
+            await new AudioProcessingService(deps, failing).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual({ transcribe: 'failed' });
+            expect(patches).toContainEqual({ waveform: 'ready', waveformPeaks: [0, 50, 100] });
         });
     });
 });

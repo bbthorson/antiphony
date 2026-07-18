@@ -12,11 +12,18 @@ import {
     type ResolvedProcessing,
 } from 'shared/types/processing';
 import { firebaseAudioProcessingDependencies } from '../adapters/outbound/firebase/audio-processing-dependencies.js';
-import { stubTranscriber, stubDenoiser, stubTrimmer } from '../adapters/outbound/firebase/processing-providers.js';
+import {
+    stubTranscriber,
+    stubDenoiser,
+    stubTrimmer,
+    stubWaveform,
+} from '../adapters/outbound/firebase/processing-providers.js';
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
-import { ffmpegTrimmer, ffmpegAvailable } from '../adapters/outbound/ffmpeg/trimmer.js';
+import { ffmpegTrimmer } from '../adapters/outbound/ffmpeg/trimmer.js';
+import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
+import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
 import { logger } from './logger.js';
 
 /**
@@ -43,20 +50,30 @@ function resolveProviders(): ProcessingProviders {
     // Stub wins when explicitly set, so a dev/test env with a real key lying
     // around in the shell cannot accidentally bill a live provider.
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
-        return { transcriber: stubTranscriber, denoiser: stubDenoiser, trimmer: stubTrimmer };
+        return {
+            transcriber: stubTranscriber,
+            denoiser: stubDenoiser,
+            trimmer: stubTrimmer,
+            waveform: stubWaveform,
+        };
     }
-    // Trim is LOCAL compute — no API key, so it is available on its binary
-    // alone. This is the first stage that can change the variant with no
-    // provider key configured anywhere, which is exactly the condition the
-    // recompute filter in `AudioProcessingService` had to be corrected for.
-    const trimmer = ffmpegAvailable() ? ffmpegTrimmer : undefined;
+    // Trim and waveform are LOCAL compute — no API key, so they are available
+    // on their binary alone, and one probe governs both. Trim is the stage that
+    // can change the variant with no provider key configured anywhere, which is
+    // exactly the condition the recompute filter in `AudioProcessingService`
+    // had to be corrected for; waveform is the derived stage that condition was
+    // corrected FOR, and with ffmpeg present both are runnable together, so the
+    // stranded-artifact path needs a deployment missing the binary to reach.
+    const local = ffmpegAvailable()
+        ? { trimmer: ffmpegTrimmer, waveform: ffmpegWaveform }
+        : {};
 
     // Real providers select off the API key alone — no separate enable flag to
     // keep in sync with it. Key present ⇒ the stage is available.
     if (elevenLabsApiKey()) {
-        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser, trimmer };
+        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser, ...local };
     }
-    return { trimmer };
+    return local;
 }
 
 /**

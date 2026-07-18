@@ -262,14 +262,70 @@ accurate, since nothing was ever produced for it.
 - **Versions:** contract → patch.
 - **Done when:** a padded recording trims cleanly with no clipped word onsets.
 
-### 6. Waveform stage
+### 6. Waveform stage ✅ done 2026-07-18
 
 - New `WaveformPort` (derived, local compute) producing peaks normalized 0–100,
   max 1000 — matching the existing embed bounds in `packages/shared/types/audio.ts`.
-- Computes over the **processed** variant; writes to `ProcessingState.waveform`.
+- Computes over the **processed** variant; writes to `ProcessingState.waveformPeaks`.
 - Client-supplied `embed.waveform` stays and remains the default for unprocessed posts.
-- **Versions:** contract → patch.
+- **Versions:** **none** — see below; the plan's "contract → patch" was wrong.
 - **Done when:** peaks for a denoised post differ from the client's original peaks.
+  ✅ Verified against real ffmpeg: a synthesized 1s-silence/2s-tone/1s-silence clip
+  yields 80 peaks averaging 0 / 94 / 0 across head / middle / tail, schema-valid.
+  Re-run as 320 kbps MP3 (what a denoised variant actually arrives as): same shape.
+
+**Deviations from the plan as written, and why:**
+
+- **No version bump. The plan said "contract → patch"; there is no contract change.**
+  Step 1 already added the `waveform` stage key and `waveformPeaks` to the schemas, so
+  the regenerated spec is byte-identical — the stage key has been in `openapi.json`
+  since then. What changed is a runtime *value* (`capabilities.waveform` now reports
+  `true`), not the surface. Nothing to bump, nothing to regenerate.
+- **The field is `waveformPeaks`**, not `ProcessingState.waveform` as this step's bullet
+  said. Step 1 already resolved that collision — the stage key keeps the bare name, the
+  data field is suffixed — but this bullet was never updated to match. Corrected above.
+- **ffmpeg plumbing moved to `adapters/outbound/ffmpeg/run.ts`.** Binary resolution, the
+  executable probe, and the stdin-pipe runner were private to `trimmer.ts`; waveform is
+  the second consumer. Copying would let `ANTIPHONY_FFMPEG_PATH` govern one stage and not
+  the other. `ffmpegAvailable` now imports from `run.js`, not `trimmer.js`.
+
+**Adapter policy — deliberately not in the contract, same reasoning as trim's pad:**
+
+- **Peak count scales with duration** (20/s, floor 1, cap 1000) rather than being fixed.
+  A fixed count renders a 3-second clip and a 3-minute one at wildly different time
+  resolutions. It saturates past 50s, so long clips get coarser peaks — correct, since
+  the strip is a fixed width on screen either way. Count is derived from the *decoded*
+  length, so it varies slightly by codec: the MP3 verification returned 81 peaks for the
+  same 4s source, because LAME's encoder-delay padding makes the decode marginally longer.
+- **Normalized against the clip's loudest sample, not full scale.** A quiet recording
+  measured against full scale renders as a flat line hugging zero — honest, useless.
+  **The consequence worth knowing: peaks are not comparable between posts.** They carry
+  shape, not absolute loudness.
+- **Decoded at 8 kHz mono.** This produces a ~40px-tall envelope, not audio; 8 kHz still
+  carries every syllable boundary a strip can show and keeps a 10-minute clip under 10 MB
+  of PCM instead of ~50 MB at 48 kHz.
+
+**Two failure modes that would have been silent:**
+
+- **Peaks and status go out in ONE patch.** Split across two, a crash between them leaves
+  `waveform: 'ready'` over absent peaks — a state the step 7 view would read as "processed
+  waveform available", then find nothing, with no pending stage left for a retry to fix.
+- **A failed decode patches no `waveformPeaks` key at all**, rather than writing `[]`.
+  Blanking it would replace the client's perfectly good original peaks with nothing.
+  Note this depends on the step-1 change that made `patchProcessingState` iterate the
+  patch's own keys — an allowlist that always wrote the field would defeat it.
+
+**This closes the step-4 stranded-artifact path for waveform, mostly.** Trim and waveform
+both select off one `ffmpegAvailable()` probe, so a deployment that can change the variant
+locally can also recompute the peaks. Reaching "variant changed, no runner" for waveform
+now takes a deployment with *no* ffmpeg at all — in which case trim cannot run either, so
+the only remaining trigger is a denoise with an API key present and no binary. Still
+reachable, still logged, just much narrower than step 4 anticipated.
+
+> **Blocker inherited by step 7:** `npm run gen:openapi` is **broken on master**
+> (`ReferenceError: __dirname is not defined in ES module scope`, from the esbuild-bundled
+> runner under Node 22). It did not block step 6 because there was nothing to regenerate.
+> **Step 7 is a minor bump and cannot skip it** — fix the generator first.
 
 ### 7. Hydration variant resolution — *the minor bump*
 
