@@ -1,9 +1,9 @@
 import {
-    AudioProcessingService,
     capabilitiesOf,
     type ProcessingCapabilities,
     type ProcessingProviders,
 } from '@antiphony/core/services/audio-processing';
+import type { ProcessingDispatchPort } from '@antiphony/core/ports/processing-dispatch';
 import {
     PROCESSING_STAGES,
     type ProcessingRequest,
@@ -24,6 +24,8 @@ import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js'
 import { ffmpegTrimmer } from '../adapters/outbound/ffmpeg/trimmer.js';
 import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
 import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
+import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
+import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
 import { logger } from './logger.js';
 
 /**
@@ -32,11 +34,16 @@ import { logger } from './logger.js';
  * Resolved per-request off env (like `getOriginAppId`) so tests and per-env
  * config take effect without a module-load singleton:
  *   - `ANTIPHONY_PROCESSING_STUB=true`   → wire the stub providers (dev/tests).
- *   - `ANTIPHONY_PROCESSING_INLINE=true` → run processing synchronously inside
- *     the create request. This is the local/test trigger; the durable
- *     production trigger (Cloud Tasks → a `/system/process-audio` worker) is a
- *     later sub-PR. With neither flag set, processing is unavailable and
- *     requested stages settle as `skipped`.
+ *   - `ANTIPHONY_PROCESSING_INLINE=true` → wire the inline dispatcher, which
+ *     runs processing synchronously inside the request. This is the local/test
+ *     trigger; the durable production dispatcher (a queue adapter behind the
+ *     same `ProcessingDispatchPort`) is a later sub-PR. With it unset, the noop
+ *     dispatcher logs and drops.
+ *
+ * Note the two flags govern DIFFERENT axes and neither implies the other:
+ * `_STUB` decides which providers can do the work, `_INLINE` decides who runs
+ * it. A deployment with real providers and no dispatcher has capable stages
+ * and nowhere to run them — that is the case the noop dispatcher logs.
  */
 
 /**
@@ -117,18 +124,36 @@ export function hasPendingStage(state: ProcessingStageMap | undefined): boolean 
 }
 
 /**
- * Dispatch processing for a freshly-created post. In inline mode, runs the
- * service synchronously (awaited). Errors are swallowed with a log — a
- * processing failure must never fail the create response (the stage state
- * records the failure). The durable Cloud Tasks trigger replaces the inline
- * branch in a later sub-PR.
+ * Which dispatcher this deployment runs jobs through. Resolved per-request off
+ * env, like `resolveProviders`, so a test can set the flag without a
+ * module-load singleton fixing the choice at import time.
+ */
+function resolveDispatcher(): ProcessingDispatchPort {
+    if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
+        return inlineDispatcher(firebaseAudioProcessingDependencies, resolveProviders(), logger);
+    }
+    return noopDispatcher(logger);
+}
+
+/**
+ * Dispatch processing for a post whose state has already been persisted.
+ *
+ * **Never throws.** The post is committed by the time this is called and the
+ * response has to succeed regardless: a create that 500s because a queue was
+ * briefly unreachable would leave the caller retrying a write that already
+ * landed. The failure is logged and the stages stay `pending`.
+ *
+ * Leaving them `pending` is deliberate. It is the truthful state — the work
+ * was not attempted — and it stays recoverable, where marking them `failed`
+ * would record a permanent verdict about a transient outage. The cost is that
+ * nothing currently re-drives a post whose dispatch failed; closing that needs
+ * a reconciliation sweep over `pending` posts, which is its own piece of work
+ * and is not part of this seam.
  */
 export async function dispatchProcessing(originAppId: string, postId: string): Promise<void> {
-    if (process.env.ANTIPHONY_PROCESSING_INLINE !== 'true') return;
     try {
-        const service = new AudioProcessingService(firebaseAudioProcessingDependencies, resolveProviders());
-        await service.process(originAppId, postId);
+        await resolveDispatcher().dispatch({ originAppId, postId });
     } catch (err) {
-        logger.error({ err, postId }, '[audio-processing] inline dispatch failed');
+        logger.error({ err, postId, originAppId }, '[audio-processing] dispatch failed');
     }
 }
