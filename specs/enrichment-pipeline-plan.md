@@ -39,10 +39,12 @@ Read [`enrichment-pipeline.md`](./enrichment-pipeline.md) first. Condensed:
 
 ### Production reality check
 
-With no real providers wired, requested stages settle `skipped` — **production enrichment
-currently does nothing**. `ANTIPHONY_PROCESSING_INLINE` is dev/test only, so even after
-adapters land, **step 8 (durable dispatch) gates all production enrichment.** Steps 2–7
-are verifiable via inline mode; none of them are shippable-to-prod without step 8.
+The `denoise` and `transcribe` adapters are wired (steps 2–3), and `trim`/`waveform`
+still settle `skipped` until steps 5–6 give them ports. But **production enrichment
+still does nothing**, for a different reason than it used to: dispatch.
+`ANTIPHONY_PROCESSING_INLINE` is dev/test only, so **step 8 (durable dispatch) gates all
+production enrichment.** Steps 2–7 are verifiable via inline mode; none of them are
+shippable-to-prod without step 8.
 
 ## Versioning
 
@@ -147,14 +149,14 @@ Narrowest real-provider slice; validates the port against a live API.
 - Live verification is a scratchpad script, deliberately not a vitest file: `npm test`
   must never bill anyone.
 
-### 3. ElevenLabs denoiser adapter ✅ code done 2026-07-18 — *bitrate deferred to step 5*
+### 3. ElevenLabs denoiser adapter ✅ done 2026-07-18 — *bitrate deferred to step 5*
 
 - New adapter satisfying `DenoiserPort`, calling **Voice Isolator**.
 - Writes the cleaned variant via `writeDerivedBlob`, settles `processedBlobCid`.
 - **Versions:** none.
 - **Done when:** inline mode produces an audibly cleaned variant; original CID untouched.
-  ⚠️ Mechanics verified live (real `voxpop` WebM → valid 6.09s MP3). **Audible quality
-  unconfirmed** — nobody has listened to the output yet.
+  ✅ Mechanics verified live (real `voxpop` WebM → valid 6.09s MP3), and the output has
+  since been listened to and confirmed audibly cleaned.
 
 **The endpoint TRANSCODES — the finding that shaped this adapter:**
 
@@ -200,7 +202,7 @@ lexicon cap, but it interacts with the whole-blob-into-memory concern in
   therefore a local concern; **deferred to step 5**, which brings in an in-process decode
   dependency anyway. Doing it sooner would mean adding a codec solely for a size fix.
 
-### 4. Auto-recompute
+### 4. Auto-recompute ✅ done 2026-07-18
 
 Needs ≥2 stages real (2 and 3) to be meaningful.
 
@@ -210,8 +212,39 @@ Needs ≥2 stages real (2 and 3) to be meaningful.
   suppresses recompute.
 - Assert the no-cascade property in a test: byte-mutating stages never depend on derived
   ones, so recompute cannot retrigger byte-mutating work.
-- **Versions:** contract → patch (additive optional field).
+- **Versions:** contract → patch (additive optional field). Shipped as **0.3.2**.
 - **Done when:** transcribe-then-denoise leaves a transcript of the *cleaned* audio.
+  ✅ Verified by test, not against the live API — see the open item below.
+
+**A derived stage with no runner keeps `ready`; it is never downgraded.**
+
+Steps 5–7 inherit this rule, step 6 most directly. When a variant changes and a derived
+stage is `ready` but this deployment has no runner for it, the stage is **excluded from
+the recompute set** rather than marked `pending`. Marking it would settle it `skipped`
+— "never attempted" — while the artifact it already produced stays saved and readable.
+The state would be strictly less true than leaving it alone. Same end state as
+`reprocess: false`, reached for a different reason.
+
+Consequences worth knowing before adding a derived stage:
+
+- **`ready` does not imply fresh.** In this one case it means "produced once, possibly
+  against superseded audio". Nothing in the state distinguishes it from a current
+  artifact, so a `warn` log at the exclusion point is the only way to enumerate what was
+  stranded.
+- **There is no self-repair.** Recompute fires on a variant change, so restoring the
+  missing provider does not fix stranded posts on its own — it takes another
+  byte-mutating run or an operator-forced reprocess.
+- **Step 5 is what makes this reachable.** Both current providers select off one API key,
+  so a variant cannot change today without a transcriber present. Trim is local compute:
+  it sets `variantChanged` with no key configured at all.
+
+Stage → runner lives in **one** place, `capabilitiesOf()` in
+`packages/core/services/audio-processing.ts`. Both the deployment's advertised
+capabilities and the recompute filter derive from it. Its `Record<ProcessingStage,
+boolean>` return type is the guard — **adding a stage fails to compile until it is
+handled there**, which is how steps 5 and 6 are forced to declare themselves. An
+explicitly requested stage with no runner still settles `skipped`; that reading is
+accurate, since nothing was ever produced for it.
 
 ### 5. Trim stage — *first local-compute stage*
 
