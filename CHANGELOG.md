@@ -8,6 +8,38 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] — 2026-07-18
+
+The hydrated audio embed now describes the audio it actually plays. **Minor
+rather than patch**: no field is added or removed, but the VALUE of two existing
+fields can now differ from what the client uploaded, which a client caching them
+would observe.
+
+### Changed
+
+- **`embed.durationMs` and `embed.waveform` on `dev.antiphony.embed.audio#view`
+  may now describe the PROCESSED variant** rather than the original upload.
+  `url` has resolved to the variant since `0.3.0`; duration and peaks previously
+  did not, so a trimmed post returned the processed audio beside the original
+  duration and the client's original peaks — a scrubber drawn from those sits
+  out of alignment with the audio under it.
+
+  The three fields now resolve together and always agree. In practice
+  `durationMs` shrinks when `trim` completes (it removes leading and trailing
+  silence) and `waveform` is replaced once the `waveform` stage is `ready`.
+
+  **Clients that persisted `durationMs` at upload time should re-read it from
+  the view** and treat the trio as a set rather than caching them independently.
+  Clients that already read the view per render need no change.
+
+  The record's own `embed.durationMs` / `embed.waveform` are unchanged and
+  remain immutable — this is read-time resolution, not a rewrite. Posts with no
+  processing requested are byte-for-byte unaffected.
+
+- Peaks are served only while the `waveform` stage is `ready`. During a
+  recompute the stage returns to `pending` and the view falls back to the
+  record's original peaks, rather than serving peaks for the superseded variant.
+
 ## [0.3.2] — 2026-07-18
 
 Derived artifacts now follow the audio they describe. **Additive only** — the

@@ -181,3 +181,62 @@ export function toProcessingView(state: ProcessingState): ProcessingView {
     }
     return view;
 }
+
+/** The record's own audio fields — canonical, inside the CID, never rewritten. */
+export interface CanonicalAudioFields {
+    blobCid: string;
+    durationMs?: number;
+    waveform?: number[];
+}
+
+/**
+ * Resolve the audio fields a reader should see: canonical from the record,
+ * variant from `ProcessingState` wherever processing has superseded it.
+ *
+ * The three fields have to move together. Peaks are rendered ACROSS a duration
+ * and a duration describes a specific set of bytes, so serving a processed URL
+ * beside the original duration puts a scrubber out of alignment with the audio
+ * under it — the failure this function exists to prevent.
+ *
+ * Resolution is not a uniform `??` per field, because the state's fields do not
+ * all mean the same thing when absent:
+ *
+ *  - `processedDurationMs` absent is DEFINED as "the variant's duration equals
+ *    the original" (denoise transcodes without retiming), so falling back to
+ *    the record there is correct, not a guess.
+ *  - `waveformPeaks` carries no such guarantee. Recompute marks the stage
+ *    `pending` without clearing the field, so between a variant change and the
+ *    recomputed peaks landing it holds peaks for the SUPERSEDED variant. Hence
+ *    the status gate rather than a presence check.
+ *
+ * Peaks do not key off `processedBlobCid`: `waveform` always runs over the
+ * final variant, so when it is `ready` its peaks describe whatever playback
+ * resolves to here, variant or original alike.
+ */
+export function resolveAudioVariant(
+    canonical: CanonicalAudioFields,
+    state: ProcessingState | undefined,
+): CanonicalAudioFields {
+    if (!state) return canonical;
+
+    // Duration tracks the variant, so it moves only when the bytes do.
+    const hasVariant = state.processedBlobCid !== undefined;
+
+    // KNOWN GAP, inherited deliberately: `ready` does not prove the peaks match
+    // the current variant. When a variant changes and no runner is configured,
+    // the stage is left `ready` over a stale artifact on purpose (see the
+    // "stranded" branch in AudioProcessingService) and nothing on the state
+    // distinguishes that from a fresh result. Closing it needs the peaks to
+    // record which variant they describe, which is a state-schema change, not a
+    // read-time one. Until then a stranded deployment can serve stale peaks —
+    // the same exposure it already has for a stranded transcript.
+    const peaksAreCurrent = state.waveform === 'ready' && state.waveformPeaks !== undefined;
+
+    return {
+        blobCid: hasVariant ? state.processedBlobCid! : canonical.blobCid,
+        durationMs: hasVariant
+            ? (state.processedDurationMs ?? canonical.durationMs)
+            : canonical.durationMs,
+        waveform: peaksAreCurrent ? state.waveformPeaks : canonical.waveform,
+    };
+}

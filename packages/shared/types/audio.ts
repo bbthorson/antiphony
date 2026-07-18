@@ -92,10 +92,22 @@ export type TimedTranscript = z.infer<typeof TimedTranscriptSchema>;
  */
 export const AudioEmbedViewSchema = z.object({
     $type: z.literal('dev.antiphony.embed.audio#view'),
+    /**
+     * `url`, `durationMs` and `waveform` are RESOLVED, not copied: once
+     * processing has produced an audio variant they describe that variant
+     * rather than the bytes the client uploaded. They always agree with one
+     * another — a duration and a set of peaks are only meaningful against the
+     * audio `url` actually points at.
+     *
+     * A client that stored `durationMs` at upload time should therefore expect
+     * it to change (trim removes leading/trailing silence), and should render
+     * these three as a set rather than caching them independently. The record's
+     * originals are immutable and unaffected; this is a read-time resolution.
+     */
     url: z.string().url(),
     durationMs: z.number().int().min(0).optional(),
-    // `alt`/`waveform` are copied from the stored embed; keep the same bounds
-    // so a view can never carry a larger payload than the record allows.
+    // `alt` is copied from the stored embed; keep the same bounds so a view can
+    // never carry a larger payload than the record allows.
     alt: z.string().max(10000).optional(),
     waveform: z.array(z.number().int().min(0).max(100)).max(1000).optional(),
     /** Lifted from the transcript enrichment record; absent until transcription completes. */
@@ -106,8 +118,8 @@ export const AudioEmbedViewSchema = z.object({
      * `pending` stage means the client should poll (or re-render) for the
      * result — including a stage that returns to `pending` after having been
      * `ready`, which is how a recompute surfaces. Once a byte-mutating stage
-     * completes, `url` above already resolves to the processed audio variant.
-     * See `types/processing.ts`.
+     * completes, `url`/`durationMs`/`waveform` above already resolve to the
+     * processed audio variant. See `types/processing.ts`.
      */
     processing: ProcessingViewSchema.optional(),
 });

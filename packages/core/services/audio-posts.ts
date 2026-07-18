@@ -9,7 +9,11 @@ import {
     type ViewerState,
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
-import { toProcessingView, type ResolvedProcessing } from 'shared/types/processing';
+import {
+    toProcessingView,
+    resolveAudioVariant,
+    type ResolvedProcessing,
+} from 'shared/types/processing';
 import { ForbiddenError, NotFoundError, ValidationError } from 'shared/errors';
 import type {
     AudioPostDependencies,
@@ -420,18 +424,27 @@ export class AudioPostService {
         const embedRecord = record.embed;
         let embed: AudioEmbedView | undefined;
         if (embedRecord?.audio?.ref?.$link) {
-            // Playback resolves to the PROCESSED variant once one exists; the
-            // record's own `audio.ref.$link` stays the immutable original CID.
+            // Playback, duration and peaks resolve TOGETHER against the
+            // processed variant once one exists; the record's own fields stay
+            // the immutable originals. Resolving them separately here is what
+            // used to leave a processed URL beside the original duration.
             const proc = record.processing;
-            const playbackCid = proc?.processedBlobCid ?? embedRecord.audio.ref.$link;
-            const signedUrl = await this.deps.signAudioUrl(record.originAppId, playbackCid);
+            const resolved = resolveAudioVariant(
+                {
+                    blobCid: embedRecord.audio.ref.$link,
+                    durationMs: embedRecord.durationMs,
+                    waveform: embedRecord.waveform,
+                },
+                proc,
+            );
+            const signedUrl = await this.deps.signAudioUrl(record.originAppId, resolved.blobCid);
             if (signedUrl) {
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
                     url: signedUrl,
-                    durationMs: embedRecord.durationMs,
+                    durationMs: resolved.durationMs,
                     alt: embedRecord.alt,
-                    waveform: embedRecord.waveform,
+                    waveform: resolved.waveform,
                     transcript: transcriptMap.get(uri)?.transcript,
                     // Surface per-stage processing status (no internal fields)
                     // when the app opted in; absent otherwise.
