@@ -26,15 +26,22 @@ function mockResponse(body: Uint8Array, contentType: string | null, status = 200
 }
 
 const fetchMock = vi.fn();
+let savedKey: string | undefined;
 
 beforeEach(() => {
+    savedKey = process.env.ELEVENLABS_API_KEY;
     process.env.ELEVENLABS_API_KEY = 'test-key';
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
 });
 
 afterEach(() => {
-    delete process.env.ELEVENLABS_API_KEY;
+    // Restore, don't delete. Deleting would clear a developer's real key for
+    // every test that runs after this file in the same process, silently
+    // changing how those tests resolve providers — the same class of env
+    // pollution this suite's sibling files already guard against.
+    if (savedKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = savedKey;
     vi.unstubAllGlobals();
 });
 
