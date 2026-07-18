@@ -1,5 +1,5 @@
 import type { AudioPostRecord } from 'shared/types/audio';
-import { PROCESSING_STAGES, type ProcessingStageMap } from 'shared/types/processing';
+import { BYTE_MUTATING_STAGES, PROCESSING_STAGES, type ProcessingStageMap } from 'shared/types/processing';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
@@ -45,13 +45,32 @@ export class AudioProcessingService {
             return;
         }
 
-        // Source audio to work from. If a byte-mutating stage already completed
-        // on a prior run (idempotent retry with transcribe still pending),
-        // start from the processed variant — otherwise transcription would
-        // fall back to the noisy original.
-        const sourceCid = post.processing.processedBlobCid ?? audioCid;
+        // Source audio to work from.
+        //
+        // If a byte-mutating stage is pending, it is about to (re)run, and the
+        // variant it would read is its OWN prior output — denoising already
+        // denoised audio compounds artifacts and bills a second time. Byte-
+        // mutating stages compose from the original, so a re-run restarts
+        // there and rebuilds the variant.
+        //
+        // Otherwise start from the processed variant when one exists: the
+        // idempotent-retry case (denoise settled last pass, transcribe still
+        // pending) must not fall back to the noisy original.
+        const rerunningByteMutating = BYTE_MUTATING_STAGES.some(
+            (stage) => post.processing?.[stage] === 'pending',
+        );
+        const sourceCid = !rerunningByteMutating && post.processing.processedBlobCid
+            ? post.processing.processedBlobCid
+            : audioCid;
         const sourceBytes = await this.deps.readBlobBytes(originAppId, sourceCid);
-        const sourceMime = post.embed?.audio?.mimeType ?? 'application/octet-stream';
+        // The mime type must describe the bytes actually read. A provider may
+        // transcode (ElevenLabs Voice Isolator returns MP3 whatever it is
+        // given), so the variant's type is recorded on the state rather than
+        // assumed to match the original embed.
+        const originalMime = post.embed?.audio?.mimeType ?? 'application/octet-stream';
+        const sourceMime = sourceCid === post.processing.processedBlobCid
+            ? post.processing.processedMimeType ?? originalMime
+            : originalMime;
         // Audio the transcriber reads — reassigned to the cleaned variant if
         // denoise runs in THIS pass, so transcription always uses the best audio.
         let working: { bytes: Uint8Array; mimeType: string } | null = sourceBytes
@@ -79,6 +98,10 @@ export class AudioProcessingService {
                     await this.deps.patchProcessingState(originAppId, postId, {
                         denoise: 'ready',
                         processedBlobCid,
+                        // Recorded because providers transcode: without it a
+                        // later pass would read these bytes under the ORIGINAL
+                        // embed's mime type.
+                        processedMimeType: cleaned.mimeType,
                     });
                 } catch {
                     await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });

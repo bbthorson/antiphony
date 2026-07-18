@@ -99,8 +99,9 @@ export type ProcessingStageMap = z.infer<typeof ProcessingStageMapSchema>;
  * counterparts live inside the record CID and cannot be updated:
  *
  *  - `processedBlobCid` ↔ `embed.audio.ref.$link`
+ *  - `processedMimeType` ↔ `embed.audio.mimeType` (providers may transcode)
  *  - `processedDurationMs` ↔ `embed.durationMs` (trim changes duration)
- *  - `waveform` ↔ `embed.waveform` (the client's peaks describe the original)
+ *  - `waveformPeaks` ↔ `embed.waveform` (the client's peaks describe the original)
  */
 export const ProcessingStateSchema = ProcessingStageMapSchema.extend({
     /**
@@ -110,6 +111,14 @@ export const ProcessingStateSchema = ProcessingStageMapSchema.extend({
      * address); only the read-time view swaps playback to this variant.
      */
     processedBlobCid: z.string().optional(),
+    /**
+     * MIME type of the processed variant. Present because providers may
+     * TRANSCODE — the ElevenLabs Voice Isolator returns MP3 regardless of what
+     * it is given — so the variant's type cannot be assumed to match
+     * `embed.audio.mimeType`. Anything reading the variant's bytes must use
+     * this, not the embed's.
+     */
+    processedMimeType: z.string().optional(),
     /**
      * Duration of the processed variant, when a byte-mutating stage changed it
      * (i.e. trim). Absent when the variant's duration matches the original.
@@ -133,12 +142,17 @@ export type ProcessingState = z.infer<typeof ProcessingStateSchema>;
 export const ProcessingViewSchema = ProcessingStageMapSchema;
 export type ProcessingView = z.infer<typeof ProcessingViewSchema>;
 
-/** Project the stored state onto the view — drops every internal field. */
+/**
+ * Project the stored state onto the view — drops every internal field.
+ *
+ * Derived from `PROCESSING_STAGES` rather than listing the stages by hand, so
+ * a stage added to the set cannot be silently omitted from the view (which
+ * would leave clients unable to tell "not requested" from "in progress").
+ */
 export function toProcessingView(state: ProcessingState): ProcessingView {
-    return {
-        transcribe: state.transcribe,
-        denoise: state.denoise,
-        trim: state.trim,
-        waveform: state.waveform,
-    };
+    const view: ProcessingView = {};
+    for (const stage of PROCESSING_STAGES) {
+        if (state[stage] !== undefined) view[stage] = state[stage];
+    }
+    return view;
 }
