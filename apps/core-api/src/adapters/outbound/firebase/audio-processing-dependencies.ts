@@ -65,11 +65,14 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
 
     async patchProcessingState(_originAppId, postId, patch) {
         // Dotted field paths update just these leaves of the `processing` map,
-        // leaving sibling stages untouched.
+        // leaving sibling stages untouched. Driven off the patch's own keys
+        // rather than a hand-maintained allowlist: an allowlist that falls
+        // behind the schema drops writes SILENTLY, which for a stage's output
+        // means the state says `ready` while the artifact went nowhere.
         const update: Record<string, unknown> = { 'processing.updatedAt': now() };
-        if (patch.transcribe !== undefined) update['processing.transcribe'] = patch.transcribe;
-        if (patch.denoise !== undefined) update['processing.denoise'] = patch.denoise;
-        if (patch.denoisedBlobCid !== undefined) update['processing.denoisedBlobCid'] = patch.denoisedBlobCid;
+        for (const [key, value] of Object.entries(patch)) {
+            if (value !== undefined) update[`processing.${key}`] = value;
+        }
         await postsCollection().doc(postId).update(update);
     },
 

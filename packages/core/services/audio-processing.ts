@@ -1,4 +1,5 @@
 import type { AudioPostRecord } from 'shared/types/audio';
+import { PROCESSING_STAGES, type ProcessingStageMap } from 'shared/types/processing';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
@@ -44,14 +45,11 @@ export class AudioProcessingService {
             return;
         }
 
-        // Source audio to work from. If denoise already completed on a prior
-        // run (idempotent retry with transcribe still pending), start from the
-        // cleaned variant — otherwise transcription would fall back to the
-        // noisy original.
-        const sourceCid =
-            post.processing.denoise === 'ready' && post.processing.denoisedBlobCid
-                ? post.processing.denoisedBlobCid
-                : audioCid;
+        // Source audio to work from. If a byte-mutating stage already completed
+        // on a prior run (idempotent retry with transcribe still pending),
+        // start from the processed variant — otherwise transcription would
+        // fall back to the noisy original.
+        const sourceCid = post.processing.processedBlobCid ?? audioCid;
         const sourceBytes = await this.deps.readBlobBytes(originAppId, sourceCid);
         const sourceMime = post.embed?.audio?.mimeType ?? 'application/octet-stream';
         // Audio the transcriber reads — reassigned to the cleaned variant if
@@ -72,7 +70,7 @@ export class AudioProcessingService {
                         bytes: working.bytes,
                         mimeType: working.mimeType,
                     });
-                    const denoisedBlobCid = await this.deps.writeDerivedBlob(
+                    const processedBlobCid = await this.deps.writeDerivedBlob(
                         originAppId,
                         cleaned.bytes,
                         cleaned.mimeType,
@@ -80,7 +78,7 @@ export class AudioProcessingService {
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     await this.deps.patchProcessingState(originAppId, postId, {
                         denoise: 'ready',
-                        denoisedBlobCid,
+                        processedBlobCid,
                     });
                 } catch {
                     await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
@@ -124,10 +122,15 @@ export class AudioProcessingService {
         postId: string,
         post: AudioPostRecord,
     ): Promise<void> {
-        const patch: { transcribe?: 'skipped'; denoise?: 'skipped' } = {};
-        if (post.processing?.transcribe === 'pending') patch.transcribe = 'skipped';
-        if (post.processing?.denoise === 'pending') patch.denoise = 'skipped';
-        if (patch.transcribe || patch.denoise) {
+        const state = post.processing;
+        if (!state) return;
+        // Every stage, not just the implemented ones — a stage this deployment
+        // cannot run must still settle rather than sit `pending` forever.
+        const patch: ProcessingStageMap = {};
+        for (const stage of PROCESSING_STAGES) {
+            if (state[stage] === 'pending') patch[stage] = 'skipped';
+        }
+        if (Object.keys(patch).length > 0) {
             await this.deps.patchProcessingState(originAppId, postId, patch);
         }
     }

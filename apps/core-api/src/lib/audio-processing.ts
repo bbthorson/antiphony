@@ -1,5 +1,10 @@
 import { AudioProcessingService, type ProcessingProviders } from '@antiphony/core/services/audio-processing';
-import type { ProcessingRequest, ProcessingStageStatus } from 'shared/types/processing';
+import {
+    PROCESSING_STAGES,
+    type ProcessingRequest,
+    type ProcessingStage,
+    type ProcessingStageMap,
+} from 'shared/types/processing';
 import { firebaseAudioProcessingDependencies } from '../adapters/outbound/firebase/audio-processing-dependencies.js';
 import { stubTranscriber, stubDenoiser } from '../adapters/outbound/firebase/processing-providers.js';
 import { logger } from './logger.js';
@@ -17,23 +22,30 @@ import { logger } from './logger.js';
  *     requested stages settle as `skipped`.
  */
 
-export interface ProcessingCapabilities {
-    transcribe: boolean;
-    denoise: boolean;
-}
+/** Which stages this deployment can actually perform right now. */
+export type ProcessingCapabilities = Record<ProcessingStage, boolean>;
 
 function resolveProviders(): ProcessingProviders {
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
         return { transcriber: stubTranscriber, denoiser: stubDenoiser };
     }
-    // Real providers (Gemini / ElevenLabs) slot in here in a later PR.
+    // Real ElevenLabs providers slot in here in steps 2-3.
     return {};
 }
 
-/** Which stages this deployment can actually perform right now. */
+/**
+ * Which stages this deployment can actually perform right now. `trim` and
+ * `waveform` have no port yet (steps 5-6), so they are always false — a
+ * request for them resolves to `skipped`, never a stage that hangs `pending`.
+ */
 export function processingCapabilities(): ProcessingCapabilities {
     const p = resolveProviders();
-    return { transcribe: !!p.transcriber, denoise: !!p.denoiser };
+    return {
+        transcribe: !!p.transcriber,
+        denoise: !!p.denoiser,
+        trim: false,
+        waveform: false,
+    };
 }
 
 /**
@@ -43,20 +55,19 @@ export function processingCapabilities(): ProcessingCapabilities {
  */
 export function resolveInitialProcessing(
     request: ProcessingRequest | undefined,
-): { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus } | undefined {
-    if (!request || (!request.transcribe && !request.denoise)) return undefined;
+): ProcessingStageMap | undefined {
+    if (!request || !PROCESSING_STAGES.some((stage) => request[stage])) return undefined;
     const caps = processingCapabilities();
-    const state: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus } = {};
-    if (request.transcribe) state.transcribe = caps.transcribe ? 'pending' : 'skipped';
-    if (request.denoise) state.denoise = caps.denoise ? 'pending' : 'skipped';
+    const state: ProcessingStageMap = {};
+    for (const stage of PROCESSING_STAGES) {
+        if (request[stage]) state[stage] = caps[stage] ? 'pending' : 'skipped';
+    }
     return state;
 }
 
 /** True when at least one stage still needs work (i.e. dispatch is worthwhile). */
-export function hasPendingStage(
-    state: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus } | undefined,
-): boolean {
-    return !!state && (state.transcribe === 'pending' || state.denoise === 'pending');
+export function hasPendingStage(state: ProcessingStageMap | undefined): boolean {
+    return !!state && PROCESSING_STAGES.some((stage) => state[stage] === 'pending');
 }
 
 /**

@@ -101,11 +101,13 @@ export const AudioEmbedViewSchema = z.object({
     /** Lifted from the transcript enrichment record; absent until transcription completes. */
     transcript: TimedTranscriptSchema.optional(),
     /**
-     * Per-stage audio-processing status (transcribe / denoise), when the app
-     * opted into processing on create. Absent otherwise. A `pending` stage
-     * means the client should poll (or re-render) for the result. When
-     * `denoise === 'ready'`, `url` above already resolves to the cleaned
-     * audio variant. See `types/processing.ts`.
+     * Per-stage audio-processing status (denoise / trim / transcribe /
+     * waveform), when the app opted into processing. Absent otherwise. A
+     * `pending` stage means the client should poll (or re-render) for the
+     * result — including a stage that returns to `pending` after having been
+     * `ready`, which is how a recompute surfaces. Once a byte-mutating stage
+     * completes, `url` above already resolves to the processed audio variant.
+     * See `types/processing.ts`.
      */
     processing: ProcessingViewSchema.optional(),
 });

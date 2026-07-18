@@ -9,7 +9,7 @@ import {
     type ViewerState,
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
-import type { ProcessingStageStatus } from 'shared/types/processing';
+import { toProcessingView, type ProcessingStageMap } from 'shared/types/processing';
 import { ForbiddenError, NotFoundError, ValidationError } from 'shared/errors';
 import type {
     AudioPostDependencies,
@@ -58,7 +58,7 @@ export interface CreateAudioPostInput {
      * deployment's capabilities into `pending`/`skipped`; the service just
      * stamps `updatedAt` and stores it. Absent ⇒ no processing.
      */
-    processing?: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus };
+    processing?: ProcessingStageMap;
 }
 
 /**
@@ -244,7 +244,7 @@ export class AudioPostService {
         originAppId: string,
         id: string,
         actorUid: string,
-        resolved: { transcribe?: ProcessingStageStatus; denoise?: ProcessingStageStatus },
+        resolved: ProcessingStageMap,
     ): Promise<AudioPostRecord> {
         const record = await this.deps.getPostById(originAppId, id);
         if (!record) {
@@ -420,13 +420,10 @@ export class AudioPostService {
         const embedRecord = record.embed;
         let embed: AudioEmbedView | undefined;
         if (embedRecord?.audio?.ref?.$link) {
-            // Playback resolves to the DENOISED variant once it's ready; the
+            // Playback resolves to the PROCESSED variant once one exists; the
             // record's own `audio.ref.$link` stays the immutable original CID.
             const proc = record.processing;
-            const playbackCid =
-                proc?.denoise === 'ready' && proc.denoisedBlobCid
-                    ? proc.denoisedBlobCid
-                    : embedRecord.audio.ref.$link;
+            const playbackCid = proc?.processedBlobCid ?? embedRecord.audio.ref.$link;
             const signedUrl = await this.deps.signAudioUrl(record.originAppId, playbackCid);
             if (signedUrl) {
                 embed = {
@@ -438,9 +435,7 @@ export class AudioPostService {
                     transcript: transcriptMap.get(uri)?.transcript,
                     // Surface per-stage processing status (no internal fields)
                     // when the app opted in; absent otherwise.
-                    processing: proc
-                        ? { transcribe: proc.transcribe, denoise: proc.denoise }
-                        : undefined,
+                    processing: proc ? toProcessingView(proc) : undefined,
                 };
             }
         }

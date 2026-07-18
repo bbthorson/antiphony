@@ -22,9 +22,11 @@ export const CreateAudioPostRequestSchema = z.object({
   /** Author self-label values (content warnings). */
   selfLabels: z.array(z.string()).optional(),
   /**
-   * Opt-in audio processing for this post's audio (transcribe / denoise).
-   * Both default off. Stages the deployment can't provide come back marked
-   * `skipped` on the view rather than failing the create. See
+   * Opt-in audio processing for this post's audio (denoise / trim /
+   * transcribe / waveform). All default off. Stages the deployment can't
+   * provide come back marked `skipped` on the view rather than failing the
+   * create. A multi-stage request runs denoise → trim → (transcribe,
+   * waveform); request stages individually to override that order. See
    * `types/processing.ts`.
    */
   processing: ProcessingRequestSchema.optional(),

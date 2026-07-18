@@ -98,7 +98,7 @@ describe('AudioProcessingService.process', () => {
         await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
         expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
-        expect(patches).toContainEqual({ denoise: 'ready', denoisedBlobCid: CLEANED_CID });
+        expect(patches).toContainEqual({ denoise: 'ready', processedBlobCid: CLEANED_CID });
     });
 
     it('runs denoise before transcribe, and transcribes the CLEANED audio', async () => {
@@ -114,7 +114,7 @@ describe('AudioProcessingService.process', () => {
     it('transcribes the cleaned audio when denoise already completed on a prior run', async () => {
         // Idempotent retry: denoise settled last time, transcribe still pending.
         const post = makePost({
-            processing: { transcribe: 'pending', denoise: 'ready', denoisedBlobCid: CLEANED_CID, updatedAt: new Date() },
+            processing: { transcribe: 'pending', denoise: 'ready', processedBlobCid: CLEANED_CID, updatedAt: new Date() },
         });
         const { deps, patches, saved } = makeDeps(post, {
             readBlobBytes: vi.fn(async (_app, cid) =>
@@ -138,6 +138,43 @@ describe('AudioProcessingService.process', () => {
         expect(patches).toContainEqual({ transcribe: 'skipped' });
         expect(patches).toContainEqual({ denoise: 'skipped' });
         expect(saved).toEqual([]);
+    });
+
+    it('settles every pending stage as skipped when the post has no audio', async () => {
+        // Includes the not-yet-implemented stages: a stage with no runner must
+        // still settle rather than sit `pending` forever and look like work in
+        // flight to a polling client.
+        const post = makePost({
+            embed: undefined,
+            processing: {
+                transcribe: 'pending',
+                denoise: 'pending',
+                trim: 'pending',
+                waveform: 'pending',
+                updatedAt: new Date(),
+            },
+        });
+        const { deps, patches } = makeDeps(post);
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        expect(patches).toContainEqual({
+            transcribe: 'skipped',
+            denoise: 'skipped',
+            trim: 'skipped',
+            waveform: 'skipped',
+        });
+    });
+
+    it('leaves already-settled stages alone when the post has no audio', async () => {
+        const post = makePost({
+            embed: undefined,
+            processing: { transcribe: 'pending', denoise: 'ready', updatedAt: new Date() },
+        });
+        const { deps, patches } = makeDeps(post);
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        // Only the pending stage is touched — `denoise: 'ready'` is not clobbered.
+        expect(patches).toEqual([{ transcribe: 'skipped' }]);
     });
 
     it('marks a stage failed when its provider throws, without blocking the other stage', async () => {

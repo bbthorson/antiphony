@@ -357,7 +357,7 @@ const patchRoute = createRoute({
     tags: ['Posts'],
     summary: 'Trigger audio enrichment on a post',
     description:
-        '(Re)runs async audio processing (transcribe / denoise) on an existing post. The body accepts ' +
+        '(Re)runs async audio processing (denoise / trim / transcribe / waveform) on an existing post. The body accepts ' +
         '**only** a `processing` opt-in — no lexicon fields are editable, because those feed the record ' +
         'CID (its content identity); processing state is storage-layer, so this changes no CID. ' +
         'Author-only: the acting viewer must be the post author. Returns the re-hydrated `AudioPostView`.',
