@@ -75,6 +75,16 @@ export const ProcessingRequestSchema = z.object({
     denoise: z.boolean().optional(),
     trim: z.boolean().optional(),
     waveform: z.boolean().optional(),
+    /**
+     * Whether a completed byte-mutating stage should invalidate and recompute
+     * the derived artifacts that describe the old audio. Defaults to **true**
+     * — a transcript of superseded audio is wrong, not merely stale.
+     *
+     * `false` opts out, for an app that would rather keep the existing
+     * transcript than pay to regenerate it. It does NOT name a stage, so a
+     * request carrying only `reprocess` requests no work.
+     */
+    reprocess: z.boolean().optional(),
 });
 export type ProcessingRequest = z.infer<typeof ProcessingRequestSchema>;
 
@@ -92,6 +102,20 @@ export const ProcessingStageMapSchema = z.object({
 export type ProcessingStageMap = z.infer<typeof ProcessingStageMapSchema>;
 
 /**
+ * An opt-in request resolved against a deployment's capabilities: the initial
+ * per-stage state plus the settings the async worker needs to honour it.
+ *
+ * `reprocess` is carried here — and persisted — rather than passed to the
+ * worker as an argument, because the request that asks for the work and the
+ * pass that performs it are separated by a queue (step 8). Stored only when
+ * explicitly `false`; absent means the default, true.
+ */
+export const ResolvedProcessingSchema = ProcessingStageMapSchema.extend({
+    reprocess: z.boolean().optional(),
+});
+export type ResolvedProcessing = z.infer<typeof ResolvedProcessingSchema>;
+
+/**
  * Stored processing state on the post record (storage-layer; not in the CID):
  * the per-stage statuses plus the output of the stages themselves.
  *
@@ -103,7 +127,7 @@ export type ProcessingStageMap = z.infer<typeof ProcessingStageMapSchema>;
  *  - `processedDurationMs` ↔ `embed.durationMs` (trim changes duration)
  *  - `waveformPeaks` ↔ `embed.waveform` (the client's peaks describe the original)
  */
-export const ProcessingStateSchema = ProcessingStageMapSchema.extend({
+export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
     /**
      * Content CID of the processed audio variant — the composed output of every
      * byte-mutating stage that has completed. The record's own

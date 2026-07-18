@@ -4,6 +4,7 @@ import {
     type ProcessingRequest,
     type ProcessingStage,
     type ProcessingStageMap,
+    type ResolvedProcessing,
 } from 'shared/types/processing';
 import { firebaseAudioProcessingDependencies } from '../adapters/outbound/firebase/audio-processing-dependencies.js';
 import { stubTranscriber, stubDenoiser } from '../adapters/outbound/firebase/processing-providers.js';
@@ -55,13 +56,18 @@ export function processingCapabilities(): ProcessingCapabilities {
  */
 export function resolveInitialProcessing(
     request: ProcessingRequest | undefined,
-): ProcessingStageMap | undefined {
+): ResolvedProcessing | undefined {
     if (!request || !PROCESSING_STAGES.some((stage) => request[stage])) return undefined;
     const caps = processingCapabilities();
-    const state: ProcessingStageMap = {};
+    const state: ResolvedProcessing = {};
     for (const stage of PROCESSING_STAGES) {
         if (request[stage]) state[stage] = caps[stage] ? 'pending' : 'skipped';
     }
+    // Always written, including the default. `setProcessing` MERGES onto the
+    // stored state, so omitting it would let an earlier request's `false`
+    // silently govern a later request that never asked to opt out. Absent
+    // remains true for posts written before this field existed.
+    state.reprocess = request.reprocess !== false;
     return state;
 }
 

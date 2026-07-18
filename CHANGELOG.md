@@ -8,6 +8,29 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.2] — 2026-07-18
+
+Derived artifacts now follow the audio they describe. **Additive only** — the
+new field is optional, and the behaviour it governs is on by default because
+the alternative is serving a transcript of audio nobody can hear.
+
+### Added
+
+- **`reprocess`** on the processing opt-in (`POST /api/v1/posts`,
+  `PATCH /api/v1/posts/{postId}`). Optional, **defaults to `true`**. When a
+  byte-mutating stage (`denoise`, later `trim`) completes, every derived
+  artifact that already exists — the transcript, later the waveform peaks —
+  describes superseded audio, so it is marked `pending` again and recomputed
+  against the new variant in the same pass. Send `reprocess: false` to keep
+  the existing artifact instead and not pay to regenerate it.
+
+### Changed
+
+- A stage returning to `pending` after having been `ready` is now reachable in
+  practice. This was already documented as normal rather than a regression;
+  clients that treat any `pending` stage as "still working" need no change.
+  Recompute cannot cascade — no byte-mutating stage reads a derived artifact.
+
 ## [0.3.1] — 2026-07-18
 
 Groundwork for the [enrichment pipeline](./specs/enrichment-pipeline.md): the

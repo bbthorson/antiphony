@@ -9,7 +9,7 @@ import {
     type ViewerState,
 } from 'shared/types/audio';
 import { EMBED_NSID } from 'shared/nsid';
-import { toProcessingView, type ProcessingStageMap } from 'shared/types/processing';
+import { toProcessingView, type ResolvedProcessing } from 'shared/types/processing';
 import { ForbiddenError, NotFoundError, ValidationError } from 'shared/errors';
 import type {
     AudioPostDependencies,
@@ -58,7 +58,7 @@ export interface CreateAudioPostInput {
      * deployment's capabilities into `pending`/`skipped`; the service just
      * stamps `updatedAt` and stores it. Absent ⇒ no processing.
      */
-    processing?: ProcessingStageMap;
+    processing?: ResolvedProcessing;
 }
 
 /**
@@ -244,7 +244,7 @@ export class AudioPostService {
         originAppId: string,
         id: string,
         actorUid: string,
-        resolved: ProcessingStageMap,
+        resolved: ResolvedProcessing,
     ): Promise<AudioPostRecord> {
         const record = await this.deps.getPostById(originAppId, id);
         if (!record) {
