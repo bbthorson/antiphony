@@ -8,7 +8,7 @@
  */
 export const OPENAPI_INFO = {
     title: 'Antiphony Core API',
-    version: '0.3.0',
+    version: '0.3.1',
     description: [
         'Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.',
         '',

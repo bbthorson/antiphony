@@ -8,6 +8,39 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-07-18
+
+Groundwork for the [enrichment pipeline](./specs/enrichment-pipeline.md): the
+processing state model widens from two stages to four. **Additive only** — no
+stage runner is wired yet, so `trim` and `waveform` resolve to `skipped` on
+every deployment until later steps land.
+
+### Added
+
+- **Two new processing stages** on the opt-in request (`POST /api/v1/posts`,
+  `PATCH /api/v1/posts/{postId}`) and the per-stage status on the post view:
+  **`trim`** (byte-mutating — strips leading/trailing silence) and
+  **`waveform`** (derived — computes peaks over the processed audio). Both are
+  optional and default off, like the existing two.
+- A multi-stage request now documents its running order:
+  **denoise → trim → (transcribe, waveform)**. Byte-mutating stages compose
+  into a single processed variant before the derived stages read it. Request
+  stages individually to override.
+
+### Changed
+
+- **`@antiphony/shared` → 0.5.0** (package axis, not the contract): the stored
+  `ProcessingState.denoisedBlobCid` is renamed **`processedBlobCid`** — one
+  variant CID for the composed output of every byte-mutating stage, rather
+  than a denoise-specific field. Breaking for type consumers reading that
+  field; **not** a contract change, as it is storage-layer and never appeared
+  on the view. Adds `processedDurationMs` and `waveformPeaks` alongside it, for
+  variant values whose record-side counterparts (`embed.durationMs`,
+  `embed.waveform`) sit inside the immutable record CID.
+- Post-view playback now resolves to the processed variant whenever one exists,
+  rather than specifically when `denoise === 'ready'`. Same behavior today;
+  correct once a second byte-mutating stage can produce the variant.
+
 ## [0.3.0] — 2026-07-11
 
 The **legacy-cruft sweep**: finishes what the 0.2.0 core-surface trim started

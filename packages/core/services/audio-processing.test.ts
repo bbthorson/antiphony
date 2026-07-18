@@ -98,7 +98,9 @@ describe('AudioProcessingService.process', () => {
         await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
         expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
-        expect(patches).toContainEqual({ denoise: 'ready', denoisedBlobCid: CLEANED_CID });
+        expect(patches).toContainEqual(
+            expect.objectContaining({ denoise: 'ready', processedBlobCid: CLEANED_CID }),
+        );
     });
 
     it('runs denoise before transcribe, and transcribes the CLEANED audio', async () => {
@@ -114,7 +116,7 @@ describe('AudioProcessingService.process', () => {
     it('transcribes the cleaned audio when denoise already completed on a prior run', async () => {
         // Idempotent retry: denoise settled last time, transcribe still pending.
         const post = makePost({
-            processing: { transcribe: 'pending', denoise: 'ready', denoisedBlobCid: CLEANED_CID, updatedAt: new Date() },
+            processing: { transcribe: 'pending', denoise: 'ready', processedBlobCid: CLEANED_CID, updatedAt: new Date() },
         });
         const { deps, patches, saved } = makeDeps(post, {
             readBlobBytes: vi.fn(async (_app, cid) =>
@@ -131,6 +133,62 @@ describe('AudioProcessingService.process', () => {
         expect(patches).toContainEqual({ transcribe: 'ready' });
     });
 
+    it('re-denoises from the ORIGINAL audio, not the existing variant', async () => {
+        // Regression: a re-requested denoise (stage back to `pending` while a
+        // variant from the prior run persists) must not feed already-denoised
+        // audio back through the denoiser — that compounds artifacts and bills
+        // a second time. Byte-mutating stages compose from the original.
+        const post = makePost({
+            processing: { denoise: 'pending', processedBlobCid: CLEANED_CID, updatedAt: new Date() },
+        });
+        const { deps } = makeDeps(post, {
+            readBlobBytes: vi.fn(async (_app, cid) =>
+                cid === CLEANED_CID ? new Uint8Array([9, 9]) : new Uint8Array([1, 2, 3]),
+            ),
+        });
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        expect(deps.readBlobBytes).toHaveBeenCalledWith('vox-pop', AUDIO_CID);
+        const call = vi.mocked(p.denoiser!.denoise).mock.calls[0]![0];
+        expect(Array.from(call.bytes)).toEqual([1, 2, 3]);
+    });
+
+    it('records the variant mime type, and reads the variant back under it', async () => {
+        // Providers transcode (Voice Isolator returns MP3 whatever it is
+        // given), so a later pass reading the variant must not label it with
+        // the original embed's type.
+        const post = makePost({ processing: { denoise: 'pending', updatedAt: new Date() } });
+        const transcoding = providers({
+            denoiser: { denoise: vi.fn(async () => ({ bytes: new Uint8Array([9, 9]), mimeType: 'audio/mpeg' })) },
+        });
+        const { deps, patches } = makeDeps(post);
+        await new AudioProcessingService(deps, transcoding).process('vox-pop', 'p1');
+
+        expect(patches).toContainEqual(
+            expect.objectContaining({ denoise: 'ready', processedMimeType: 'audio/mpeg' }),
+        );
+    });
+
+    it('transcribes the variant under the variant mime type', async () => {
+        const post = makePost({
+            processing: {
+                transcribe: 'pending',
+                denoise: 'ready',
+                processedBlobCid: CLEANED_CID,
+                processedMimeType: 'audio/mpeg',
+                updatedAt: new Date(),
+            },
+        });
+        const { deps } = makeDeps(post, {
+            readBlobBytes: vi.fn(async () => new Uint8Array([9, 9])),
+        });
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        // NOT the original embed's audio/webm.
+        const call = vi.mocked(p.transcriber!.transcribe).mock.calls[0]![0];
+        expect(call.mimeType).toBe('audio/mpeg');
+    });
+
     it('marks a requested stage skipped when its provider is absent', async () => {
         const post = makePost({ processing: { transcribe: 'pending', denoise: 'pending', updatedAt: new Date() } });
         const { deps, patches, saved } = makeDeps(post);
@@ -138,6 +196,43 @@ describe('AudioProcessingService.process', () => {
         expect(patches).toContainEqual({ transcribe: 'skipped' });
         expect(patches).toContainEqual({ denoise: 'skipped' });
         expect(saved).toEqual([]);
+    });
+
+    it('settles every pending stage as skipped when the post has no audio', async () => {
+        // Includes the not-yet-implemented stages: a stage with no runner must
+        // still settle rather than sit `pending` forever and look like work in
+        // flight to a polling client.
+        const post = makePost({
+            embed: undefined,
+            processing: {
+                transcribe: 'pending',
+                denoise: 'pending',
+                trim: 'pending',
+                waveform: 'pending',
+                updatedAt: new Date(),
+            },
+        });
+        const { deps, patches } = makeDeps(post);
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        expect(patches).toContainEqual({
+            transcribe: 'skipped',
+            denoise: 'skipped',
+            trim: 'skipped',
+            waveform: 'skipped',
+        });
+    });
+
+    it('leaves already-settled stages alone when the post has no audio', async () => {
+        const post = makePost({
+            embed: undefined,
+            processing: { transcribe: 'pending', denoise: 'ready', updatedAt: new Date() },
+        });
+        const { deps, patches } = makeDeps(post);
+        await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+        // Only the pending stage is touched — `denoise: 'ready'` is not clobbered.
+        expect(patches).toEqual([{ transcribe: 'skipped' }]);
     });
 
     it('marks a stage failed when its provider throws, without blocking the other stage', async () => {

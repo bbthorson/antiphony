@@ -248,15 +248,15 @@ describe('hydrateAudioPosts', () => {
     });
 
     it('surfaces per-stage processing status on the embed view', async () => {
-        const rec = record({ processing: { transcribe: 'pending', denoise: 'ready', denoisedBlobCid: 'bafkreiclean', updatedAt: new Date() } });
+        const rec = record({ processing: { transcribe: 'pending', denoise: 'ready', processedBlobCid: 'bafkreiclean', updatedAt: new Date() } });
         const [view] = await svc.hydrateAudioPosts([rec], null);
         expect(view.embed?.processing).toEqual({ transcribe: 'pending', denoise: 'ready' });
-        // Internal storage fields (denoisedBlobCid, updatedAt) never leak to the view.
-        expect(view.embed?.processing).not.toHaveProperty('denoisedBlobCid');
+        // Internal storage fields (processedBlobCid, updatedAt) never leak to the view.
+        expect(view.embed?.processing).not.toHaveProperty('processedBlobCid');
     });
 
     it('resolves playback to the denoised variant once denoise is ready', async () => {
-        const rec = record({ processing: { denoise: 'ready', denoisedBlobCid: 'bafkreiclean', updatedAt: new Date() } });
+        const rec = record({ processing: { denoise: 'ready', processedBlobCid: 'bafkreiclean', updatedAt: new Date() } });
         const [view] = await svc.hydrateAudioPosts([rec], null);
         // Playback signs the DENOISED cid, not the original embed cid.
         expect(view.embed?.url).toBe('signed::vox-pop::bafkreiclean');

@@ -13,12 +13,24 @@ afterEach(() => {
 
 describe('processingCapabilities', () => {
     it('reports nothing available with no providers configured', () => {
-        expect(processingCapabilities()).toEqual({ transcribe: false, denoise: false });
+        expect(processingCapabilities()).toEqual({
+            transcribe: false,
+            denoise: false,
+            trim: false,
+            waveform: false,
+        });
     });
 
-    it('reports both available when the stub providers are wired', () => {
+    it('reports the provider-backed stages available when the stubs are wired', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(processingCapabilities()).toEqual({ transcribe: true, denoise: true });
+        // `trim`/`waveform` stay false — they have no port yet (plan steps 5-6),
+        // so requesting them resolves to `skipped` rather than hanging `pending`.
+        expect(processingCapabilities()).toEqual({
+            transcribe: true,
+            denoise: true,
+            trim: false,
+            waveform: false,
+        });
     });
 });
 
