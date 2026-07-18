@@ -335,8 +335,9 @@ app.openapi(createRouteDef, async (c) => {
         processing: initialProcessing,
     });
 
-    // Kick off processing for any stage that's actually pending. In inline
-    // mode this awaits; the durable Cloud Tasks trigger lands in a later PR.
+    // Kick off processing for any stage that's actually pending. Which
+    // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
+    // inline awaits the work, a queue adapter awaits only the enqueue.
     if (hasPendingStage(initialProcessing)) {
         await dispatchProcessing(originAppId, created.id);
     }
@@ -413,8 +414,9 @@ app.openapi(patchRoute, async (c) => {
     // the error handler). Content address is unchanged — processing is storage-layer.
     await audioPostService.setProcessing(originAppId, postId, uid, resolved);
 
-    // Kick off any stage that's actually pending. Inline mode awaits; the
-    // durable Cloud Tasks trigger lands in a later PR (same seam as create).
+    // Kick off any stage that's actually pending, through the same dispatch
+    // seam as create. The re-read below only sees results under the inline
+    // dispatcher; a queued one settles after this response.
     if (hasPendingStage(resolved)) {
         await dispatchProcessing(originAppId, postId);
     }
