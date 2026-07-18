@@ -9,12 +9,14 @@ import {
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
+import type { TrimmerPort } from '../ports/audio-trimmer';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { buildPostUri } from './audio-posts';
 
 export interface ProcessingProviders {
     transcriber?: TranscriberPort;
     denoiser?: DenoiserPort;
+    trimmer?: TrimmerPort;
 }
 
 /** Which stages a deployment can actually perform, given its wired providers. */
@@ -34,9 +36,9 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
     return {
         transcribe: !!providers.transcriber,
         denoise: !!providers.denoiser,
-        // Ports arrive in steps 5-6. Until then a request for either settles
-        // `skipped` rather than hanging `pending`.
-        trim: false,
+        trim: !!providers.trimmer,
+        // Port arrives in step 6. Until then a request settles `skipped`
+        // rather than hanging `pending`.
         waveform: false,
     };
 }
@@ -86,23 +88,81 @@ export class AudioProcessingService {
             return;
         }
 
-        // Source audio to work from.
+        // Byte-mutating stages form an ORDERED CHAIN (denoise → trim) that
+        // composes into one variant, so re-running any link decides both where
+        // to read from and which other links must re-run.
         //
-        // If a byte-mutating stage is pending, it is about to (re)run, and the
-        // variant it would read is its OWN prior output — denoising already
-        // denoised audio compounds artifacts and bills a second time. Byte-
-        // mutating stages compose from the original, so a re-run restarts
-        // there and rebuilds the variant.
-        //
-        // Otherwise start from the processed variant when one exists: the
-        // idempotent-retry case (denoise settled last pass, transcribe still
-        // pending) must not fall back to the noisy original.
-        const rerunningByteMutating = BYTE_MUTATING_STAGES.some(
-            (stage) => post.processing?.[stage] === 'pending',
+        // Find the earliest link that is pending. Everything from there on has
+        // to run: an earlier stage re-running changes the input to every later
+        // one, so a later stage sitting `ready` describes audio that no longer
+        // exists — the same argument as derived recompute below, applied within
+        // the chain instead of after it.
+        // Only links this deployment can actually RUN drive composition. A
+        // pending link with no runner cannot rebuild anything, so letting it
+        // set the restart point would reset the source to the original, settle
+        // itself `skipped`, and re-run the later links over raw audio —
+        // destroying a good variant and putting nothing in its place. It
+        // settles `skipped` below without taking part.
+        const firstPending = BYTE_MUTATING_STAGES.findIndex(
+            (stage) => post.processing?.[stage] === 'pending' && this.capabilities[stage],
         );
-        const sourceCid = !rerunningByteMutating && post.processing.processedBlobCid
+
+        // Re-running the chain's FIRST link rebuilds from the original: its own
+        // prior output is what the variant holds, and denoising already
+        // denoised audio compounds artifacts and bills a second time. Re-running
+        // a LATER link starts from the variant, which already holds every
+        // earlier link's output — reading the original there would silently
+        // discard them (a trim-only re-run would drop the denoise).
+        //
+        // No link pending at all is the idempotent-retry case (denoise settled
+        // last pass, transcribe still pending); it must not fall back to the
+        // noisy original either.
+        const sourceCid = firstPending !== 0 && post.processing.processedBlobCid
             ? post.processing.processedBlobCid
             : audioCid;
+
+        // Ready links after the first pending one are re-applied, not skipped.
+        // Only `pending` (requested) and `ready` (previously applied, and whose
+        // input just changed) qualify — a `skipped` or `failed` link stays that
+        // way rather than being silently activated by a neighbour's re-run.
+        const chainToRun: ProcessingStage[] =
+            firstPending === -1
+                ? []
+                : BYTE_MUTATING_STAGES.slice(firstPending).filter((stage) => {
+                      const status = post.processing?.[stage];
+                      return (
+                          (status === 'pending' || status === 'ready') && this.capabilities[stage]
+                      );
+                  });
+
+        // A pending link with no runner settles `skipped`: accurate, because
+        // nothing was ever produced for it. This is the one place that happens
+        // now, so the stage blocks below can assume their provider exists.
+        const unrunnable: ProcessingStageMap = {};
+        for (const stage of BYTE_MUTATING_STAGES) {
+            if (post.processing[stage] === 'pending' && !this.capabilities[stage]) {
+                unrunnable[stage] = 'skipped';
+            }
+        }
+        if (Object.keys(unrunnable).length > 0) {
+            await this.deps.patchProcessingState(originAppId, postId, unrunnable);
+        }
+
+        // A `ready` link the chain would re-apply but cannot run is left alone,
+        // never downgraded — the #42 rule, applied inside the chain. The
+        // variant is missing that link and the state still says `ready`, so
+        // like there, the log is the only record.
+        const strandedChain = firstPending === -1
+            ? []
+            : BYTE_MUTATING_STAGES.slice(firstPending).filter(
+                  (stage) => post.processing?.[stage] === 'ready' && !this.capabilities[stage],
+              );
+        if (strandedChain.length > 0) {
+            this.logger.warn(
+                { originAppId, postId, stages: strandedChain },
+                '[audio-processing] chain re-ran without a runner for a ready link; variant is missing it',
+            );
+        }
         const sourceBytes = await this.deps.readBlobBytes(originAppId, sourceCid);
         // The mime type must describe the bytes actually read. A provider may
         // transcode (ElevenLabs Voice Isolator returns MP3 whatever it is
@@ -122,15 +182,30 @@ export class AudioProcessingService {
         // which is what invalidates the derived artifacts below.
         let variantChanged = false;
 
+        // A `ready` link being re-applied is marked `pending` BEFORE it runs,
+        // for the same reason derived recompute is: if this pass dies partway,
+        // a retry must find outstanding work. Left `ready`, it would compute
+        // `firstPending === -1` on the retry and re-run nothing, stranding a
+        // variant that is missing that link forever.
+        const reapplied: ProcessingStageMap = {};
+        for (const stage of chainToRun) {
+            if (post.processing[stage] === 'ready') reapplied[stage] = 'pending';
+        }
+        if (Object.keys(reapplied).length > 0) {
+            await this.deps.patchProcessingState(originAppId, postId, reapplied);
+        }
+
         // --- Denoise (first, so transcription can use the cleaned audio) ---
-        if (post.processing.denoise === 'pending') {
-            if (!this.providers.denoiser) {
-                await this.deps.patchProcessingState(originAppId, postId, { denoise: 'skipped' });
-            } else if (!working) {
+        if (chainToRun.includes('denoise')) {
+            // Non-null: `chainToRun` is filtered by capability, and `denoise`
+            // capability IS the denoiser's presence. The no-runner case settled
+            // `skipped` above.
+            const denoiser = this.providers.denoiser!;
+            if (!working) {
                 await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
             } else {
                 try {
-                    const cleaned = await this.providers.denoiser.denoise({
+                    const cleaned = await denoiser.denoise({
                         bytes: working.bytes,
                         mimeType: working.mimeType,
                     });
@@ -151,6 +226,45 @@ export class AudioProcessingService {
                     });
                 } catch {
                     await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
+                }
+            }
+        }
+
+        // --- Trim (after denoise: silence detection needs the noise floor gone) ---
+        //
+        // Composes into the SAME processedBlobCid rather than adding a second
+        // variant: `working` already holds the denoised bytes when denoise ran
+        // in this pass, so trimming them chains the two byte-mutating stages
+        // into one artifact.
+        if (chainToRun.includes('trim')) {
+            // Non-null for the same reason as the denoiser above.
+            const trimmer = this.providers.trimmer!;
+            if (!working) {
+                await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
+            } else {
+                try {
+                    const trimmed = await trimmer.trim({
+                        bytes: working.bytes,
+                        mimeType: working.mimeType,
+                    });
+                    const processedBlobCid = await this.deps.writeDerivedBlob(
+                        originAppId,
+                        trimmed.bytes,
+                        trimmed.mimeType,
+                    );
+                    working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
+                    variantChanged = true;
+                    await this.deps.patchProcessingState(originAppId, postId, {
+                        trim: 'ready',
+                        processedBlobCid,
+                        processedMimeType: trimmed.mimeType,
+                        // The first stage that makes the variant's duration
+                        // genuinely differ from the record's immutable
+                        // `embed.durationMs`. Step 7 reconciles the two.
+                        processedDurationMs: trimmed.durationMs,
+                    });
+                } catch {
+                    await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
                 }
             }
         }
