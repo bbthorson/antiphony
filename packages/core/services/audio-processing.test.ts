@@ -316,6 +316,26 @@ describe('AudioProcessingService.process', () => {
             expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
         });
 
+        it('never downgrades a ready stage the deployment cannot recompute', async () => {
+            // A denoiser with no transcriber. Recomputing `transcribe` would
+            // mark it pending, find no runner, and settle it `skipped` — i.e.
+            // "never attempted", while the transcript of the OLD audio is still
+            // saved and readable. Leaving it `ready` is stale but true.
+            //
+            // Currently unreachable via resolveProviders (both providers share
+            // one API key), but trim in step 5 is local compute: it sets
+            // variantChanged with no key configured, and so no transcriber.
+            const denoiseOnly = providers({ transcriber: undefined });
+            const { deps, patches, saved } = makeDeps(recomputeCase());
+            await new AudioProcessingService(deps, denoiseOnly).process('vox-pop', 'p1');
+
+            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            expect(patches.some((patch) => patch.transcribe === 'skipped')).toBe(false);
+            expect(saved).toEqual([]);
+            // The stage that could run still did.
+            expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
+
         it('does not recompute when the byte-mutating stage failed', async () => {
             const failing = providers({ denoiser: { denoise: vi.fn(async () => { throw new Error('nope'); }) } });
             const { deps, patches, saved } = makeDeps(recomputeCase());

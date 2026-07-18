@@ -3,6 +3,7 @@ import {
     BYTE_MUTATING_STAGES,
     DERIVED_STAGES,
     PROCESSING_STAGES,
+    type ProcessingStage,
     type ProcessingStageMap,
 } from 'shared/types/processing';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
@@ -136,9 +137,20 @@ export class AudioProcessingService {
         //
         // `reprocess: false` opts out, leaving the stale artifact and its
         // `ready` status in place — the app's explicit choice not to re-bill.
+        //
+        // A stage this deployment cannot run is excluded rather than marked
+        // pending. Marking it would settle it `skipped` below, downgrading a
+        // `ready` stage to "never attempted" while its now-stale artifact stays
+        // readable — the state would be strictly less true than leaving it
+        // alone. Same end state as `reprocess: false`, reached for a different
+        // reason. Reachable as soon as a byte-mutating stage runs locally
+        // (trim, step 5), since that sets `variantChanged` with no API key and
+        // so no transcriber.
         const recompute =
             variantChanged && post.processing.reprocess !== false
-                ? DERIVED_STAGES.filter((stage) => post.processing?.[stage] === 'ready')
+                ? DERIVED_STAGES.filter(
+                      (stage) => post.processing?.[stage] === 'ready' && this.hasRunnerFor(stage),
+                  )
                 : [];
 
         if (recompute.length > 0) {
@@ -177,6 +189,24 @@ export class AudioProcessingService {
                     await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'failed' });
                 }
             }
+        }
+    }
+
+    /**
+     * Whether this deployment can actually run a stage. Only consulted for the
+     * recompute set: an explicitly requested stage with no runner still settles
+     * `skipped`, which is accurate there — nothing was ever produced.
+     */
+    private hasRunnerFor(stage: ProcessingStage): boolean {
+        switch (stage) {
+            case 'transcribe':
+                return !!this.providers.transcriber;
+            case 'denoise':
+                return !!this.providers.denoiser;
+            // Ports arrive in steps 5-6; no runner exists yet.
+            case 'trim':
+            case 'waveform':
+                return false;
         }
     }
 
