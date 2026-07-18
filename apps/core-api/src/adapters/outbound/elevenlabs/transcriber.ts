@@ -54,10 +54,14 @@ export const elevenLabsTranscriber: TranscriberPort = {
         // Audio-event tags like "(laughter)" are transcription noise for a
         // caption track; the post's own text is the place for that colour.
         form.append('tag_audio_events', 'false');
-        if (input.langHint) {
-            // Scribe takes ISO-639-1/3; a BCP-47 hint like `en-US` needs its
-            // region subtag dropped or the request is rejected outright.
-            form.append('language_code', input.langHint.split('-')[0]!.toLowerCase());
+        // Scribe takes ISO-639-1/3; a BCP-47 hint like `en-US` needs its region
+        // subtag dropped or the request is rejected outright. Trim and re-check
+        // after splitting: a whitespace-only hint is truthy but yields a blank
+        // `language_code`, which fails the whole request with a 400 — losing a
+        // transcript over a bad hint that is safe to simply omit.
+        const langCode = input.langHint?.split('-')[0]?.trim().toLowerCase();
+        if (langCode) {
+            form.append('language_code', langCode);
         }
 
         const res = await postForm('/speech-to-text', form);

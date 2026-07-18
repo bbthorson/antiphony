@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { groupIntoSegments, normalizeLang } from './transcriber.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { groupIntoSegments, normalizeLang, elevenLabsTranscriber } from './transcriber.js';
 import { TimedTranscriptSchema } from 'shared/types/audio';
 
 /**
@@ -124,5 +124,56 @@ describe('normalizeLang', () => {
 
     it('passes through an unparseable tag rather than dropping provenance', () => {
         expect(normalizeLang('not a tag!')).toBe('not a tag!');
+    });
+});
+
+describe('elevenLabsTranscriber request', () => {
+    const fetchMock = vi.fn();
+    let savedKey: string | undefined;
+
+    beforeEach(() => {
+        savedKey = process.env.ELEVENLABS_API_KEY;
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        vi.stubGlobal('fetch', fetchMock);
+        fetchMock.mockReset();
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ language_code: 'eng', text: 'hi.', words: [{ text: 'hi.', start: 0, end: 1, type: 'word' }] }),
+            text: async () => '',
+        } as unknown as Response);
+    });
+
+    afterEach(() => {
+        // Restore rather than delete: clearing a developer's real key would
+        // change how later tests in the same process resolve providers.
+        if (savedKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+        else process.env.ELEVENLABS_API_KEY = savedKey;
+        vi.unstubAllGlobals();
+    });
+
+    const formOf = () => fetchMock.mock.calls[0]![1].body as FormData;
+
+    it('strips the region subtag from a BCP-47 hint', async () => {
+        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en-US' });
+        expect(formOf().get('language_code')).toBe('en');
+    });
+
+    it('omits language_code for a whitespace-only hint', async () => {
+        // Regression: a whitespace hint is truthy but yields a blank code,
+        // which fails the whole request with a 400 — losing a transcript over
+        // a bad hint that is safe to omit.
+        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: '   ' });
+        expect(formOf().has('language_code')).toBe(false);
+    });
+
+    it('omits language_code when no hint is given', async () => {
+        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        expect(formOf().has('language_code')).toBe(false);
+    });
+
+    it('normalizes the returned language to BCP-47', async () => {
+        const r = await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        expect(r.lang).toBe('en');
     });
 });
