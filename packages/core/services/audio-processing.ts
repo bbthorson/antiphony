@@ -1,5 +1,10 @@
 import type { AudioPostRecord } from 'shared/types/audio';
-import { BYTE_MUTATING_STAGES, PROCESSING_STAGES, type ProcessingStageMap } from 'shared/types/processing';
+import {
+    BYTE_MUTATING_STAGES,
+    DERIVED_STAGES,
+    PROCESSING_STAGES,
+    type ProcessingStageMap,
+} from 'shared/types/processing';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
@@ -18,7 +23,11 @@ export interface ProcessingProviders {
  * settles the post's `processing` state (`ready`/`failed`/`skipped`) as it
  * finishes, so progress is observable on the read view.
  *
- * Idempotent: only acts on stages currently marked `pending`, so a retried
+ * When a byte-mutating stage completes, any derived artifact that already
+ * exists now describes superseded audio, so it is marked `pending` again and
+ * recomputed in the same pass (`reprocess: false` opts out).
+ *
+ * Idempotent: acts on stages marked `pending` plus that recompute set, so a retried
  * run (Cloud Tasks redelivery, later) re-does nothing already settled. Denoise
  * output is content-addressed and the transcript is last-write-wins by
  * subject, so even a mid-stage retry converges.
@@ -77,6 +86,10 @@ export class AudioProcessingService {
             ? { bytes: sourceBytes, mimeType: sourceMime }
             : null;
 
+        // Set when a byte-mutating stage produces a NEW variant in this pass,
+        // which is what invalidates the derived artifacts below.
+        let variantChanged = false;
+
         // --- Denoise (first, so transcription can use the cleaned audio) ---
         if (post.processing.denoise === 'pending') {
             if (!this.providers.denoiser) {
@@ -95,6 +108,7 @@ export class AudioProcessingService {
                         cleaned.mimeType,
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
+                    variantChanged = true;
                     await this.deps.patchProcessingState(originAppId, postId, {
                         denoise: 'ready',
                         processedBlobCid,
@@ -109,8 +123,35 @@ export class AudioProcessingService {
             }
         }
 
+        // --- Auto-recompute of derived artifacts ---
+        //
+        // A completed byte-mutating stage supersedes the audio every derived
+        // artifact describes: the transcript is of sound that is no longer
+        // served. Derived stages are pure functions of the variant, so
+        // recomputing is always the correct response to it changing.
+        //
+        // This cannot cascade. The recompute set is drawn from DERIVED_STAGES,
+        // and no byte-mutating stage reads a derived artifact, so a recompute
+        // can never mark byte-mutating work pending and retrigger this branch.
+        //
+        // `reprocess: false` opts out, leaving the stale artifact and its
+        // `ready` status in place — the app's explicit choice not to re-bill.
+        const recompute =
+            variantChanged && post.processing.reprocess !== false
+                ? DERIVED_STAGES.filter((stage) => post.processing?.[stage] === 'ready')
+                : [];
+
+        if (recompute.length > 0) {
+            const patch: ProcessingStageMap = {};
+            for (const stage of recompute) patch[stage] = 'pending';
+            // Written BEFORE the re-run, not after. If this pass dies here, a
+            // retry must find outstanding work rather than a `ready` transcript
+            // of audio that no longer exists.
+            await this.deps.patchProcessingState(originAppId, postId, patch);
+        }
+
         // --- Transcribe (uses the cleaned audio when denoise produced it) ---
-        if (post.processing.transcribe === 'pending') {
+        if (post.processing.transcribe === 'pending' || recompute.includes('transcribe')) {
             if (!this.providers.transcriber) {
                 await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'skipped' });
             } else if (!working) {

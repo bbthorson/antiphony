@@ -46,6 +46,7 @@ describe('resolveInitialProcessing', () => {
         expect(resolveInitialProcessing({ transcribe: true, denoise: true })).toEqual({
             transcribe: 'pending',
             denoise: 'pending',
+            reprocess: true,
         });
     });
 
@@ -53,12 +54,35 @@ describe('resolveInitialProcessing', () => {
         expect(resolveInitialProcessing({ transcribe: true, denoise: true })).toEqual({
             transcribe: 'skipped',
             denoise: 'skipped',
+            reprocess: true,
         });
     });
 
     it('only includes the stages the app actually requested', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(resolveInitialProcessing({ transcribe: true })).toEqual({ transcribe: 'pending' });
+        expect(resolveInitialProcessing({ transcribe: true })).toEqual({
+            transcribe: 'pending',
+            reprocess: true,
+        });
+    });
+
+    it('carries an explicit reprocess opt-out through to the stored state', () => {
+        process.env.ANTIPHONY_PROCESSING_STUB = 'true';
+        expect(resolveInitialProcessing({ denoise: true, reprocess: false })?.reprocess).toBe(false);
+    });
+
+    it('writes reprocess on every request, so a later one is not governed by an earlier opt-out', () => {
+        // `setProcessing` MERGES onto the stored state. Omitting the default
+        // would leave a previous `reprocess: false` in place for a request
+        // that never asked to opt out.
+        process.env.ANTIPHONY_PROCESSING_STUB = 'true';
+        expect(resolveInitialProcessing({ denoise: true })?.reprocess).toBe(true);
+    });
+
+    it('does not treat reprocess alone as a request for work', () => {
+        // It names no stage, so there is nothing to run.
+        expect(resolveInitialProcessing({ reprocess: true })).toBeUndefined();
+        expect(resolveInitialProcessing({ reprocess: false })).toBeUndefined();
     });
 });
 

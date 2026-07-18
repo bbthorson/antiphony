@@ -3,7 +3,7 @@ import { AudioProcessingService, type ProcessingProviders } from './audio-proces
 import { buildPostUri } from './audio-posts';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
-import type { ProcessingState } from 'shared/types/processing';
+import { BYTE_MUTATING_STAGES, type ProcessingState } from 'shared/types/processing';
 
 const AUDIO_CID = 'bafkreioriginal';
 const CLEANED_CID = 'bafkreicleaned';
@@ -273,5 +273,87 @@ describe('AudioProcessingService.process', () => {
         const { deps, patches } = makeDeps(post, { readBlobBytes: vi.fn(async () => null) });
         await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
         expect(patches).toContainEqual({ transcribe: 'failed' });
+    });
+
+    describe('auto-recompute', () => {
+        /** Denoise newly requested on a post that already carries a transcript. */
+        const recomputeCase = (over: Partial<ProcessingState> = {}) =>
+            makePost({
+                processing: {
+                    denoise: 'pending',
+                    transcribe: 'ready',
+                    updatedAt: new Date(),
+                    ...over,
+                },
+            });
+
+        it('re-transcribes the cleaned audio when denoise completes', async () => {
+            const { deps, patches, saved } = makeDeps(recomputeCase());
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            // Marked pending before the re-run: a pass that dies mid-recompute
+            // must leave outstanding work, not a `ready` stale transcript.
+            expect(patches).toContainEqual({ transcribe: 'pending' });
+            expect(patches).toContainEqual({ transcribe: 'ready' });
+            expect(patches.findIndex((patch) => patch.transcribe === 'pending')).toBeLessThan(
+                patches.findIndex((patch) => patch.transcribe === 'ready'),
+            );
+            expect(saved).toHaveLength(1);
+            // The new transcript is of the DENOISER's output, not the original.
+            const call = vi.mocked(p.transcriber!.transcribe).mock.calls[0][0];
+            expect(Array.from(call.bytes)).toEqual([9, 9]);
+        });
+
+        it('leaves the derived artifact alone when reprocess is false', async () => {
+            const { deps, patches, saved } = makeDeps(recomputeCase({ reprocess: false }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(saved).toEqual([]);
+            expect(p.transcriber!.transcribe).not.toHaveBeenCalled();
+            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            // Denoise itself still ran — opting out of recompute is not opting
+            // out of the stage that triggered it.
+            expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not recompute when the byte-mutating stage failed', async () => {
+            const failing = providers({ denoiser: { denoise: vi.fn(async () => { throw new Error('nope'); }) } });
+            const { deps, patches, saved } = makeDeps(recomputeCase());
+            await new AudioProcessingService(deps, failing).process('vox-pop', 'p1');
+
+            // No new variant ⇒ the existing transcript still describes the
+            // audio being served, so recomputing it would only bill again.
+            expect(patches).toContainEqual({ denoise: 'failed' });
+            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            expect(saved).toEqual([]);
+        });
+
+        it('does not recompute a derived stage that has no artifact yet', async () => {
+            // transcribe `skipped`, not `ready` — nothing to invalidate.
+            const post = makePost({
+                processing: { denoise: 'pending', transcribe: 'skipped', updatedAt: new Date() },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches).not.toContainEqual({ transcribe: 'pending' });
+            expect(p.transcriber!.transcribe).not.toHaveBeenCalled();
+        });
+
+        it('never marks a byte-mutating stage pending — recompute cannot cascade', async () => {
+            // The property that makes recompute terminate: derived stages are
+            // pure analysis, so no byte-mutating stage depends on one. If this
+            // ever fails, denoise→transcribe→denoise loops and bills forever.
+            const post = makePost({
+                processing: { denoise: 'pending', transcribe: 'ready', updatedAt: new Date() },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            for (const stage of BYTE_MUTATING_STAGES) {
+                expect(patches.filter((patch) => patch[stage] === 'pending')).toEqual([]);
+            }
+            expect(deps.writeDerivedBlob).toHaveBeenCalledTimes(1);
+        });
     });
 });
