@@ -130,7 +130,7 @@ export function hasPendingStage(state: ProcessingStageMap | undefined): boolean 
  */
 function resolveDispatcher(): ProcessingDispatchPort {
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
-        return inlineDispatcher(firebaseAudioProcessingDependencies, resolveProviders());
+        return inlineDispatcher(firebaseAudioProcessingDependencies, resolveProviders(), logger);
     }
     return noopDispatcher(logger);
 }

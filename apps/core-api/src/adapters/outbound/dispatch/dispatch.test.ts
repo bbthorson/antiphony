@@ -41,7 +41,7 @@ describe('inlineDispatcher', () => {
     it('runs the job against the service with the job tenant and post', async () => {
         const { deps, getPostById } = depsStub();
 
-        await inlineDispatcher(deps, {} as ProcessingProviders).dispatch({
+        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
             originAppId: 'app-1',
             postId: 'post-1',
         });
@@ -61,11 +61,53 @@ describe('inlineDispatcher', () => {
         const { deps } = depsStub(boom as never);
 
         await expect(
-            inlineDispatcher(deps, {} as ProcessingProviders).dispatch({
+            inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
                 originAppId: 'app-1',
                 postId: 'post-1',
             }),
         ).rejects.toThrow('storage down');
+    });
+
+    it('routes the service’s own warnings through the injected logger', async () => {
+        // The service defaults to `defaultLogger` (console), and its warnings
+        // are the stranded-artifact paths — the only record that a post serves
+        // an artifact for audio that no longer exists. Under console those lose
+        // pino's JSON shape and arrive in Cloud Logging unparsed, with no
+        // severity and no requestId. Drive a real stranded case and assert the
+        // line lands on the injected logger.
+        const logger = loggerStub();
+        const post = {
+            embed: { audio: { ref: { $link: 'bafkreiaudio' } } },
+            // The chain-stranded branch needs BOTH: a runnable pending link to
+            // set the restart point (`denoise`, with a denoiser wired below),
+            // and a later `ready` link the rebuilt chain would re-apply but
+            // cannot (`trim`, with no trimmer). The variant then ends up
+            // missing trim while the state still reads `ready` — the case the
+            // log line exists to record.
+            processing: { denoise: 'pending', trim: 'ready', processedBlobCid: 'bafkreivariant' },
+        };
+        const deps = {
+            getPostById: vi.fn(async () => post),
+            readBlobBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
+            patchProcessingState: vi.fn(async () => undefined),
+            writeDerivedBlob: vi.fn(async () => 'bafkreinew'),
+            now: vi.fn(() => new Date(0)),
+        } as unknown as AudioProcessingDependencies;
+
+        // Passthrough denoiser — in-memory, no external call and nothing billed.
+        const providers = {
+            denoiser: { denoise: async (i: { bytes: Uint8Array; mimeType: string }) => i },
+        } as unknown as ProcessingProviders;
+
+        await inlineDispatcher(deps, providers, logger).dispatch({
+            originAppId: 'app-1',
+            postId: 'post-1',
+        });
+
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ originAppId: 'app-1', postId: 'post-1' }),
+            expect.stringContaining('[audio-processing]'),
+        );
     });
 
     it('awaits the run, so results are visible when dispatch resolves', async () => {
@@ -81,7 +123,7 @@ describe('inlineDispatcher', () => {
         });
         const { deps } = depsStub(slow as never);
 
-        await inlineDispatcher(deps, {} as ProcessingProviders).dispatch({
+        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
             originAppId: 'app-1',
             postId: 'post-1',
         });
