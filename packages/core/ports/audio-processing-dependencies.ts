@@ -82,8 +82,15 @@ export interface AudioProcessingDependencies {
      * Called in a `finally`, so a stage that throws does not hold the post for
      * the full TTL. Best-effort by nature: if the runner dies before reaching
      * it, expiry is the backstop.
+     *
+     * `leaseUntil` is the value this runner claimed, and acts as a fencing
+     * token: the release must be a no-op unless the stored lease is still
+     * that exact one. A runner whose lease lapsed mid-pass has already been
+     * superseded, and an unconditional delete there would clear the *new*
+     * holder's claim — re-opening the post to a third runner while the second
+     * is still working, which is the overlap the lease exists to prevent.
      */
-    releaseProcessingLease(originAppId: string, postId: string): Promise<void>;
+    releaseProcessingLease(originAppId: string, postId: string, leaseUntil: Date): Promise<void>;
 
     /** Generate a new unique transcript record id. */
     newTranscriptId(): string;

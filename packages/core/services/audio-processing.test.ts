@@ -695,6 +695,11 @@ describe('AudioProcessingService.process', () => {
             });
         }
 
+        /** The lease `process()` derives from the frozen `deps.now()` clock. */
+        function claimedLease() {
+            return new Date(new Date('2026-07-03T00:00:00Z').getTime() + 15 * 60 * 1000);
+        }
+
         it('does no work when the claim is declined', async () => {
             // The duplicate-delivery case. Without the lease both runners see
             // `denoise: 'pending'` and both pay ElevenLabs for the same post.
@@ -746,7 +751,7 @@ describe('AudioProcessingService.process', () => {
 
             await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
-            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1');
+            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1', claimedLease());
         });
 
         it('releases the lease when the pass throws', async () => {
@@ -762,7 +767,24 @@ describe('AudioProcessingService.process', () => {
                 new AudioProcessingService(deps, p).process('vox-pop', 'p1'),
             ).rejects.toThrow('firestore down');
 
-            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1');
+            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1', claimedLease());
+        });
+
+        it('releases with the token it claimed, so a lapsed pass cannot clear a successor', async () => {
+            // The fencing property. Release is not "delete this post's lease",
+            // it is "delete the lease IF it is still mine" — and the adapter
+            // can only honour that if the service hands back what it claimed.
+            // Same value, not merely some Date: a release carrying a different
+            // token would clear whatever the next runner holds.
+            const claim = vi.fn(async () => true);
+            const { deps } = makeDeps(pendingPost(), { claimProcessingLease: claim });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            const [, , claimedUntil] = claim.mock.calls[0] as unknown as [string, string, Date];
+            const [, , releasedUntil] = (deps.releaseProcessingLease as ReturnType<typeof vi.fn>).mock
+                .calls[0] as unknown as [string, string, Date];
+            expect(releasedUntil.getTime()).toBe(claimedUntil.getTime());
         });
 
         it('does not release a lease it never held', async () => {

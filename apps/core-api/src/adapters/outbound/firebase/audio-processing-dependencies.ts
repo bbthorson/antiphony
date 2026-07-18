@@ -31,6 +31,20 @@ function now(): Date {
     return new Date();
 }
 
+/**
+ * Millis for a stored `leaseUntil`, or undefined if there isn't one.
+ *
+ * Real Firestore hands back a `Timestamp`, but a `Date` goes in on the write
+ * and in-memory doubles read it straight back out that way. Handling only
+ * `toMillis` makes every lease check silently answer "unheld" against a
+ * double — the check would compile, pass, and protect nothing.
+ */
+function leaseMillis(value: unknown): number | undefined {
+    if (value instanceof Date) return value.getTime();
+    const ts = value as { toMillis?: () => number } | undefined;
+    return typeof ts?.toMillis === 'function' ? ts.toMillis() : undefined;
+}
+
 export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = {
     // Reuse the post surface's tenancy-checked read (wrapped so the binding is
     // resolved at call time, not module-eval — these two modules form a cycle).
@@ -86,29 +100,45 @@ export const firebaseAudioProcessingDependencies: AudioProcessingDependencies = 
             const ref = postsCollection().doc(postId);
             const snap = await t.get(ref);
             if (!snap.exists) return false;
-            const processing = snap.data()?.processing as
-                | { leaseUntil?: { toMillis?: () => number } }
-                | undefined;
+            const processing = snap.data()?.processing as { leaseUntil?: unknown } | undefined;
             // No processing state means nothing to claim. Claiming anyway
             // would CREATE the `processing` map on a post that never requested
             // any, and the service treats a present map as "processing was
             // requested" — so a no-op job would permanently change how the
             // post reads.
             if (!processing) return false;
-            const heldUntil = processing.leaseUntil?.toMillis?.();
+            const heldUntil = leaseMillis(processing.leaseUntil);
             // Strictly-greater: a lease expiring exactly now is expired.
-            if (heldUntil && heldUntil > Date.now()) return false;
+            // Read against this binding's own clock, the same one that stamps
+            // every other timestamp here.
+            if (heldUntil !== undefined && heldUntil > now().getTime()) return false;
             t.update(ref, { 'processing.leaseUntil': leaseUntil });
             return true;
         });
     },
 
-    async releaseProcessingLease(_originAppId, postId) {
-        // Deleted rather than set to a past time, so the absent case and the
-        // released case are one state instead of two that read differently.
-        await postsCollection()
-            .doc(postId)
-            .update({ 'processing.leaseUntil': admin.firestore.FieldValue.delete() });
+    async releaseProcessingLease(_originAppId, postId, leaseUntil) {
+        // Compare-and-delete, in a transaction for the same reason the claim
+        // is: read-then-write outside one would let the stored lease change
+        // between the check and the delete.
+        //
+        // The check is the fencing token. A pass that outran its own lease has
+        // already been superseded by whoever claimed next, and deleting
+        // unconditionally there would hand a THIRD runner the post while the
+        // second is still mid-pass — restoring exactly the concurrent-write
+        // hazard the lease closes, and doing it at the moment the system is
+        // already running slow enough to have caused it.
+        await getAdminDb().runTransaction(async (t) => {
+            const ref = postsCollection().doc(postId);
+            const snap = await t.get(ref);
+            if (!snap.exists) return;
+            const processing = snap.data()?.processing as { leaseUntil?: unknown } | undefined;
+            if (leaseMillis(processing?.leaseUntil) !== leaseUntil.getTime()) return;
+            // Deleted rather than set to a past time, so the absent case and
+            // the released case are one state instead of two that read
+            // differently.
+            t.update(ref, { 'processing.leaseUntil': admin.firestore.FieldValue.delete() });
+        });
     },
 
     newTranscriptId(): string {

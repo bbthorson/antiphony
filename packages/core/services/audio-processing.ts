@@ -122,7 +122,12 @@ export class AudioProcessingService {
             // reprocessable rather than parked for the rest of the TTL. The
             // stage's own state was already settled `failed` by the block that
             // threw; this only gives back the claim.
-            await this.deps.releaseProcessingLease(originAppId, postId);
+            //
+            // Passing the claimed `leaseUntil` fences the release: if this
+            // pass outlived its own lease and another runner took over, the
+            // stored lease is no longer ours and the release does nothing
+            // rather than clearing theirs.
+            await this.deps.releaseProcessingLease(originAppId, postId, leaseUntil);
         }
     }
 
