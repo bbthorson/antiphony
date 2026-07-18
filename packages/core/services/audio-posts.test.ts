@@ -262,6 +262,64 @@ describe('hydrateAudioPosts', () => {
         expect(view.embed?.url).toBe('signed::vox-pop::bafkreiclean');
     });
 
+    it('resolves url, duration and peaks together for a fully-processed post', async () => {
+        // The trio has to agree: peaks are rendered across a duration, and a
+        // duration describes the bytes `url` points at. Asserting them
+        // separately would pass on exactly the mixed state this prevents.
+        const rec = record({
+            processing: {
+                trim: 'ready',
+                waveform: 'ready',
+                processedBlobCid: 'bafkreitrimmed',
+                processedDurationMs: 2100,
+                waveformPeaks: [5, 100, 5],
+                updatedAt: new Date(),
+            },
+        });
+        const [view] = await svc.hydrateAudioPosts([rec], null);
+        expect(view.embed?.url).toBe('signed::vox-pop::bafkreitrimmed');
+        expect(view.embed?.durationMs).toBe(2100);
+        expect(view.embed?.waveform).toEqual([5, 100, 5]);
+    });
+
+    it('keeps the original duration when the variant did not retime it', async () => {
+        // Denoise transcodes without changing length, so the record's duration
+        // still describes the variant and the trio stays consistent.
+        const rec = record({
+            processing: {
+                denoise: 'ready',
+                processedBlobCid: 'bafkreiclean',
+                updatedAt: new Date(),
+            },
+        });
+        const [view] = await svc.hydrateAudioPosts([rec], null);
+        expect(view.embed?.url).toBe('signed::vox-pop::bafkreiclean');
+        expect(view.embed?.durationMs).toBe(4200);
+    });
+
+    it('does not serve peaks for a superseded variant mid-recompute', async () => {
+        // Recompute marks waveform `pending` without clearing `waveformPeaks`,
+        // so the stored peaks still describe the PREVIOUS variant here.
+        const rec = record({
+            processing: {
+                trim: 'ready',
+                waveform: 'pending',
+                processedBlobCid: 'bafkreitrimmed',
+                processedDurationMs: 2100,
+                waveformPeaks: [5, 100, 5],
+                updatedAt: new Date(),
+            },
+        });
+        const [view] = await svc.hydrateAudioPosts([rec], null);
+        expect(view.embed?.waveform).toEqual([0, 30, 90]);
+    });
+
+    it('leaves duration and peaks canonical when no processing was requested', async () => {
+        const [view] = await svc.hydrateAudioPosts([record()], null);
+        expect(view.embed?.durationMs).toBe(4200);
+        expect(view.embed?.waveform).toEqual([0, 30, 90]);
+    });
+
     it('keeps playback on the original audio while denoise is still pending', async () => {
         const rec = record({ processing: { denoise: 'pending', updatedAt: new Date() } });
         const [view] = await svc.hydrateAudioPosts([rec], null);

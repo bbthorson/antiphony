@@ -52,7 +52,7 @@ Two independent axes, per [`api-versioning.md`](./api-versioning.md). Do not con
 
 **API contract** — `OPENAPI_INFO.version` in `apps/core-api/src/lib/openapi-info.ts`,
 the single source of truth (`app.ts` imports it). **0.3.0** when this plan opened; now
-**0.3.2**. Pre-1.0 rules: breaking → minor, additive/fix → patch.
+**0.4.0** (step 7). Pre-1.0 rules: breaking → minor, additive/fix → patch.
 
 Nearly everything here is **additive** (new optional stage keys, a new optional request
 flag), so it is **patch** bumps and never forces `/v2`. One exception:
@@ -68,7 +68,12 @@ flag), so it is **patch** bumps and never forces `/v2`. One exception:
 > back byte-identical — what changed was a runtime *value* (`capabilities.<stage>`), which
 > is not surface. The per-step "contract → patch" lines were written before that
 > consolidation and were simply stale. **Check whether the spec actually changes before
-> bumping**; only steps 1 (0.3.1) and 4 (0.3.2) really moved it.
+> bumping**; only steps 1 (0.3.1), 4 (0.3.2) and 7 (0.4.0) really moved it.
+>
+> Step 7 is the one case where the spec diff *understates* the change: the regenerated
+> document differs only in `info.version`, because the fields already existed and only
+> their resolved values changed. Byte-identical output is evidence of "no surface change",
+> not of "no contract change" — see the changelog entry.
 
 **Package versions** — track package releases, independent of the contract.
 `@antiphony/shared` was at **0.4.0** when this plan opened and is now **0.5.0** (step 1);
@@ -396,12 +401,19 @@ now takes a deployment with *no* ffmpeg at all — in which case trim cannot run
 the only remaining trigger is a denoise with an API key present and no binary. Still
 reachable, still logged, just much narrower than step 4 anticipated.
 
-> **Blocker inherited by step 7:** `npm run gen:openapi` is **broken on master**
-> (`ReferenceError: __dirname is not defined in ES module scope`, from the esbuild-bundled
-> runner under Node 22). It did not block step 6 because there was nothing to regenerate.
-> **Step 7 is a minor bump and cannot skip it** — fix the generator first.
+> **Blocker inherited by step 7 — RESOLVED in step 7's PR.** `npm run gen:openapi` was
+> broken (`ReferenceError: __dirname is not defined in ES module scope`).
+>
+> The diagnosis recorded here was wrong twice over. It was **not** pre-existing on master:
+> `ffmpeg-static` does not exist before step 5, so step 5 introduced it — the earlier check
+> compared against `master`, which already contained the regression, instead of against a
+> commit that predated it. And the generator was the *lesser* half. The same bug was in
+> `dist/index.js`: `node dist/index.js` threw on startup, so **the deployable artifact had
+> been unbootable since step 5** while the test suite stayed green, because nothing loads
+> `dist/`. Fixed by marking `ffmpeg-static` external in both esbuild invocations, plus a
+> post-build assertion that fails on any `__dirname`/`__filename` in the bundle.
 
-### 7. Hydration variant resolution — *the minor bump*
+### 7. Hydration variant resolution ✅ done 2026-07-18
 
 - The view resolves per field: canonical from the record, variant from `ProcessingState`
   when a processed variant exists. Generalizes the playback-URL swap the view already does.
@@ -409,6 +421,41 @@ reachable, still logged, just much narrower than step 4 anticipated.
 - **Versions:** contract → **minor**, `0.3.x` → **0.4.0**. Changelog entry must call out
   that `durationMs`/`waveform` may now describe the processed variant.
 - **Done when:** a fully-processed post returns self-consistent url + duration + peaks.
+  ✅ Verified by test rather than live: this step adds no provider call and no I/O — it is
+  read-time arithmetic over stored state, so a scratchpad run against real audio would
+  exercise nothing the service tests do not. `resolveAudioVariant` has 12 unit tests and
+  the hydrator has 4; the load-bearing one was confirmed to FAIL against the pre-step-7
+  behavior, so it tests the change rather than restating it.
+
+**Deviations from the plan as written, and why**
+
+- **Resolution is not a uniform `??` per field.** The plan says "canonical from the record,
+  variant from `ProcessingState`", which reads as one fallback applied three times. Two of
+  the fields do not support that:
+  - `processedDurationMs` absent is *defined* as "the variant's duration equals the
+    original" (denoise transcodes without retiming), so the fallback is correct there.
+  - `waveformPeaks` carries no such guarantee. Recompute marks the stage `pending`
+    **without clearing the field**, so a presence check serves peaks for the *superseded*
+    variant — the old envelope drawn across the new duration, which is the precise
+    misalignment this step exists to remove. Peaks are therefore gated on
+    `waveform === 'ready'`, not on presence.
+- **Peaks do not key off `processedBlobCid`,** unlike url and duration. `waveform` always
+  runs over the final variant, so `ready` peaks describe whatever playback resolves to —
+  variant or original alike. This means a waveform-only post (no byte-mutating stage) gets
+  server-computed peaks, which the plan did not call out.
+- **Known gap, inherited deliberately:** `ready` does not *prove* the peaks match the
+  current variant. The stranded path (step 4) leaves a stage `ready` over a stale artifact
+  when no runner is configured, and nothing on the state distinguishes that from a fresh
+  result. Closing it requires the peaks to record which variant they describe — a
+  state-schema change, not a read-time one. Left open because it is the same exposure the
+  codebase already accepts for a stranded transcript; documented at the call site.
+- **The changelog entry is broader than "may now describe the processed variant".** No
+  field is added or removed, so the wire shape is unchanged — but a client that persisted
+  `durationMs` at upload time will observe it shrink once `trim` runs. That is the part
+  worth a minor bump, so the entry leads with it and says to re-read rather than cache.
+- **Shipped on the same PR as the `gen:openapi` / bundle fix,** against the
+  one-PR-per-step convention, at the author's request. The fix is a separate commit and
+  stays cherry-pickable.
 
 ### 8. Durable dispatch — *gates production*
 
