@@ -51,8 +51,8 @@ shippable-to-prod without step 8.
 Two independent axes, per [`api-versioning.md`](./api-versioning.md). Do not conflate.
 
 **API contract** — `OPENAPI_INFO.version` in `apps/core-api/src/lib/openapi-info.ts`,
-the single source of truth (`app.ts` imports it). Currently **0.3.0**. Pre-1.0 rules:
-breaking → minor, additive/fix → patch.
+the single source of truth (`app.ts` imports it). **0.3.0** when this plan opened; now
+**0.3.2**. Pre-1.0 rules: breaking → minor, additive/fix → patch.
 
 Nearly everything here is **additive** (new optional stage keys, a new optional request
 flag), so it is **patch** bumps and never forces `/v2`. One exception:
@@ -62,9 +62,18 @@ flag), so it is **patch** bumps and never forces `/v2`. One exception:
 > different number for the same post. That is breaking under pre-1.0 rules even though
 > no field is added or removed. `0.3.x` → `0.4.0`.
 
+> **In practice steps 5 and 6 needed NO bump, against what their sections predicted.**
+> Step 1 front-loaded all four stage keys into the schemas, so by the time trim and
+> waveform were built their contract surface already existed and the regenerated spec came
+> back byte-identical — what changed was a runtime *value* (`capabilities.<stage>`), which
+> is not surface. The per-step "contract → patch" lines were written before that
+> consolidation and were simply stale. **Check whether the spec actually changes before
+> bumping**; only steps 1 (0.3.1) and 4 (0.3.2) really moved it.
+
 **Package versions** — track package releases, independent of the contract.
-`@antiphony/shared` is at **0.4.0** and is the only published one; `core`, `core-api`,
-and the root are `private` at `0.1.0` and can be left alone.
+`@antiphony/shared` was at **0.4.0** when this plan opened and is now **0.5.0** (step 1);
+it is the only published one. `core`, `core-api`, and the root are `private` at `0.1.0`
+and can be left alone.
 
 > **Step 1 bumps `@antiphony/shared` to 0.5.0.** Renaming the exported
 > `denoisedBlobCid` → `processedBlobCid` is breaking for type consumers.
@@ -249,7 +258,7 @@ handled there**, which is how steps 5 and 6 are forced to declare themselves. An
 explicitly requested stage with no runner still settles `skipped`; that reading is
 accurate, since nothing was ever produced for it.
 
-### 5. Trim stage — *first local-compute stage*
+### 5. Trim stage — *first local-compute stage* ✅ done 2026-07-18
 
 - New `TrimmerPort` in `packages/core/ports/` (byte-mutating, mirrors `DenoiserPort`).
 - Fixed conservative policy: **leading/trailing only**, leave interior gaps, pad rather
@@ -259,8 +268,73 @@ accurate, since nothing was ever produced for it.
   makes undoing Voice Isolator's 320kbps inflation cheap.
 - Runs **after** denoise, composing into the same `processedBlobCid`; sets
   `processedDurationMs`.
-- **Versions:** contract → patch.
+- **Versions:** **none** — the plan's "contract → patch" was wrong, same as step 6's.
+  Step 1 already added the `trim` stage key to the schemas, so the spec is unchanged and
+  the contract stayed at 0.3.2.
 - **Done when:** a padded recording trims cleanly with no clipped word onsets.
+  ✅ Verified live twice. **Synthetic** (in the PR): a 7.55s 320kbps clip (2s silence,
+  3s tone, 2.5s silence) → 24,633 bytes webm/opus at exactly the expected 3300ms, output
+  probing clean at -21.5dB mean with no silence detected, 12.3× smaller.
+  **Real speech** (backfilled 2026-07-18, see below): synthesized *"Peter picked a peck
+  of pickled peppers"* (2090ms) padded with 2s of −60dB room noise either side, encoded
+  320kbps MP3 → 2340ms webm/opus against 2390ms expected, **158ms of leading silence in
+  the output against a `PAD_MS` of 150**, mean volume preserved (−17.1 → −17.7dB), 16×
+  smaller.
+
+> **The synthetic verification could not test this step's actual risk.** A sine tone
+> starts at full amplitude on its first sample. A spoken plosive does not — the /p/ burst
+> is low-energy and `silencedetect` scores it as part of the silence, which is the exact
+> mechanism `PAD_MS` exists to defend against. "No clipped word onsets" needs a word.
+> The speech run is what closes the criterion; the measured 158ms lead is the pad
+> surviving, and the preserved mean volume is the onset arriving with it.
+
+**Deviations from the plan as written, and why** *(backfilled 2026-07-18 — PR #44 shipped
+the code without touching `specs/`, so this section was reconstructed from its commits)*:
+
+- **The byte-mutating stages became an ordered CHAIN, and the source-selection logic had
+  to be rewritten for it.** It was written when denoise was the only link. Two mirrored
+  defects, both found in review:
+  - denoise `ready` from an earlier pass + trim newly `pending` → the source reset to the
+    **original**, but denoise no longer re-runs, so trim operated on the noisy original
+    and silently discarded the denoised audio — while the state still read denoise
+    `ready`. Confirmed by test: trim received `[1,2,3]` instead of `[9,9]`.
+  - denoise `pending` + trim `ready` → the variant came out denoised but **untrimmed**,
+    with trim still claiming `ready`.
+
+  Both are one defect: re-running any link changes the input to every later one. Now the
+  earliest `pending` link is found; re-running the FIRST rebuilds from the original,
+  re-running a LATER one starts from the variant. Every link at or after it runs,
+  including ones sitting `ready` — and a `ready` link being re-applied is marked `pending`
+  **before** it runs, or a pass that died partway would compute no pending link on retry
+  and strand a variant missing that link permanently.
+- **A pending link with no runner destroyed the variant.** Denoise re-requested after the
+  API key went away would reset the source to the original, settle itself `skipped`, and
+  re-run trim over raw audio — discarding a good denoised variant and putting nothing in
+  its place. Only links the deployment can actually run now drive composition. This is
+  #42's no-downgrade rule applied *inside* the chain, with the same caveat that the log is
+  the only record.
+- **`ffmpegAvailable` only checked that a path string was non-empty**, so a typo'd
+  `ANTIPHONY_FFMPEG_PATH` advertised trim as available and then failed every post —
+  precisely what the function's own comment claimed it prevented. It now checks `X_OK`,
+  memoized per path. *(Step 6 moved this to `adapters/outbound/ffmpeg/run.ts`.)*
+- **Re-trimming re-encoded already-trimmed audio.** With the chain fix, a trim-only re-run
+  reads the variant — which already holds a previous Opus encode — so every re-request
+  lost another generation, silently, with the state reading `ready` throughout. The
+  adapter now passes bytes through when there is nothing to cut AND the input is already
+  the output format. A denoised variant arrives as 320kbps MP3, so it does not match and
+  still gets the re-encode that undoes the inflation.
+- **`-t` (duration) rather than `-to` (stop position).** With an output-side `-ss`,
+  whether `-to` measures from the input timeline or the seek point has varied across
+  ffmpeg versions, and `ANTIPHONY_FFMPEG_PATH` allows a different one.
+- **`durationMs` is measured off the encoded bytes, not predicted from the window.** The
+  first attempt read the cut pass's `time=` progress counter and the live run caught it:
+  3290ms for a file both the container header and a full decode agree is 3300ms — the
+  counter stops short of the true end. A pipe never reports a container duration on the
+  way out, so a third probe pass over the (small) output is the only authoritative source.
+  This value becomes `processedDurationMs`, which step 7 serves to clients.
+- **Output is Opus in WebM, 48 kbps mono.** Opus is the best voice codec at this bitrate
+  by a wide margin, and WebM/Opus is what browsers record in, so it is already proven to
+  play in this product's clients.
 
 ### 6. Waveform stage ✅ done 2026-07-18
 
