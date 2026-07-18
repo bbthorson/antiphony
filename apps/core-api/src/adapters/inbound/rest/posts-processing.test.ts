@@ -169,13 +169,26 @@ async function getPost(postId: string) {
 }
 
 describe('POST /api/v1/posts — audio processing (B5)', () => {
+    // Provider selection is env-driven, so env is test state. `ELEVENLABS_API_KEY`
+    // must be cleared alongside the stub flag: the "no provider ⇒ skipped" test
+    // below runs with the stub OFF, so a real key in the developer's shell would
+    // both break the assertion AND fire a live, billed API call from the suite.
+    const providerEnv = ['ANTIPHONY_PROCESSING_STUB', 'ELEVENLABS_API_KEY'] as const;
+    const savedEnv: Record<string, string | undefined> = {};
+
     beforeEach(() => {
         docs.clear();
         autoId = 0;
-        delete process.env.ANTIPHONY_PROCESSING_STUB;
+        for (const key of providerEnv) {
+            savedEnv[key] = process.env[key];
+            delete process.env[key];
+        }
     });
     afterEach(() => {
-        delete process.env.ANTIPHONY_PROCESSING_STUB;
+        for (const key of providerEnv) {
+            if (savedEnv[key] === undefined) delete process.env[key];
+            else process.env[key] = savedEnv[key];
+        }
     });
 
     it('runs transcribe + denoise inline and surfaces them on the view', async () => {
