@@ -38,6 +38,7 @@
  * there IS a window where one of them is serving the original audio. Prefer
  * running it immediately after the deploy to keep that window short.
  */
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminDb } from '../src/lib/firebase-admin.js';
 import { COLLECTIONS, NSID } from 'shared/nsid';
 
@@ -53,7 +54,9 @@ async function main(): Promise<void> {
 
     // `!= null` matches documents where the field EXISTS and is non-null;
     // documents without it are not returned at all, which is what we want.
-    const snapshot = await posts.where(LEGACY, '!=', null).get();
+    // `.select()` keeps the payload to the one map we read — audio post docs
+    // carry a full record, and this fetches every match at once.
+    const snapshot = await posts.where(LEGACY, '!=', null).select('processing').get();
 
     if (snapshot.empty) {
         console.log('Nothing to migrate: no post carries processing.denoisedBlobCid.');
@@ -62,19 +65,14 @@ async function main(): Promise<void> {
 
     console.log(`${snapshot.size} post(s) carry the legacy field.\n`);
 
-    const { FieldValue } = (await import('firebase-admin/firestore')) as {
-        FieldValue: { delete(): unknown };
-    };
-
     let migrated = 0;
     let conflicted = 0;
     let batch = db.batch();
     let pending = 0;
 
     for (const doc of snapshot.docs) {
-        const processing = doc.get('processing') as Record<string, unknown> | undefined;
-        const legacyCid = processing?.denoisedBlobCid as string | undefined;
-        const currentCid = processing?.processedBlobCid as string | undefined;
+        const legacyCid = doc.get(LEGACY) as string | undefined;
+        const currentCid = doc.get(CURRENT) as string | undefined;
 
         if (!legacyCid) continue;
 
@@ -123,7 +121,13 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch((err) => {
-    console.error('Migration failed:', err);
-    process.exitCode = 1;
-});
+main()
+    .catch((err) => {
+        console.error('Migration failed:', err);
+        process.exitCode = 1;
+    })
+    // Releases the Firestore gRPC channel so the process can exit on its own.
+    // Preferred over `process.exit()`, which would set the exit code correctly
+    // but can truncate buffered stdout — and this script's output IS its
+    // result when run as a dry run.
+    .finally(() => getAdminDb().terminate());
