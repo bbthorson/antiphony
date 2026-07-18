@@ -30,11 +30,14 @@ afterEach(() => {
 });
 
 describe('processingCapabilities', () => {
-    it('reports nothing available with no providers configured', () => {
+    it('reports only the local stage with no API key configured', () => {
+        // Trim is local compute, so it needs no key — it is available on its
+        // binary alone. This is what makes a variant change possible with no
+        // transcriber present, the condition the recompute filter handles.
         expect(processingCapabilities()).toEqual({
             transcribe: false,
             denoise: false,
-            trim: false,
+            trim: true,
             waveform: false,
         });
     });

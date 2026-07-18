@@ -16,6 +16,7 @@ import { stubTranscriber, stubDenoiser, stubTrimmer } from '../adapters/outbound
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
+import { ffmpegTrimmer, ffmpegAvailable } from '../adapters/outbound/ffmpeg/trimmer.js';
 import { logger } from './logger.js';
 
 /**
@@ -44,12 +45,18 @@ function resolveProviders(): ProcessingProviders {
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
         return { transcriber: stubTranscriber, denoiser: stubDenoiser, trimmer: stubTrimmer };
     }
+    // Trim is LOCAL compute — no API key, so it is available on its binary
+    // alone. This is the first stage that can change the variant with no
+    // provider key configured anywhere, which is exactly the condition the
+    // recompute filter in `AudioProcessingService` had to be corrected for.
+    const trimmer = ffmpegAvailable() ? ffmpegTrimmer : undefined;
+
     // Real providers select off the API key alone — no separate enable flag to
     // keep in sync with it. Key present ⇒ the stage is available.
     if (elevenLabsApiKey()) {
-        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser };
+        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser, trimmer };
     }
-    return {};
+    return { trimmer };
 }
 
 /**
