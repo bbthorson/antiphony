@@ -1,6 +1,7 @@
 import type { TranscriberPort } from '@antiphony/core/ports/transcription';
 import type { DenoiserPort } from '@antiphony/core/ports/audio-denoiser';
 import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
+import type { WaveformPort } from '@antiphony/core/ports/audio-waveform';
 
 /**
  * Processing providers (B5).
@@ -48,5 +49,20 @@ export const stubDenoiser: DenoiserPort = {
 export const stubTrimmer: TrimmerPort = {
     async trim(input) {
         return { bytes: input.bytes, mimeType: input.mimeType, durationMs: 0 };
+    },
+};
+
+/**
+ * Placeholder waveform — a fixed, obviously-synthetic sawtooth.
+ *
+ * Schema-valid (0–100, under 1000 peaks) so the full create → process →
+ * hydrate loop exercises the real shape, but visibly not a recording: a
+ * plausible-looking envelope would let a dev confirm "waveform works" against
+ * peaks nothing decoded, which is the same valid-but-wrong failure the stub
+ * trimmer's zero duration avoids.
+ */
+export const stubWaveform: WaveformPort = {
+    async waveform() {
+        return { peaks: Array.from({ length: 50 }, (_, i) => (i % 10) * 10) };
     },
 };

@@ -10,6 +10,7 @@ import type { AudioProcessingDependencies } from '../ports/audio-processing-depe
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
 import type { TrimmerPort } from '../ports/audio-trimmer';
+import type { WaveformPort } from '../ports/audio-waveform';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { buildPostUri } from './audio-posts';
 
@@ -17,6 +18,7 @@ export interface ProcessingProviders {
     transcriber?: TranscriberPort;
     denoiser?: DenoiserPort;
     trimmer?: TrimmerPort;
+    waveform?: WaveformPort;
 }
 
 /** Which stages a deployment can actually perform, given its wired providers. */
@@ -37,9 +39,7 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
         transcribe: !!providers.transcriber,
         denoise: !!providers.denoiser,
         trim: !!providers.trimmer,
-        // Port arrives in step 6. Until then a request settles `skipped`
-        // rather than hanging `pending`.
-        waveform: false,
+        waveform: !!providers.waveform,
     };
 }
 
@@ -350,6 +350,38 @@ export class AudioProcessingService {
                     await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'ready' });
                 } catch {
                     await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'failed' });
+                }
+            }
+        }
+
+        // --- Waveform (peaks over the same variant the transcript describes) ---
+        //
+        // Independent of transcribe: both are derived, neither reads the
+        // other's artifact, so a transcriber failure above must not suppress
+        // peaks. They are sequential here only because there is no reason to
+        // add concurrency to a path that is about to move behind a queue.
+        if (post.processing.waveform === 'pending' || recompute.includes('waveform')) {
+            if (!this.providers.waveform) {
+                await this.deps.patchProcessingState(originAppId, postId, { waveform: 'skipped' });
+            } else if (!working) {
+                await this.deps.patchProcessingState(originAppId, postId, { waveform: 'failed' });
+            } else {
+                try {
+                    const result = await this.providers.waveform.waveform({
+                        bytes: working.bytes,
+                        mimeType: working.mimeType,
+                    });
+                    // Peaks and status in ONE patch. Split across two, a crash
+                    // between them leaves `ready` over absent peaks — a state
+                    // the view would read as "processed waveform available"
+                    // and then find nothing, with no pending stage left to
+                    // make a retry fix it.
+                    await this.deps.patchProcessingState(originAppId, postId, {
+                        waveform: 'ready',
+                        waveformPeaks: result.peaks,
+                    });
+                } catch {
+                    await this.deps.patchProcessingState(originAppId, postId, { waveform: 'failed' });
                 }
             }
         }
