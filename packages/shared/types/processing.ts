@@ -107,8 +107,9 @@ export type ProcessingStageMap = z.infer<typeof ProcessingStageMapSchema>;
  *
  * `reprocess` is carried here — and persisted — rather than passed to the
  * worker as an argument, because the request that asks for the work and the
- * pass that performs it are separated by a queue (step 8). Stored only when
- * explicitly `false`; absent means the default, true.
+ * pass that performs it are separated by a queue (step 8). Written on every
+ * request including the default, because the stored state is MERGED onto —
+ * absent means true only for posts written before this field existed.
  */
 export const ResolvedProcessingSchema = ProcessingStageMapSchema.extend({
     reprocess: z.boolean().optional(),
