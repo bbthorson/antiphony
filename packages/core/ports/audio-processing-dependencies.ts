@@ -50,6 +50,48 @@ export interface AudioProcessingDependencies {
         patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
     ): Promise<void>;
 
+    /**
+     * Claim exclusive right to process this post until `leaseUntil`. Returns
+     * true when the claim succeeded and the caller may proceed.
+     *
+     * **Must be atomic** — a read-then-write implementation reintroduces
+     * exactly the race it exists to close. The Firebase binding does it in a
+     * transaction.
+     *
+     * Returns false in three cases, deliberately not distinguished:
+     *   - another runner holds an unexpired lease,
+     *   - the post is gone or belongs to another tenant,
+     *   - the post has no `processing` state, so there is nothing to claim.
+     *
+     * They collapse because the caller's response is identical in all three —
+     * stop, without treating it as an error — and because distinguishing them
+     * would mean returning post state through a method whose job is the claim.
+     * The service reads the post after claiming, which is where "gone" is
+     * reported.
+     *
+     * An expired lease is claimable: a runner that died mid-pass never
+     * released, and the post must not be stranded on that account. This means
+     * a lease that lapses under a still-running holder permits a genuine
+     * overlap, so the TTL has to exceed the longest plausible pass.
+     */
+    claimProcessingLease(originAppId: string, postId: string, leaseUntil: Date): Promise<boolean>;
+
+    /**
+     * Release this post's lease, making it immediately claimable again.
+     *
+     * Called in a `finally`, so a stage that throws does not hold the post for
+     * the full TTL. Best-effort by nature: if the runner dies before reaching
+     * it, expiry is the backstop.
+     *
+     * `leaseUntil` is the value this runner claimed, and acts as a fencing
+     * token: the release must be a no-op unless the stored lease is still
+     * that exact one. A runner whose lease lapsed mid-pass has already been
+     * superseded, and an unconditional delete there would clear the *new*
+     * holder's claim — re-opening the post to a third runner while the second
+     * is still working, which is the overlap the lease exists to prevent.
+     */
+    releaseProcessingLease(originAppId: string, postId: string, leaseUntil: Date): Promise<void>;
+
     /** Generate a new unique transcript record id. */
     newTranscriptId(): string;
 

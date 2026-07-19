@@ -24,7 +24,14 @@ function depsStub(getPostById = vi.fn(async () => null)): {
     getPostById: typeof getPostById;
 } {
     return {
-        deps: { getPostById } as unknown as AudioProcessingDependencies,
+        deps: {
+            getPostById,
+            // The service claims a lease before touching anything, so an
+            // uncontended stub is the minimum for the run to reach the post.
+            claimProcessingLease: vi.fn(async () => true),
+            releaseProcessingLease: vi.fn(async () => undefined),
+            now: vi.fn(() => new Date(0)),
+        } as unknown as AudioProcessingDependencies,
         getPostById,
     };
 }
@@ -92,6 +99,8 @@ describe('inlineDispatcher', () => {
             patchProcessingState: vi.fn(async () => undefined),
             writeDerivedBlob: vi.fn(async () => 'bafkreinew'),
             now: vi.fn(() => new Date(0)),
+            claimProcessingLease: vi.fn(async () => true),
+            releaseProcessingLease: vi.fn(async () => undefined),
         } as unknown as AudioProcessingDependencies;
 
         // Passthrough denoiser — in-memory, no external call and nothing billed.

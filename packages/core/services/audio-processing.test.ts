@@ -41,6 +41,11 @@ function makeDeps(post: AudioPostRecord | null, over: Partial<AudioProcessingDep
         writeDerivedBlob: vi.fn(async () => (derivedCounter++ === 0 ? CLEANED_CID : `bafkrei${derivedCounter}`)),
         saveTranscript: vi.fn(async (r: TranscriptEnrichmentRecord) => { saved.push(r); }),
         patchProcessingState: vi.fn(async (_app, _id, patch) => { patches.push(patch); }),
+        // Uncontended by default, so every existing case exercises the work
+        // rather than the declined-claim path. The lease's own behaviour is
+        // covered by the `over` overrides in its describe block.
+        claimProcessingLease: vi.fn(async () => true),
+        releaseProcessingLease: vi.fn(async () => undefined),
         newTranscriptId: vi.fn(() => 't1'),
         now: vi.fn(() => new Date('2026-07-03T00:00:00Z')),
         ...over,
@@ -675,6 +680,124 @@ describe('AudioProcessingService.process', () => {
 
             expect(patches).toContainEqual({ transcribe: 'failed' });
             expect(patches).toContainEqual({ waveform: 'ready', waveformPeaks: [0, 50, 100] });
+        });
+    });
+
+    /**
+     * The lease. Queue delivery is at-least-once, so these assert the property
+     * that makes a duplicate delivery harmless: the second runner does no
+     * work, bills nothing, and writes nothing.
+     */
+    describe('lease', () => {
+        function pendingPost() {
+            return makePost({
+                processing: { denoise: 'pending', transcribe: 'pending', updatedAt: new Date() },
+            });
+        }
+
+        /** The lease `process()` derives from the frozen `deps.now()` clock. */
+        function claimedLease() {
+            return new Date(new Date('2026-07-03T00:00:00Z').getTime() + 15 * 60 * 1000);
+        }
+
+        it('does no work when the claim is declined', async () => {
+            // The duplicate-delivery case. Without the lease both runners see
+            // `denoise: 'pending'` and both pay ElevenLabs for the same post.
+            const { deps, patches, saved } = makeDeps(pendingPost(), {
+                claimProcessingLease: vi.fn(async () => false),
+            });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches).toEqual([]);
+            expect(saved).toEqual([]);
+            expect(p.denoiser!.denoise).not.toHaveBeenCalled();
+            // Not even read: a declined claim must cost one transaction, not a
+            // full pass that happens to write nothing.
+            expect(deps.getPostById).not.toHaveBeenCalled();
+        });
+
+        it('claims before reading the post', async () => {
+            // Ordering is the whole point. A claim taken after the read would
+            // let both runners load the same `pending` state first and only
+            // then contend, which is the race with extra steps.
+            const order: string[] = [];
+            const { deps } = makeDeps(pendingPost(), {
+                claimProcessingLease: vi.fn(async () => { order.push('claim'); return true; }),
+                getPostById: vi.fn(async () => { order.push('read'); return null; }),
+            });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(order).toEqual(['claim', 'read']);
+        });
+
+        it('claims a lease that expires ahead of the deps clock', async () => {
+            const claim = vi.fn(async () => true);
+            const { deps } = makeDeps(pendingPost(), { claimProcessingLease: claim });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            // Derived from `deps.now()`, not `Date.now()`, so the expiry is on
+            // the same clock as every other timestamp the service writes.
+            const [, , leaseUntil] = claim.mock.calls[0] as unknown as [string, string, Date];
+            expect(leaseUntil.getTime()).toBe(
+                new Date('2026-07-03T00:00:00Z').getTime() + 15 * 60 * 1000,
+            );
+        });
+
+        it('releases the lease when the pass succeeds', async () => {
+            const { deps } = makeDeps(pendingPost());
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1', claimedLease());
+        });
+
+        it('releases the lease when the pass throws', async () => {
+            // A stage's own try/catch settles it `failed`, but an error from
+            // outside those blocks (storage down, here) escapes. Held to
+            // expiry, the post would be unprocessable for the full TTL over a
+            // fault that has already passed.
+            const { deps } = makeDeps(pendingPost(), {
+                getPostById: vi.fn(async () => { throw new Error('firestore down'); }),
+            });
+
+            await expect(
+                new AudioProcessingService(deps, p).process('vox-pop', 'p1'),
+            ).rejects.toThrow('firestore down');
+
+            expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1', claimedLease());
+        });
+
+        it('releases with the token it claimed, so a lapsed pass cannot clear a successor', async () => {
+            // The fencing property. Release is not "delete this post's lease",
+            // it is "delete the lease IF it is still mine" — and the adapter
+            // can only honour that if the service hands back what it claimed.
+            // Same value, not merely some Date: a release carrying a different
+            // token would clear whatever the next runner holds.
+            const claim = vi.fn(async () => true);
+            const { deps } = makeDeps(pendingPost(), { claimProcessingLease: claim });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            const [, , claimedUntil] = claim.mock.calls[0] as unknown as [string, string, Date];
+            const [, , releasedUntil] = (deps.releaseProcessingLease as ReturnType<typeof vi.fn>).mock
+                .calls[0] as unknown as [string, string, Date];
+            expect(releasedUntil.getTime()).toBe(claimedUntil.getTime());
+        });
+
+        it('does not release a lease it never held', async () => {
+            // Releasing after a declined claim would clear the OTHER runner's
+            // lease, handing its post to a third delivery mid-pass — turning
+            // the safeguard into a way to cause the overlap.
+            const { deps } = makeDeps(pendingPost(), {
+                claimProcessingLease: vi.fn(async () => false),
+            });
+
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(deps.releaseProcessingLease).not.toHaveBeenCalled();
         });
     });
 });

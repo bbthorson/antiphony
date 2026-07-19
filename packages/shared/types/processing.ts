@@ -155,6 +155,28 @@ export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
      * a view can never carry a larger payload than the record allows.
      */
     waveformPeaks: z.array(z.number().int().min(0).max(100)).max(1000).optional(),
+    /**
+     * When the current runner's exclusive claim on this post expires.
+     *
+     * Queue delivery is at-least-once, so the same job can arrive twice and
+     * run CONCURRENTLY. `process()` is idempotent under sequential retry — it
+     * acts on `pending` and re-does nothing already settled — but two passes
+     * interleaved is a different failure: both read the same `pending` state,
+     * both bill the provider for the same stage, and both write
+     * `processedBlobCid`, so the surviving variant is whichever finished last
+     * and the other's blob is orphaned.
+     *
+     * A runner claims this field transactionally before doing any work and
+     * clears it when finished; a second runner finding it unexpired declines
+     * and returns. It is an EXPIRY, not a boolean lock, because the holder can
+     * die mid-run (instance recycled, process killed) with no chance to
+     * release — a plain flag would strand the post permanently, where a lapsed
+     * lease lets the next delivery pick it up.
+     *
+     * Internal, like the variant fields above: `toProcessingView` projects
+     * stages only, so this never reaches a client.
+     */
+    leaseUntil: FirestoreTimestampSchema.optional(),
     updatedAt: FirestoreTimestampSchema,
 });
 export type ProcessingState = z.infer<typeof ProcessingStateSchema>;

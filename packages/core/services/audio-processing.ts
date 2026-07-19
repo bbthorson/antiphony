@@ -44,6 +44,22 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
 }
 
 /**
+ * How long a runner's exclusive claim on a post lasts.
+ *
+ * Bounded from BELOW by the longest plausible pass — denoise is a network call
+ * to ElevenLabs over a multi-megabyte upload, followed by two local ffmpeg
+ * runs — because a lease that lapses under a live holder permits the very
+ * overlap it exists to prevent. Bounded from ABOVE by how long a post stays
+ * stuck after a runner dies without releasing, since nothing reclaims it
+ * before expiry.
+ *
+ * 15 minutes sits well past any observed pass and inside Cloud Tasks' 30
+ * minute maximum HTTP deadline, so the lease cannot outlive the delivery that
+ * took it by more than the margin.
+ */
+const PROCESSING_LEASE_MS = 15 * 60 * 1000;
+
+/**
  * AudioProcessingService — runs one post's opted-in audio processing (B5).
  *
  * Order matters: **denoise first, then transcribe**, so the transcript is
@@ -56,9 +72,14 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
  * recomputed in the same pass (`reprocess: false` opts out).
  *
  * Idempotent: acts on stages marked `pending` plus that recompute set, so a retried
- * run (Cloud Tasks redelivery, later) re-does nothing already settled. Denoise
+ * run (Cloud Tasks redelivery) re-does nothing already settled. Denoise
  * output is content-addressed and the transcript is last-write-wins by
  * subject, so even a mid-stage retry converges.
+ *
+ * That covers SEQUENTIAL retry. Concurrent execution is a separate hazard —
+ * two passes reading the same `pending` state both bill for it — and is closed
+ * by the lease `process()` claims before doing anything; see
+ * `PROCESSING_LEASE_MS` and `claimProcessingLease`.
  *
  * The service performs NO external I/O itself — transcription and denoise are
  * `TranscriberPort`/`DenoiserPort`, and all storage is `AudioProcessingDependencies`.
@@ -75,7 +96,42 @@ export class AudioProcessingService {
         this.capabilities = capabilitiesOf(providers);
     }
 
+    /**
+     * Run one post's outstanding processing, under an exclusive lease.
+     *
+     * The lease is claimed HERE rather than in the worker route so every
+     * dispatcher inherits it — the hazard belongs to `process()`, not to a
+     * transport. Losing the claim is a normal outcome, not an error: it means
+     * another runner is already doing this work (or there is none to do), so
+     * this returns cleanly and the caller must not retry. Retrying would only
+     * spin against a held lease.
+     */
     async process(originAppId: string, postId: string): Promise<void> {
+        const leaseUntil = new Date(this.deps.now().getTime() + PROCESSING_LEASE_MS);
+        if (!(await this.deps.claimProcessingLease(originAppId, postId, leaseUntil))) {
+            this.logger.info(
+                { originAppId, postId },
+                '[audio-processing] lease not acquired; another runner holds it or there is nothing to process',
+            );
+            return;
+        }
+        try {
+            await this.runStages(originAppId, postId);
+        } finally {
+            // Released even when a stage threw, so the post is immediately
+            // reprocessable rather than parked for the rest of the TTL. The
+            // stage's own state was already settled `failed` by the block that
+            // threw; this only gives back the claim.
+            //
+            // Passing the claimed `leaseUntil` fences the release: if this
+            // pass outlived its own lease and another runner took over, the
+            // stored lease is no longer ours and the release does nothing
+            // rather than clearing theirs.
+            await this.deps.releaseProcessingLease(originAppId, postId, leaseUntil);
+        }
+    }
+
+    private async runStages(originAppId: string, postId: string): Promise<void> {
         const post = await this.deps.getPostById(originAppId, postId);
         // Nothing to do: post gone/cross-tenant, or no processing was requested.
         if (!post || !post.processing) return;
