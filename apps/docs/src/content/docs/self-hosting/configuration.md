@@ -42,6 +42,40 @@ Applications (BFFs, workers) are the intended callers of the posts/audio surface
 | `ANTIPHONY_APP_TOKENS` | Comma-separated `appId:token` pairs (tokens ≥32 chars). A caller presenting a matching `Authorization: Bearer <token>` is that app: its tenancy (`originAppId`) comes from the credential, and it asserts the acting user via `X-Antiphony-Acting-Actor` (+ optional `X-Antiphony-Acting-Actor-Did`). Store as a secret. |
 | `SYSTEM_AUTH_TOKEN` | Shared secret for the `/api/v1/system/*` routes. The system-auth middleware expects `Authorization: Bearer <SYSTEM_AUTH_TOKEN>` and **fails closed** (503) if the variable is unset — these routes are service-to-service plumbing, not public API. Store it as a secret, not in plaintext config. |
 
+## Audio enrichment
+
+Opt-in processing runs four stages over a post's audio: **denoise** and **transcribe** (external API — ElevenLabs), and **trim** and **waveform** (local compute — in-process ffmpeg). None run unless the relevant variables below are set; a deployment with none of them still serves audio, it just does no enrichment. Stages requested against a deployment that can't run them settle `skipped`, not `pending`.
+
+### Providers
+
+| Variable | Purpose |
+|---|---|
+| `ELEVENLABS_API_KEY` | Enables the ElevenLabs providers — Scribe (transcription) and Voice Isolator (denoise). **Presence alone selects them**; there is no separate enable flag. Absent → `denoise`/`transcribe` settle `skipped`. Store as a secret. |
+| `ELEVENLABS_STT_MODEL` | Optional. Overrides the default Scribe model id used for transcription. |
+| `ANTIPHONY_FFMPEG_PATH` | Optional. Path to an ffmpeg binary for the local-compute stages (`trim`, `waveform`). Defaults to the bundled `ffmpeg-static`; set this only to point at a system binary. Checked for executability at startup — a bad path means those stages advertise as unavailable rather than failing every post. |
+
+### Dispatch
+
+Processing runs out of band, never inside the create/patch request. How it's triggered depends on these:
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_TASKS_LOCATION` | Cloud Tasks region for durable dispatch (the production path), e.g. `us-east4`. |
+| `ANTIPHONY_TASKS_QUEUE` | Cloud Tasks queue name. |
+| `ANTIPHONY_TASKS_WORKER_URL` | Absolute URL of this deployment's `/api/v1/system/process-audio` worker route, which the queue calls back. Must carry `SYSTEM_AUTH_TOKEN` (above) — the worker is system-auth'd. |
+| `ANTIPHONY_TASKS_PROJECT` | Optional. GCP project for the queue; falls back to `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT`. |
+
+The three non-optional `ANTIPHONY_TASKS_*` vars are **all-or-nothing**: set together, or a partial set is treated as a misconfiguration (logged at `error`, jobs dropped) rather than a silent opt-out. The runtime service account also needs `roles/cloudtasks.enqueuer`, and the worker route requires `SYSTEM_AUTH_TOKEN`.
+
+### Development flags
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_PROCESSING_INLINE` | When `true`, runs processing **synchronously inside the request** — the local/test trigger, no queue needed. Wins over the Cloud Tasks vars, so a developer with queue config in their shell can't enqueue against a real queue by accident. |
+| `ANTIPHONY_PROCESSING_STUB` | When `true`, wires pass-through **stub providers** instead of ElevenLabs — exercises the full create → process → hydrate loop with no key and no billing. Wins over `ELEVENLABS_API_KEY`, so a real key in the shell can't accidentally bill from a test run. |
+
+With neither `ANTIPHONY_PROCESSING_INLINE` nor the `ANTIPHONY_TASKS_*` vars set, dispatch is a no-op (logged and dropped) — enrichment is effectively off.
+
 ## Deployment
 
 The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.

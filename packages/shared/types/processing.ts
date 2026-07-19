@@ -16,8 +16,8 @@ import { FirestoreTimestampSchema } from './records';
  *    recomputation is always the correct response to their input changing.
  *
  * Every stage is OFF by default — the app asks for them per post via
- * `CreateAudioPostRequest.processing`, or after the fact via
- * `POST /posts/{postId}/processing`.
+ * `CreateAudioPostRequest.processing`, or after the fact via the `processing`
+ * opt-in on `PATCH /posts/{postId}`.
  *
  * The work runs asynchronously (outside the create request), so a post
  * carries a mutable `processing` state that starts `pending` and settles to
