@@ -5,7 +5,7 @@ description: An overview of the protocol and the open-core surface.
 
 Antiphony is a **headless service** — MIT-licensed, open infrastructure and an AT Protocol lexicon — that other applications call to store and retrieve audio in an interoperable, portable format, for audio-based call-and-response. These are apps where someone publishes an audio **prompt** (the call) and an audience records audio **replies** (the response). Antiphony owns the post → reply data model, content-addressed audio storage, and an opt-in audio enrichment pipeline — machine transcription, denoising, silence trimming, and waveform generation; it deliberately does **not** own end-user accounts, profiles, or sign-in — that stays with the application that calls it.
 
-It's the kind of backend that sits behind a podcaster's audience-questions feature, a "leave a voice note" embed, an audio AMA, a call-in show's voicemail wall, or any surface built on the same call-and-response shape. [Vox Pop](https://voxpop.com) is one such app, built on Antiphony; this repo also ships a minimal one you can read and run (`apps/reference`).
+It's the kind of backend that sits behind a podcaster's audience-questions feature, a "leave a voice note" embed, an audio AMA, a call-in show's voicemail wall, or any surface built on the same call-and-response shape. [Vox Pop](https://voxpop.audio) is one such app, built on Antiphony; this repo also ships a minimal one you can read and run (`apps/reference`).
 
 :::tip[The lexicon is the contract]
 The most important thing Antiphony defines is a set of **AT Protocol lexicons** under the `dev.antiphony.*` namespace — chiefly `dev.antiphony.audio.post` and the `dev.antiphony.embed.audio` attachment, the protocol's first audio embed. Every REST shape is derived from them. Start at [The Antiphony lexicons](/lexicons/overview/).
@@ -24,13 +24,13 @@ The core is backed by **Firebase** (Firestore, Firebase Auth, Cloud Storage) tod
 ## What's in the open core
 
 - **Hono HTTP service** at `apps/core-api/` — the `/api/v1/*` JSON API surface.
-- **Service bindings** at `packages/core/` — pure TypeScript services (`AudioPostService`, `ActorIdentityService`, `StorageService`, …) with pluggable dependency interfaces. Swap in your own backend without touching the route layer.
+- **Service bindings** at `packages/core/` — pure TypeScript services (`AudioPostService`, `AudioProcessingService`, `StorageService`, …) with pluggable dependency interfaces. Swap in your own backend without touching the route layer.
 - **Shared types and Zod schemas** at `packages/shared/` — records, views, and request codecs. The same schemas validate the wire format, generate the API reference, and mirror the lexicons.
 - **Lexicons** at `lexicons/dev/antiphony/` — the portable AT Protocol record definitions.
 
 ## What's intentionally not in the open core
 
-The core stops at the infrastructure boundary. Anything that's a product, UX, or **identity** decision rather than shared plumbing — accounts, profiles, sign-in, how an app distributes an embed, whether it offers telephony, how it handles **teams or billing** — belongs to the calling application, not the core. The core stays unopinionated about those choices, so different apps can make them differently, while still giving every app the same opinionated **call-and-response model** underneath (the post/reply shape, reply gating, the audio embed). The one identity fact Antiphony *will* hold, if an app wants it there, is the optional actor↔DID mapping (`/actors`) — because that fact has to travel with the portable records, not live only in one caller's database. See [service auth](/api/overview/#authentication).
+The core stops at the infrastructure boundary. Anything that's a product, UX, or **identity** decision rather than shared plumbing — accounts, profiles, sign-in, how an app distributes an embed, whether it offers telephony, how it handles **teams or billing** — belongs to the calling application, not the core. The core stays unopinionated about those choices, so different apps can make them differently, while still giving every app the same opinionated **call-and-response model** underneath (the post/reply shape, reply gating, the audio embed). Antiphony holds no actor or profile record: author identity travels with the portable post as opaque `authorId` / `authorDid` facets that the calling app asserts per request — the presentation (name, avatar, handle) is the app's to join back on. See [service auth](/api/overview/#authentication).
 
 The protocol has no "organization" primitive, either: grouping people into teams is product machinery an app layers on top. The core treats any `orgId` it sees as an opaque scoping key, nothing more. The tenancy boundary the core *does* enforce is the **origin app** (`originAppId`), derived from the calling app's own credential — see [multi-tenancy](/introduction/architecture/).
 
