@@ -457,7 +457,7 @@ reachable, still logged, just much narrower than step 4 anticipated.
   one-PR-per-step convention, at the author's request. The fix is a separate commit and
   stays cherry-pickable.
 
-### 8. Durable dispatch — *gates production*
+### 8. Durable dispatch — *gates production* ✅ done 2026-07-18
 
 - Replace the inline branch with a real queue trigger + a `/system/process-audio` worker
   (system-auth'd, like the other `/system/*` routes).
@@ -466,8 +466,132 @@ reachable, still logged, just much narrower than step 4 anticipated.
   Cloud Tasks and Cloudflare Queues both become adapters behind it.
 - Recompute (step 4) makes this load-bearing: a recompute triggered by a later PATCH is
   exactly the work that must not run inside a request.
-- **Versions:** contract → patch if the system route is documented; none if internal.
+- **Versions:** **none.** The route is internal and stays plain-Hono like every other
+  `/system/*`, so the regenerated spec is byte-identical — this settles the "patch if
+  documented" branch as no bump.
 - **Done when:** a create with processing requested settles without inline mode.
+  ✅ Verified against the built `dist/` bundle, not just tests: it boots, `/health` is
+  200, the worker route 401s unauthenticated and returns `{ran: false}` on a malformed
+  payload under system auth.
+
+Shipped as three PRs rather than one: #48 (the port + inline/noop adapters), #49 (the
+lease), and the queue adapter + worker route. The lease had to precede the durable
+adapter — see below.
+
+**Only the ENQUEUE side is a port.** The consume side is genuinely platform-shaped (Cloud
+Tasks pushes HTTP at a route, Cloudflare Queues invokes a `queue()` handler over a batch)
+and both are thin wrappers around `AudioProcessingService.process()`, which already takes
+exactly this job. Abstracting the consumer too would invent a uniformity that isn't there.
+
+**The lease is a separate concern that had to land FIRST (#49).** Both candidate queues
+are at-least-once, so two deliveries of one job would both read the same `pending` state,
+both bill ElevenLabs, and both write `processedBlobCid` — last writer wins, the other blob
+orphaned. `process()` is idempotent under *sequential* retry only. Shipping the lease
+alongside the queue adapter would have meant one PR introducing a live double-billing bug
+and fixing it in the same diff.
+
+**Deviations from the plan as written, and why:**
+
+- **REST, not `@google-cloud/tasks`.** The official client pulls gRPC and protobufjs —
+  the exact dependency class this bundle has already been bitten by twice (`firebase-admin`
+  is external for that reason; `ffmpeg-static` shipped an artifact that could not boot).
+  The REST surface is one authenticated POST with a JSON body. It is also the portable
+  choice: a gRPC client cannot run on Cloudflare at all, where `fetch` can — which does not
+  make the adapter portable, but keeps the option from being foreclosed by a dependency.
+- **`dispatchDeadline` is DERIVED from `PROCESSING_LEASE_MS`, not chosen.** This is the
+  one coupling worth knowing about. A delivery permitted to run longer than the lease can
+  outlive its own claim, letting a second runner start while the first is still writing —
+  the concurrent-write hazard the lease exists to close, reached from the one direction
+  the lease cannot defend against itself. Holding the deadline at the lease means Cloud
+  Tasks aborts the request no later than the claim lapses. `PROCESSING_LEASE_MS` was
+  exported to make the two numbers unable to drift.
+  **It bounds the overlap, it does not eliminate it** — Cloud Tasks aborts the HTTP
+  *request*, and a worker ignoring client disconnect can run on briefly. See § Still open.
+- **No task name, so no name-based dedup.** Dedup sounds like exactly what an
+  at-least-once queue wants and is wrong here: recompute re-dispatches the SAME post when
+  a later PATCH changes its stages, and Cloud Tasks would silently discard that legitimate
+  second job for ~1 hour after the first completed. Concurrency is the lease's problem;
+  the lease handles redelivery without confusing it with a real re-request.
+- **Status codes are retry instructions, not descriptions.** To Cloud Tasks a 2xx means
+  "do not run this again". The split follows one question — *is there anything a retry
+  could change?*
+  - **200 when the pass completes, including with stages settled `failed`.** A failed
+    stage is already recorded and `process()` acts only on `pending`, so redelivery
+    re-reads that state and does nothing. Denoise and transcribe **bill on the attempt,
+    not the success**, so retrying here is a pure cost.
+  - **200 when the lease is declined** — another runner holds it, or there is nothing to
+    do. A retry only spins.
+  - **200 on a malformed payload.** Not transient; retrying replays the same bad bytes on
+    the backoff schedule until the queue gives up. Logged at `error` and swallowed.
+  - **503 only when the pass throws** — an error escaping `process()` came from outside a
+    stage's own try/catch (Firestore unreachable, storage down), so nothing was recorded
+    and a retry is the only thing that recovers it. The lease was already released in the
+    `finally`, so the redelivery claims immediately rather than waiting out the TTL.
+- **Partial queue config is an error, not an opt-out** — and the test for which is which
+  is *intent*, not a count. A deployment missing one `ANTIPHONY_TASKS_*` var believes it
+  has durable dispatch and has none: every post sits `pending` forever with nothing saying
+  why. But the config also reads two values nothing about queueing controls —
+  `GOOGLE_CLOUD_PROJECT` is set by the platform and `SYSTEM_AUTH_TOKEN` by every other
+  `/system/*` route — so a deployment that cleanly opted out still arrives with two of the
+  five present. Counting missing values therefore fires the misconfiguration error at every
+  correctly-configured noop deployment, which is how a real one gets tuned out.
+  `cloudTasksRequested()` keys on the `ANTIPHONY_TASKS_*` vars alone, which have no default
+  and no other consumer. *(Caught in review of part 3; the first implementation counted, and
+  its tests could not see the bug because they ran against a cleared env where the platform
+  vars are absent by construction.)*
+- **The system-auth token is stored by Cloud Tasks** for the task's lifetime, so anyone
+  who can read the queue can read the secret. `oidcToken` is the better mechanism and
+  stores nothing, but adopting it means changing how every `/system/*` route
+  authenticates, not just this one — `middleware/system-auth.ts` already names itself the
+  swap point.
+- **Inline still wins over queue config**, so a developer with the vars in their shell
+  cannot enqueue against a real queue from a local run. Same precedence and reasoning as
+  `_STUB` over real providers.
+
+**Operator setup** (not inferable from the code): create the queue, grant the runtime
+service account `roles/cloudtasks.enqueuer`, and set `ANTIPHONY_TASKS_LOCATION`,
+`ANTIPHONY_TASKS_QUEUE`, `ANTIPHONY_TASKS_WORKER_URL` (the absolute URL of
+`/api/v1/system/process-audio`) plus the already-required `SYSTEM_AUTH_TOKEN`. The project
+falls back to `GOOGLE_CLOUD_PROJECT`, which App Hosting sets. Queue-level retry/backoff is
+configured on the queue itself, not per task.
+
+### Before enrichment runs in production — operator config
+
+The code for all 8 steps is merged, but `apphosting.yaml` — which calls itself the
+single source of truth for what production runs — carries **none** of the enrichment
+env, so a fresh deploy today runs the noop dispatcher and skips both API stages.
+Ships as its own PR, sequenced *after* the secrets and queue exist because a `secret:`
+ref to a missing Secret Manager entry fails boot:
+
+1. Create the Cloud Tasks queue and grant the App Hosting SA `roles/cloudtasks.enqueuer`.
+2. Create two secrets (`firebase apphosting:secrets:set …`): the `SYSTEM_AUTH_TOKEN`
+   the worker route authenticates with, and `ELEVENLABS_API_KEY`.
+3. Add to `apphosting.yaml`: those two as `secret:` refs, plus plain
+   `ANTIPHONY_TASKS_LOCATION` / `ANTIPHONY_TASKS_QUEUE` / `ANTIPHONY_TASKS_WORKER_URL`
+   (the last being the absolute deployed URL of `/api/v1/system/process-audio`, known
+   only after a first deploy). `GCLOUD_PROJECT` is already set, so the project falls
+   back correctly; ffmpeg needs nothing — it uses bundled `ffmpeg-static`.
+
+Until then trim and waveform are the only stages that would run (local compute, no key),
+and only under inline mode — the production dispatcher stays noop without the queue vars.
+
+### Still open after step 8
+
+Not blockers for production enrichment, but the known gaps:
+
+- **Nothing re-drives a post whose dispatch failed.** `dispatchProcessing` never throws —
+  the post is already committed and the response must succeed — so a queue outage leaves
+  stages `pending` with only a log. The same sweep over `pending` posts would also recover
+  a post whose runner died: the lease bounds that stall to the TTL, but nothing retriggers
+  it afterwards.
+- **A pass that overruns its lease is bounded, not prevented.** `dispatchDeadline` caps
+  the delivery at the lease, but the runner still believes it holds a claim it may have
+  lost, and the fence added in #49 only stops it from *clearing* the successor's lease —
+  not from racing the successor's writes. Closing it properly means re-checking the lease
+  before each byte-mutating write, which is a per-stage change rather than a dispatch one.
+- **Stranded artifacts** (steps 4 and 6) — a `ready` stage over an artifact describing
+  superseded audio, when no runner is configured. Requires the artifact to record which
+  variant it describes; a state-schema change.
 
 ## Deferred — not in this plan
 

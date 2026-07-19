@@ -56,8 +56,14 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
  * 15 minutes sits well past any observed pass and inside Cloud Tasks' 30
  * minute maximum HTTP deadline, so the lease cannot outlive the delivery that
  * took it by more than the margin.
+ *
+ * **Exported so a dispatcher can bound its delivery by it.** The Cloud Tasks
+ * adapter sets `dispatchDeadline` from this value, which is what keeps the two
+ * numbers from drifting apart: a delivery allowed to run LONGER than the lease
+ * is one that can outlive its own claim and race the runner that replaced it.
+ * That coupling only holds if both read the same constant.
  */
-const PROCESSING_LEASE_MS = 15 * 60 * 1000;
+export const PROCESSING_LEASE_MS = 15 * 60 * 1000;
 
 /**
  * AudioProcessingService — runs one post's opted-in audio processing (B5).
