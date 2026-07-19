@@ -173,7 +173,7 @@ B3:
 - Vendor its own `ProfileViewSchema` before the shared 0.4.0 trim (item 3 above).
 - Re-implement the moved `/users/*`, `/resolve`, `/atproto` + OAuth-ceremony surface against
   its own store.
-- **Serve `/.well-known/did.json` on voxpop.com** — a **beta onboarding prerequisite** for
+- **Serve `/.well-known/did.json` on `did.voxpop.audio`** — a **beta onboarding prerequisite** for
   the app-DID authority model (see [`atproto-authority-model.md`](./atproto-authority-model.md)).
   The doc's `#atproto_pds` endpoint must point at Antiphony; Antiphony validates + snapshots
   it at tenant onboarding.
