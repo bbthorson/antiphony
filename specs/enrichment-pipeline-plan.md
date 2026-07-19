@@ -1,9 +1,11 @@
 # Enrichment pipeline — work plan
 
-**Status:** active, opened 2026-07-18. Execution plan for
+**Status:** ✅ complete, all 8 steps merged and deployed to production 2026-07-19
+(`api.antiphony.dev`, App Hosting). Opened 2026-07-18. Execution plan for
 [`enrichment-pipeline.md`](./enrichment-pipeline.md) (the design). That doc is the
 authority on *what* and *why*; this one is *in what order*, and is written to be
-self-contained enough to resume from cold.
+self-contained enough to resume from cold. Retained as the execution record — the
+per-step deviation notes are the durable value now that the work is done.
 
 ## Context you need
 
@@ -32,19 +34,25 @@ Read [`enrichment-pipeline.md`](./enrichment-pipeline.md) first. Condensed:
 - `TranscriberPort` / `DenoiserPort` (`packages/core/ports/`) — the provider seam.
 - `AudioProcessingService.process()` (`packages/core/services/audio-processing.ts`) —
   denoise→transcribe ordering, idempotent retry, per-stage settle.
-- `POST /api/v1/posts/{postId}/processing` (`apps/core-api/src/adapters/inbound/rest/posts.ts`,
-  ~line 383) — the post-hoc stage-request seam.
+- `PATCH /api/v1/posts/{postId}` (`apps/core-api/src/adapters/inbound/rest/posts.ts`) — the
+  post-hoc stage-request seam. Its body accepts **only** a `processing` opt-in (no lexicon
+  fields, so it changes no record CID). Processing is also requestable at create time via the
+  `processing` field on `POST /api/v1/posts`.
 - Stub providers (`apps/core-api/src/adapters/outbound/firebase/processing-providers.ts`)
   and env-based selection in `resolveProviders()` (`apps/core-api/src/lib/audio-processing.ts`).
 
-### Production reality check
+### Production reality check — RESOLVED 2026-07-19
 
-The `denoise` and `transcribe` adapters are wired (steps 2–3), and `trim`/`waveform`
-still settle `skipped` until steps 5–6 give them ports. But **production enrichment
-still does nothing**, for a different reason than it used to: dispatch.
-`ANTIPHONY_PROCESSING_INLINE` is dev/test only, so **step 8 (durable dispatch) gates all
-production enrichment.** Steps 2–7 are verifiable via inline mode; none of them are
-shippable-to-prod without step 8.
+All four stage adapters are wired and **production enrichment is live.** Step 8's durable
+dispatch (Cloud Tasks → the `/api/v1/system/process-audio` worker) shipped, and the
+operator config that gated it — the queue, the `roles/cloudtasks.enqueuer` grant, the
+`ELEVENLABS_API_KEY` / `SYSTEM_AUTH_TOKEN` secrets, and the `apphosting.yaml` env — is
+provisioned and deployed. Verified post-deploy: `/health` 200, the worker route 401s
+unauthenticated (i.e. `SYSTEM_AUTH_TOKEN` resolved from the secret).
+
+*Historical note:* before step 8, production enrichment did nothing because
+`ANTIPHONY_PROCESSING_INLINE` (the only dispatcher that ran anything) is dev/test only.
+Steps 2–7 were verifiable via inline mode but none were shippable-to-prod without step 8.
 
 ## Versioning
 
@@ -555,25 +563,26 @@ service account `roles/cloudtasks.enqueuer`, and set `ANTIPHONY_TASKS_LOCATION`,
 falls back to `GOOGLE_CLOUD_PROJECT`, which App Hosting sets. Queue-level retry/backoff is
 configured on the queue itself, not per task.
 
-### Before enrichment runs in production — operator config
+### Operator config — DONE 2026-07-19
 
-The code for all 8 steps is merged, but `apphosting.yaml` — which calls itself the
-single source of truth for what production runs — carries **none** of the enrichment
-env, so a fresh deploy today runs the noop dispatcher and skips both API stages.
-Ships as its own PR, sequenced *after* the secrets and queue exist because a `secret:`
-ref to a missing Secret Manager entry fails boot:
+`apphosting.yaml` — the single source of truth for what production runs — now carries the
+enrichment env, so the production dispatcher is the Cloud Tasks adapter rather than noop.
+Provisioned in order (secrets and queue before the `apphosting.yaml` PR, because a
+`secret:` ref to a missing Secret Manager entry fails boot):
 
-1. Create the Cloud Tasks queue and grant the App Hosting SA `roles/cloudtasks.enqueuer`.
-2. Create two secrets (`firebase apphosting:secrets:set …`): the `SYSTEM_AUTH_TOKEN`
-   the worker route authenticates with, and `ELEVENLABS_API_KEY`.
-3. Add to `apphosting.yaml`: those two as `secret:` refs, plus plain
-   `ANTIPHONY_TASKS_LOCATION` / `ANTIPHONY_TASKS_QUEUE` / `ANTIPHONY_TASKS_WORKER_URL`
-   (the last being the absolute deployed URL of `/api/v1/system/process-audio`, known
-   only after a first deploy). `GCLOUD_PROJECT` is already set, so the project falls
-   back correctly; ffmpeg needs nothing — it uses bundled `ffmpeg-static`.
+1. ✅ Cloud Tasks queue `us-east4/antiphony-processing`; App Hosting SA
+   (`firebase-app-hosting-compute@`) granted `roles/cloudtasks.enqueuer`.
+2. ✅ Two secrets: `system-auth-token` (the worker's bearer, ≥32 chars) and
+   `elevenlabs-api-key`. Both at IAM parity with the existing `antiphony-app-tokens`
+   (accessor + versionManager + viewer).
+3. ✅ `apphosting.yaml` (PR #51): the two `secret:` refs plus plain
+   `ANTIPHONY_TASKS_LOCATION=us-east4` / `ANTIPHONY_TASKS_QUEUE=antiphony-processing` /
+   `ANTIPHONY_TASKS_WORKER_URL` (the deployed worker URL). `GCLOUD_PROJECT` is already set,
+   so the project falls back correctly; ffmpeg uses bundled `ffmpeg-static`.
 
-Until then trim and waveform are the only stages that would run (local compute, no key),
-and only under inline mode — the production dispatcher stays noop without the queue vars.
+One functional check remains before calling the pipeline proven end-to-end: a create with a
+processing stage requested, observed settling via the queue (not inline) with a real
+transcript/variant.
 
 ### Still open after step 8
 

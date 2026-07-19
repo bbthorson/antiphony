@@ -1,8 +1,10 @@
 # Core API Surface — the headless boundary
 
-**Status:** Decided 2026-07-05. Supersedes the inherited `vox-pop-core-api`
-surface. Implementation follows in a separate PR (breaking → version bump, see
-[`api-versioning.md`](./api-versioning.md)).
+**Status:** Decided 2026-07-05; **implemented and deployed**. Supersedes the
+inherited `vox-pop-core-api` surface — the public API is now **posts + audio
+only**, and the profile/handle/identity routes described below as "remove" are
+gone, re-homed in the Vox Pop BFF (see [`core-bff-boundary.md`](./core-bff-boundary.md)).
+The breaking trim shipped as a version bump (see [`api-versioning.md`](./api-versioning.md)).
 
 ## Decision
 
@@ -139,14 +141,14 @@ server-side secret; untrusted clients always go through a BFF). If a genuinely
 public, directly-consumed content plane is ever needed, it is an **explicit,
 opt-in, per-tenant public-read scope** — never a silent default tenant.
 
-## Rollout
+## Rollout — ✅ done
 
-No deprecation window is needed. The only wired tenant (voxpop) is **not** yet
-calling these routes (its BFF still reads the legacy `vox-pop-core-api` store),
-and there are no other consumers. So:
+No deprecation window was needed: at decision time the only wired tenant (voxpop)
+was not yet calling these routes, and there were no other consumers. Since then
+the Vox Pop BFF has become an independent codebase that composes against this
+trimmed surface over HTTP. The trim executed as planned:
 
-1. Land the BFF's author-hydration change (join on `authorId`) — or confirm the
-   reference app is the only reader of `author`.
-2. Remove the routes + hydration + narrative fixes in one PR.
+1. ✅ The BFF hydrates authors by joining on `authorId` against its own store.
+2. ✅ The moved routes + profile hydration were removed in one PR.
 3. Breaking change → bump the contract version per
    [`api-versioning.md`](./api-versioning.md) (`0.1.0` → `0.2.0`).

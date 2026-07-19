@@ -60,11 +60,13 @@ View (`#view`) — what hydration returns:
 
 | Field | Type | Notes |
 | :--- | :--- | :--- |
-| `url` | uri | Resolved, **playable** URL. In the centralized deployment this is a short-lived signed Storage URL — not the raw blob. Required. |
-| `durationMs`, `alt`, `waveform` | | Copied from the record embed. |
+| `url` | uri | Resolved, **playable** URL — the **processed variant** once opt-in processing has produced one, otherwise the original. In the centralized deployment this is a short-lived signed Storage URL, not the raw blob. Required. |
+| `durationMs` | integer? | The processed variant's duration once a byte-mutating stage (`trim`) has run; otherwise the record's value. |
+| `waveform` | integer[]? | Server-computed peaks once the `waveform` stage is `ready`; otherwise the client-supplied peaks from the record. |
+| `alt` | string? | Copied from the record embed (never processed). |
 | `transcript` | ref? | The timed transcript, **lifted** from the enrichment record at read time. Absent until transcription completes. |
 
-The split is the important part: the record stores universal facts; the view carries the resolved playback URL and the lifted transcript. The transcript is **never stored on the post**.
+The split is the important part: the record stores universal facts; the view carries the resolved playback URL, the lifted transcript, and — for `url`, `durationMs`, and `waveform` — whichever value describes the audio the reader actually plays. `url`, `durationMs`, and `waveform` **move together**: peaks are drawn across a duration and a duration describes specific bytes, so all three resolve to the processed variant or none do. A client that cached `durationMs`/`waveform` at upload time should re-read them from the view, since they change once processing runs (`trim` shortens the audio, `waveform` recomputes the peaks). The transcript is **never stored on the post**.
 
 ### `dev.antiphony.audio.transcript` — platform enrichment
 

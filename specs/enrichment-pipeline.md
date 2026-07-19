@@ -1,10 +1,12 @@
 # Enrichment pipeline (B5)
 
-**Status:** proposed 2026-07-18. Extends the B5 processing scaffold already in
+**Status:** ✅ implemented and deployed 2026-07-19 (proposed 2026-07-18). See
+[`enrichment-pipeline-plan.md`](./enrichment-pipeline-plan.md) for the execution
+record and per-step deviations. Extended the B5 processing scaffold already in
 the tree (`packages/core/services/audio-processing.ts`, `packages/shared/types/processing.ts`,
-`POST /api/v1/posts/{postId}/processing`) from two stages to four, and settles
-stage ordering, the derived-artifact recompute rule, and the provider seam.
-Companion to [`core-surface.md`](./core-surface.md) (what the contract exposes).
+the `processing` opt-in on `POST /api/v1/posts` + `PATCH /api/v1/posts/{postId}`) from two
+stages to four, and settled stage ordering, the derived-artifact recompute rule, and the
+provider seam. Companion to [`core-surface.md`](./core-surface.md) (what the contract exposes).
 
 ## What already exists
 
@@ -17,8 +19,8 @@ Not restated below, but load-bearing:
 - **Denoise-before-transcribe ordering**, including the idempotent-retry case (a pass
   with denoise already `ready` starts from the cleaned variant rather than the noisy
   original).
-- **The post-hoc trigger.** `POST /posts/{postId}/processing` validates a stage request,
-  persists it via `setProcessing`, and dispatches — the same seam as create.
+- **The post-hoc trigger.** The `processing` opt-in on `PATCH /api/v1/posts/{postId}`
+  validates a stage request, persists it, and dispatches — the same seam as create.
 - **Storage-layer processing state.** `ProcessingState` is deliberately outside the
   record CID, so stages can settle without changing a post's content address.
 
@@ -64,8 +66,8 @@ Denoise precedes trim deliberately: silence detection keys off a noise floor, so
 noisy input the "silence" is not actually quiet and trim under-cuts. Denoising first
 makes the silence genuinely silent and detection reliable.
 
-Callers wanting a different order request stages **individually** via
-`POST /posts/{postId}/processing`, one call per stage. The order above is what a
+Callers wanting a different order request stages **individually** via the `processing`
+opt-in on `PATCH /api/v1/posts/{postId}`, one call per stage. The order above is what a
 multi-stage request runs; it is not a restriction on what callers may ask for.
 
 ## Recompute rule (decided)

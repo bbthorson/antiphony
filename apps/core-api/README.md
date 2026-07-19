@@ -1,38 +1,41 @@
 # @antiphony/core-api
 
-> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, replies, audio upload/playback, and identity. Pairs with a Firestore backend and any Firebase-compatible auth provider.
+> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, threaded replies, and audio upload/playback. Pairs with a Firestore backend and any Firebase-compatible auth provider.
 >
 > **Apps built on it** (e.g. [Vox Pop](https://voxpop.com)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
 
 ## Status
 
-**Phase 4a complete (2026-04-24).** Every non-hosted-tier endpoint in `/api/v1/*` is live:
+**Open-core carve-out complete.** Antiphony is a standalone MIT repository; the Vox Pop consumer app is a separate codebase with its own BFF that talks to this API over HTTP. This repo contains only the open-core tier and is deployed at `api.antiphony.dev`.
 
-- 22 JSON endpoints across prompts, replies, users, organizations, handles, onboarding, uploads, inbox, and notifications.
-- Firebase-wired service bindings (`UserService`, `PromptService`, `ReplyService`, `OrganizationService`, `HydrationService`, `FeedService`, `StorageService`, `RssService`).
-- Bearer-token auth bridge — accepts either Firebase ID tokens or session cookie values.
-- Idempotency-key support on write endpoints.
-- pino structured logging + X-Request-ID correlation.
+The public `/api/v1/*` surface is deliberately small — **two resource groups**:
 
-**Phase 4b (in progress):** open-source carve-out. See [`../../specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 4b.
+- **Posts** (`dev.antiphony.audio.post`) — create, read, list, and threaded replies, with hydrated audio and lifted transcript. A prompt and a reply are the *same* record type, distinguished by the `reply` field, not separate resources.
+- **Audio** — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint.
+
+Plus opt-in **audio enrichment** — denoise, trim, transcribe, and waveform — requested on create/patch and run out of band behind a durable queue. See [`../../specs/enrichment-pipeline.md`](../../specs/enrichment-pipeline.md).
+
+Internal `/api/v1/system/*` routes (the enrichment worker, identity plumbing, rate-limit checks) are system-auth'd and stay out of the public contract.
 
 ## Intentionally NOT here
 
-These live in the closed-source `apps/web` tier and stay there:
+These belong to the consumer app (e.g. Vox Pop) — now a separate repo — not to the open core:
 
 - **IVR / call-forwarding** — Twilio integration, phone-lookup, dedicated numbers, carrier detection.
 - **AT Protocol OAuth callback + client-metadata** — redirect_uri baked into PDS registrations; origin-bound.
 - **CSP violation reporter** — browser sends to the `report-uri` in the page's CSP header.
 - **Twilio SIP webhooks** — third-party webhook URLs are configured in Twilio's console.
+- **App-coupled compositions** — inbox, onboarding, teams/CRM, billing. These compose the core primitives in the consumer BFF; they are not core resources.
 
 ## Architecture
 
-Hono + firebase-admin, two layers:
+**Ports and adapters (hexagonal).** The Firebase-free domain — ports and services — lives in [`@antiphony/core`](../../packages/core/); this package is the Node host that wires concrete adapters to it.
 
-- **`src/routes/`** — one file per endpoint. Each route validates with Zod, authenticates via the bearer middleware, and delegates to a service method.
-- **`src/services/core-services-firebase.ts`** — composition root. Wires the Firebase-backed `CoreServices` binding with the `*-dependencies.ts` implementations in this package. Swappable for non-Firebase backends (Postgres, in-memory for tests) without touching `packages/core`.
+- **`src/adapters/inbound/rest/`** — one file per HTTP route. Each validates with Zod, authenticates via the auth middleware, and calls a use case / domain service.
+- **`src/adapters/outbound/`** — the driven side: `firebase/` (Firestore + Storage bindings), `elevenlabs/` (transcribe + denoise), `ffmpeg/` (trim + waveform), `dispatch/` (the processing queue). Swapping a backend means swapping an adapter, not touching `packages/core`.
+- **`src/use-cases/`**, **`src/middleware/`**, **`src/lib/`** — application wiring, the auth/CORS/logging middleware, and the composition helpers (provider + dispatcher resolution). `src/app.ts` mounts the routes.
 
-No React, no Next.js, no framework magic. Just Hono handlers talking to typed services.
+No React, no Next.js, no framework magic. Just Hono handlers talking to typed ports.
 
 ## The public contract
 
@@ -42,14 +45,13 @@ The documented public API surface is defined by **one rule**:
 > `app.openapi(createRoute({ ... }), handler)` on an `OpenAPIHono` **and** carries
 > one of the approved tags.
 
-The approved tag set — **Users, Prompts, Replies, Audio, Auth, Connectors,
-Organizations** — is the single source of truth, declared in
-[`src/lib/openapi-info.ts`](src/lib/openapi-info.ts)
+The approved tag set — **Posts** and **Audio** — is the single source of truth,
+declared in [`src/lib/openapi-info.ts`](src/lib/openapi-info.ts)
 (`OPENAPI_TAGS`). A route belongs in the contract only if it is a **primitive**
 (CRUD over a core resource), a **query** (a read needing server-only state), or a
 **public-projection** (an anonymous, public-safe read). Compositions and
 app-coupled experiences (inbox, onboarding, CRM) stay on plain `Hono` and never
-appear in the spec — they live in the consumer/web BFF.
+appear in the spec — they live in the consumer BFF.
 
 Consequences:
 
@@ -63,10 +65,10 @@ Consequences:
   widens the public contract.
 
 The spec is generated by `npm run gen:openapi` (output committed to
-`openapi.json`, consumed by the public Scalar reference). The committed
+`openapi.json`, consumed by the public API reference). The committed
 `openapi.surface.json` snapshot + its test guard the *set* of public endpoints:
 adding, removing, or renaming one fails CI until the snapshot is updated in the
-same PR. See [`../../specs/plan-a-core-api-contract.md`](../../specs/plan-a-core-api-contract.md).
+same PR. See [`../../specs/core-surface.md`](../../specs/core-surface.md) for what the contract exposes and why.
 
 ## Local Development & Onboarding
 
@@ -78,18 +80,18 @@ For detailed instructions on setting up your local environment, running the full
 
 ```bash
 npm run typecheck -w @antiphony/core-api
-npm run build -w @antiphony/core-api     # esbuild; bundle stays < 500kb
+npm run build -w @antiphony/core-api     # esbuild
 npm run lint -w @antiphony/core-api
 npm run test -w @antiphony/core-api -- --run
 ```
 
 ## Deployment
 
-Firebase App Hosting — the `antiphony-core` backend serves `api.antiphony.dev`. See [`apphosting.yaml`](../../apphosting.yaml) at the repo root for the production config. Provision the backend in the Firebase console, wire credentials (Application Default Credentials on App Hosting), and map a domain (or use the default `*.hosted.app` URL).
+Firebase App Hosting — the `antiphony-core` backend serves `api.antiphony.dev`. See [`apphosting.yaml`](../../apphosting.yaml) at the repo root for the production config. Provision the backend in the Firebase console, wire credentials (Application Default Credentials on App Hosting), and map a domain (or use the default `*.hosted.app` URL). Enrichment adds a Cloud Tasks queue and two secrets — see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
 
 ## Why Hono, not Next.js
 
-Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and App Hosting supports it natively. See [`specs/decoupling-migration.md`](../../specs/decoupling-migration.md) § Phase 4 for the full trade-off.
+Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and App Hosting supports it natively.
 
 ## License
 
