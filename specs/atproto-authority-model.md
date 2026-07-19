@@ -78,12 +78,12 @@ the acting end-user has ever linked an identity.
 
 ## App DID method (sub-decision — decided 2026-07-03)
 
-**Vox Pop beta uses an own-domain `did:web` (`did:web:voxpop.com`), behind a
+**Vox Pop beta uses an own-domain `did:web` (`did:web:did.voxpop.audio`), behind a
 method-agnostic per-tenant pinning layer.**
 
-**Why `did:web`, precisely:** not cost — **exit sovereignty**. `did:web:voxpop.com` is the
+**Why `did:web`, precisely:** not cost — **exit sovereignty**. `did:web:did.voxpop.audio` is the
 only option where the app can leave Antiphony with *zero cooperation from us*: Vox Pop
-controls voxpop.com, so it controls the DID document, so it can repoint the
+controls voxpop.audio, so it controls the DID document, so it can repoint the
 `#atproto_pds` endpoint at a new host, import the exported corpus, and every `at://` URI
 ever minted stays valid — without asking Antiphony. That makes the "the app can take its
 corpus and leave" story mechanically true. The fragility (a lapsed domain / rebrand orphans
@@ -108,7 +108,7 @@ it's what makes the method a per-tenant choice by construction):
   get to have before `did:plc`.**
 
 **The revisit deadline is the first Vox Pop post we commit to keeping** — i.e. the
-end-of-beta keep-or-wipe call (effectively GA). `did:web:voxpop.com` is provisional exactly
+end-of-beta keep-or-wipe call (effectively GA). `did:web:did.voxpop.audio` is provisional exactly
 as long as we're still willing to wipe the beta corpus. It is **not** "second app" (the
 method is per-tenant, so tenant #2 chooses `did:plc` independently — no global call is
 waiting) and **not** "first export" (the authority is sealed into reply StrongRef CIDs at
@@ -125,7 +125,7 @@ story that justifies `did:web` at all (lock-in wearing the exit hatch's syntax).
 hosted `did:web` only for explicitly throwaway tenants (staging, integration tests) where
 "orphaned forever" is fine because forever is a sprint.
 
-**BFF prerequisite:** Vox Pop serving `/.well-known/did.json` on voxpop.com is a **beta
+**BFF prerequisite:** Vox Pop serving `/.well-known/did.json` on `did.voxpop.audio` is a **beta
 onboarding prerequisite** — it belongs on the coupled BFF work list next to the B3 cross-repo
 items in [`core-bff-boundary.md`](./core-bff-boundary.md).
 

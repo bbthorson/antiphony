@@ -9,7 +9,7 @@ This page is the **mental model** for the whole project: why the API is scoped t
 
 ## The core is a hub
 
-Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single source of truth for portable audio posts, replies, transcription, and an optional actor↔DID mapping, with a contract in front of it — deliberately not accounts or profiles, which stay with each connector. Everything a human or a machine actually touches — a web dashboard, an embed on a blog, a phone call, a mobile app — is a separate **connector** that talks to the hub over that contract.
+Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single source of truth for portable audio posts, replies, and transcription, with a contract in front of it — deliberately not accounts or profiles, which stay with each connector. Everything a human or a machine actually touches — a web dashboard, an embed on a blog, a phone call, a mobile app — is a separate **connector** that talks to the hub over that contract.
 
 ```
                        ┌───────────────────────────┐
@@ -21,9 +21,9 @@ Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single so
                        └───────────────────────────┘
 ```
 
-[Vox Pop](https://voxpop.com) is **one** connector — a hosted product built on the hub. This repo ships a second you can read end to end: [`apps/reference`](/build-your-own/reference-app/). Your surface is just one more arrow into the same hub.
+[Vox Pop](https://voxpop.audio) is **one** connector — a hosted product built on the hub. This repo ships a second you can read end to end: [`apps/reference`](/build-your-own/reference-app/). Your surface is just one more arrow into the same hub.
 
-This is the single rule that explains the API: **the core ships primitives, and connectors compose experiences from them.** An "inbox," an "onboarding flow," a "dashboard" — those are compositions a connector assembles; they are deliberately *not* endpoints. A reply "inbox," for instance, is something a connector builds from the post primitives — a thread is `GET /api/v1/posts/{id}/replies`, a viewer's posts are `GET /api/v1/posts`, and the replies addressed to an author (the raw feed a connector filters into an inbox) are `GET /api/v1/posts?rootAuthor=…`. There is no `GET /inbox`: the "read / unread," "archived," and unread-count layers that make it an *inbox* live in the connector, over those primitives.
+This is the single rule that explains the API: **the core ships primitives, and connectors compose experiences from them.** An "inbox," an "onboarding flow," a "dashboard" — those are compositions a connector assembles; they are deliberately *not* endpoints. A reply "inbox," for instance, is something a connector builds from the post primitives — a thread is `GET /api/v1/posts/{postId}/replies`, a viewer's posts are `GET /api/v1/posts`, and the replies addressed to an author (the raw feed a connector filters into an inbox) are `GET /api/v1/posts?rootAuthor=…`. There is no `GET /inbox`: the "read / unread," "archived," and unread-count layers that make it an *inbox* live in the connector, over those primitives.
 
 ## Connectors are directional
 

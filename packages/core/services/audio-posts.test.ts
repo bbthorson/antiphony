@@ -48,17 +48,17 @@ function promptInput(over: Partial<CreateAudioPostInput> = {}): CreateAudioPostI
 
 describe('buildPostUri', () => {
     it('uses the app DID as the at:// authority (not the author), post id as the last segment', () => {
-        expect(buildPostUri('did:web:voxpop.com', 'p1'))
-            .toBe('at://did:web:voxpop.com/dev.antiphony.audio.post/p1');
+        expect(buildPostUri('did:web:did.voxpop.audio', 'p1'))
+            .toBe('at://did:web:did.voxpop.audio/dev.antiphony.audio.post/p1');
     });
 });
 
 describe('parsePostId', () => {
-    const APP_DID = 'did:web:voxpop.com';
+    const APP_DID = 'did:web:did.voxpop.audio';
 
     it('extracts the rkey when the authority matches, tolerating a trailing slash; null when empty', () => {
-        expect(parsePostId('at://did:web:voxpop.com/dev.antiphony.audio.post/p1', APP_DID)).toBe('p1');
-        expect(parsePostId('at://did:web:voxpop.com/dev.antiphony.audio.post/p1/', APP_DID)).toBe('p1');
+        expect(parsePostId('at://did:web:did.voxpop.audio/dev.antiphony.audio.post/p1', APP_DID)).toBe('p1');
+        expect(parsePostId('at://did:web:did.voxpop.audio/dev.antiphony.audio.post/p1/', APP_DID)).toBe('p1');
         expect(parsePostId(buildPostUri(APP_DID, 'p9'), APP_DID)).toBe('p9');
         expect(parsePostId('', APP_DID)).toBeNull();
     });
@@ -70,13 +70,13 @@ describe('parsePostId', () => {
     });
 
     it('rejects a malformed uri (non-at://, or missing collection/rkey)', () => {
-        expect(parsePostId('at://did:web:voxpop.com', APP_DID)).toBeNull();
-        expect(parsePostId('https://voxpop.com/x/y/p1', APP_DID)).toBeNull();
+        expect(parsePostId('at://did:web:did.voxpop.audio', APP_DID)).toBeNull();
+        expect(parsePostId('https://did.voxpop.audio/x/y/p1', APP_DID)).toBeNull();
     });
 
     it('rejects a ref to a different collection (cross-collection spoofing)', () => {
         // Right authority, wrong collection ⇒ null, so it can't masquerade as a post.
-        expect(parsePostId('at://did:web:voxpop.com/app.bsky.feed.post/p1', APP_DID)).toBeNull();
+        expect(parsePostId('at://did:web:did.voxpop.audio/app.bsky.feed.post/p1', APP_DID)).toBeNull();
     });
 });
 

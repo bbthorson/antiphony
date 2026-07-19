@@ -2,7 +2,7 @@
 
 > **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, threaded replies, and audio upload/playback. Pairs with a Firestore backend and any Firebase-compatible auth provider.
 >
-> **Apps built on it** (e.g. [Vox Pop](https://voxpop.com)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
+> **Apps built on it** (e.g. [Vox Pop](https://voxpop.audio)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
 
 ## Status
 

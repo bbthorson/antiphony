@@ -23,7 +23,7 @@ Firebase (Firestore, Firebase Auth, Cloud Storage) is the only backend implement
 │        ▼                                              │
 │   packages/core/services/*.ts                         │
 │   ← pure-TS services (AudioPostService,               │
-│     ActorIdentityService, StorageService, …) over     │
+│     AudioProcessingService, StorageService, …) over   │
 │     *Dependencies interfaces — no Firebase import      │
 │        ▲                                              │
 │        │ implements                                   │

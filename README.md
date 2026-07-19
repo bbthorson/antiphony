@@ -5,7 +5,7 @@ applications call to store and retrieve audio posts in an interoperable,
 AT-Protocol-shaped format — plus audio enrichment (transcription, and opt-in
 cleanup like denoising). It owns the canonical `dev.antiphony.*` data model, the
 audio-embed lexicon contribution, and the public REST surface that products
-(e.g. [Vox Pop](https://voxpop.com)) build on. Docs: [docs.antiphony.dev](https://docs.antiphony.dev).
+(e.g. [Vox Pop](https://voxpop.audio)) build on. Docs: [docs.antiphony.dev](https://docs.antiphony.dev).
 
 ## Workspaces
 
