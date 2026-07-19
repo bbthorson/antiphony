@@ -103,3 +103,49 @@ env:
       value: "https://api.antiphony.dev,https://antiphony--antiphony-core.us-east4.hosted.app"
       availability:
           - RUNTIME
+
+    # ── Audio enrichment (specs/enrichment-pipeline-plan.md, step 8) ───────────
+    # Without this block the dispatch seam resolves the NOOP dispatcher and both
+    # ElevenLabs stages settle `skipped` — every processing request sits `pending`
+    # forever. The three ANTIPHONY_TASKS_* vars are what `cloudTasksRequested()`
+    # keys on; set together or not at all (a partial set logs at `error` and still
+    # drops jobs). Project id is not repeated here — the adapter falls back to
+    # GCLOUD_PROJECT, set above.
+    #
+    # Durable dispatch target: the Cloud Tasks queue created in us-east4. The
+    # runtime SA (firebase-app-hosting-compute@) holds roles/cloudtasks.enqueuer.
+    - variable: ANTIPHONY_TASKS_LOCATION
+      value: "us-east4"
+      availability:
+          - RUNTIME
+    - variable: ANTIPHONY_TASKS_QUEUE
+      value: "antiphony-processing"
+      availability:
+          - RUNTIME
+    # Absolute URL Cloud Tasks calls back with each job. Must resolve to THIS
+    # backend and carry to the system-auth'd worker route. The default App
+    # Hosting domain (same host as the CORS origin above) is stable and always
+    # exists; switch to https://api.antiphony.dev once that custom domain is the
+    # canonical ingress.
+    - variable: ANTIPHONY_TASKS_WORKER_URL
+      value: "https://antiphony--antiphony-core.us-east4.hosted.app/api/v1/system/process-audio"
+      availability:
+          - RUNTIME
+    # Shared bearer the worker route authenticates callbacks with, and that the
+    # enqueuing adapter bakes into each task's headers. Required by EVERY
+    # `/system/*` route, not just this one — absent until now, so setting it also
+    # switches on the other system routes. SECRET, ≥32 chars (middleware rejects
+    # shorter). Version 2 of `system-auth-token` holds the value; the compute SA
+    # has roles/secretmanager.secretAccessor.
+    - variable: SYSTEM_AUTH_TOKEN
+      secret: system-auth-token
+      availability:
+          - RUNTIME
+    # ElevenLabs API key. Its PRESENCE alone selects the real Scribe/Voice
+    # Isolator providers (no separate enable flag); absent ⇒ denoise/transcribe
+    # settle `skipped`. SECRET — set via `firebase apphosting:secrets:set
+    # elevenlabs-api-key` BEFORE this deploys, or boot fails on the missing ref.
+    - variable: ELEVENLABS_API_KEY
+      secret: elevenlabs-api-key
+      availability:
+          - RUNTIME
