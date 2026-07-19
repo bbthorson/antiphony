@@ -56,7 +56,7 @@ The server stamps `originAppId` (the tenancy key) and `createdAt` for you — yo
 
 ## 4. Read it back, hydrated
 
-`GET /api/v1/posts/{id}` returns the **view**, not the raw record:
+`GET /api/v1/posts/{postId}` returns the **view**, not the raw record:
 
 ```ts
 // GET /api/v1/posts/:id → AudioPostView
@@ -102,7 +102,7 @@ Open the app, record, and watch it round-trip create → fetch → render. The f
 1. **A bearer token** — the reference app's anonymous Firebase auth is the local-dev/demo shortcut, not the integration pattern. A real app authenticates with a [service credential](/api/overview/#authentication) and asserts its own end user as the acting actor.
 2. **Upload, then reference** — `POST /api/v1/audio/upload`, place the returned blob ref in the post's `embed` verbatim.
 3. **Create with `POST /api/v1/posts`** — `reply` presence is prompt-vs-reply; the server stamps tenancy + timestamps.
-4. **Read the view, not the record** — `GET /api/v1/posts/{id}` gives you the signed URL, the lifted transcript, and viewer state.
+4. **Read the view, not the record** — `GET /api/v1/posts/{postId}` gives you the signed URL, the lifted transcript, and viewer state.
 5. **The envelope convention** — unwrap `{ success, data }`, handle errors.
 
 That's the whole template. Everything past it — threads, lists, filters — is documented in the [API reference](/api/reference/).

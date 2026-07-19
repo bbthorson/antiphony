@@ -12,8 +12,8 @@ This page covers **what the core gives you** and the **getting-started path** fo
 | Capability | Where it lives | What you call |
 |---|---|---|
 | **Audio upload & playback** | `apps/core-api` audio routes | `POST /api/v1/audio/upload` (content-addressed — returns a blob ref, not a URL) and the audio resolver `GET /api/v1/audio?url=…` (302s to a short-lived signed URL). |
-| **Audio posts (call & response)** | `posts` service | A creator publishes a **prompt** (an `audio.post` with no `reply`); the audience records **replies** (`audio.post`s with a `reply` StrongRef). `POST /api/v1/posts`, `GET /api/v1/posts`, `GET /api/v1/posts/{id}`, `GET /api/v1/posts/{id}/replies`. |
-| **Audio enrichment** | platform processing | Opt-in, out-of-band processing over a post's audio: **transcription** (`dev.antiphony.audio.transcript`), **denoising**, silence **trimming**, and **waveform** generation. Request stages in the `processing` opt-in on `POST /api/v1/posts` (at create) or `PATCH /api/v1/posts/{id}` (post-hoc); results are **lifted into the embed's view** at read time — no extra call. See [Configuration](/self-hosting/configuration/#audio-enrichment) for wiring providers. |
+| **Audio posts (call & response)** | `posts` service | A creator publishes a **prompt** (an `audio.post` with no `reply`); the audience records **replies** (`audio.post`s with a `reply` StrongRef). `POST /api/v1/posts`, `GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`. |
+| **Audio enrichment** | platform processing | Opt-in, out-of-band processing over a post's audio: **transcription** (`dev.antiphony.audio.transcript`), **denoising**, silence **trimming**, and **waveform** generation. Request stages in the `processing` opt-in on `POST /api/v1/posts` (at create) or `PATCH /api/v1/posts/{postId}` (post-hoc); results are **lifted into the embed's view** at read time — no extra call. See [Configuration](/self-hosting/configuration/#audio-enrichment) for wiring providers. |
 | **Public REST API** | `apps/core-api` | The full `/api/v1/*` JSON surface with a consistent auth + envelope contract. See the [API reference](/api/overview/). |
 | **AT Protocol lexicons** | `lexicons/` + `packages/shared` | MIT-licensed `dev.antiphony.*` records — `audio.post`, `embed.audio`, `audio.transcript`, `actor.profile` — plus the Zod schemas that mirror them. See [The Antiphony lexicons](/lexicons/overview/). |
 | **Capture primitives** | `apps/reference/src/capture` | A neutral mic recorder, waveform helper, and audio player — the seed for a shared capture kit once a second client needs them. |
@@ -42,8 +42,8 @@ If you can build `apps/reference`, you can build your own surface. The [referenc
      -H "Content-Type: application/json" \
      -d '{ "text": "Ask me anything", "embed": { "$type": "dev.antiphony.embed.audio", "audio": <blob from above> } }'
    ```
-4. **Read it back and render it.** `GET /api/v1/posts/{id}` returns a hydrated view — the post, its author, the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
-5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{id}/replies`. Replies are gated to a participant-only sub-thread — check `viewer.canReply` on the view before showing a reply control (see [reply gating](/api/overview/#reply-gating)).
+4. **Read it back and render it.** `GET /api/v1/posts/{postId}` returns a hydrated view — the post, its author, the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
+5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{postId}/replies`. Replies are gated to a participant-only sub-thread — check `viewer.canReply` on the view before showing a reply control (see [reply gating](/api/overview/#reply-gating)).
 
 ## Where next?
 
