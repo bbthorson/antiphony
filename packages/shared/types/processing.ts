@@ -17,7 +17,7 @@ import { FirestoreTimestampSchema } from './records';
  *
  * Every stage is OFF by default — the app asks for them per post via
  * `CreateAudioPostRequest.processing`, or after the fact via the `processing`
- * opt-in on `PATCH /posts/{postId}`.
+ * opt-in on `PATCH /api/v1/posts/{postId}`.
  *
  * The work runs asynchronously (outside the create request), so a post
  * carries a mutable `processing` state that starts `pending` and settles to

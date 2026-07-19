@@ -19,8 +19,8 @@ Not restated below, but load-bearing:
 - **Denoise-before-transcribe ordering**, including the idempotent-retry case (a pass
   with denoise already `ready` starts from the cleaned variant rather than the noisy
   original).
-- **The post-hoc trigger.** The `processing` opt-in on `PATCH /posts/{postId}` validates a
-  stage request, persists it, and dispatches — the same seam as create.
+- **The post-hoc trigger.** The `processing` opt-in on `PATCH /api/v1/posts/{postId}`
+  validates a stage request, persists it, and dispatches — the same seam as create.
 - **Storage-layer processing state.** `ProcessingState` is deliberately outside the
   record CID, so stages can settle without changing a post's content address.
 
@@ -67,7 +67,7 @@ noisy input the "silence" is not actually quiet and trim under-cuts. Denoising f
 makes the silence genuinely silent and detection reliable.
 
 Callers wanting a different order request stages **individually** via the `processing`
-opt-in on `PATCH /posts/{postId}`, one call per stage. The order above is what a
+opt-in on `PATCH /api/v1/posts/{postId}`, one call per stage. The order above is what a
 multi-stage request runs; it is not a restriction on what callers may ask for.
 
 ## Recompute rule (decided)

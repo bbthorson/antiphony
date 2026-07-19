@@ -70,9 +70,8 @@ the backend's `ALLOWED_ORIGINS` (apphosting.yaml), or — the real path —
 deploy this app to an allowlisted origin (e.g. `reference.antiphony.dev`) and
 add that origin to `ALLOWED_ORIGINS`.
 
-Until the `api.antiphony.dev` TLS cert finishes provisioning, swap
-`VITE_CORE_API_BASE_URL` to the `…hosted.app` fallback noted in
-`.env.production`.
+`.env.production` targets `api.antiphony.dev` (live). The `…hosted.app` default
+domain noted there is an equivalent fallback if you ever need it.
 
 ### Notes
 
