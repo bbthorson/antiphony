@@ -1,6 +1,8 @@
 # Docs content scope — core (Antiphony) vs. app-layer
 
-**Status:** decided 2026-06-27. The definition Stream 3 (the docs site) builds against.
+**Status:** decided 2026-06-27; ✅ **the docs site shipped** against this definition
+(`docs.antiphony.dev`, Cloudflare Pages). The boundary table below is the durable
+content; the Stream-3/4 execution notes near the end are historical.
 
 The Antiphony docs site (`docs.antiphony.dev`) documents the **protocol + infra** —
 not any product built on top of it (Vox Pop, Bardcast). This note draws the line so
@@ -11,7 +13,7 @@ a page either clearly belongs or clearly doesn't.
 | In core docs (Antiphony protocol/infra) | App-layer — NOT in core docs |
 | :--- | :--- |
 | **Lexicons** — `audio.post`, `embed.audio`, `audio.transcript`, `actor.profile` (the lexicon spec is the adopter **crown jewel**) | **Organizations** — teams, membership, roles, invites, org profiles |
-| **REST** — posts, audio (upload / signed-URL / transcript), actor profiles, identity-linking auth | Legacy `prompts` / `replies` (superseded by `posts`) |
+| **REST** — posts, audio (upload / signed-URL / transcript) | **Profiles, handles, identity-linking auth** — moved to the BFF (see [`core-bff-boundary.md`](./core-bff-boundary.md)); legacy `prompts` / `replies` (superseded by `posts`) |
 | **Multi-tenancy** — `originAppId` isolation + directional sharing at the AppView | Product connectors as a *feature* (the telephony impl is closed Tier-2) |
 | **Self-hosting** + **build-your-own** | App enrichments (sentiment, character attrs, social-video) |
 
@@ -38,17 +40,17 @@ it as an opaque scoping/filter key."* Nothing more.
 - **Auth.** Identity-linking (atproto connect/disconnect — about the actor's DID) is core.
   Session/cookie mechanics (`POST /auth/session`, dashboard login) are infra/app → out.
 
-## Codebase implication
+## Codebase implication — ✅ done
 
-The `Organizations` resource currently in `apps/core-api` joins `prompts`/`replies` on the
-**Stream 4 carve-out** list (moves to Vox Pop's app layer). It coexists for now; the core
-docs simply don't present it as core.
+The `Organizations`, `prompts`, and `replies` resources (the **Stream-4 carve-out**) have
+been **removed from `apps/core-api`** and live in the Vox Pop app layer. Core's public
+surface is now `posts` + `audio` only; there is no longer anything to "not present as core."
 
-## Also for Stream 3
+## Also for Stream 3 — ✅ done
 
-- **Retire the Scalar "API reference" UI** (`/api/reference`, the page that renders
-  `/openapi.json`) as the centerpiece. Lean on the hand-written **lexicon spec** as the
-  adopter-facing reference; a generated endpoint list can stay as a secondary aid, not the
-  star. (Existing site source to relocate from: the `vox-pop-core` mirror's `docs/`.)
-- Rebrand Vox Pop → Antiphony; repoint the OpenAPI copy at `https://api.antiphony.dev/openapi.json`.
-- Host on **Cloudflare Pages** at `docs.antiphony.dev`.
+All shipped:
+
+- The hand-written **lexicon spec** ([`/lexicons/overview`](https://docs.antiphony.dev/lexicons/overview/))
+  is the adopter-facing reference; the generated endpoint list is a secondary aid, not the star.
+- Rebranded Vox Pop → Antiphony; the OpenAPI copy targets `https://api.antiphony.dev/openapi.json`.
+- Hosted on **Cloudflare Pages** at `docs.antiphony.dev`.

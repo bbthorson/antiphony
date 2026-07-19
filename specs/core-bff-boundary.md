@@ -1,7 +1,11 @@
 # Core ↔ BFF boundary (the seam)
 
-**Status:** proposed 2026-07-03; **largely implemented** by the core-surface trim
-(contract `0.2.0`). Defines the seam the Vox Pop BFF composes against. Companion to
+**Status:** proposed 2026-07-03; ✅ **fully implemented.** The "B3" trim described
+below executed — the profile/handle/identity surface was removed from core, and the
+Vox Pop BFF that owns it is now an **independent repository** composing against this
+seam over HTTP. Retained as the decision record: the principle table and the join
+contract are the durable value; the "What B3 executes" / "Coupled BFF work" sections
+are historical now that both sides shipped. Companion to
 [`service-auth.md`](./service-auth.md) (the auth half), [`docs-content-scope.md`](./docs-content-scope.md)
 (the docs half), and [`atproto-authority-model.md`](./atproto-authority-model.md) (the
 identity/authority axis — **resolved** to app-as-repo-owner; read it first).
@@ -46,7 +50,7 @@ fields; the BFF never sends core a profile.
 
 *(The `/api/v1/actors/*` mapping this doc originally listed here was removed — see the superseding note at the top; attribution is now the per-request `authorId` / `authorDid` on posts.)*
 
-**Move to the BFF (remove from core in B3):**
+**Moved to the BFF — ✅ removed from core** (was "remove in B3"):
 
 - All of `/api/v1/users/*` — `GET /users`, `/users/handles`, `/users/{handle}`,
   `/users/{handle}/profile`, `GET|PATCH /users/me`, `/users/me/handle`,
@@ -63,7 +67,7 @@ fields; the BFF never sends core a profile.
 Rationale for the whole `/system/atproto-*` + `/system/auth` block: the OAuth ceremony is
 product UX tied to the calling app's origin (its callback URL is registered with the PDS),
 so both the flow **and** its server-side state belong to the app. Core held them only
-because a browser (`apps/web`) can't; a BFF can.
+because a browser (the app's web client) can't; a BFF can.
 
 ### Shared types (`@antiphony/shared` — the breaking 0.4.0 trim)
 
@@ -143,7 +147,7 @@ B3:
   **removed** — the service token is now the only accepted credential (`service-auth.md`),
   and every data route is gated. There is no tokenless/end-user path left.
 
-## What B3 executes
+## What B3 executed — ✅ done
 
 1. **Delete** the moved routes (above) and their handlers/tests; unmount from `app.ts`.
 2. **Breaking `AudioPostView.author` change** — `ProfileViewBasic` embed → `{ id, did? }`.
