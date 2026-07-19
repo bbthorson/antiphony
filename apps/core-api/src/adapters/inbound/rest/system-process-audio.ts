@@ -46,9 +46,11 @@ import { logger } from '../../../lib/logger.js';
  *     retry cannot help and the attempt already cost money.
  *   - **200, lease declined.** Another runner holds the post, or there was
  *     nothing to do. Both are normal outcomes, and both are things a retry would
- *     only spin against. `process()` returns cleanly in all three of its
- *     declined cases and does not distinguish them, which is exactly right here
- *     — the response is identical.
+ *     only spin against — so the STATUS is identical to a run. The body differs:
+ *     `process()` returns `false`, which surfaces as `ran: false` so the 200 is
+ *     not ambiguous in the logs. `process()` does not distinguish its three
+ *     declined cases from each other, which is right — the queue's decision is
+ *     the same for all of them.
  *   - **200, bad payload.** A malformed body is not transient; retrying it
  *     replays the same bad bytes on the same schedule until the queue gives up.
  *     Logged at `error` and swallowed, because the queue has no better move.
@@ -100,8 +102,12 @@ app.post('/', requireSystemAuth(), async (c) => {
     );
 
     try {
-        await service.process(originAppId, postId);
-        return c.json({ success: true, data: { ran: true } });
+        // `ran` is false when the lease was already held (or there was nothing
+        // to claim) — a routine redelivery on an at-least-once queue, not work.
+        // Both are 200s; the boolean is what keeps the 200 from being ambiguous
+        // in the logs. See § Status codes.
+        const ran = await service.process(originAppId, postId);
+        return c.json({ success: true, data: { ran } });
     } catch (err) {
         // The one retryable case. Deliberately NOT rethrown into the global
         // error handler: that would render a 500, which Cloud Tasks also

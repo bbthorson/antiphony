@@ -111,18 +111,26 @@ export class AudioProcessingService {
      * another runner is already doing this work (or there is none to do), so
      * this returns cleanly and the caller must not retry. Retrying would only
      * spin against a held lease.
+     *
+     * Returns whether this call ACQUIRED the lease and ran the stages (`true`)
+     * or found it already held / nothing to claim and did nothing (`false`).
+     * Both are 200s to the queue — neither is retryable — but the two are not
+     * the same event, and an at-least-once queue makes the declined case a
+     * routine redelivery rather than an edge. The boolean is what lets the
+     * worker log which one happened instead of reporting every delivery as work.
      */
-    async process(originAppId: string, postId: string): Promise<void> {
+    async process(originAppId: string, postId: string): Promise<boolean> {
         const leaseUntil = new Date(this.deps.now().getTime() + PROCESSING_LEASE_MS);
         if (!(await this.deps.claimProcessingLease(originAppId, postId, leaseUntil))) {
             this.logger.info(
                 { originAppId, postId },
                 '[audio-processing] lease not acquired; another runner holds it or there is nothing to process',
             );
-            return;
+            return false;
         }
         try {
             await this.runStages(originAppId, postId);
+            return true;
         } finally {
             // Released even when a stage threw, so the post is immediately
             // reprocessable rather than parked for the rest of the TTL. The

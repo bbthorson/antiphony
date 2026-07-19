@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * from inside the process; both are permanent.
  */
 
-const process_ = vi.fn(async () => undefined);
+const process_ = vi.fn(async () => true);
 vi.mock('@antiphony/core/services/audio-processing', () => ({
     AudioProcessingService: class {
         process = process_;
@@ -44,7 +44,7 @@ function post(body: unknown, token: string | null = SYSTEM_TOKEN) {
 describe('POST /system/process-audio', () => {
     beforeEach(() => {
         process_.mockReset();
-        process_.mockResolvedValue(undefined);
+        process_.mockResolvedValue(true);
     });
 
     it('runs the job for the payload tenant and post', async () => {
@@ -80,7 +80,7 @@ describe('POST /system/process-audio', () => {
         // `process()` acts only on `pending` — so a redelivery would re-read
         // that state and do nothing. The retry cannot help and the attempt that
         // failed already cost money. `process()` resolving IS that signal.
-        process_.mockResolvedValue(undefined);
+        process_.mockResolvedValue(true);
 
         expect((await post({ originAppId: 'vox-pop', postId: 'p1' })).status).toBe(200);
     });
@@ -101,8 +101,18 @@ describe('POST /system/process-audio', () => {
     });
 
     it('reports whether work ran, so a 200 is not ambiguous in the logs', async () => {
-        const res = await post({ originAppId: 'vox-pop', postId: 'p1' });
+        process_.mockResolvedValue(true);
+        const ran = await post({ originAppId: 'vox-pop', postId: 'p1' });
+        expect(await ran.json()).toMatchObject({ success: true, data: { ran: true } });
 
-        expect(await res.json()).toMatchObject({ success: true, data: { ran: true } });
+        // The declined lease: another runner holds the post, or there is nothing
+        // to claim. A 200 (no retry) same as a run, but `ran: false` so the two
+        // are distinguishable in the logs rather than every delivery reading as
+        // work. On an at-least-once queue this is the common redelivery, not an
+        // edge — which is why the field has to tell them apart.
+        process_.mockResolvedValue(false);
+        const declined = await post({ originAppId: 'vox-pop', postId: 'p1' });
+        expect(declined.status).toBe(200);
+        expect(await declined.json()).toMatchObject({ success: true, data: { ran: false } });
     });
 });

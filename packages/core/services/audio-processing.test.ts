@@ -707,14 +707,25 @@ describe('AudioProcessingService.process', () => {
                 claimProcessingLease: vi.fn(async () => false),
             });
 
-            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+            const ran = await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
+            // `false` is the signal the worker turns into `ran: false`, so a
+            // redelivery reads as "already handled" rather than as fresh work.
+            expect(ran).toBe(false);
             expect(patches).toEqual([]);
             expect(saved).toEqual([]);
             expect(p.denoiser!.denoise).not.toHaveBeenCalled();
             // Not even read: a declined claim must cost one transaction, not a
             // full pass that happens to write nothing.
             expect(deps.getPostById).not.toHaveBeenCalled();
+        });
+
+        it('reports that it ran when the claim is granted', async () => {
+            const { deps } = makeDeps(pendingPost());
+
+            const ran = await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(ran).toBe(true);
         });
 
         it('claims before reading the post', async () => {
