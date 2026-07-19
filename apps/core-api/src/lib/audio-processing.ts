@@ -26,6 +26,11 @@ import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
 import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
 import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
 import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
+import {
+    cloudTasksConfig,
+    cloudTasksDispatcher,
+    cloudTasksRequested,
+} from '../adapters/outbound/dispatch/cloud-tasks.js';
 import { logger } from './logger.js';
 
 /**
@@ -36,9 +41,11 @@ import { logger } from './logger.js';
  *   - `ANTIPHONY_PROCESSING_STUB=true`   → wire the stub providers (dev/tests).
  *   - `ANTIPHONY_PROCESSING_INLINE=true` → wire the inline dispatcher, which
  *     runs processing synchronously inside the request. This is the local/test
- *     trigger; the durable production dispatcher (a queue adapter behind the
- *     same `ProcessingDispatchPort`) is a later sub-PR. With it unset, the noop
- *     dispatcher logs and drops.
+ *     trigger.
+ *   - Otherwise, if the `ANTIPHONY_TASKS_*` vars are set → the Cloud Tasks
+ *     dispatcher, which enqueues against this deployment's own
+ *     `/api/v1/system/process-audio` worker. This is production.
+ *   - With neither → the noop dispatcher logs and drops.
  *
  * Note the two flags govern DIFFERENT axes and neither implies the other:
  * `_STUB` decides which providers can do the work, `_INLINE` decides who runs
@@ -53,7 +60,12 @@ import { logger } from './logger.js';
  */
 export type { ProcessingCapabilities };
 
-function resolveProviders(): ProcessingProviders {
+/**
+ * Exported for the queue worker route, which builds its own
+ * `AudioProcessingService` outside any request that resolved providers already.
+ * Still called per invocation rather than memoized — see the module docstring.
+ */
+export function resolveProviders(): ProcessingProviders {
     // Stub wins when explicitly set, so a dev/test env with a real key lying
     // around in the shell cannot accidentally bill a live provider.
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
@@ -129,8 +141,33 @@ export function hasPendingStage(state: ProcessingStageMap | undefined): boolean 
  * module-load singleton fixing the choice at import time.
  */
 function resolveDispatcher(): ProcessingDispatchPort {
+    // Inline wins, so a developer with queue config in their shell cannot
+    // accidentally enqueue against a real Cloud Tasks queue from a local run —
+    // the same precedence, and the same reasoning, as `_STUB` over real
+    // providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
         return inlineDispatcher(firebaseAudioProcessingDependencies, resolveProviders(), logger);
+    }
+
+    const resolved = cloudTasksConfig();
+    if (resolved.config) return cloudTasksDispatcher(resolved.config, logger);
+
+    // Partial config is a MISCONFIGURATION, not an opt-out, and the two must
+    // not degrade to the same silent noop. A deployment that set some of the
+    // queue vars believes it has durable dispatch and has none; every post sits
+    // `pending` forever with nothing saying why.
+    //
+    // Keyed on INTENT rather than on how many values are missing. Counting
+    // cannot work here: `GOOGLE_CLOUD_PROJECT` is set by the platform and
+    // `SYSTEM_AUTH_TOKEN` by every other `/system/*` route, so a deployment
+    // that cleanly opted out still reports only three missing and would trip
+    // any threshold — firing this error at every correctly-configured
+    // noop deployment, which is how a real misconfiguration gets tuned out.
+    if (cloudTasksRequested()) {
+        logger.error(
+            { missing: resolved.missing },
+            '[audio-processing] Cloud Tasks dispatch is partially configured — falling back to noop, jobs will be dropped',
+        );
     }
     return noopDispatcher(logger);
 }

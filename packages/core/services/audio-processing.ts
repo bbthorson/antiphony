@@ -56,8 +56,14 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
  * 15 minutes sits well past any observed pass and inside Cloud Tasks' 30
  * minute maximum HTTP deadline, so the lease cannot outlive the delivery that
  * took it by more than the margin.
+ *
+ * **Exported so a dispatcher can bound its delivery by it.** The Cloud Tasks
+ * adapter sets `dispatchDeadline` from this value, which is what keeps the two
+ * numbers from drifting apart: a delivery allowed to run LONGER than the lease
+ * is one that can outlive its own claim and race the runner that replaced it.
+ * That coupling only holds if both read the same constant.
  */
-const PROCESSING_LEASE_MS = 15 * 60 * 1000;
+export const PROCESSING_LEASE_MS = 15 * 60 * 1000;
 
 /**
  * AudioProcessingService — runs one post's opted-in audio processing (B5).
@@ -105,18 +111,26 @@ export class AudioProcessingService {
      * another runner is already doing this work (or there is none to do), so
      * this returns cleanly and the caller must not retry. Retrying would only
      * spin against a held lease.
+     *
+     * Returns whether this call ACQUIRED the lease and ran the stages (`true`)
+     * or found it already held / nothing to claim and did nothing (`false`).
+     * Both are 200s to the queue — neither is retryable — but the two are not
+     * the same event, and an at-least-once queue makes the declined case a
+     * routine redelivery rather than an edge. The boolean is what lets the
+     * worker log which one happened instead of reporting every delivery as work.
      */
-    async process(originAppId: string, postId: string): Promise<void> {
+    async process(originAppId: string, postId: string): Promise<boolean> {
         const leaseUntil = new Date(this.deps.now().getTime() + PROCESSING_LEASE_MS);
         if (!(await this.deps.claimProcessingLease(originAppId, postId, leaseUntil))) {
             this.logger.info(
                 { originAppId, postId },
                 '[audio-processing] lease not acquired; another runner holds it or there is nothing to process',
             );
-            return;
+            return false;
         }
         try {
             await this.runStages(originAppId, postId);
+            return true;
         } finally {
             // Released even when a stage threw, so the post is immediately
             // reprocessable rather than parked for the rest of the TTL. The
