@@ -81,7 +81,8 @@ Every request carries `X-Antiphony-Signature: sha256=<hex>`, an HMAC-SHA256 of t
 ```ts
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-function verify(rawBody: string, header: string, secret: string): boolean {
+function verify(rawBody: string, header: string | undefined, secret: string): boolean {
+  if (!header) return false; // no signature → reject (unsigned probe, missing header)
   const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
   const a = Buffer.from(header);
   const b = Buffer.from(expected);
