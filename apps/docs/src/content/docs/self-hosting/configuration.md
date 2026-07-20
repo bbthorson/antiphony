@@ -67,6 +67,17 @@ Processing runs out of band, never inside the create/patch request. How it's tri
 
 The three non-optional `ANTIPHONY_TASKS_*` vars are **all-or-nothing**: set together, or a partial set is treated as a misconfiguration (logged at `error`, jobs dropped) rather than a silent opt-out. The runtime service account also needs `roles/cloudtasks.enqueuer`, and the worker route requires `SYSTEM_AUTH_TOKEN`.
 
+### Stage-settled webhooks
+
+Optional. When configured, the core POSTs a small signed webhook to a tenant's BFF each time an enrichment stage reaches a terminal state (`ready` / `failed` / `skipped`), so the BFF learns a result landed without polling. The webhook is a **latency accelerator over the authoritative post state**, not a second source of truth — a dropped delivery is a latency regression the next read reconciles, never lost data.
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_APP_WEBHOOK_URLS` | Comma-separated `appId:url` pairs — where to POST each tenant's stage-settled events, e.g. `vox-pop:https://bff.voxpop/hooks`. Split on the first colon, so a URL with a port is fine. |
+| `ANTIPHONY_APP_WEBHOOK_SECRETS` | Comma-separated `appId:secret` pairs. The key for the `X-Antiphony-Signature: sha256=<hex>` header, an HMAC-SHA256 over the **raw request body**; the receiver recomputes and constant-time-compares. Store as a secret. |
+
+A tenant present in **both** vars gets webhooks; a tenant in **neither** is a silent opt-out (the pull paths still work). A tenant in **exactly one** is a misconfiguration — logged at `error` and sent no webhooks, so it never pushes unsigned. Delivery is best-effort (a short timeout and a couple of retries); a failed POST is logged and swallowed, never failing the enrichment pass. The payload carries `{postId, originAppId, stage, status, occurredAt}` — enough to act on without a follow-up request; the artifact itself is fetched from the post view when wanted. Receivers should treat each event as "latest wins for `(postId, stage)`" (a recompute legitimately re-fires `ready`), using `occurredAt` as the tiebreaker.
+
 ### Development flags
 
 | Variable | Purpose |

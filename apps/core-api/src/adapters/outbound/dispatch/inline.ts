@@ -6,6 +6,7 @@ import type {
 import type { ProcessingProviders } from '@antiphony/core/services/audio-processing';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
 import type { Logger } from '@antiphony/core/ports/logger';
+import type { ProcessingNotifierPort } from '@antiphony/core/ports/processing-notifier';
 
 /**
  * Inline dispatcher — runs processing synchronously inside the calling
@@ -44,10 +45,11 @@ export function inlineDispatcher(
     deps: AudioProcessingDependencies,
     providers: ProcessingProviders,
     logger: Logger,
+    notifier: ProcessingNotifierPort,
 ): ProcessingDispatchPort {
     return {
         async dispatch(job: ProcessingJob): Promise<void> {
-            const service = new AudioProcessingService(deps, providers, logger);
+            const service = new AudioProcessingService(deps, providers, logger, notifier);
             await service.process(job.originAppId, job.postId);
         },
     };

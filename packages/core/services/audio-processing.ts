@@ -5,6 +5,7 @@ import {
     PROCESSING_STAGES,
     type ProcessingStage,
     type ProcessingStageMap,
+    type ProcessingState,
 } from 'shared/types/processing';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
@@ -12,6 +13,7 @@ import type { DenoiserPort } from '../ports/audio-denoiser';
 import type { TrimmerPort } from '../ports/audio-trimmer';
 import type { WaveformPort } from '../ports/audio-waveform';
 import { type Logger, defaultLogger } from '../ports/logger';
+import { type ProcessingNotifierPort, noopNotifier } from '../ports/processing-notifier';
 import { buildPostUri } from './audio-posts';
 
 export interface ProcessingProviders {
@@ -98,8 +100,55 @@ export class AudioProcessingService {
         private readonly deps: AudioProcessingDependencies,
         private readonly providers: ProcessingProviders,
         private readonly logger: Logger = defaultLogger,
+        // Defaults to noop for the same reason `logger` defaults to console: a
+        // deployment (or test) that wires no webhook keeps working unchanged,
+        // and the outbound push is opt-in per tenant. See `settle`.
+        private readonly notifier: ProcessingNotifierPort = noopNotifier,
     ) {
         this.capabilities = capabilitiesOf(providers);
+    }
+
+    /**
+     * Persist a processing-state patch, then fire an outbound `StageSettledEvent`
+     * for each stage the patch settled to a TERMINAL status (`ready`/`failed`/
+     * `skipped`). Every terminal `patchProcessingState` in `runStages` goes
+     * through here so the fire point is single and inherited by every dispatcher.
+     *
+     * **Write first, notify second.** The Firestore write is the authoritative
+     * settle; the webhook is a latency accelerator over it. Ordering the write
+     * first means a crash between them loses a NOTIFICATION, not a result — the
+     * sweep/next-GET backstops the drop (see `specs/enrichment-webhooks.md`).
+     *
+     * **Notify never fails the pass.** Each `notify` is individually wrapped:
+     * a rejection is logged and swallowed, so a webhook that times out or errors
+     * never throws out of `process()`, never fails the stage, never holds the
+     * lease. Delivery is best-effort by contract.
+     *
+     * **Only terminal stage keys fire.** A patch may also carry non-stage fields
+     * (`processedBlobCid`, `waveformPeaks`, …) and the two `pending` recompute/
+     * reapply writes; iterating `PROCESSING_STAGES` and gating on the terminal
+     * values means those fire nothing, so routing every patch through here is
+     * uniform and cannot mis-fire a `pending` transition as a settle.
+     */
+    private async settle(
+        originAppId: string,
+        postId: string,
+        patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
+    ): Promise<void> {
+        await this.deps.patchProcessingState(originAppId, postId, patch);
+        const occurredAt = this.deps.now().toISOString();
+        for (const stage of PROCESSING_STAGES) {
+            const status = patch[stage];
+            if (status !== 'ready' && status !== 'failed' && status !== 'skipped') continue;
+            try {
+                await this.notifier.notify({ originAppId, postId, stage, status, occurredAt });
+            } catch (err) {
+                this.logger.error(
+                    { err, originAppId, postId, stage, status },
+                    '[audio-processing] stage-settled webhook failed; swallowed (state already persisted)',
+                );
+            }
+        }
     }
 
     /**
@@ -215,7 +264,7 @@ export class AudioProcessingService {
             }
         }
         if (Object.keys(unrunnable).length > 0) {
-            await this.deps.patchProcessingState(originAppId, postId, unrunnable);
+            await this.settle(originAppId, postId, unrunnable);
         }
 
         // A `ready` link the chain would re-apply but cannot run is left alone,
@@ -262,7 +311,7 @@ export class AudioProcessingService {
             if (post.processing[stage] === 'ready') reapplied[stage] = 'pending';
         }
         if (Object.keys(reapplied).length > 0) {
-            await this.deps.patchProcessingState(originAppId, postId, reapplied);
+            await this.settle(originAppId, postId, reapplied);
         }
 
         // --- Denoise (first, so transcription can use the cleaned audio) ---
@@ -272,7 +321,7 @@ export class AudioProcessingService {
             // `skipped` above.
             const denoiser = this.providers.denoiser!;
             if (!working) {
-                await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
+                await this.settle(originAppId, postId, { denoise: 'failed' });
             } else {
                 try {
                     const cleaned = await denoiser.denoise({
@@ -286,7 +335,7 @@ export class AudioProcessingService {
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     variantChanged = true;
-                    await this.deps.patchProcessingState(originAppId, postId, {
+                    await this.settle(originAppId, postId, {
                         denoise: 'ready',
                         processedBlobCid,
                         // Recorded because providers transcode: without it a
@@ -295,7 +344,7 @@ export class AudioProcessingService {
                         processedMimeType: cleaned.mimeType,
                     });
                 } catch {
-                    await this.deps.patchProcessingState(originAppId, postId, { denoise: 'failed' });
+                    await this.settle(originAppId, postId, { denoise: 'failed' });
                 }
             }
         }
@@ -310,7 +359,7 @@ export class AudioProcessingService {
             // Non-null for the same reason as the denoiser above.
             const trimmer = this.providers.trimmer!;
             if (!working) {
-                await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
+                await this.settle(originAppId, postId, { trim: 'failed' });
             } else {
                 try {
                     const trimmed = await trimmer.trim({
@@ -324,7 +373,7 @@ export class AudioProcessingService {
                     );
                     working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
                     variantChanged = true;
-                    await this.deps.patchProcessingState(originAppId, postId, {
+                    await this.settle(originAppId, postId, {
                         trim: 'ready',
                         processedBlobCid,
                         processedMimeType: trimmed.mimeType,
@@ -334,7 +383,7 @@ export class AudioProcessingService {
                         processedDurationMs: trimmed.durationMs,
                     });
                 } catch {
-                    await this.deps.patchProcessingState(originAppId, postId, { trim: 'failed' });
+                    await this.settle(originAppId, postId, { trim: 'failed' });
                 }
             }
         }
@@ -392,15 +441,15 @@ export class AudioProcessingService {
             // Written BEFORE the re-run, not after. If this pass dies here, a
             // retry must find outstanding work rather than a `ready` transcript
             // of audio that no longer exists.
-            await this.deps.patchProcessingState(originAppId, postId, patch);
+            await this.settle(originAppId, postId, patch);
         }
 
         // --- Transcribe (uses the cleaned audio when denoise produced it) ---
         if (post.processing.transcribe === 'pending' || recompute.includes('transcribe')) {
             if (!this.providers.transcriber) {
-                await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'skipped' });
+                await this.settle(originAppId, postId, { transcribe: 'skipped' });
             } else if (!working) {
-                await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'failed' });
+                await this.settle(originAppId, postId, { transcribe: 'failed' });
             } else {
                 try {
                     const result = await this.providers.transcriber.transcribe({
@@ -417,9 +466,9 @@ export class AudioProcessingService {
                         model: result.model,
                         createdAt: this.deps.now(),
                     });
-                    await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'ready' });
+                    await this.settle(originAppId, postId, { transcribe: 'ready' });
                 } catch {
-                    await this.deps.patchProcessingState(originAppId, postId, { transcribe: 'failed' });
+                    await this.settle(originAppId, postId, { transcribe: 'failed' });
                 }
             }
         }
@@ -432,9 +481,9 @@ export class AudioProcessingService {
         // add concurrency to a path that is about to move behind a queue.
         if (post.processing.waveform === 'pending' || recompute.includes('waveform')) {
             if (!this.providers.waveform) {
-                await this.deps.patchProcessingState(originAppId, postId, { waveform: 'skipped' });
+                await this.settle(originAppId, postId, { waveform: 'skipped' });
             } else if (!working) {
-                await this.deps.patchProcessingState(originAppId, postId, { waveform: 'failed' });
+                await this.settle(originAppId, postId, { waveform: 'failed' });
             } else {
                 try {
                     const result = await this.providers.waveform.waveform({
@@ -446,12 +495,12 @@ export class AudioProcessingService {
                     // the view would read as "processed waveform available"
                     // and then find nothing, with no pending stage left to
                     // make a retry fix it.
-                    await this.deps.patchProcessingState(originAppId, postId, {
+                    await this.settle(originAppId, postId, {
                         waveform: 'ready',
                         waveformPeaks: result.peaks,
                     });
                 } catch {
-                    await this.deps.patchProcessingState(originAppId, postId, { waveform: 'failed' });
+                    await this.settle(originAppId, postId, { waveform: 'failed' });
                 }
             }
         }
@@ -485,7 +534,7 @@ export class AudioProcessingService {
             if (state[stage] === 'pending') patch[stage] = 'skipped';
         }
         if (Object.keys(patch).length > 0) {
-            await this.deps.patchProcessingState(originAppId, postId, patch);
+            await this.settle(originAppId, postId, patch);
         }
     }
 }

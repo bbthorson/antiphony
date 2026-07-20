@@ -4,6 +4,7 @@ import {
     type ProcessingProviders,
 } from '@antiphony/core/services/audio-processing';
 import type { ProcessingDispatchPort } from '@antiphony/core/ports/processing-dispatch';
+import type { ProcessingNotifierPort } from '@antiphony/core/ports/processing-notifier';
 import {
     PROCESSING_STAGES,
     type ProcessingRequest,
@@ -25,6 +26,7 @@ import { ffmpegTrimmer } from '../adapters/outbound/ffmpeg/trimmer.js';
 import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
 import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
 import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
+import { webhookNotifier } from '../adapters/outbound/webhook/notifier.js';
 import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
 import {
     cloudTasksConfig,
@@ -136,6 +138,20 @@ export function hasPendingStage(state: ProcessingStageMap | undefined): boolean 
 }
 
 /**
+ * The outbound stage-settled notifier for this deployment. Always the webhook
+ * adapter: it resolves each tenant's `{url, secret}` per event and no-ops for a
+ * tenant with none configured, so a deployment with no webhooks wired needs no
+ * separate branch here — absence is handled tenant-by-tenant inside the adapter.
+ *
+ * Resolved per-invocation (like `resolveProviders`) so env-driven config takes
+ * effect in tests and across restarts without a module-load singleton. The
+ * worker route builds its own `AudioProcessingService` and calls this directly.
+ */
+export function resolveNotifier(): ProcessingNotifierPort {
+    return webhookNotifier(logger);
+}
+
+/**
  * Which dispatcher this deployment runs jobs through. Resolved per-request off
  * env, like `resolveProviders`, so a test can set the flag without a
  * module-load singleton fixing the choice at import time.
@@ -146,7 +162,12 @@ function resolveDispatcher(): ProcessingDispatchPort {
     // the same precedence, and the same reasoning, as `_STUB` over real
     // providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
-        return inlineDispatcher(firebaseAudioProcessingDependencies, resolveProviders(), logger);
+        return inlineDispatcher(
+            firebaseAudioProcessingDependencies,
+            resolveProviders(),
+            logger,
+            resolveNotifier(),
+        );
     }
 
     const resolved = cloudTasksConfig();
