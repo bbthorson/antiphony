@@ -89,7 +89,7 @@ describe('webhookNotifier', () => {
         expect(logger.error).toHaveBeenCalled();
     });
 
-    it('does not retry a 4xx — the receiver rejected the request itself', async () => {
+    it('does not retry a permanent 4xx — the receiver rejected the request itself', async () => {
         configureTenant();
         const fetchImpl = vi.fn(async () => new Response(null, { status: 400 }));
         const logger = loggerStub();
@@ -98,6 +98,18 @@ describe('webhookNotifier', () => {
 
         expect(fetchImpl).toHaveBeenCalledTimes(1);
         expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('retries a transient 429 (rate limited), then succeeds', async () => {
+        configureTenant();
+        const fetchImpl = vi
+            .fn()
+            .mockResolvedValueOnce(new Response(null, { status: 429 }))
+            .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+        await webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep).notify(EVENT);
+
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
     });
 
     it('retries a transient network error, then succeeds without throwing', async () => {

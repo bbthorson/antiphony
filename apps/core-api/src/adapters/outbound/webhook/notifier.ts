@@ -84,8 +84,12 @@ async function deliver(
             if (res.ok) return;
             // A 4xx is the receiver rejecting the request itself (bad signature,
             // unknown route) — retrying the same bytes cannot fix it, so stop.
+            // The two transient exceptions are 429 (rate-limited) and 408
+            // (request timeout): the same bytes CAN succeed once the receiver
+            // recovers, so they fall through to retry alongside 5xx.
             // A 5xx is a transient server-side failure worth another attempt.
-            if (res.status < 500) {
+            const transient = res.status >= 500 || res.status === 429 || res.status === 408;
+            if (!transient) {
                 logger.error(
                     { originAppId: event.originAppId, postId: event.postId, stage: event.stage, status: res.status },
                     '[webhook] receiver rejected stage-settled webhook (4xx); not retrying',
@@ -95,7 +99,7 @@ async function deliver(
             if (attempt === MAX_ATTEMPTS) {
                 logger.error(
                     { originAppId: event.originAppId, postId: event.postId, stage: event.stage, status: res.status, attempts: attempt },
-                    '[webhook] stage-settled webhook failed after retries (5xx); dropped',
+                    '[webhook] stage-settled webhook failed after retries (transient status); dropped',
                 );
                 return;
             }

@@ -124,6 +124,14 @@ export class AudioProcessingService {
      * never throws out of `process()`, never fails the stage, never holds the
      * lease. Delivery is best-effort by contract.
      *
+     * **Fired in parallel.** A single patch can settle several stages at once
+     * (the no-audio path skips all four), and each `notify` may spend its full
+     * timeout-and-retry budget against a slow receiver. Awaited sequentially,
+     * that budget MULTIPLIES by the stage count and holds the pass — and the
+     * lease — for that whole time. The notifications are independent and each
+     * swallows its own failure, so dispatching them together bounds the wait to
+     * one budget rather than N.
+     *
      * **Only terminal stage keys fire.** A patch may also carry non-stage fields
      * (`processedBlobCid`, `waveformPeaks`, …) and the two `pending` recompute/
      * reapply writes; iterating `PROCESSING_STAGES` and gating on the terminal
@@ -137,18 +145,20 @@ export class AudioProcessingService {
     ): Promise<void> {
         await this.deps.patchProcessingState(originAppId, postId, patch);
         const occurredAt = this.deps.now().toISOString();
-        for (const stage of PROCESSING_STAGES) {
-            const status = patch[stage];
-            if (status !== 'ready' && status !== 'failed' && status !== 'skipped') continue;
-            try {
-                await this.notifier.notify({ originAppId, postId, stage, status, occurredAt });
-            } catch (err) {
-                this.logger.error(
-                    { err, originAppId, postId, stage, status },
-                    '[audio-processing] stage-settled webhook failed; swallowed (state already persisted)',
-                );
-            }
-        }
+        await Promise.all(
+            PROCESSING_STAGES.map(async (stage) => {
+                const status = patch[stage];
+                if (status !== 'ready' && status !== 'failed' && status !== 'skipped') return;
+                try {
+                    await this.notifier.notify({ originAppId, postId, stage, status, occurredAt });
+                } catch (err) {
+                    this.logger.error(
+                        { err, originAppId, postId, stage, status },
+                        '[audio-processing] stage-settled webhook failed; swallowed (state already persisted)',
+                    );
+                }
+            }),
+        );
     }
 
     /**
