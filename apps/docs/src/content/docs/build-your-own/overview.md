@@ -13,7 +13,7 @@ This page covers **what the core gives you** and the **getting-started path** fo
 |---|---|---|
 | **Audio upload & playback** | `apps/core-api` audio routes | `POST /api/v1/audio/upload` (content-addressed — returns a blob ref, not a URL) and the audio resolver `GET /api/v1/audio?url=…` (302s to a short-lived signed URL). |
 | **Audio posts (call & response)** | `posts` service | A creator publishes a **prompt** (an `audio.post` with no `reply`); the audience records **replies** (`audio.post`s with a `reply` StrongRef). `POST /api/v1/posts`, `GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`. |
-| **Audio enrichment** | platform processing | Opt-in, out-of-band processing over a post's audio: **transcription** (`dev.antiphony.audio.transcript`), **denoising**, silence **trimming**, and **waveform** generation. Request stages in the `processing` opt-in on `POST /api/v1/posts` (at create) or `PATCH /api/v1/posts/{postId}` (post-hoc); results are **lifted into the embed's view** at read time — no extra call. See [Configuration](/self-hosting/configuration/#audio-enrichment) for wiring providers. |
+| **Audio enrichment** | platform processing | Opt-in, out-of-band processing over a post's audio: **transcription** (`dev.antiphony.audio.transcript`), **denoising**, silence **trimming**, and **waveform** generation. Request stages in the `processing` opt-in on `POST /api/v1/posts` (at create) or `PATCH /api/v1/posts/{postId}` (post-hoc); results are **lifted into the embed's view** at read time — no extra call. Enrichment runs out of band, so you can also opt into a **push** when a stage settles (see [Receiving enrichment webhooks](#receiving-enrichment-webhooks)) instead of polling. See [Configuration](/self-hosting/configuration/#audio-enrichment) for wiring providers. |
 | **Public REST API** | `apps/core-api` | The full `/api/v1/*` JSON surface with a consistent auth + envelope contract. See the [API reference](/api/overview/). |
 | **AT Protocol lexicons** | `lexicons/` + `packages/shared` | MIT-licensed `dev.antiphony.*` records — `audio.post`, `embed.audio`, `audio.transcript`, `actor.profile` — plus the Zod schemas that mirror them. See [The Antiphony lexicons](/lexicons/overview/). |
 | **Capture primitives** | `apps/reference/src/capture` | A neutral mic recorder, waveform helper, and audio player — the seed for a shared capture kit once a second client needs them. |
@@ -44,6 +44,56 @@ If you can build `apps/reference`, you can build your own surface. The [referenc
    ```
 4. **Read it back and render it.** `GET /api/v1/posts/{postId}` returns a hydrated view — the post, its author, the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
 5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{postId}/replies`. Replies are gated to a participant-only sub-thread — check `viewer.canReply` on the view before showing a reply control (see [reply gating](/api/overview/#reply-gating)).
+
+## Receiving enrichment webhooks
+
+Enrichment runs **out of band**: a create or `PATCH` returns as soon as the work is queued, and the stages settle later on the worker's clock. You have two ways to learn a result landed:
+
+- **Pull** — re-read `GET /api/v1/posts/{postId}` and diff its `processing` state. Always available, but laggy and wasteful (most reads find nothing changed).
+- **Push** — have the core POST you a small signed webhook the moment each stage reaches a terminal state (`ready` / `failed` / `skipped`). No polling; you act on the push and only fetch the artifact when you actually want it.
+
+The webhook is an **accelerator, not a source of truth**. The authoritative record is always the post's `processing` state in the view; the push just makes the common case fast. Delivery is **best-effort**, so your receiver must still be able to reconcile from the view — a dropped webhook is a latency regression, never lost data.
+
+Wiring is per tenant and done by the **operator**, not through an API call: they set your receiver URL and a shared secret (see [webhook configuration](/self-hosting/configuration/#stage-settled-webhooks)). A tenant with none configured simply gets no webhooks.
+
+### The payload
+
+One POST per stage that settles, `Content-Type: application/json`:
+
+```json
+{
+  "postId": "3kb2…",
+  "originAppId": "voxpop",
+  "stage": "transcribe",
+  "status": "ready",
+  "occurredAt": "2026-07-19T14:03:11.204Z"
+}
+```
+
+- `stage` ∈ `denoise | trim | transcribe | waveform`; `status` ∈ `ready | failed | skipped` (`pending` never fires — it isn't a settle).
+- `occurredAt` is the server settle time, for ordering and replay detection.
+- The **artifact itself** (transcript text, signed URL, waveform peaks) is deliberately **not** included. The status tells you whether it's worth fetching; the hydrated view (`GET /api/v1/posts/{postId}`) is where you fetch it. A `waveform: skipped` needs no follow-up at all; a `transcribe: ready` invites one, on your terms.
+
+### Verify the signature
+
+Every request carries `X-Antiphony-Signature: sha256=<hex>`, an HMAC-SHA256 of the **raw request body** keyed by your webhook secret. Recompute it over the exact bytes you received and compare in constant time — this is what lets you trust the payload without a callback to the core.
+
+```ts
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function verify(rawBody: string, header: string, secret: string): boolean {
+  const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+```
+
+Sign and compare over the **raw body**, before any JSON parse and re-serialize — a reparsed body's bytes (key order, whitespace) won't match. Also reject a request whose `occurredAt` is far from now to blunt replay.
+
+### Dedupe by "latest wins", not "seen before"
+
+The same stage's webhook can arrive more than once, and "already saw this" is the wrong test: a byte-mutating stage re-running legitimately settles a derived stage (`transcribe` / `waveform`) a second time — `ready → pending → ready` — and that second `ready` describes the **recomputed** artifact, a new correct event, not a duplicate to suppress. Treat each event as **latest-wins for `(postId, stage)`**, using `occurredAt` as the tiebreaker, rather than ignoring anything you've seen before.
 
 ## Where next?
 
