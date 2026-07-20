@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
 import type { ProcessingProviders } from '@antiphony/core/services/audio-processing';
 import type { Logger } from '@antiphony/core/ports/logger';
+import { noopNotifier } from '@antiphony/core/ports/processing-notifier';
 import { inlineDispatcher } from './inline.js';
 import { noopDispatcher } from './noop.js';
 
@@ -48,7 +49,7 @@ describe('inlineDispatcher', () => {
     it('runs the job against the service with the job tenant and post', async () => {
         const { deps, getPostById } = depsStub();
 
-        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
+        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub(), noopNotifier).dispatch({
             originAppId: 'app-1',
             postId: 'post-1',
         });
@@ -68,7 +69,7 @@ describe('inlineDispatcher', () => {
         const { deps } = depsStub(boom as never);
 
         await expect(
-            inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
+            inlineDispatcher(deps, {} as ProcessingProviders, loggerStub(), noopNotifier).dispatch({
                 originAppId: 'app-1',
                 postId: 'post-1',
             }),
@@ -108,7 +109,7 @@ describe('inlineDispatcher', () => {
             denoiser: { denoise: async (i: { bytes: Uint8Array; mimeType: string }) => i },
         } as unknown as ProcessingProviders;
 
-        await inlineDispatcher(deps, providers, logger).dispatch({
+        await inlineDispatcher(deps, providers, logger, noopNotifier).dispatch({
             originAppId: 'app-1',
             postId: 'post-1',
         });
@@ -132,7 +133,7 @@ describe('inlineDispatcher', () => {
         });
         const { deps } = depsStub(slow as never);
 
-        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub()).dispatch({
+        await inlineDispatcher(deps, {} as ProcessingProviders, loggerStub(), noopNotifier).dispatch({
             originAppId: 'app-1',
             postId: 'post-1',
         });

@@ -23,6 +23,7 @@ vi.mock('../../outbound/firebase/audio-processing-dependencies.js', () => ({
 
 vi.mock('../../../lib/audio-processing.js', () => ({
     resolveProviders: () => ({}),
+    resolveNotifier: () => ({ notify: async () => {} }),
 }));
 
 const SYSTEM_TOKEN = 'sys-tok-abcdefghijklmnopqrstuvwxyz01234';

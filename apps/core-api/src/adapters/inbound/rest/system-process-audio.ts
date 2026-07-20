@@ -4,7 +4,7 @@ import { AudioProcessingService } from '@antiphony/core/services/audio-processin
 import { requireSystemAuth } from '../../../middleware/system-auth.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { firebaseAudioProcessingDependencies } from '../../outbound/firebase/audio-processing-dependencies.js';
-import { resolveProviders } from '../../../lib/audio-processing.js';
+import { resolveProviders, resolveNotifier } from '../../../lib/audio-processing.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -99,6 +99,7 @@ app.post('/', requireSystemAuth(), async (c) => {
         firebaseAudioProcessingDependencies,
         resolveProviders(),
         logger,
+        resolveNotifier(),
     );
 
     try {
