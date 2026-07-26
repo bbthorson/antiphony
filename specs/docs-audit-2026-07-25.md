@@ -3,6 +3,14 @@
 **Date:** 2026-07-25 · **Scope:** the 12 pages under `apps/docs/src/content/docs/`
 (the public Starlight site), audited against the code at `e69bf87`.
 
+> **Status: resolved.** Every finding below was fixed in the commit that follows
+> this one. `apps/reference` was migrated to a server-side dev BFF (1.4), and the
+> full record → upload → post → hydrate loop was re-verified through it against
+> the emulators. One thing the docs now *state* rather than fix: `did:web`
+> pinning has no offline path (1.2), so the quick start requires a real domain.
+> Closing that gap needs a product decision, not a docs edit — see the note at
+> the end of [Suggested order](#suggested-order).
+
 **Headline:** the mechanics are clean — the site builds, every internal link and
 anchor resolves, every GitHub deep link points at a real path, and the lexicon
 reference matches the JSON field for field. The problem is **content drift from a
@@ -201,6 +209,27 @@ Worth stating, because it's most of the site:
 A docs-drift guard would keep this from recurring: the auth change was already
 recorded in the CHANGELOG under a "Docs" heading that listed the OpenAPI narrative
 and two specs — the docs *site* simply wasn't on the checklist.
+
+### The one gap docs can't close
+
+Finding 1.2 is now **documented** rather than **solved**. `did:web` resolution is
+HTTPS-only, so there is no way to satisfy `ANTIPHONY_APP_DIDS` on a laptop, and
+the quick start therefore asks for a domain the reader controls. That is an honest
+description of the system, but it is a real barrier to "clone it and run it."
+
+Closing it is a product decision with a security dimension, so it wasn't taken
+unilaterally. Three options, roughly in order of preference:
+
+1. **A pre-validated local pin.** Accept a `did:web` whose host is loopback and
+   skip the custody fetch *only* then, gated on `ANTIPHONY_USE_EMULATOR`. Narrow
+   and hard to misuse in production, since the DID itself must be a localhost one.
+2. **An injectable resolver.** `validateAllPins` already takes a `fetchImpl` for
+   tests; a documented "offline pin file" would reuse that seam.
+3. **A blanket skip flag.** Simplest, and the worst — a single env var that
+   disables a custody proof is exactly the kind of thing that ends up set in
+   production.
+
+Until one lands, the caution block in the quick start is the honest answer.
 
 ## Method
 

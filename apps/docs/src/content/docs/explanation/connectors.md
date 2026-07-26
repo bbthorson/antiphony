@@ -12,13 +12,13 @@ This page is the **mental model** for the whole project: why the API is scoped t
 Antiphony's core doesn't have a UI. It isn't an app. It's a **hub**: a single source of truth for portable audio posts, replies, and transcription, with a contract in front of it — deliberately not accounts or profiles, which stay with each connector. Everything a human or a machine actually touches — a web dashboard, an embed on a blog, a phone call, a mobile app — is a separate **connector** that talks to the hub over that contract.
 
 ```
-                       ┌───────────────────────────┐
-   web dashboard ────▶ │                           │ ◀──── mobile app
-                       │        Antiphony          │
-   embed / pages ────▶ │  (audio posts · replies   │ ◀──── your app
-                       │    · transcripts · DIDs)  │
-   phone / IVR  ─────▶ │           hub             │ ◀──── RSS / federation
-                       └───────────────────────────┘
+                       ┌─────────────────────────────┐
+   web dashboard ────▶ │                             │ ◀──── mobile app
+                       │          Antiphony          │
+   embed / pages ────▶ │   (audio posts · replies    │ ◀──── your app
+                       │ · transcripts · DID facets) │
+   phone / IVR  ─────▶ │             hub             │ ◀──── RSS / federation
+                       └─────────────────────────────┘
 ```
 
 [Vox Pop](https://voxpop.audio) is **one** connector — a hosted product built on the hub. This repo ships a second you can read end to end: [`apps/reference`](/build-your-own/reference-app/). Your surface is just one more arrow into the same hub.
@@ -48,10 +48,10 @@ Connectors don't all knock on the same door. The hub exposes distinct **planes**
 
 | Plane | Path shape | Who calls it | Auth |
 |---|---|---|---|
-| **Consumer API** | `/api/v1/*` | Apps built on the core — yours, a dashboard, mobile. | A service credential asserting the acting actor (or, for local demos, an anonymous end-user token) — see [Authentication](/api/overview/#authentication). Public projections accept no token. |
-| **Ingestion** | `system/*` | Ingress connectors writing on behalf of a captured event. | System-to-system, not end-user tokens. |
+| **Consumer API** | `/api/v1/*` | Apps built on the core — yours, a dashboard, mobile. | A service credential, optionally asserting the acting actor — see [Authentication](/api/overview/#authentication). Required on every data route, including public projections. |
+| **Ingestion** | `/api/v1/system/*` | Ingress connectors writing on behalf of a captured event. | A separate shared secret (`SYSTEM_AUTH_TOKEN`), not an app service token. |
 
-The **consumer API** is the documented front door — it's all you need for the egress and bidirectional cases, and it's what appears in the [reference](/api/overview/). The **ingestion plane** (`system/*`) is the exception: it's system-to-system plumbing an ingress connector uses to write on behalf of a captured event, so it stays out of the public reference by design — it isn't something a third-party client calls with an end-user token.
+The **consumer API** is the documented front door — it's all you need for the egress and bidirectional cases, and it's what appears in the [reference](/api/overview/). The **ingestion plane** (`/api/v1/system/*`) is the exception: it's system-to-system plumbing an ingress connector uses to write on behalf of a captured event, so it stays out of the public reference by design — it isn't something a third-party client calls with an end-user token.
 
 The split is the point: a captured voicemail becoming a reply is a fundamentally different operation from a logged-in user fetching their feed, so it lives on a different plane with a different trust model. Keeping them separate is what lets the consumer contract stay small and stable.
 
@@ -59,7 +59,7 @@ The split is the point: a captured voicemail becoming a reply is a fundamentally
 
 You're building a connector. To place it, answer two questions:
 
-1. **Which direction?** Reading content to display → **egress** (often an anonymous viewer token). Reading and writing on a user's behalf → **bidirectional**, and you'll pass a bearer token. Bridging a non-REST modality *into* the hub → that's **ingress**, an ingestion-plane concern.
+1. **Which direction?** Reading content to display → **egress**: still your service credential, just without an acting actor, which yields the viewer-less public projection. Reading and writing on a user's behalf → **bidirectional**, so you add the acting-actor assertion. Bridging a non-REST modality *into* the hub → that's **ingress**, an ingestion-plane concern.
 2. **Which plane?** Almost every app you'd build talks to the **consumer API** (`/api/v1/*`) — that's the documented surface, and it's all you need for the egress and bidirectional cases.
 
 For the common path — read content, optionally authenticate to write — start with [Build your own app](/build-your-own/overview/), then the [reference app walkthrough](/build-your-own/reference-app/) for a connector you can run today.

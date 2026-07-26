@@ -15,12 +15,14 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 
 The canonical resources:
 
-- **`/posts`** — Create an audio post, get one by id, list the viewer's posts, list a post's replies (the thread). One record type; `reply` presence is prompt-vs-reply.
+- **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), and `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment). One record type; `reply` presence is prompt-vs-reply.
 - **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), and resolve a stored ref to a short-lived signed playback URL.
+
+`GET /api/v1/posts` is one endpoint with two slices: by default the **viewer's own** posts (optionally filtered by `kind`), and with `?rootAuthor=<id>` the replies whose thread root that id authored — "replies addressed to X", the raw feed you'd compose an inbox from. That's [queries, not bespoke views](/explanation/api-design-principles/#2-queries-not-bespoke-views) in practice.
 
 That's the whole public contract: Antiphony is a headless post store plus audio hygiene. There is no user/profile/handle surface — end-user identity and profile data (display name, bio, handle claiming, OAuth linking UX) belong to the calling application, and the acting actor's AT Protocol DID is asserted per request (`X-Antiphony-Acting-Actor-Did`), never registered. See [service auth](#authentication) below.
 
-Internal/utility routes (`/system/*` service-to-service glue) intentionally stay out of the public reference — they're plumbing a third-party client wouldn't call.
+Internal/utility routes (`/api/v1/system/*` service-to-service glue) intentionally stay out of the public reference — they're plumbing a third-party client wouldn't call, gated by a separate `SYSTEM_AUTH_TOKEN` rather than an app service token.
 
 ## Reply gating
 
@@ -70,6 +72,32 @@ Paginated lists nest the cursor inside `data`:
 ```
 
 The `requestId` correlation ID appears in every error response and as the `X-Request-ID` response header on every request — propagate it from your client (`X-Request-ID: <uuid>`) for end-to-end tracing across `core-api` and downstream logs.
+
+## Limits
+
+Three limits are worth designing around before you write a client.
+
+**Upload size and type.** `POST /api/v1/audio/upload` accepts a `multipart/form-data` body with a single `file` field, up to **25 MB**, and only these MIME types:
+
+`audio/m4a` · `audio/x-m4a` · `audio/mp4` · `audio/mpeg` · `audio/webm` · `audio/ogg` · `audio/wav`
+
+The match is exact, so strip any codec parameter first — `MediaRecorder` produces `audio/webm;codecs=opus`, which is rejected as-is. Anything outside the list, or over the cap, is a `400`.
+
+:::note
+The `dev.antiphony.embed.audio` lexicon permits `audio/*` up to 100 MB. That's the **record's** ceiling — what a portable record may legally describe. This endpoint is deliberately tighter; size your client to the numbers above, not to the lexicon.
+:::
+
+**Rate limits.** Every route carries one, keyed on the caller. Exceeding it returns `429`:
+
+| Operation | Limit |
+|---|---|
+| Writes (`POST`/`PATCH /posts`) | 10 per 15 min |
+| Reads (`GET /posts`, `/posts/{id}`, `/posts/{id}/replies`, `/audio`) | 60 per min |
+| Uploads (`POST /audio/upload`) | 20 per hour |
+
+The write limit is tight enough to hit while developing — back off rather than retrying immediately.
+
+**Idempotency.** `POST /api/v1/posts` honours an `Idempotency-Key` header. Send a unique key per logical create and a retry after a timeout returns the original result instead of creating a second post. Recommended for any client that retries writes, since a network timeout can't tell you whether the post landed.
 
 ## Source of truth
 

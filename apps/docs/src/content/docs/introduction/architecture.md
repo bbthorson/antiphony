@@ -34,8 +34,8 @@ Firebase (Firestore, Firebase Auth, Cloud Storage) is the only backend implement
 
 ## The layers
 
-- **Auth middleware** (`apps/core-api/src/middleware/auth.ts`, `service-auth.ts`) resolves the caller: a service-authenticated app (tenancy + asserted actor from its credential) or, for the demo path, a verified Firebase end-user token. See [API reference § Authentication](/api/overview/#authentication) and [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
-- **Inbound adapters** (`apps/core-api/src/adapters/inbound/rest/`) own HTTP. Each route file validates with Zod, authenticates via the bearer middleware, and delegates. Routes mount under `/api/v1/*` in `apps/core-api/src/app.ts` — that file is the single registry of the public surface (`posts`, `actors`, `audio`, and the legacy `users`/`atproto`/`resolve` surface — see [API reference](/api/overview/#whats-covered)).
+- **Auth middleware** (`apps/core-api/src/middleware/auth.ts`, `service-auth.ts`) resolves the caller from its **service credential** — the only credential the core accepts. The token yields the tenancy; the acting end user arrives as a per-request assertion alongside it. There is no end-user token path. See [API reference § Authentication](/api/overview/#authentication) and [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
+- **Inbound adapters** (`apps/core-api/src/adapters/inbound/rest/`) own HTTP. Each route file validates with Zod, authenticates via the bearer middleware, and delegates. Routes mount under `/api/v1/*` in `apps/core-api/src/app.ts` — that file is the single registry of the public surface, which is `posts` and `audio` (plus the system-auth'd `/api/v1/system/*` plumbing). See [API reference](/api/overview/#whats-covered).
 - **Services** (`packages/core/services/`) hold domain logic. They depend on small `*Dependencies` interfaces (a data port, a clock, an ID generator), **never on `firebase-admin` directly**. This is the package you reuse or test in isolation. (`apps/core-api/src/use-cases/` is a reserved layer for cross-service orchestration — currently empty; most routes call a service directly.)
 - **Outbound adapters / composition root** (`apps/core-api/src/adapters/outbound/firebase/`) implement those `*Dependencies` interfaces against Firestore, Firebase Auth, and Cloud Storage, and assemble the wired services that the routes import.
 
@@ -50,7 +50,9 @@ If you're building your own app *on top of* the API, you don't need any of this 
 
 ## Multi-tenancy
 
-One Antiphony deployment can serve more than one app. The tenancy boundary is the **origin app**: every post is stamped with an `originAppId`, and reads are scoped to the same key — so App A never sees App B's posts by default. The tenancy key is derived from the caller's service credential (see [Authentication](/api/overview/#authentication)); a deployment-level `ANTIPHONY_ORIGIN_APP_ID` remains only as the fallback for the Firebase end-user demo path. Sharing across apps is **directional and explicit**, resolved at the read (AppView) layer rather than baked into the record.
+One Antiphony deployment can serve more than one app. The tenancy boundary is the **origin app**: every post is stamped with an `originAppId`, and reads are scoped to the same key — so App A never sees App B's posts by default. The tenancy key is derived from the caller's service credential and **only** from there (see [Authentication](/api/overview/#authentication)) — there is no deployment-level default, because inferring a tenant from config would let an untrusted request read an arbitrary tenant's data. Sharing across apps is **directional and explicit**, resolved at the read (AppView) layer rather than baked into the record.
+
+Each tenant also carries a pinned **app DID** — the `at://` authority its records are written under, proven at boot. See [Tenant identity](/self-hosting/configuration/#tenant-identity).
 
 `orgId`, where it appears, is *not* a tenancy boundary — it's an opaque indexed facet an app may tag records with for its own grouping. The core stores and filters by it but never defines what an "org" is; teams, membership, and billing are app-layer concerns. (See [What is Antiphony?](/introduction/overview/#whats-intentionally-not-in-the-open-core).)
 

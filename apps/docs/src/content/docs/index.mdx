@@ -8,7 +8,7 @@ head:
   - tag: title
     content: Antiphony — open audio call-and-response infrastructure
 hero:
-  tagline: An AT Protocol lexicon and MIT-licensed infrastructure for audio call-and-response — audio posts, replies, identity, and transcription behind one HTTP API. Vox Pop is one app built on it.
+  tagline: An AT Protocol lexicon and MIT-licensed infrastructure for audio call-and-response — audio posts, replies, portable records, and transcription behind one HTTP API. Vox Pop is one app built on it.
   actions:
     - text: The lexicons
       link: /lexicons/overview/
@@ -50,6 +50,6 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 ## Where the line is
 
-Antiphony is infrastructure and a protocol, not a finished app. It gives you identity, audio posts, replies, and transcription behind one API — and a set of `dev.antiphony.*` AT Protocol lexicons that define those records portably. The product experience, and the higher-level features a given app layers on (telephony, hosted distribution, teams, billing), belong to whatever you build on top.
+Antiphony is infrastructure and a protocol, not a finished app. It gives you audio posts, replies, and transcription behind one API — and a set of `dev.antiphony.*` AT Protocol lexicons that define those records portably. It deliberately does **not** give you identity: accounts, profiles, and sign-in stay with the app that calls it, which asserts who is acting on each request. The product experience, and the higher-level features a given app layers on (telephony, hosted distribution, teams, billing), belong to whatever you build on top.
 
 [Vox Pop](https://voxpop.audio) is one such app. Anything Antiphony stores — an audio prompt and the replies it draws — is a `dev.antiphony.audio.post`; how an app presents that, who it lets reply, and what it charges for are app decisions, not protocol ones.

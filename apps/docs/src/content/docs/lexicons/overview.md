@@ -51,7 +51,7 @@ Record (`#main`):
 
 | Field | Type | Notes |
 | :--- | :--- | :--- |
-| `audio` | blob | `audio/*`, up to 100 MB, content-addressed by CID. Required. |
+| `audio` | blob | `audio/*`, up to 100 MB, content-addressed by CID. Required. (The upload endpoint is deliberately tighter — see [Limits](/api/overview/#limits).) |
 | `durationMs` | integer? | Duration in **milliseconds** (the platform-wide unit). |
 | `alt` | string? | User-authored short description (the audio analogue of image alt text). Not the transcript. |
 | `waveform` | integer[]? | Pre-computed visual peaks, normalized 0–100, for instant rendering. |
@@ -123,7 +123,9 @@ and CIDs are **real content addresses** computed by the AT Protocol rules:
 One thing to know about identity so integrators aren't surprised:
 
 - **`at://` URI authority is the tenant app DID.** Antiphony is the repo owner
-  (app-as-repo-owner — see the [authority model](/introduction/architecture/)),
+  (app-as-repo-owner — see [`specs/atproto-authority-model.md`](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md),
+  and [Tenant identity](/self-hosting/configuration/#tenant-identity) for how a
+  deployment pins and proves it),
   so a post's URI authority is always the tenant's own `did:web`
   (`at://did:web:<tenant>/dev.antiphony.audio.post/<rkey>`), never an internal
   id or handle. The acting user's own identity, when the caller asserts one,
