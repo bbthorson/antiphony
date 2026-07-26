@@ -24,25 +24,29 @@ Some capabilities are split: the open core ships the **lexicon definitions and t
 
 ## Start from the example app you can actually run
 
-The example to learn from lives **right here in this repo**: `apps/reference`, a small Vite + React SPA that signs in anonymously, records audio, uploads it, creates a post, and renders the hydrated view. It is deliberately **unbranded** — the point is to prove the *protocol* is usable by a client carrying no product's design language. It depends on nothing a hosted product keeps private: same public endpoints, same `@antiphony/shared` types.
+The example to learn from lives **right here in this repo**: `apps/reference`, a small Vite + React SPA that records audio, uploads it, creates a post, and renders the hydrated view — with a ~40-line BFF holding the service token so the browser never sees it. It is deliberately **unbranded** — the point is to prove the *protocol* is usable by a client carrying no product's design language. It depends on nothing a hosted product keeps private: same public endpoints, same `@antiphony/shared` types.
 
 If you can build `apps/reference`, you can build your own surface. The [reference app walkthrough](/build-your-own/reference-app/) reads it top to bottom.
 
 ## Getting-started path
 
 1. **Run the core locally.** Follow the [quick start](/self-hosting/quick-start/) to get `/api/v1/*` serving against the Firebase emulators.
-2. **Authenticate.** A real integration uses a service credential + an asserted acting actor; the local/demo path (what `apps/reference` uses) is an anonymous Firebase token. See [Authentication](/api/overview/#authentication).
-3. **Upload audio, then create a post.**
+2. **Authenticate.** Your app presents its own **service token** and asserts which of its users is acting. That is the only path — there is no end-user sign-in against Antiphony. See [Authentication](/api/overview/#authentication).
+
+   Because the token authenticates the *application*, anyone holding it can act as any user in your tenancy, so it must stay server-side: calls to Antiphony come from your backend, never from a browser. That's the shape [`apps/reference`](/build-your-own/reference-app/) demonstrates.
+3. **Upload audio, then create a post.** Max 25 MB, and the MIME type must be one core-api accepts — see [Limits](/api/overview/#limits).
    ```bash
+   AUTH=(-H "Authorization: Bearer $TOKEN" -H "X-Antiphony-Acting-Actor: $YOUR_USER_ID")
+
    # upload hashes the bytes and returns a canonical blob ref
-   curl -X POST $BASE/api/v1/audio/upload -H "Authorization: Bearer $TOKEN" -F file=@clip.wav
+   curl -X POST $BASE/api/v1/audio/upload "${AUTH[@]}" -F "file=@clip.wav;type=audio/wav"
    # → { "success": true, "data": { "blob": { "$type": "blob", "ref": { "$link": "<cid>" }, "mimeType": "audio/wav", "size": 12345 } } }
 
-   curl -X POST $BASE/api/v1/posts -H "Authorization: Bearer $TOKEN" \
+   curl -X POST $BASE/api/v1/posts "${AUTH[@]}" \
      -H "Content-Type: application/json" \
      -d '{ "text": "Ask me anything", "embed": { "$type": "dev.antiphony.embed.audio", "audio": <blob from above> } }'
    ```
-4. **Read it back and render it.** `GET /api/v1/posts/{postId}` returns a hydrated view — the post, its author, the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
+4. **Read it back and render it.** `GET /api/v1/posts/{postId}` returns a hydrated view — the post, an opaque `authorId` (your own user id, for you to join display identity onto), the audio embed with a signed playback URL, the lifted transcript (when ready), and per-viewer state. Drop that payload into your own UI.
 5. **Thread replies.** A reply is a post whose `reply.root`/`reply.parent` point at the prompt; list them with `GET /api/v1/posts/{postId}/replies`. Replies are gated to a participant-only sub-thread — check `viewer.canReply` on the view before showing a reply control (see [reply gating](/api/overview/#reply-gating)).
 
 ## Receiving enrichment webhooks

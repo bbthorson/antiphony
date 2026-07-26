@@ -11,14 +11,35 @@ Most of the variables below are Firebase credentials, because Firebase is the ba
 
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_ORIGIN_APP_ID` | The **fallback** tenancy key for end-user (Firebase-token) callers — the demo/reference path. Service-authenticated apps get their tenancy from their credential instead (see below). See [Multi-tenancy](/introduction/architecture/#multi-tenancy). |
 | `FIREBASE_PROJECT_ID` | Firebase project to authenticate against. (`GCLOUD_PROJECT` is honored as a fallback when running on Google infrastructure.) |
 | `FIREBASE_STORAGE_BUCKET` | GCS bucket for audio uploads. |
 | `ADMIN_SERVICE_ACCOUNT_JSON` | Service account JSON for Firebase Admin (production). On Google infrastructure, Application Default Credentials are used instead. |
-| `ALLOWED_ORIGINS` | Comma-separated CORS allowlist for browser-direct calls to `/api/v1/*`. Add every origin that calls the API from a browser — including any embed surface you deploy. Deliberately excludes `localhost` in production. |
+| `ALLOWED_ORIGINS` | Comma-separated CORS allowlist for browser-direct calls to `/api/v1/*`. Add every origin that calls the API from a browser — including any embed surface you deploy. Deliberately excludes `localhost` in production. Irrelevant to callers that go through their own backend, which is the intended shape. |
+| `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Rate limiting keys off that IP, so a value that doesn't match your actual proxy depth mis-attributes limits — too high lets a caller spoof the address, too low buckets every caller behind the proxy together. |
 | `PORT` | Port to bind. Defaults to `8080`; Cloud Run / App Hosting inject it automatically. |
 | `LOG_LEVEL` | pino log level. Defaults to `info`. |
 | `NODE_ENV` | Standard Node environment flag (`production` in deploys). |
+
+:::note[Removed: `ANTIPHONY_ORIGIN_APP_ID`]
+Tenancy now comes exclusively from the caller's service credential. The deployment-level default was removed because inferring a tenant from an env var let an untrusted request read an arbitrary tenant's data. Setting it today has no effect.
+:::
+
+## Tenant identity
+
+Every tenant needs **two** registry entries, and they're keyed on the same `originAppId`: a credential to authenticate with (`ANTIPHONY_APP_TOKENS`, below) and an app DID to write records under. A tenant present in only one is config drift — core-api logs a warning at boot naming it.
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_APP_DIDS` | Comma-separated `appId:did` pairs pinning each tenant's `at://` authority, e.g. `vox-pop:did:web:voxpop.audio`. Split on the first colon, so the DID's own colons are safe. **Required for any tenant that reads or writes posts** — see the custody note below. |
+| `ANTIPHONY_PDS_HOST` | Optional but recommended. Your Antiphony host (e.g. `api.antiphony.dev`). When set, a pin must also point its `#atproto_pds` `serviceEndpoint` at this host — that's what turns "the DID document exists" into "the DID names *us* as its PDS". Unset, core-api logs a startup warning and only requires the endpoint to be present. |
+
+:::caution[Pins are validated at boot, and fail closed]
+Before serving traffic, core-api resolves every pinned `did:web` (`https://<domain>/.well-known/did.json`), checks the document's `id`, and requires an `#atproto_pds` service entry. A pin that doesn't validate **stops the process** — it will not mint an `at://` URI whose authority it hasn't proven.
+
+The asymmetry to know about: an **empty** pin set is valid and boots cleanly, so a deployment with `ANTIPHONY_APP_TOKENS` but no `ANTIPHONY_APP_DIDS` starts healthy and then fails every post request with `no validated app DID for tenant "<id>"`. Because resolution is HTTPS-only, this can't be satisfied by a localhost domain — see the [quick start](/self-hosting/quick-start/#3-pin-your-tenants-app-did).
+:::
+
+Full rationale: [`specs/atproto-authority-model.md`](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
 
 ## Emulator variables
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Neutral reference creation app for the Antiphony contract — record → upload → create audio.post → hydrate → render. NO product branding; this is the contract's acceptance harness and the capture-kit seed.",
+  "description": "Neutral reference creation app for the Antiphony contract — record → upload → create audio.post → hydrate → render. NO product branding; this is the contract's acceptance harness and the capture-kit seed. Ships a dev BFF that holds the service token server-side.",
   "scripts": {
     "dev": "vite",
     "dev:live": "vite --mode production",
@@ -14,12 +14,12 @@
   },
   "dependencies": {
     "@antiphony/shared": "*",
-    "firebase": "^12.11.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",

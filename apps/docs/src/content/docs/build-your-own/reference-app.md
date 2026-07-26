@@ -17,17 +17,26 @@ record (mic) → POST /api/v1/audio/upload   → build a dev.antiphony.embed.aud
 
 That's the full contract for a bidirectional surface: capture audio, hand the bytes to the audio route, reference them from a post, then read the post back hydrated.
 
-## 1. Authenticate (anonymously is fine)
+## 1. Authenticate (from the server side, always)
 
-The app signs in **anonymously** against Firebase Auth and uses that ID token as its bearer. No account, no UI — just a token good enough to write and read your own posts:
+This is the part most worth copying, and the part people get wrong first.
 
-```ts
-// apps/reference/src/lib/firebase.ts (shape)
-const cred = await signInAnonymously(auth);
-const token = await cred.user.getIdToken();
+Antiphony's only credential is a **service token**, and it authenticates an *application*, not a person — whoever holds it can act as any user in that tenancy. So it can never ship in a browser bundle, and the reference app does **not** call core-api directly. The browser calls `/api/v1/*` on its own origin, and a small Vite middleware forwards each request with the credential attached:
+
+```
+browser ──/api/v1/*──▶ dev BFF ──Authorization: Bearer <service token>──▶ core-api
+                                 X-Antiphony-Acting-Actor: <your user id>
 ```
 
-Every call below carries `Authorization: Bearer <token>`. Anonymous auth is the smallest credential that satisfies the API — a real app swaps in its own sign-in.
+```ts
+// apps/reference/server/dev-bff.ts (shape)
+headers.set('authorization', `Bearer ${serviceToken()}`);
+headers.set('x-antiphony-acting-actor', resolveActingActor(req));
+```
+
+That is the shape of **every** real integration — only the hop's implementation changes (your BFF, worker, or edge function instead of Vite middleware). The one thing standing in for something real is `resolveActingActor()`, which returns a fixed id from env because the reference app has no accounts; a production BFF resolves it from its own session. Antiphony never sees your users' credentials, and it stamps whatever id you assert as the post's opaque `authorId`.
+
+The client itself (`src/lib/api.ts`) therefore carries **no token and no `Authorization` header** — and wouldn't change if you swapped the Vite middleware for a real backend.
 
 ## 2. Upload the audio
 
@@ -61,21 +70,33 @@ The server stamps `originAppId` (the tenancy key) and `createdAt` for you — yo
 ```ts
 // GET /api/v1/posts/:id → AudioPostView
 const view = await client.getPost(created.id);
-// view.embed.url       → signed, playable audio URL
+// view.embed.url        → signed, playable audio URL
 // view.embed.transcript → lifted transcript (absent until transcription runs)
-// view.author           → profile basic
-// view.viewer           → per-viewer state (e.g. isAuthor)
+// view.authorId         → YOUR user id, opaque — join your own profile onto it
+// view.viewer           → per-viewer state (e.g. isAuthor, canReply)
 ```
 
 Three things the view does that the record can't:
 
 - **Signed playback URL.** `embed.url` is a short-lived signed Storage URL — the client plays that, never a raw blob path.
 - **Lifted transcript.** If a `dev.antiphony.audio.transcript` exists for the post, it's folded into `embed.transcript` at read time. Until then the view shows "no transcript yet."
-- **Viewer state.** `viewer` carries per-reader relationship (starting with `isAuthor`) — the projection rule from [API design principles](/explanation/api-design-principles/#3-projections-not-field-flags) in action.
+- **Viewer state.** `viewer` carries per-reader relationship (`isAuthor`, `canReply`) — the projection rule from [API design principles](/explanation/api-design-principles/#3-projections-not-field-flags) in action.
+
+Note what the view does **not** carry: a hydrated author profile. Antiphony holds no user data, so it returns the opaque `authorId` your BFF asserted (plus `authorDid` if you sent one) and leaves display identity — name, avatar, handle — for you to join back on. `PostView.tsx` just renders the raw id, which is exactly what a protocol-level client should do.
 
 ## Configuration: point it at any core-api
 
-The origin is the only thing you configure. The app reads it from build-time env (`VITE_CORE_API_BASE_URL`) — point it at the emulator (`http://localhost:8090`) or the live API (`https://api.antiphony.dev`) and the same bundle talks to your core. The client hard-codes a *contract* (`/api/v1/posts`, `/api/v1/audio`), never a host.
+Configuration lives on the **server** side of the BFF, not in the bundle:
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_CORE_API_URL` | Where the BFF forwards — the emulator (`http://localhost:8090`) or the live API (`https://api.antiphony.dev`). |
+| `ANTIPHONY_SERVICE_TOKEN` | The app's credential. Must match an `appId:token` pair in core-api's `ANTIPHONY_APP_TOKENS`. |
+| `ANTIPHONY_ACTING_ACTOR` | Who the BFF says is acting. Stands in for a real session lookup. |
+
+None of these carry a `VITE_` prefix, and that's the point: Vite only inlines `VITE_`-prefixed vars into the client bundle, so the token stays server-side **by construction** rather than by discipline. The browser-facing client hard-codes a *contract* (`/api/v1/posts`, `/api/v1/audio`) and a same-origin base, never a host or a credential.
+
+One nice consequence: since the browser never makes a cross-origin request, core-api's `ALLOWED_ORIGINS` doesn't constrain this app at all — including against the live API, which deliberately doesn't allowlist localhost.
 
 ## The capture kit
 
@@ -87,22 +108,26 @@ The origin is the only thing you configure. The app reads it from build-time env
 # 1. emulators (separate terminal)
 npx firebase emulators:start --only auth,firestore,storage --project demo-antiphony
 
-# 2. core-api on :8090, pointed at the emulators
+# 2. core-api on :8090, pointed at the emulators.
+#    The token must match ANTIPHONY_SERVICE_TOKEN in apps/reference/.env.development;
+#    the DID pin needs a domain you control (see the quick start).
 PORT=8090 ANTIPHONY_USE_EMULATOR=true GCLOUD_PROJECT=demo-antiphony \
-  ANTIPHONY_ORIGIN_APP_ID=reference npm run dev -w @antiphony/core-api
+  ANTIPHONY_APP_TOKENS=reference:reference-local-dev-token-0123456789abcdef \
+  ANTIPHONY_APP_DIDS=reference:did:web:your-domain.example \
+  npm run dev -w @antiphony/core-api
 
-# 3. the reference app
+# 3. the reference app (serves the UI and the BFF together)
 npm run dev -w @antiphony/reference
 ```
 
-Open the app, record, and watch it round-trip create → fetch → render. The full run notes (including running against the live API) are in [`apps/reference/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/reference/README.md).
+Open the app, record, and watch it round-trip create → fetch → render. There's no sign-in step — the BFF asserts the acting actor for you. The full run notes (including running against the live API, and why the local view comes back without an `embed`) are in [`apps/reference/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/reference/README.md).
 
 ## What to copy for your own app
 
-1. **A bearer token** — the reference app's anonymous Firebase auth is the local-dev/demo shortcut, not the integration pattern. A real app authenticates with a [service credential](/api/overview/#authentication) and asserts its own end user as the acting actor.
+1. **A server-side hop that holds the credential** — this is the integration pattern, not a shortcut around one. Your backend presents the [service token](/api/overview/#authentication) and asserts your end user as the acting actor; the browser never sees either. Replace the Vite middleware with your own backend and nothing else in this list changes.
 2. **Upload, then reference** — `POST /api/v1/audio/upload`, place the returned blob ref in the post's `embed` verbatim.
 3. **Create with `POST /api/v1/posts`** — `reply` presence is prompt-vs-reply; the server stamps tenancy + timestamps.
-4. **Read the view, not the record** — `GET /api/v1/posts/{postId}` gives you the signed URL, the lifted transcript, and viewer state.
+4. **Read the view, not the record** — `GET /api/v1/posts/{postId}` gives you the signed URL, the lifted transcript, and viewer state. Join your own profile data onto the opaque `authorId`.
 5. **The envelope convention** — unwrap `{ success, data }`, handle errors.
 
 That's the whole template. Everything past it — threads, lists, filters — is documented in the [API reference](/api/reference/).

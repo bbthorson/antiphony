@@ -1,11 +1,14 @@
 /// <reference types="vite/client" />
 
+/**
+ * Client-visible env. Deliberately tiny: the app holds no credential, so
+ * there is nothing here but a display string. The service token and the
+ * core-api URL are server-side vars read by `server/dev-bff.ts` — they carry
+ * no `VITE_` prefix precisely so Vite cannot inline them into this bundle.
+ */
 interface ImportMetaEnv {
-    readonly VITE_CORE_API_BASE_URL?: string;
-    readonly VITE_FIREBASE_PROJECT_ID?: string;
-    readonly VITE_FIREBASE_API_KEY?: string;
-    readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
-    readonly VITE_AUTH_EMULATOR_HOST?: string;
+    /** Display only — which core-api the BFF forwards to, shown in the header. */
+    readonly VITE_CORE_API_LABEL?: string;
 }
 
 interface ImportMeta {

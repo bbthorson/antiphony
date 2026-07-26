@@ -9,6 +9,18 @@ import type { BlobRef } from '@antiphony/shared/types/blob';
  * the published contract end to end using only `@antiphony/shared` types —
  * no product-specific code. If the shapes here drift from what core-api
  * emits, the build breaks, which is exactly the acceptance signal we want.
+ *
+ * ## No credential lives here
+ *
+ * The client carries no token and sets no `Authorization` header. Antiphony's
+ * only credential is a service token, which authenticates an *application*
+ * rather than a person and so must never reach a browser bundle. Calls go to
+ * `/api/v1/*` on this app's own origin and the dev BFF
+ * (`server/dev-bff.ts`) attaches the credential and the acting-actor
+ * assertion server-side.
+ *
+ * That is the shape of a real integration too — your BFF replaces the Vite
+ * middleware, and this file doesn't change.
  */
 
 /** The core-api response envelope (mirrors lib/error-envelope on the server). */
@@ -24,20 +36,14 @@ export class ApiError extends Error {
 }
 
 export class AntiphonyClient {
-    constructor(
-        private readonly baseUrl: string,
-        private readonly getToken: () => Promise<string>,
-    ) {}
+    /**
+     * @param baseUrl Same-origin by default (`''`) so requests hit the dev BFF.
+     *   A real app points this at its own backend, never at core-api directly.
+     */
+    constructor(private readonly baseUrl: string = '') {}
 
     private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-        const token = await this.getToken();
-        const res = await fetch(`${this.baseUrl}${path}`, {
-            ...init,
-            headers: {
-                Authorization: `Bearer ${token}`,
-                ...(init.headers ?? {}),
-            },
-        });
+        const res = await fetch(`${this.baseUrl}${path}`, init);
 
         let body: Envelope<T>;
         try {

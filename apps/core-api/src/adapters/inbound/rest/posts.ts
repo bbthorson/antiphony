@@ -28,10 +28,11 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * `reply` presence discriminates a prompt (thread root) from a reply. The
  * legacy `/prompts` + `/replies` + `/organizations` surface has been removed.
  *
- * **Tenancy:** every read/write is scoped to a single `originAppId` — derived
- * from the caller's service credential when present, else deploy config
- * (`ANTIPHONY_ORIGIN_APP_ID`, default `antiphony`). See `lib/origin-app.ts`
- * and `specs/service-auth.md`. Always stamped server-side.
+ * **Tenancy:** every read/write is scoped to a single `originAppId`, derived
+ * from the caller's service credential — the only source. There is no deploy
+ * -level default: inferring the tenant from config would let a request read an
+ * arbitrary tenant's data. See `lib/origin-app.ts` and `specs/service-auth.md`.
+ * Always stamped server-side.
  */
 
 /**
