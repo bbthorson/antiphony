@@ -1,0 +1,81 @@
+{
+    // Knip — unused files / exports / dependencies.
+    //
+    // Run it with `npm run knip`. It is deliberately NOT wired into CI: a
+    // meaningful share of what it reports on this repo is either a false
+    // positive (see `ignoreDependencies`) or an `export` keyword that is
+    // redundant but harmless, and gating merges on that trades real review
+    // attention for churn. Treat it as a periodic sweep, not a gate.
+    //
+    // Known blind spot, important when reading a report: knip resolves imports
+    // through node_modules, so it cannot follow this repo's tsconfig path
+    // aliases (`shared/*` -> `packages/shared/*`, `@antiphony/core/*` ->
+    // `packages/core/*`). Anything reached only through an alias looks unused
+    // to it. That is also why it could not see that `packages/core/ports/
+    // auth-port.ts` was dead — a barrel re-export in `index.ts` made the file
+    // reachable from an entry point even though nothing imported the barrel.
+    "$schema": "https://unpkg.com/knip@5/schema.json",
+
+    "workspaces": {
+        "apps/core-api": {
+            "entry": ["scripts/*.ts"],
+            "project": ["src/**/*.ts", "scripts/**/*.ts"]
+        },
+        "apps/reference": {
+            "project": ["src/**/*.{ts,tsx}"]
+        },
+        "apps/docs": {
+            "project": ["src/**/*.{ts,astro}"]
+        },
+        "packages/core": {
+            "entry": ["index.ts"],
+            "project": ["**/*.ts"]
+        },
+        "packages/shared": {
+            // Entry points come from the `exports` map in package.json, which
+            // knip reads on its own — every published subpath counts as one.
+            "project": ["**/*.ts"]
+        }
+    },
+
+    // These are NOT unused. Each is a knip resolution gap, verified by hand:
+    //
+    //   @antiphony/shared        imported 14x by core-api and 18x by
+    //                            packages/core, but via the `shared/*` tsconfig
+    //                            path alias rather than the package specifier,
+    //                            which knip does not follow.
+    //   @fontsource-variable/*   referenced from `apps/docs/astro.config.mjs`
+    //                            in a Vite `optimizeDeps` string array and from
+    //                            `src/styles/brand.css`; knip reads neither.
+    //   sharp                    Astro's default image service loads it by name
+    //                            at build time; nothing imports it in source.
+    //
+    // Re-verify before deleting any of these, don't just trust the report.
+    "ignoreDependencies": [
+        "@antiphony/shared",
+        "@fontsource-variable/inter",
+        "@fontsource-variable/sora",
+        "@fontsource-variable/jetbrains-mono",
+        "sharp"
+    ],
+
+    // `eslint-rules/` is a plain directory of ESLint plugin sources, not a
+    // workspace. `index.mjs` is imported by each workspace's eslint.config.mjs
+    // across a boundary knip does not follow, and the RuleTester suites beside
+    // it run under `node --test` via the root `test:eslint-rules` script — they
+    // are entry points, not dead files. Knip flagged them as unused and was
+    // right at the time: nothing ran them at all until that script was added.
+    "ignore": ["eslint-rules/**"],
+
+    // `types` is off because it reports ~21 exported interfaces that are the
+    // declared shape of a module's own contract — `AudioPostDependencies`,
+    // `RateLimitOptions`, `ServiceApp` and friends. Exporting those is the
+    // point of the ports pattern, not an oversight, and leaving the check on
+    // buries the findings that do matter. `exports` stays on but still needs
+    // triage by hand: most of what it flags is a function used inside its own
+    // module, where the `export` keyword is redundant rather than the code
+    // being dead.
+    "rules": {
+        "types": "off"
+    }
+}

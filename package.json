@@ -14,9 +14,14 @@
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present && npm run test:eslint-rules",
+    "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them — they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
+    "test:eslint-rules": "node --test \"eslint-rules/*.test.mjs\"",
+    "knip": "knip"
   },
   "devDependencies": {
+    "eslint": "^9.16.0",
+    "knip": "^5.66.1",
     "typescript": "^5.7.2"
   },
   "engines": {

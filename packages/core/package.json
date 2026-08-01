@@ -9,8 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@antiphony/shared": "*",
-    "zod": "^3.24.1"
+    "@antiphony/shared": "*"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
