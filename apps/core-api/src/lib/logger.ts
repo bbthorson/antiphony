@@ -38,9 +38,4 @@ export function correlationId(): string {
     return randomUUID();
 }
 
-/** Build a request-scoped child logger with the correlation ID pre-bound. */
-export function childLogger(requestId: string, extra: Record<string, unknown> = {}) {
-    return logger.child({ requestId, ...extra });
-}
-
 export type Logger = typeof logger;
