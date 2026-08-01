@@ -1,0 +1,147 @@
+name: Release
+
+# Publishes @antiphony/shared to npm. It is the only publishable package in the
+# workspace — every other workspace is `private` or deployed elsewhere (core-api
+# to Firebase App Hosting, docs to Cloudflare).
+#
+# Why this exists: publishing used to be manual, and so it didn't happen. 0.5.0
+# was bumped in the tree in fe7596b and then sat unpublished while the registry
+# served 0.4.0, because nobody ran `npm publish`. A tag is harder to forget than
+# a step in someone's head.
+#
+# To cut a release:
+#   1. bump `version` in packages/shared/package.json, land it on master
+#   2. git tag shared-v0.6.0 && git push origin shared-v0.6.0
+#
+# The tag is the trigger AND the assertion — step "Assert the tag matches the
+# package version" fails the run if they disagree, so a mistyped tag can't
+# publish the wrong version.
+
+on:
+  push:
+    tags:
+      # Namespaced by package so a second publishable workspace can get its own
+      # tag prefix later without this workflow firing on it.
+      - 'shared-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run every check and pack the tarball, but do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # Required for npm trusted publishing: npm exchanges this short-lived OIDC
+  # token for publish rights. Nothing here reads a stored NPM_TOKEN — see the
+  # publish step for the one-time npmjs.com setup that makes it work.
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Deliberately NOT cancel-in-progress, unlike ci.yml. Cancelling a run
+  # mid-publish can leave a version half-claimed on the registry, and npm
+  # versions are immutable — you cannot re-publish over the wreckage.
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish @antiphony/shared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # Node 22 ships npm 10.x (10.9.8 as of this writing); trusted publishing
+      # needs >= 11.5.1. Without this the publish step fails asking for an OTP,
+      # which is exactly the manual gate this workflow exists to remove.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
+      # Also builds @antiphony/shared through its `prepare` script — load-bearing
+      # for the typecheck below, same as in ci.yml.
+      - run: npm ci
+
+      # Re-run the full gate rather than trusting that CI passed on the commit
+      # this tag points at. A tag can be moved, or pushed to a commit that never
+      # opened a PR; the registry is immutable, so verify here too.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+      # The docs build and OpenAPI drift assertions from ci.yml are omitted on
+      # purpose: they gate core-api's committed contract, which has no bearing
+      # on the contents of this tarball (`files: ["dist"]`).
+
+      - name: Assert the tag matches the package version
+        if: github.event_name == 'push'
+        run: |
+          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#shared-v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} implies ${TAG_VERSION}, but packages/shared/package.json says ${PKG_VERSION}."
+            echo "Bump the package version and move the tag, or tag shared-v${PKG_VERSION} instead."
+            exit 1
+          fi
+          echo "Tag and package agree on ${PKG_VERSION}."
+
+      # npm's own error for this is a bare 403 that reads like an auth failure.
+      # Catching it here costs one request and says what actually happened.
+      - name: Assert this version is not already published
+        run: |
+          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          if npm view "@antiphony/shared@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "::error::@antiphony/shared@${PKG_VERSION} is already on the registry. npm versions are immutable — bump the version."
+            exit 1
+          fi
+          echo "@antiphony/shared@${PKG_VERSION} is unclaimed."
+
+      - name: Pack (dry run)
+        if: inputs.dry_run
+        run: npm pack -w @antiphony/shared --dry-run
+
+      # No NODE_AUTH_TOKEN, by design. This authenticates via the OIDC token
+      # granted by `id-token: write` above, which requires a one-time setup on
+      # npmjs.com: package settings -> Trusted Publisher -> GitHub Actions, with
+      # this repo and the workflow filename `release.yml`. That filename is part
+      # of the trust policy — renaming this file breaks publishing until the
+      # policy is updated to match.
+      #
+      # Trusted publishing also attaches build provenance automatically, so the
+      # registry can attest the tarball came from this workflow at this commit.
+      #
+      # If you ever need to fall back to a classic token, add
+      #   env: { NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} }
+      # to this step — but prefer fixing the trust policy. A stored token is a
+      # long-lived credential that can publish from anywhere.
+      #
+      # The dist-tag is derived, not hardcoded: npm tags every publish `latest`
+      # unless told otherwise, so tagging shared-v0.6.0-rc.1 would hand every
+      # `npm install @antiphony/shared` a release candidate. A version carrying
+      # a prerelease identifier goes to `next` instead.
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        run: |
+          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          case "$PKG_VERSION" in
+            *-*) DIST_TAG=next ;;
+            *)   DIST_TAG=latest ;;
+          esac
+          echo "Publishing ${PKG_VERSION} under dist-tag ${DIST_TAG}."
+          npm publish -w @antiphony/shared --tag "$DIST_TAG"
+
+      - name: Summary
+        run: |
+          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "### Dry run: @antiphony/shared@${PKG_VERSION} validated, not published" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Published @antiphony/shared@${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+            echo "https://www.npmjs.com/package/@antiphony/shared/v/${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          fi

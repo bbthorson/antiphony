@@ -27,7 +27,38 @@ npm run typecheck    # all workspaces
 npm run lint         # all workspaces
 npm run test         # all workspaces
 npm run dev          # core-api on :8090 (emulator mode)
+npm run knip         # unused files/exports/deps sweep (manual, not a CI gate)
 ```
+
+## Releasing
+
+`@antiphony/shared` is the only published package. Releases are cut by tag —
+`.github/workflows/release.yml` does the publishing, so no one needs npm
+credentials locally.
+
+```bash
+# 1. bump the version, land it on master
+#    packages/shared/package.json -> "version": "0.6.0"
+# 2. tag the merge commit and push the tag
+git tag shared-v0.6.0
+git push origin shared-v0.6.0
+```
+
+The workflow re-runs typecheck, lint, test, and build, then asserts the tag
+matches `packages/shared/package.json` and that the version is unclaimed on the
+registry, before publishing. A version with a prerelease identifier
+(`shared-v0.6.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
+
+`workflow_dispatch` runs the same pipeline with a `dry_run` input (default on)
+to validate a release without publishing.
+
+Authentication is npm [trusted publishing](https://docs.npmjs.com/trusted-publishers)
+over OIDC — there is no `NPM_TOKEN` secret. The trust policy on npmjs.com names
+this repo **and the workflow filename**, so renaming `release.yml` breaks
+publishing until the policy is updated.
+
+Note that `CHANGELOG.md` tracks the **API contract** version, not package
+releases; the two version lines are independent.
 
 ## History
 
