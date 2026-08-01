@@ -20,7 +20,10 @@ const EVENT: StageSettledEvent = {
     occurredAt: '2026-07-19T14:03:11.204Z',
 };
 
-const SECRET = 'whsec_test';
+// Must clear webhook-config's ≥32-char floor, or the tenant resolves to no
+// config and the notifier correctly sends nothing. The bytes are arbitrary —
+// every assertion below recomputes the HMAC from this same constant.
+const SECRET = `whsec_test_${'a'.repeat(32)}`;
 const URL = 'https://bff.voxpop/hooks';
 
 function loggerStub(): Logger {

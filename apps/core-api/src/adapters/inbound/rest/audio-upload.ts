@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
@@ -36,6 +37,16 @@ const ALLOWED_TYPES = new Set([
 
 const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
 
+/**
+ * Transport-level cap, enforced before the body is read.
+ *
+ * Sits slightly above `MAX_SIZE` because multipart framing (the boundary
+ * delimiters and per-part headers) rides on top of the file bytes — capping the
+ * *body* at exactly `MAX_SIZE` would reject a legitimate 25 MB file. The exact
+ * file-size check stays in the handler, where `file.size` is the real number.
+ */
+const MAX_BODY_SIZE = MAX_SIZE + 64 * 1024;
+
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 const UploadResponseSchema = z.object({
@@ -59,7 +70,26 @@ const uploadRoute = createRoute({
         'Authenticated multipart/form-data upload with a single `file` field (max 25MB; ' +
         'types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns ' +
         'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post.',
-    middleware: [requireAuth(), rateLimit(RATE_LIMITS.hourly)] as const,
+    middleware: [
+        requireAuth(),
+        rateLimit(RATE_LIMITS.hourly),
+        // Bound the body BEFORE the handler's `c.req.formData()` buffers it
+        // whole. Without this the 25 MB check below only ran after the bytes
+        // were already resident, so an authenticated caller could spend the
+        // instance's memory `hourly`-limit times an hour on a minInstances: 0
+        // backend. Rejects on Content-Length when present, otherwise aborts the
+        // stream once the cap is passed.
+        //
+        // The handler's own `file.size` guard stays: this caps the whole
+        // multipart envelope, not the file part, and a request that omits or
+        // understates Content-Length is caught there.
+        bodyLimit({
+            maxSize: MAX_BODY_SIZE,
+            // Same 400 + message the handler's size guard returns, so the
+            // documented contract has one oversized-upload response, not two.
+            onError: (c) => c.json(errorEnvelope(c, 'File too large (max 25MB)'), 400),
+        }),
+    ] as const,
     responses: {
         200: jsonResponse(UploadResponseSchema, 'Stored audio blob ref'),
         400: errorResponse('Missing/oversized file or unsupported audio type'),

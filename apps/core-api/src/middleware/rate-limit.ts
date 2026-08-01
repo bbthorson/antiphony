@@ -210,14 +210,24 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
     return async (c, next) => {
         const xff = c.req.header('x-forwarded-for');
         const ip = extractClientIp(xff);
-        // H5 verification diagnostic (June 2026): emit the raw XFF chain + the
-        // IP we extracted so a single known-source request confirms the
-        // TRUSTED_PROXY_HOPS offset in client-ip.ts against real production
-        // traffic. Low volume (pre-beta). Remove/downgrade once confirmed.
-        logger.info(
-            { requestId: c.get('requestId'), xff: xff ?? null, clientIp: ip },
-            '[rate-limit] xff diagnostic',
-        );
+        // The June 2026 H5 investigation confirmed the TRUSTED_PROXY_HOPS offset
+        // in client-ip.ts, so the per-request diagnostic that verified it is
+        // gone — it logged the full XFF chain and the extracted client IP at
+        // `info` on EVERY rate-limited request, which is a lot of addresses to
+        // keep in Cloud Logging for a question already answered.
+        //
+        // What it was also serving as — the detector for the platform changing
+        // its hop count — survives in this narrower form. If the topology moves,
+        // the entry we index lands outside the chain and extraction collapses to
+        // 'unknown', which also means every such caller shares one rate-limit
+        // bucket. That is the symptom worth paging on, it fires only when
+        // something is actually wrong, and it needs no client address to say so.
+        if (ip === 'unknown' && xff) {
+            logger.warn(
+                { requestId: c.get('requestId'), xffEntries: xff.split(',').length },
+                '[rate-limit] client IP unresolvable from a present XFF chain — TRUSTED_PROXY_HOPS may no longer match the platform; all such callers share one bucket',
+            );
+        }
         const key = `ratelimit_${customKey || ip}`;
         const result = await checkRateLimit(key, options, c.get('requestId'));
         if (!result.allowed) {

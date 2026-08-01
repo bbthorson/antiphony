@@ -22,6 +22,18 @@ import { logger } from './logger.js';
  * outcome — and only the log distinguishes them.
  */
 
+/**
+ * Minimum webhook-signing-secret length — the same bar `ANTIPHONY_APP_TOKENS`
+ * and `SYSTEM_AUTH_TOKEN` hold their secrets to.
+ *
+ * This key is the *only* thing standing between a receiver and a forged
+ * stage-settled event: the receiver's whole trust decision is recomputing the
+ * HMAC and comparing. A short key is brute-forceable offline from a single
+ * captured delivery, which makes the signature decorative. Fail closed for that
+ * tenant rather than push events it can't safely trust.
+ */
+const WEBHOOK_SECRET_MIN_LENGTH = 32;
+
 export interface WebhookConfig {
     url: string;
     secret: string;
@@ -111,7 +123,18 @@ function parsePairs(
     return out;
 }
 
-/** A webhook URL must parse and be http(s) — anything else has nowhere valid to POST. */
+/** Loopback hosts, where plaintext http is a local-development convenience rather than a wire risk. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * A webhook URL must parse, be http(s), and — off loopback — be https.
+ *
+ * The payload names a tenant's post ids and processing outcomes, and the
+ * signature that authenticates it travels in a header beside it. Over plaintext
+ * both are readable and strippable in transit, so a non-loopback `http:` target
+ * is refused rather than quietly downgraded. Loopback stays allowed so a
+ * receiver can be developed against `http://localhost:8787`.
+ */
 function validateUrl(value: string, appId: string): boolean {
     let parsed: URL;
     try {
@@ -124,10 +147,29 @@ function validateUrl(value: string, appId: string): boolean {
         logger.error({ appId, protocol: parsed.protocol }, '[webhook-config] webhook url must be http(s); ignoring entry');
         return false;
     }
+    if (parsed.protocol === 'http:' && !LOOPBACK_HOSTS.has(parsed.hostname)) {
+        logger.error(
+            { appId, hostname: parsed.hostname },
+            '[webhook-config] webhook url must be https off loopback (the signature travels with the payload); ignoring entry',
+        );
+        return false;
+    }
     return true;
 }
 
-/** A secret only has to be non-empty; the trim in `parsePairs` already enforces that. */
-function validateSecret(_value: string, _appId: string): boolean {
+/**
+ * A signing secret must clear `WEBHOOK_SECRET_MIN_LENGTH`. Previously any
+ * non-empty string passed, so a deployment could sign with four characters and
+ * read as correctly configured — the one place in this codebase where a secret
+ * had no strength floor.
+ */
+function validateSecret(value: string, appId: string): boolean {
+    if (value.length < WEBHOOK_SECRET_MIN_LENGTH) {
+        logger.error(
+            { appId, minLength: WEBHOOK_SECRET_MIN_LENGTH, actualLength: value.length },
+            '[webhook-config] webhook signing secret too short; ignoring entry (rotate to ≥32 chars)',
+        );
+        return false;
+    }
     return true;
 }
