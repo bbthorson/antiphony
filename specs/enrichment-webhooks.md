@@ -96,6 +96,19 @@ queue config falls back to noop dispatch. Absence is a valid, silent opt-out; **
 config (a url with no secret, or vice versa) is a misconfiguration and logs at `error`,
 same discipline as the Cloud Tasks vars.
 
+Each half is also validated on its own, and a failing entry drops for that tenant alone:
+
+- **The secret must be ≥32 chars**, the same floor `ANTIPHONY_APP_TOKENS` and
+  `SYSTEM_AUTH_TOKEN` hold. Recomputing the HMAC is the receiver's *entire* basis for
+  trusting an event, and a short key is brute-forceable offline from one captured
+  delivery — which makes the signature decorative rather than load-bearing.
+- **The url must be https off loopback.** The signature travels in a header beside the
+  payload it authenticates, so a plaintext hop exposes both to read and to strip.
+  `localhost` / `127.0.0.1` / `::1` stay http-friendly so a receiver can be built locally.
+
+Both refuse rather than downgrade: a tenant whose config can't carry a trustworthy
+signature gets no webhooks, and the pull paths continue to carry the result.
+
 ## Delivery — best-effort, decoupled from the pass
 
 Chosen: **best-effort with the sweep as the durability backstop** (not a durable/queued
