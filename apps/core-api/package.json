@@ -12,7 +12,7 @@
     "migrate:processed-blob-cid": "tsx scripts/migrate-processed-blob-cid.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
   },
   "dependencies": {

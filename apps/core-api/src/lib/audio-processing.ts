@@ -8,7 +8,6 @@ import type { ProcessingNotifierPort } from '@antiphony/core/ports/processing-no
 import {
     PROCESSING_STAGES,
     type ProcessingRequest,
-    type ProcessingStage,
     type ProcessingStageMap,
     type ResolvedProcessing,
 } from 'shared/types/processing';
