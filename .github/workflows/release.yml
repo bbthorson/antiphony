@@ -57,12 +57,10 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      # Node 22 ships npm 10.x (10.9.8 as of this writing); trusted publishing
-      # needs >= 11.5.1. Without this the publish step fails asking for an OTP,
-      # which is exactly the manual gate this workflow exists to remove.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
-
+      # Install and verify on the npm that ships with Node 22, the same one
+      # ci.yml uses. The npm upgrade that trusted publishing needs happens LATER,
+      # deliberately — see the step just above the publish.
+      #
       # Also builds @antiphony/shared through its `prepare` script — load-bearing
       # for the typecheck below, same as in ci.yml.
       - run: npm ci
@@ -93,18 +91,62 @@ jobs:
 
       # npm's own error for this is a bare 403 that reads like an auth failure.
       # Catching it here costs one request and says what actually happened.
+      #
+      # On a dry run this warns instead of failing. A dry run's job is to
+      # exercise the pipeline, and the common case for running one — validating
+      # the workflow itself against the current tree — is precisely when the
+      # version is already published. Failing there would leave no way to get a
+      # green run without cutting a real release.
       - name: Assert this version is not already published
         run: |
           PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
           if npm view "@antiphony/shared@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "::error::@antiphony/shared@${PKG_VERSION} is already on the registry. npm versions are immutable — bump the version."
-            exit 1
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "::warning::@antiphony/shared@${PKG_VERSION} is already on the registry. A real release would stop here."
+            else
+              echo "::error::@antiphony/shared@${PKG_VERSION} is already on the registry. npm versions are immutable — bump the version."
+              exit 1
+            fi
+          else
+            echo "@antiphony/shared@${PKG_VERSION} is unclaimed."
           fi
-          echo "@antiphony/shared@${PKG_VERSION} is unclaimed."
 
       - name: Pack (dry run)
         if: inputs.dry_run
         run: npm pack -w @antiphony/shared --dry-run
+
+      # Node 22 ships npm 10.9.8; trusted publishing needs >= 11.5.1. Without
+      # this the publish fails asking for an OTP, which is the manual gate this
+      # workflow exists to remove.
+      #
+      # It runs HERE, after install and after the whole verification gate, and
+      # that ordering is load-bearing. npm 12 does not run a dependency's
+      # install script unless it is covered by `allowScripts`, so upgrading
+      # before `npm ci` silently changes what gets installed. The first run of
+      # this workflow did exactly that and failed: ffmpeg-static never fetched
+      # its binary, so `ffmpegAvailable()` went false and the trim/waveform
+      # capabilities reported unavailable. esbuild's postinstall was blocked in
+      # the same run, which would have taken out `npm run build` immediately
+      # after.
+      #
+      # Verified against both majors with a probe package: 11.19.0 warns
+      # ("not yet covered by allowScripts") and still runs the script; 12.0.2
+      # blocks it. npm 11 is the runway, npm 12 is the enforcement.
+      #
+      # Nothing is installed past this point, so the new default has nothing to
+      # block — `npm publish` runs this repo's own prepack/prepare, not a
+      # dependency's install script.
+      #
+      # Unconditional rather than gated on the publish, so a dry run exercises
+      # every step a real release takes except the publish itself.
+      #
+      # Pinned to a major rather than `@latest`: `@latest` is what put npm 12
+      # in this job without anyone deciding to, and the step immediately before
+      # an irreversible publish is the worst place to accept an unreviewed major
+      # bump. Patches still arrive. npm 12 requires Node ^22.22.2, which the
+      # .nvmrc 22 line satisfies on the runner.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@12
 
       # No NODE_AUTH_TOKEN, by design. This authenticates via the OIDC token
       # granted by `id-token: write` above, which requires a one-time setup on
