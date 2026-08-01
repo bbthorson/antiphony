@@ -3,26 +3,27 @@
  * `X-Forwarded-For`.
  *
  * Firebase App Hosting fronts Cloud Run with **two** Google infrastructure hops,
- * confirmed empirically from production XFF chains (June 2026 H5 investigation —
- * see `docs/security-audit-2026-06.md`). Every chain on the `vox-pop-core-api`
- * backend has the exact shape:
+ * confirmed empirically from production XFF chains (June 2026 investigation).
+ * Every chain observed on the backend has the exact shape:
  *
  *     <client-ip>, <GCLB-ip 35.219.x>, <GFE-ip 192.178.13.x>
  *
  * The two rightmost entries are Google's load balancer and front-end (both
  * public Google ranges, so they can't be filtered by an is-private check); the
- * real client is the entry TWO hops in from the right. The original H5 fix used
- * 1 hop and so bucketed on the stable `35.219.x` GCLB IP — the diagnostic log in
- * `rate-limit.ts` showed `clientIp: 35.219.200.199` for every request, which is
- * how we caught it. With 2 hops the client is correctly extracted, and a client
- * that spoofs a leading XFF entry is ignored (we trust only what the edge
- * appended).
+ * real client is the entry TWO hops in from the right. An earlier fix used 1
+ * hop and so bucketed every caller on the stable `35.219.x` GCLB address —
+ * i.e. one shared rate-limit bucket for the entire internet, which is how the
+ * off-by-one was caught. With 2 hops the client is extracted correctly, and a
+ * client that spoofs a leading XFF entry is ignored, since only what the edge
+ * appended is trusted.
  *
- * Overridable via the `TRUSTED_PROXY_HOPS` env var (apphosting.yaml) so a future
- * platform topology change can be corrected without a code deploy — the
- * diagnostic log in `rate-limit.ts` is the detector (if `clientIp` starts
- * showing a Google infra IP or `unknown`, the hop count moved). Falls back to 2
- * when unset or non-numeric.
+ * Overridable via the `TRUSTED_PROXY_HOPS` env var (apphosting.yaml) so a
+ * future platform topology change can be corrected without a code deploy.
+ * The detector for that is the `warn` in `rate-limit.ts`: if the platform
+ * changes its hop count, the entry this indexes to falls outside the chain and
+ * extraction collapses to 'unknown' despite an XFF header being present, which
+ * is precisely what that log fires on. Falls back to 2 when unset or
+ * non-numeric.
  */
 const TRUSTED_PROXY_HOPS = (() => {
     const raw = Number(process.env.TRUSTED_PROXY_HOPS);

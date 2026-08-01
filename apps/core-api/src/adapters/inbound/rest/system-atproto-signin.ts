@@ -10,7 +10,7 @@ import { ConflictError } from 'shared/errors';
 
 /**
  * System-auth endpoint that completes the AT Protocol login flow.
- * Called by apps/web's `/api/v1/atproto/callback` when `state.mode === 'login'`.
+ * Called by a tenant BFF's OAuth callback route when `state.mode === 'login'`.
  *
  * POST /api/v1/system/atproto/signin
  *   { did: string, handle: string }

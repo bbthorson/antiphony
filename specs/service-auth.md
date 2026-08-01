@@ -32,8 +32,8 @@ request is tenancy-scoped but viewer-less (public projection, `canReply: false`)
 ### Tenancy resolution
 
 `originAppId` is **derived from the credential**, never from the request body.
-A request authenticated as app `vox-pop` can only read and write
-`vox-pop`-tenancy records and blobs. The `ANTIPHONY_ORIGIN_APP_ID` env var is
+A request authenticated as app `voxpop` can only read and write
+`voxpop`-tenancy records and blobs. The `ANTIPHONY_ORIGIN_APP_ID` env var is
 the tenancy only for an anonymous read (`optionalAuth` with no service token) —
 a self-hoster's single-tenant default.
 
@@ -51,7 +51,7 @@ a self-hoster's single-tenant default.
 `ANTIPHONY_APP_TOKENS` — comma-separated `appId:token` pairs:
 
 ```
-ANTIPHONY_APP_TOKENS="vox-pop:<64-char-random>,bardcast:<64-char-random>"
+ANTIPHONY_APP_TOKENS="voxpop:<64-char-random>,bardcast:<64-char-random>"
 ```
 
 - Tokens must be ≥32 chars (generate with `openssl rand -hex 32`); shorter

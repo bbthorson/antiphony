@@ -7,8 +7,8 @@ import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
- * Hono error handler. Equivalent of `apps/web/src/lib/api/withErrorHandler.ts`,
- * rewritten for Hono's `app.onError` signature.
+ * Hono error handler, installed via `app.onError` so it catches throws from
+ * any middleware or handler.
  *
  * Error mapping priority:
  *   1. `ServiceError` subclasses — typed domain errors with HTTP status.
@@ -20,11 +20,10 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  *      production to avoid leaking internals.
  *
  * Every response includes the `requestId` correlation ID (set by the
- * request-id middleware) so support can trace a single request across
- * core-api, apps/web, and any downstream Cloud Functions logs.
+ * request-id middleware) so one request can be traced across the calling
+ * application's logs and core-api's.
  *
- * Response shape (Phase 4 of envelope standardization — symmetric with the
- * success envelope):
+ * Response shape — symmetric with the success envelope:
  *   { success: false, error: { message, code? }, requestId, ... }
  */
 

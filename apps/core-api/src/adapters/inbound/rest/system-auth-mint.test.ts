@@ -41,7 +41,7 @@ const withSystemAuth = (extra: Record<string, string> = {}) => ({
 
 const validBody = JSON.stringify({
     idToken: 'fake-id-token',
-    expiresInMs: 5 * 24 * 60 * 60 * 1000, // 5 days, matches apps/web default
+    expiresInMs: 5 * 24 * 60 * 60 * 1000, // 5 days
 });
 
 describe('POST /api/v1/system/auth/mint-session-cookie', () => {

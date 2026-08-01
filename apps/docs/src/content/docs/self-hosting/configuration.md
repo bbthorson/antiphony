@@ -30,7 +30,7 @@ Every tenant needs **two** registry entries, and they're keyed on the same `orig
 
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_APP_DIDS` | Comma-separated `appId:did` pairs pinning each tenant's `at://` authority, e.g. `vox-pop:did:web:voxpop.audio`. Split on the first colon, so the DID's own colons are safe. **Required for any tenant that reads or writes posts** — see the custody note below. |
+| `ANTIPHONY_APP_DIDS` | Comma-separated `appId:did` pairs pinning each tenant's `at://` authority, e.g. `voxpop:did:web:did.voxpop.audio`. Split on the first colon, so the DID's own colons are safe. **Required for any tenant that reads or writes posts** — see the custody note below. |
 | `ANTIPHONY_PDS_HOST` | Optional but recommended. Your Antiphony host (e.g. `api.antiphony.dev`). When set, a pin must also point its `#atproto_pds` `serviceEndpoint` at this host — that's what turns "the DID document exists" into "the DID names *us* as its PDS". Unset, core-api logs a startup warning and only requires the endpoint to be present. |
 
 :::caution[Pins are validated at boot, and fail closed]

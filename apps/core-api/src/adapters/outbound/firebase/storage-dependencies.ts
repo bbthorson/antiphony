@@ -4,8 +4,7 @@ import type { BlobStore } from '@antiphony/core/ports/storage-dependencies';
 export type { BlobStore };
 
 /**
- * Firebase Storage-backed `BlobStore` for core-api. Parity with
- * `apps/web/src/services/storage-dependencies.ts` — handles both the
+ * Firebase Storage-backed `BlobStore` for core-api. Handles both the
  * current `storage.googleapis.com` URL shape and the legacy
  * `firebasestorage.googleapis.com` shape that older Firestore records
  * may still reference.
