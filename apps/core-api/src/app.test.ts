@@ -1,41 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { app, parseAllowedOrigins } from './app.js';
+import { app } from './app.js';
 
-describe('parseAllowedOrigins', () => {
-    it('falls back to localhost dev ports when env var is undefined', () => {
-        expect(parseAllowedOrigins(undefined)).toEqual(['http://localhost:3002']);
+// The `parseAllowedOrigins` suite that stood here went with the CORS
+// middleware — see the note at the top of app.ts. Its replacement is the
+// no-CORS assertion in the security-headers suite below: what actually has to
+// hold now is that a cross-origin `<audio>` load still works, and that is a
+// Cross-Origin-Resource-Policy guarantee rather than a CORS one.
+
+describe('CORS', () => {
+    it('answers a cross-origin request without any CORS headers', async () => {
+        const a = app();
+        const res = await a.fetch(
+            new Request('http://localhost/api/v1/audio?url=nope', {
+                headers: { origin: 'https://embed.example.com' },
+            }),
+        );
+        expect(res.headers.get('access-control-allow-origin')).toBeNull();
+        expect(res.headers.get('access-control-allow-credentials')).toBeNull();
     });
 
-    it('falls back to localhost dev ports when env var is an empty string', () => {
-        expect(parseAllowedOrigins('')).toEqual(['http://localhost:3002']);
-    });
-
-    it('falls back to localhost dev ports when env var is whitespace-only', () => {
-        expect(parseAllowedOrigins('   ,  ,  ')).toEqual(['http://localhost:3002']);
-    });
-
-    it('parses a single origin', () => {
-        expect(parseAllowedOrigins('https://example.com')).toEqual([
-            'https://example.com',
-        ]);
-    });
-
-    it('parses a comma-separated list', () => {
-        expect(
-            parseAllowedOrigins('https://example.com,https://app.example.com'),
-        ).toEqual(['https://example.com', 'https://app.example.com']);
-    });
-
-    it('trims whitespace around entries', () => {
-        expect(
-            parseAllowedOrigins('  https://example.com , https://app.example.com  '),
-        ).toEqual(['https://example.com', 'https://app.example.com']);
-    });
-
-    it('drops empty entries from the list', () => {
-        expect(
-            parseAllowedOrigins('https://example.com,,https://app.example.com,'),
-        ).toEqual(['https://example.com', 'https://app.example.com']);
+    it('still permits cross-origin no-cors media loads via CORP', async () => {
+        const a = app();
+        const res = await a.fetch(new Request('http://localhost/api/v1/audio?url=nope'));
+        // This — not CORS — is what lets `<audio src="…/api/v1/audio?url=…">`
+        // load from a page on another origin.
+        expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     });
 });
 

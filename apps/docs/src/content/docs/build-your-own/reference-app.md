@@ -96,7 +96,7 @@ Configuration lives on the **server** side of the BFF, not in the bundle:
 
 None of these carry a `VITE_` prefix, and that's the point: Vite only inlines `VITE_`-prefixed vars into the client bundle, so the token stays server-side **by construction** rather than by discipline. The browser-facing client hard-codes a *contract* (`/api/v1/posts`, `/api/v1/audio`) and a same-origin base, never a host or a credential.
 
-One nice consequence: since the browser never makes a cross-origin request, core-api's `ALLOWED_ORIGINS` doesn't constrain this app at all — including against the live API, which deliberately doesn't allowlist localhost.
+One nice consequence: since the browser never makes a cross-origin request, no CORS configuration constrains this app at all — it works the same against a local core-api and the live API. That property is why core-api carries no CORS middleware to begin with.
 
 ## The capture kit
 
