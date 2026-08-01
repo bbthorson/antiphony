@@ -5,29 +5,26 @@ import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
- * Rate-limit middleware. Hono port of `apps/web/src/lib/api/rate-limit.ts`.
+ * Rate-limit middleware.
  *
  * Firestore-backed, IP-keyed, with a circuit breaker that fails open after
  * 5 consecutive *systemic* Firestore errors (30s cooldown). Per-bucket
  * transaction contention (ABORTED / FAILED_PRECONDITION) fails CLOSED:
  * returns 429 rather than letting the request through. See `checkRateLimit`
- * below for the rationale. Writes to the same `rate_limits` collection
- * apps/web uses — per spec Post-4a Follow-ups, we'll split collections per
- * backend after 4a stabilizes.
+ * below for the rationale, and rate-limit.test.ts for why that asymmetry is
+ * the load-bearing part.
  *
- * Presets match apps/web for contract parity:
- *   write / read / auth / hourly / sensitive / burst / standard
+ * Buckets live in the `rate_limits` collection, keyed by client IP.
  *
- * IP extraction takes the **rightmost** `X-Forwarded-For` entry — that's
- * the IP the trusted reverse proxy added; earlier entries can be spoofed
- * by the client. Private/loopback IPs are rejected so they can't
- * share a single rate-limit bucket.
+ * IP extraction is handled by `extractClientIp` (lib/client-ip.ts), which
+ * indexes in from the RIGHT of `X-Forwarded-For` by the trusted hop count —
+ * entries further left are client-supplied and spoofable. Private/loopback
+ * addresses collapse to 'unknown' so they can't share one bucket.
  *
- * The core check logic lives in `checkRateLimit(key, options, requestId?)`
- * — a callable function the middleware wraps, and the
- * `POST /api/v1/system/rate-limit/check` endpoint also reuses (PR-F3b
- * stage 1 — apps/web calls that endpoint instead of touching Firestore
- * directly, so apps/web no longer needs `firebase-admin`).
+ * The core check logic lives in `checkRateLimit(key, options, requestId?)` —
+ * a callable function the middleware wraps, and which
+ * `POST /api/v1/system/rate-limit/check` also reuses so a trusted sibling
+ * service can rate-limit without depending on `firebase-admin` itself.
  */
 
 export interface RateLimitOptions {
@@ -86,13 +83,13 @@ export interface CheckRateLimitResult {
  *
  * Pure function — no Hono context binding. Used by:
  *   - The `rateLimit(...)` middleware factory below.
- *   - `POST /api/v1/system/rate-limit/check` endpoint (the apps/web shim
- *     calls this so apps/web doesn't need `firebase-admin`).
+ *   - `POST /api/v1/system/rate-limit/check`, so a trusted sibling service can
+ *     rate-limit against the same buckets without depending on `firebase-admin`.
  *
  * @param key — the Firestore doc id under `rate_limits/`. Typically
  *              `ratelimit_<ip>` or a custom key set by the caller.
  * @param options — limit + windowMs.
- * @param requestId — optional, threaded into log lines so apps/web's
+ * @param requestId — optional, threaded into log lines so the caller's
  *                    requestId correlates with core-api logs.
  */
 export async function checkRateLimit(

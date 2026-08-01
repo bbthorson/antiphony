@@ -28,8 +28,7 @@ import { logger } from '../../../lib/logger.js';
  *
  * `expiresInMs` is bounded to match Firebase's allowed range
  * (5 min to 14 days). Tighter bounds can be applied by the caller —
- * apps/web uses 5 days, matching the previous default in
- * `SESSION_DURATION_SECONDS`.
+ * a BFF typically picks its own session duration here.
  *
  * ## Response
  *
@@ -64,11 +63,11 @@ const MintRequestSchema = z.object({
 const app = new Hono();
 
 // NOTE: deliberately NOT IP rate-limited. This is a system-to-system endpoint
-// called by apps/web's server during login (authenticated by the shared
-// SYSTEM_AUTH_TOKEN via requireSystemAuth). Every caller shares the web
-// server's / load-balancer's IP, so an IP-keyed limit would collapse ALL
-// logins into one bucket and throttle the whole system. Abuse is gated by the
-// shared secret; per-user login rate limiting belongs at the apps/web edge.
+// called by a tenant BFF's server during login (authenticated by the shared
+// SYSTEM_AUTH_TOKEN via requireSystemAuth). Every caller shares that server's
+// / load-balancer's IP, so an IP-keyed limit would collapse ALL logins into
+// one bucket and throttle the whole system. Abuse is gated by the shared
+// secret; per-user login rate limiting belongs at the BFF's own edge.
 app.post('/mint-session-cookie', requireSystemAuth(), async (c) => {
     let body: unknown;
     try {
@@ -95,7 +94,7 @@ app.post('/mint-session-cookie', requireSystemAuth(), async (c) => {
     } catch (err) {
         // Firebase rejects the ID token: expired, revoked, malformed,
         // from a different project, etc. Surface as 400 with a
-        // discriminator code so apps/web can map to a 401 for the end
+        // discriminator code so the caller can map to a 401 for the end
         // user without scraping the message. Anything else (Firebase
         // outage, network) falls through to the error handler as 500.
         const code = (err as { code?: string })?.code ?? '';

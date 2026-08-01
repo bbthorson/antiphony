@@ -5,8 +5,8 @@ import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * System-auth middleware — verifies that the request comes from a trusted
- * sibling service (apps/telephony / future tier-2 deployables) rather
- * than an end user.
+ * sibling service or from infrastructure this deployment owns, rather than
+ * from an application acting for a user.
  *
  * Mechanism: shared-secret bearer auth. The caller sends
  * `Authorization: Bearer <SYSTEM_AUTH_TOKEN>` where the token value
@@ -14,17 +14,24 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * Secret Manager in production, .env locally). On mismatch / missing
  * header: 401.
  *
- * Why not the same `requireAuth()` middleware that handles user tokens:
+ * Who actually presents it today: the Cloud Tasks queue calling back into
+ * `/api/v1/system/process-audio` with each enrichment job (the enqueuing
+ * adapter bakes this token into every task's headers), and a tenant's BFF
+ * calling the `/api/v1/system/*` endpoints — rate-limit checks, AT Protocol
+ * session and sign-in helpers — that exist so it doesn't need
+ * `firebase-admin` of its own.
  *
- *   - User tokens are Firebase ID tokens or session cookies, scoped to
- *     a specific uid. System lookups (e.g. "find the user behind this
- *     phone number") don't have a calling user — they're driven by an
- *     external trigger (a Twilio SIP webhook hits apps/telephony,
- *     which then asks core-api "whose forwarding is this phone").
- *   - Using a service-bound shared secret keeps the privilege model
- *     explicit: system-auth endpoints expose data the calling service
- *     needs across the apps/telephony tier — but they MUST NOT be
- *     callable by end users.
+ * Why not `requireAuth()`, the service-token middleware every data route uses:
+ *
+ *   - A service token identifies an APPLICATION and carries a tenancy
+ *     (`originAppId`), so everything behind it is scoped to that tenant.
+ *     System routes are deliberately outside that model — a queue callback
+ *     has no tenant asserting it, and some system lookups are cross-tenant
+ *     by nature.
+ *   - Keeping them on a separate credential makes the privilege boundary
+ *     explicit: these endpoints expose things a trusted sibling needs and
+ *     that an ordinary application MUST NOT be able to reach, so sharing
+ *     the app credential would silently widen every tenant's authority.
  *
  * Why shared secret rather than e.g. Cloud Run identity tokens:
  *

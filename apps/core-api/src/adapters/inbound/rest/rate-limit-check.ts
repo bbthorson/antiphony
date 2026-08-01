@@ -7,17 +7,15 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
 /**
  * POST /api/v1/system/rate-limit/check
  *
- * Sibling-service rate-limit check. Apps/web's rate-limit shim calls this
- * endpoint instead of touching Firestore directly, so apps/web no longer
- * needs `firebase-admin` in its dependency tree. This is stage 1 of the
- * PR-F3b firebase-admin purge.
+ * Sibling-service rate-limit check. A tenant's BFF calls this endpoint
+ * instead of touching Firestore directly, so it needs no `firebase-admin`
+ * in its own dependency tree.
  *
- * **Requires system-auth, NOT user-auth.** The caller is another service
- * in the trust circle (apps/web, future tier-2 deployables) that has
- * already extracted the IP (or a custom key) and chosen rate-limit
- * options for the route under check. End users must never hit this
- * endpoint — it would let them probe the rate-limit state of arbitrary
- * keys.
+ * **Requires system-auth, NOT user-auth.** The caller is a trusted sibling
+ * service that has already extracted the IP (or a custom key) and chosen
+ * rate-limit options for the route under check. Applications and end users
+ * must never reach this endpoint — it would let them probe the rate-limit
+ * state of arbitrary keys.
  *
  * Behavior matches the in-process `rateLimit(...)` Hono middleware
  * exactly: both call `checkRateLimit(key, options, requestId?)`. Same
@@ -30,17 +28,17 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  * On rate-limited or per-bucket contention:
  *   `429 { success: false, error: { message, code: 'RATE_LIMITED' }, requestId }`
  *
- * The 429 path uses the standard Phase 4 error envelope so apps/web can
- * pass the response back to its caller without reshaping. The `code:
- * 'RATE_LIMITED'` discriminator lets future API consumers branch on
- * envelope code rather than HTTP status alone.
+ * The 429 path uses the standard error envelope so the caller can pass the
+ * response straight back to its own client without reshaping. The
+ * `code: 'RATE_LIMITED'` discriminator lets consumers branch on envelope
+ * code rather than HTTP status alone.
  *
  * ## requestId propagation
  *
  * The caller's `X-Request-ID` header arrives via the request-id
- * middleware (which prefers an inbound header over a generated id), so
- * log lines from this endpoint correlate with the apps/web requestId
- * that triggered the check. No extra plumbing needed.
+ * middleware (which prefers an inbound header over a generated id), so log
+ * lines from this endpoint correlate with the caller's own requestId for the
+ * request that triggered the check. No extra plumbing needed.
  */
 
 const CheckRequestSchema = z.object({

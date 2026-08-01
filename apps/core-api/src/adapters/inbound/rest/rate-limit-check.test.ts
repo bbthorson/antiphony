@@ -2,18 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Tests for `POST /api/v1/system/rate-limit/check`. System-auth (shared
- * secret bearer) ONLY. Apps/web's rate-limit shim calls this endpoint so
- * it doesn't have to depend on `firebase-admin`. PR-F3b stage 1.
+ * secret bearer) ONLY — a tenant's BFF calls this endpoint so it doesn't have
+ * to depend on `firebase-admin` itself.
  *
- * We don't unit-test the Firestore transaction directly here — the
- * middleware tests (and the live Firestore emulator runs in CI) cover
- * that path. These tests verify the endpoint contract: system-auth gate,
- * body validation, allowed/limited mapping to envelope shape.
+ * Scope is the ENDPOINT contract: the system-auth gate, body validation, and
+ * how an allowed/limited result maps onto the envelope shape. The counting and
+ * failure-mode behavior of `checkRateLimit` itself is covered directly in
+ * middleware/rate-limit.test.ts, so it's mocked here.
  */
 
-// Mock the rate-limit check function so we control allowed/denied paths
-// without booting Firestore. Real Firestore behavior is exercised by
-// the middleware tests under rate-limit logic.
+// Mock the rate-limit check so allowed/denied are controllable without booting
+// Firestore; the real behavior lives in middleware/rate-limit.test.ts.
 vi.mock('../../../middleware/rate-limit.js', async () => {
     return {
         checkRateLimit: vi.fn(),

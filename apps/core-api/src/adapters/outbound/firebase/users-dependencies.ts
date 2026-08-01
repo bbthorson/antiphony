@@ -58,8 +58,8 @@ export const firebaseUserDependencies: UserDependencies = {
 
     async setBlueskyIdentity(uid: string, identity: { handle: string; did: string }) {
         // `update` requires the user doc to exist (NOT_FOUND if missing).
-        // That matches the pre-port behavior — apps/web's callback also
-        // called `update` and would 500 on a missing user, which is the
+        // That is deliberate: the OAuth callback path also calls `update`
+        // and would 500 on a missing user, which is the
         // right semantics: callback fires for an already-authenticated
         // user, so a missing user doc is a genuine error.
         await usersCollection().doc(uid).update({

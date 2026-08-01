@@ -4,8 +4,7 @@ import type { Context } from 'hono';
 import { getAdminDb } from './firebase-admin.js';
 
 /**
- * Idempotency-Key support for write endpoints. Mirrors apps/web's
- * `checkIdempotency` / `saveIdempotencyResult`.
+ * Idempotency-Key support for write endpoints.
  *
  * Flow:
  *   1. Handler calls `checkIdempotency(c, uid)`.
@@ -26,7 +25,7 @@ import { getAdminDb } from './firebase-admin.js';
  * for the first user (write denial).
  *
  * The header is read case-insensitively. `null` return when no header — the
- * caller proceeds without any idempotency behavior (matches apps/web).
+ * caller proceeds without any idempotency behavior.
  */
 
 const COLLECTION = 'idempotency_keys';

@@ -16,8 +16,8 @@ import { logger } from '../../../lib/logger.js';
  * aggregate was retired with the public-profile projection (see
  * specs/core-surface.md).
  *
- * Note: no React `cache()` wrappers (unlike apps/web's binding). Core-api
- * isn't an RSC runtime.
+ * Note: no per-request memoization wrappers — core-api is a plain HTTP
+ * service, not an RSC runtime.
  */
 
 export const userService = new UserService(firebaseUserDependencies, logger);
@@ -29,7 +29,7 @@ export const audioPostService = new AudioPostService(firebaseAudioPostDependenci
 /**
  * Firebase-wired StorageService. Not part of CoreServices (none of the core
  * services call it as a peer), so constructed directly via the factory.
- * Shape mirrors apps/web's StorageService export — `StorageService.uploadFile(...)`,
+ * Exposed as a const-object — `StorageService.uploadFile(...)`,
  * `StorageService.getSignedUrl(...)`, `StorageService.extractObjectPath(...)`.
  */
 export const StorageService = makeStorageService(firebaseBlobStore);

@@ -13,11 +13,11 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  *   PUT    /:key — store session ciphertext.
  *   DELETE /:key — remove the session doc (idempotent).
  *
- * **Requires system-auth, NOT user-auth.** The caller is apps/web's
- * `@atproto/oauth-client-node` sessionStore adapter; end users must
- * never hit this directly. Mirrors the design of
- * `/api/v1/system/atproto-state/:key` — apps/web holds the encryption
- * key, so this endpoint sees only opaque ciphertext.
+ * **Requires system-auth, NOT user-auth.** The caller is a tenant BFF's
+ * `@atproto/oauth-client-node` sessionStore adapter; end users must never
+ * hit this directly. Mirrors the design of
+ * `/api/v1/system/atproto-state/:key` — the BFF holds the encryption key, so
+ * this endpoint sees only opaque ciphertext.
  *
  * ## Storage
  *
@@ -35,17 +35,17 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  * ## Encryption boundary
  *
  * The session payload contains DPoP keypairs + refresh tokens — high
- * sensitivity. apps/web encrypts client-side with `SESSION_ENCRYPTION_KEY`
- * (AES-256-GCM) before PUTting. core-api never sees plaintext, never
- * holds the key. If core-api is compromised, an attacker gets opaque
- * ciphertext only; without `SESSION_ENCRYPTION_KEY` (held only by
- * apps/web's runtime) they can't decrypt.
+ * sensitivity. The BFF encrypts client-side with `SESSION_ENCRYPTION_KEY`
+ * (AES-256-GCM) before PUTting. core-api never sees plaintext, never holds
+ * the key. If core-api is compromised, an attacker gets opaque ciphertext
+ * only; without `SESSION_ENCRYPTION_KEY` (held solely by the BFF's runtime)
+ * they can't decrypt.
  *
  * ## Body shape
  *
- * PUT body is `{ ciphertext: string }`. core-api validates only that
- * the field is present and a string — the format is opaque (the
- * apps/web encryption helper owns the encoding).
+ * PUT body is `{ ciphertext: string }`. core-api validates only that the
+ * field is present and a string — the format is opaque, and the BFF's
+ * encryption helper owns the encoding.
  */
 
 const SESSIONS_COLLECTION = 'atproto_oauth_sessions';

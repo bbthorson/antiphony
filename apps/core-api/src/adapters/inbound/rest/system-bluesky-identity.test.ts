@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *
  * System-auth-gated. Validates uid + body shape. Maps Firestore
  * NOT_FOUND (`update` on missing doc) to 404 with a clean envelope
- * so apps/web's callback can redirect with a meaningful error reason.
+ * so the caller's callback can redirect with a meaningful error reason.
  */
 
 const setBlueskyIdentity = vi.fn();

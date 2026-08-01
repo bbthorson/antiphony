@@ -10,15 +10,12 @@ import { errorEnvelope } from '../../../lib/error-envelope.js';
  *
  *   PUT /:uid/bluesky-identity — store `{handle, did}` on the user.
  *
- * **Requires system-auth, NOT user-auth.** Called by apps/web's
- * `/api/v1/atproto/callback` route after the OAuth flow completes
- * server-side. The user-auth context isn't available at callback
+ * **Requires system-auth, NOT user-auth.** Called by a tenant BFF's OAuth
+ * callback route after the flow completes server-side. The user-auth
+ * context isn't available at callback
  * time (the request comes from the PDS, not the user's browser), so
  * the caller authenticates as a sibling service and passes the uid
  * extracted from the OAuth state token.
- *
- * PR-F3b stage 5: this is the deferred port flagged in stage 3 — the
- * last production `firebase-admin` user in apps/web.
  *
  * ## Body shape
  *
@@ -88,7 +85,7 @@ app.put('/:uid/bluesky-identity', requireSystemAuth(), async (c) => {
         await userService.setBlueskyIdentity(uid, validation.data);
     } catch (err) {
         // Firestore `update` on a missing doc throws NOT_FOUND (code 5).
-        // Surface as 404 so the apps/web callback can redirect with a
+        // Surface as 404 so the caller's callback can redirect with a
         // meaningful error reason instead of 500.
         const code = (err as { code?: unknown })?.code;
         if (code === 5 || code === 'NOT_FOUND') {

@@ -17,12 +17,11 @@ import { logger } from '../../../lib/logger.js';
  *   DELETE /:key — remove the state doc (idempotent — DELETE of a
  *                   missing key still returns 200).
  *
- * **Requires system-auth, NOT user-auth.** The caller is apps/web's
- * `@atproto/oauth-client-node` stateStore adapter; end users must never
- * hit this directly. Adding it as a system route lets apps/web drop
- * `firebase-admin` from its dependency tree (PR-F3b stage 2 — the
- * `firebase-admin`-backed StateStore in `apps/web/src/lib/atproto/client.ts`
- * is replaced with a thin HTTP client to this endpoint).
+ * **Requires system-auth, NOT user-auth.** The caller is a tenant BFF's
+ * `@atproto/oauth-client-node` stateStore adapter; end users must never hit
+ * this directly. Exposing it as a system route lets that BFF back its
+ * StateStore with a thin HTTP client here instead of carrying
+ * `firebase-admin` itself.
  *
  * ## Storage
  *
@@ -32,11 +31,10 @@ import { logger } from '../../../lib/logger.js';
  *
  *   { state: <NodeSavedState JSON>, createdAt: <Firestore timestamp> }
  *
- * The TTL is enforced on read: if `Date.now() - createdAt > TTL`, the
- * doc is deleted and the response is 404. Matches the previous
- * in-process implementation in apps/web exactly. No background TTL
- * cleanup — relies on the natural read-side eviction plus the fact that
- * expired entries never resolve a real OAuth flow.
+ * The TTL is enforced on read: if `Date.now() - createdAt > TTL`, the doc is
+ * deleted and the response is 404. No background TTL cleanup — this relies on
+ * the natural read-side eviction plus the fact that expired entries never
+ * resolve a real OAuth flow.
  *
  * ## Body shape
  *

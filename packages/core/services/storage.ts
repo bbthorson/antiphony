@@ -6,9 +6,8 @@ import type { BlobStore } from '../ports/storage-dependencies';
 const SIGNED_URL_EXPIRY_MS = 60 * 60 * 1000;
 
 /**
- * Public shape of the storage service. Mirrors the const-object API the
- * apps/web consumers have always used (so the migration is a transparent
- * move from their perspective).
+ * Public shape of the storage service — a const-object API rather than a
+ * class, so callers use it as `StorageService.uploadFile(...)`.
  */
 export interface StorageService {
     /**
@@ -33,8 +32,8 @@ export interface StorageService {
 
 /**
  * Factory that builds a StorageService around a BlobStore binding. Kept as
- * a factory (not a class) to preserve the const-object call shape that
- * apps/web consumers already use (`StorageService.uploadFile(...)`).
+ * a factory (not a class) to preserve the const-object call shape callers
+ * use (`StorageService.uploadFile(...)`).
  */
 export function makeStorageService(blob: BlobStore): StorageService {
     return {
