@@ -1,5 +1,4 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { cors } from 'hono/cors';
 import { OPENAPI_INFO, OPENAPI_TAGS } from './lib/openapi-info.js';
 import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
@@ -16,29 +15,32 @@ import { systemAtprotoSigninRoute } from './adapters/inbound/rest/system-atproto
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 
 /**
- * Parse the `ALLOWED_ORIGINS` env var into the CORS allowlist.
+ * ## No CORS middleware — deliberately
  *
- * Format: comma-separated list of full origins (with scheme), e.g.
- *   `https://example.com,https://app.example.com,http://localhost:9002`
+ * Antiphony is headless: every caller is an application holding a service
+ * token, and a service token authenticates the *app*, not a person, so it can
+ * never reach a browser bundle. Integrations therefore call their own origin
+ * and a server-side hop forwards to core-api (see `apps/reference/server/
+ * dev-bff.ts` for the reference shape). A server-to-server caller is not
+ * subject to the same-origin policy at all, so CORS gates nothing on that path.
  *
- * Whitespace around entries is trimmed; empty entries are dropped. If the
- * env var is unset or all entries are empty, falls back to the reference
- * app's dev origin (`http://localhost:3002` — see apps/reference/vite.config.ts).
- * Production deployments MUST set the env var explicitly via apphosting.yaml;
- * the localhost-only default exists so a self-hoster's first `npm run dev`
- * works without manual configuration.
+ * The one surface a browser does touch directly is the anonymous audio proxy,
+ * `GET /api/v1/audio`, via `<audio src=…>`. That is a **no-cors media load**:
+ * it is governed by `Cross-Origin-Resource-Policy` (set to `cross-origin` in
+ * middleware/security-headers.ts, and load-bearing), not by CORS. Removing the
+ * CORS middleware does not affect it.
  *
- * Exported for unit tests.
+ * The remaining case CORS would cover — a browser `fetch()` of that proxy —
+ * does not work today regardless: the route 302s to a signed Cloud Storage
+ * URL, and following that redirect from a browser needs CORS on the *bucket*.
+ * An allowlist here would have permitted the first hop of a request that then
+ * fails at the second.
+ *
+ * So the middleware, its `ALLOWED_ORIGINS` env var, and its `credentials: true`
+ * (which advertised cookie auth this API does not have) are gone. If a genuine
+ * browser-direct integration ever lands, this is the place it comes back — with
+ * the bucket's CORS configured to match.
  */
-export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWED_ORIGINS): string[] {
-    // Local-dev fallback when ALLOWED_ORIGINS is unset: apps/reference
-    // (:3002), whose browser-direct audio upload (POST /api/v1/audio/upload)
-    // needs CORS even in dev.
-    const fallback = ['http://localhost:3002'];
-    if (!raw) return fallback;
-    const entries = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-    return entries.length > 0 ? entries : fallback;
-}
 
 /**
  * Construct the Hono app with all middleware and routes wired.
@@ -52,15 +54,14 @@ export function parseAllowedOrigins(raw: string | undefined = process.env.ALLOWE
  *   1. request-id — sets `c.var.requestId`; must run before anything that
  *      reads it (error-handler, rate-limit, handlers).
  *   2. security-headers — global API-tier hardening (strict CSP, frame-deny,
- *      etc.); see middleware/security-headers.ts. Before CORS so even preflight
- *      and error responses carry the headers.
- *   3. CORS — scoped to `/api/v1/*`; runs before route handlers so preflight
- *      OPTIONS requests are answered immediately. Allowlist comes from
- *      ALLOWED_ORIGINS env var.
- *   4. routes — each route opts into rate-limit per-endpoint via the
+ *      Cross-Origin-Resource-Policy); see middleware/security-headers.ts.
+ *      Applied to every response, errors included.
+ *   3. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit.
- *   5. error-handler — installed via `app.onError` so it catches throws
+ *   4. error-handler — installed via `app.onError` so it catches throws
  *      from handlers AND from middleware (rate-limit, request-id).
+ *
+ * There is no CORS step — see the note above this factory for why.
  */
 
 export function app(): OpenAPIHono {
@@ -73,28 +74,7 @@ export function app(): OpenAPIHono {
     // 2. Security headers — strict API-tier CSP + hardening on every response.
     a.use('*', securityHeaders());
 
-    // 3. CORS — allowlist for browser-direct calls. Allowlist comes from the
-    //    ALLOWED_ORIGINS env var (comma-separated); see parseAllowedOrigins
-    //    above and apphosting.yaml. Server-to-server callers are unaffected.
-    //    Scoped to /api/v1/* so health probes don't get the headers.
-    a.use(
-        '/api/v1/*',
-        cors({
-            origin: parseAllowedOrigins(),
-            allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-            allowHeaders: [
-                'Authorization',
-                'Content-Type',
-                'X-Request-ID',
-                'Idempotency-Key',
-            ],
-            exposeHeaders: ['X-Request-ID'],
-            credentials: true,
-            maxAge: 7200,
-        }),
-    );
-
-    // 4. Health + service identity. No rate limit (probes hit these).
+    // 3. Health + service identity. No rate limit (probes hit these).
     a.get('/', (c) =>
         c.json({
             service: 'antiphony-core-api',
@@ -113,7 +93,7 @@ export function app(): OpenAPIHono {
         }),
     );
 
-    // 5. API routes.
+    // 4. API routes.
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
@@ -131,13 +111,13 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/system/atproto', systemAtprotoSigninRoute);
     a.route('/api/v1/system/process-audio', systemProcessAudioRoute);
 
-    // 6. OpenAPI document — served at `/openapi.json`. Only routes
+    // 5. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
     //    in the spec. Public-doc scope: `/posts` and `/audio`.
     //    Transport/utility/system routes intentionally stay plain-Hono.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
-    // 7. Error handler — last, via `onError` so it catches throws from
+    // 6. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
     a.onError(errorHandler);
 

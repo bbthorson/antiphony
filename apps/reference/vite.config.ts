@@ -9,9 +9,9 @@ import { devBff } from './server/dev-bff';
  * core-api service token and forwards those calls server-side (see
  * `server/dev-bff.ts` for why that hop is mandatory rather than stylistic).
  *
- * Because nothing is cross-origin any more, core-api's `ALLOWED_ORIGINS` no
- * longer constrains this app — including against the live API, which
- * deliberately doesn't allowlist localhost.
+ * Because nothing is cross-origin any more, no CORS policy constrains this
+ * app — it behaves identically against a local core-api and the live API.
+ * core-api carries no CORS middleware at all for exactly this reason.
  */
 export default defineConfig(({ mode }) => {
     // Load .env files with an EMPTY prefix so the server-side vars

@@ -93,16 +93,17 @@ env:
       secret: antiphony-app-tokens
       availability:
           - RUNTIME
-    # CORS allowlist for browser-direct calls (the reference app's audio upload).
-    # Comma-separated full origins. Starts with the App Hosting default domain
-    # for the `antiphony-core-api` backend; ADD the custom domain (e.g.
-    # https://api.antiphony.dev / the reference app's origin) once DNS is wired.
-    # NOTE: a backend-level ALLOWED_ORIGINS set in the console OVERRIDES this —
-    # keep the console value unset so this file stays the source of truth.
-    - variable: ALLOWED_ORIGINS
-      value: "https://api.antiphony.dev,https://antiphony--antiphony-core.us-east4.hosted.app"
-      availability:
-          - RUNTIME
+    # ALLOWED_ORIGINS is intentionally absent: core-api no longer runs CORS
+    # middleware at all (see the note atop apps/core-api/src/app.ts). Every
+    # caller is a service-token-holding backend, and the one browser-facing
+    # surface — the anonymous audio proxy — is reached by `<audio src=…>`, a
+    # no-cors load governed by Cross-Origin-Resource-Policy rather than CORS.
+    # The value that used to live here listed this API's OWN two origins, which
+    # allowlisted nothing a browser would ever send.
+    #
+    # If this backend ever had ALLOWED_ORIGINS set at the console level, it is
+    # now simply unread — but clear it anyway so the console doesn't imply a
+    # policy the code no longer has.
 
     # ── Audio enrichment (specs/enrichment-pipeline-plan.md, step 8) ───────────
     # Without this block the dispatch seam resolves the NOOP dispatcher and both
@@ -149,3 +150,35 @@ env:
       secret: elevenlabs-api-key
       availability:
           - RUNTIME
+
+    # ── Stage-settled webhooks: DEFERRED, not misconfigured ───────────────────
+    # ANTIPHONY_APP_WEBHOOK_URLS / _SECRETS are deliberately absent, so every
+    # tenant takes the silent opt-out and enrichment results travel by the pull
+    # paths alone. That is the designed fallback, not a gap: the spec makes the
+    # pull path permanent and the webhook a latency optimization over it, never
+    # a second source of truth (specs/enrichment-webhooks.md).
+    #
+    # The core side is built and tested. The reason nothing is wired is that
+    # NO RECEIVER EXISTS YET — Vox Pop's BFF has no verify-HMAC endpoint, and
+    # runs enrichment pull-first from its own create seam plus a scheduled
+    # reconciliation sweep. There is no URL to point at. (Confirmed against the
+    # Vox Pop repo, 2026-08-01.)
+    #
+    # To enable, once a receiver is live — both vars, or neither. A tenant in
+    # exactly one is a misconfiguration that logs at `error` and still sends
+    # nothing:
+    #
+    #   firebase apphosting:secrets:set antiphony-app-webhook-secrets
+    #
+    #   - variable: ANTIPHONY_APP_WEBHOOK_URLS
+    #     value: "voxpop:https://<bff-host>/api/v1/webhooks/antiphony"
+    #     availability:
+    #         - RUNTIME
+    #   - variable: ANTIPHONY_APP_WEBHOOK_SECRETS
+    #     secret: antiphony-app-webhook-secrets
+    #     availability:
+    #         - RUNTIME
+    #
+    # The url must be https off loopback, and the secret ≥32 chars; either
+    # failing drops that tenant with an `error` log rather than downgrading.
+    # Create the secret BEFORE adding the ref — a missing secret fails boot.

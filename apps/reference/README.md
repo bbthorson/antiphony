@@ -107,9 +107,10 @@ Without it the BFF returns a 500 naming what's missing, rather than forwarding
 an unauthenticated request.
 
 **No CORS caveat any more.** The browser only ever talks to its own origin, so
-core-api's `ALLOWED_ORIGINS` — which deliberately excludes localhost in
-production — no longer constrains this app. That restriction was the reason
-the old browser-direct build couldn't run against the live API from localhost.
+no CORS policy constrains this app — it runs the same against a local core-api
+and the live API. An origin allowlist was the reason the old browser-direct
+build couldn't reach the live API from localhost; core-api now carries no CORS
+middleware at all, since every caller is a backend holding a service token.
 
 ### Notes
 

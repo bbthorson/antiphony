@@ -14,7 +14,6 @@ Most of the variables below are Firebase credentials, because Firebase is the ba
 | `FIREBASE_PROJECT_ID` | Firebase project to authenticate against. (`GCLOUD_PROJECT` is honored as a fallback when running on Google infrastructure.) |
 | `FIREBASE_STORAGE_BUCKET` | GCS bucket for audio uploads. |
 | `ADMIN_SERVICE_ACCOUNT_JSON` | Service account JSON for Firebase Admin (production). On Google infrastructure, Application Default Credentials are used instead. |
-| `ALLOWED_ORIGINS` | Comma-separated CORS allowlist for browser-direct calls to `/api/v1/*`. Add every origin that calls the API from a browser — including any embed surface you deploy. Deliberately excludes `localhost` in production. Irrelevant to callers that go through their own backend, which is the intended shape. |
 | `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Rate limiting keys off that IP, so a value that doesn't match your actual proxy depth mis-attributes limits — too high lets a caller spoof the address, too low buckets every caller behind the proxy together. |
 | `PORT` | Port to bind. Defaults to `8080`; Cloud Run / App Hosting inject it automatically. |
 | `LOG_LEVEL` | pino log level. Defaults to `info`. |
@@ -117,7 +116,7 @@ The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**
 - **Cloud Run** — containerize the service, set the env vars as secrets/config, let `PORT` be injected.
 - **Fly.io / Render / a VM** — `npm run build` then run the Node entrypoint; set `PORT` and the Firebase credentials.
 
-Whatever the target, the only hard requirement is reachable Firebase credentials (or the emulator hosts) and a correct `ALLOWED_ORIGINS` for your browser clients.
+Whatever the target, the only hard requirement is reachable Firebase credentials (or the emulator hosts). There is no CORS allowlist to configure: core-api runs no CORS middleware, because every caller is a backend holding a service token and the one browser-facing surface — the anonymous audio proxy — is an `<audio src=…>` no-cors load governed by `Cross-Origin-Resource-Policy`.
 
 ## Where next?
 
