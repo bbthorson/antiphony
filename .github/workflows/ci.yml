@@ -33,6 +33,12 @@ jobs:
 
       # `npm ci` at the root installs every workspace; core-api depends on
       # @antiphony/core + @antiphony/shared through npm workspaces.
+      #
+      # It also BUILDS @antiphony/shared, via that package's `prepare` script.
+      # That is load-bearing for the typecheck below, not incidental: every
+      # export of @antiphony/shared resolves into its dist/, and apps/reference
+      # imports those subpaths directly, so a tree without dist/ cannot be
+      # typechecked. Don't drop `prepare` without reordering these steps.
       - run: npm ci
 
       - run: npm run typecheck
