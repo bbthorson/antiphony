@@ -134,7 +134,7 @@
     "//prepare": "Every export in this package resolves into dist/, so a tree without it cannot be typechecked by the workspaces that consume it (apps/reference imports @antiphony/shared/* directly). npm runs prepare for workspace packages on install, which makes `git clone && npm ci && npm run typecheck` work on a cold checkout instead of only on a machine that happens to have built already.",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
   },
   "dependencies": {
