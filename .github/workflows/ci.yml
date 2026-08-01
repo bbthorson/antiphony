@@ -1,0 +1,65 @@
+name: CI
+
+# Every check here already exists as an npm script — this workflow only makes
+# them mandatory. Until now nothing gated a merge, so `typecheck`, `lint`,
+# `test`, and the generated-OpenAPI drift check were all opt-in.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A new push to the same branch supersedes the run in flight.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Single source of truth for the version — matches `engines.node`
+          # (>=22) and the Volta pin in the root package.json.
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` at the root installs every workspace; core-api depends on
+      # @antiphony/core + @antiphony/shared through npm workspaces.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run test
+
+      # Builds @antiphony/shared (dual ESM/CJS) then bundles core-api and
+      # regenerates the OpenAPI documents. Needs no secrets and touches no
+      # network, which is what makes the drift check below safe to run here.
+      - run: npm run build
+
+      # `gen:openapi` writes two TRACKED files. If a route change lands without
+      # a rebuild, the committed contract silently lags the code — so assert the
+      # build produced no diff rather than trusting the author to remember.
+      - name: Assert the generated OpenAPI is committed
+        run: |
+          git diff --exit-code -- \
+            apps/core-api/openapi.json \
+            apps/core-api/openapi.surface.json
+
+      # The docs site is deployed separately (Cloudflare, see wrangler.jsonc) so
+      # nothing else would catch a break here. `copy-openapi.mjs --strict` also
+      # fails the build if core-api's spec is missing, tying the published docs
+      # to the contract built above.
+      - run: npm run build -w @antiphony/docs
+
+      - name: Assert the docs copy of the OpenAPI spec is committed
+        run: git diff --exit-code -- apps/docs/public/openapi.json
