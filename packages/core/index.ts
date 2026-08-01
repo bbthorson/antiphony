@@ -10,7 +10,14 @@
 //   - When a service needs a backend, it brings its `...Dependencies` port
 //     interface with it; the concrete binding stays in the adapter layer.
 //
-// AuthPort — pure contract (Zod schemas + interface + Result type); no
-// implementation, no runtime dependency on any auth backend. Adapters
-// (Firebase / Stub / future DID) live in consuming apps and satisfy this port.
-export * from './ports/auth-port';
+// This file deliberately re-exports NOTHING. Every consumer imports the
+// subpath it actually needs — `@antiphony/core/services/audio-processing`,
+// `@antiphony/core/ports/logger`, and so on — which keeps the dependency
+// arrows legible and means adding a service here can't silently widen what
+// the package hands out.
+//
+// It previously exported `./ports/auth-port`, a contract whose only
+// implementations lived in a consuming app that has since moved off this
+// repo. Since nothing imports the bare `@antiphony/core` specifier, that
+// export — and the 700 lines behind it — reached no one.
+export {};
