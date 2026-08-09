@@ -36,9 +36,8 @@ npm-debug.log*
 .env
 .env.*
 
-# Deploy configs for other targets. apphosting.yaml stays in the repo while the
-# App Hosting backend is still the live deploy; it means nothing to this image.
-apphosting.yaml
+# Deploy and tooling configs that mean nothing to this image. The Cloud Run
+# runtime env lives in deploy/, which is not copied in at all.
 firebase.json
 .firebaserc
 firestore.indexes.json

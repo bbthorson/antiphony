@@ -5,10 +5,11 @@ run once, by hand, by someone with owner on `antiphony-core`. None of it is
 automated on purpose: it grants IAM, and IAM grants are not a thing a CI workflow
 should be able to widen.
 
-This is a **migration target, not the live deploy.** Firebase App Hosting still
-serves `api.antiphony.dev` until step 7. `apphosting.yaml` stays authoritative
-until then; after cutover it should be deleted rather than left to rot as a
-second, silently-diverging description of production.
+This is **the live deploy.** Cloud Run serves `api.antiphony.dev`; Firebase App
+Hosting was retired at the § 7 cutover and `apphosting.yaml` is deleted, so
+`deploy/cloudrun.env.yaml` is the single authoritative description of what
+production runs. Steps 1–5 are historical record — they are already done, and are
+kept because they are what you would re-run to stand this up in a fresh project.
 
 ```bash
 export PROJECT_ID=antiphony-core
@@ -28,9 +29,9 @@ gcloud artifacts repositories create "$REPOSITORY" \
 
 ## 2. Runtime service account
 
-The identity the container runs as. These are the same roles `apphosting.yaml`
-documents for the App Hosting compute account — the migration does not change
-what the service is allowed to do.
+The identity the container runs as. These are the same roles the App Hosting
+compute account held — the migration did not change what the service is allowed
+to do.
 
 ```bash
 gcloud iam service-accounts create antiphony-core-api \

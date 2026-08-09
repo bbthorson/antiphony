@@ -17,7 +17,7 @@
  * client that spoofs a leading XFF entry is ignored, since only what the edge
  * appended is trusted.
  *
- * Overridable via the `TRUSTED_PROXY_HOPS` env var (apphosting.yaml) so a
+ * Overridable via the `TRUSTED_PROXY_HOPS` env var (deploy/cloudrun.env.yaml) so a
  * future platform topology change can be corrected without a code deploy.
  * The detector for that is the `warn` in `rate-limit.ts`: if the platform
  * changes its hop count, the entry this indexes to falls outside the chain and

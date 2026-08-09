@@ -109,11 +109,11 @@ With neither `ANTIPHONY_PROCESSING_INLINE` nor the `ANTIPHONY_TASKS_*` vars set,
 
 ## Deployment
 
-The hosted reference deploy at `api.antiphony.dev` uses **Firebase App Hosting**. See `apphosting.yaml` at the repo root for the production config and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.
+The hosted reference deploy at `api.antiphony.dev` runs on **Cloud Run**, from the `Dockerfile` at the repo root. See [`deploy/cloudrun.env.yaml`](https://github.com/bbthorson/antiphony/blob/master/deploy/cloudrun.env.yaml) for the production config, [`deploy/README.md`](https://github.com/bbthorson/antiphony/blob/master/deploy/README.md) for the one-time project setup, and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.
 
 `core-api` is a plain Node service with no platform-specific dependencies, so other targets work too:
 
-- **Cloud Run** — containerize the service, set the env vars as secrets/config, let `PORT` be injected.
+- **Firebase App Hosting** — a Node buildpack target; needs a `start` script at the repo root.
 - **Fly.io / Render / a VM** — `npm run build` then run the Node entrypoint; set `PORT` and the Firebase credentials.
 
 Whatever the target, the only hard requirement is reachable Firebase credentials (or the emulator hosts). There is no CORS allowlist to configure: core-api runs no CORS middleware, because every caller is a backend holding a service token and the one browser-facing surface — the anonymous audio proxy — is an `<audio src=…>` no-cors load governed by `Cross-Origin-Resource-Policy`.

@@ -1,12 +1,13 @@
 # Container image for apps/core-api, for Cloud Run.
 #
 # ── Why this exists ───────────────────────────────────────────────────────────
-# This replaces the Firebase App Hosting buildpack described in apphosting.yaml.
-# The buildpack is a black box that runs the ROOT package.json scripts from
-# /workspace, which is why `start` has to live at the root and why `rootDirectory`
-# is unusable. It also picks its own npm, independent of this repo's
-# `packageManager` pin — a bump to that npm has broken production here before.
-# A Dockerfile makes both the toolchain and the entrypoint explicit and pinned.
+# This replaced the Firebase App Hosting buildpack, which served api.antiphony.dev
+# until the Cloud Run cutover. The buildpack was a black box that ran the ROOT
+# package.json scripts from /workspace, which is why `start` still lives at the
+# root and why `rootDirectory` was unusable. It also picked its own npm,
+# independent of this repo's `packageManager` pin — a bump to that npm broke
+# production here once. A Dockerfile makes both the toolchain and the entrypoint
+# explicit and pinned.
 #
 # ── Shape ─────────────────────────────────────────────────────────────────────
 #   build   — full workspace install, bundles core-api to dist/index.js

@@ -87,11 +87,11 @@ npm run test -w @antiphony/core-api -- --run
 
 ## Deployment
 
-Firebase App Hosting — the `antiphony-core` backend serves `api.antiphony.dev`. See [`apphosting.yaml`](../../apphosting.yaml) at the repo root for the production config. Provision the backend in the Firebase console, wire credentials (Application Default Credentials on App Hosting), and map a domain (or use the default `*.hosted.app` URL). Enrichment adds a Cloud Tasks queue and two secrets — see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
+Cloud Run — the `antiphony-core-api` service in project `antiphony-core` serves `api.antiphony.dev`, built from the [`Dockerfile`](../../Dockerfile) at the repo root and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/cloudrun.env.yaml`](../../deploy/cloudrun.env.yaml) for the production config and [`deploy/README.md`](../../deploy/README.md) for the one-time IAM, Artifact Registry, and Workload Identity Federation setup. Credentials are Application Default Credentials from the runtime service account. Enrichment adds a Cloud Tasks queue and two secrets — see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
 
 ## Why Hono, not Next.js
 
-Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and App Hosting supports it natively.
+Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and — being a plain Node server with no platform coupling — runs anywhere a container does.
 
 ## License
 
