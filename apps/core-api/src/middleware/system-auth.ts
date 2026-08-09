@@ -46,7 +46,8 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  *     swap point).
  *
  * Configuration: set `SYSTEM_AUTH_TOKEN` in core-api's env (Secret
- * Manager via apphosting.yaml in prod, `.env` for local dev). If the
+ * Manager, mounted by the deploy workflow's `--set-secrets` in prod;
+ * `.env` for local dev). If the
  * env var is unset, all system-auth requests get 503 — fail-closed,
  * never silently downgrade to "all requests allowed".
  *

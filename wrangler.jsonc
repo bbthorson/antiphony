@@ -9,8 +9,9 @@
 	//   Build command:  npm run build -w @antiphony/docs
 	//   (this file's `assets.directory` is what gets uploaded)
 	//
-	// Unrelated to apphosting.yaml, which deploys apps/core-api to Firebase
-	// App Hosting (api.antiphony.dev) and is ignored by Cloudflare.
+	// Unrelated to the API: apps/core-api ships to Cloud Run via the root
+	// Dockerfile and .github/workflows/deploy.yml, and serves api.antiphony.dev
+	// behind Cloudflare. Nothing in this file touches it.
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "antiphony",
 	"compatibility_date": "2025-01-01",

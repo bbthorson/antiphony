@@ -33,7 +33,7 @@
     "knip": "^5.66.1",
     "typescript": "^5.7.2"
   },
-  "//packageManager": "Declares the npm this repo is verified against, for build environments that resolve it (corepack-aware ones do; actions/setup-node does not switch npm on it, and whether the Firebase App Hosting buildpack honours it is unverified — see apphosting.yaml, which notes the buildpack runs `npm ci` with ITS npm, not ours). It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
+  "//packageManager": "Declares the npm this repo is verified against, for build environments that resolve it (corepack-aware ones do; actions/setup-node does not switch npm on it). The Dockerfile does not rely on resolution at all — it installs this exact npm explicitly, which is the point: production used to build on the Firebase App Hosting buildpack's own npm, and an unreviewed bump to it broke prod. It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
   "packageManager": "npm@12.0.2",
   "engines": {
     "node": ">=22"

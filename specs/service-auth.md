@@ -57,7 +57,7 @@ ANTIPHONY_APP_TOKENS="voxpop:<64-char-random>,bardcast:<64-char-random>"
 - Tokens must be ≥32 chars (generate with `openssl rand -hex 32`); shorter
   entries are ignored with an error log — fail-closed, never fail-open.
 - Comparison is constant-time.
-- Source from Secret Manager in production (`apphosting.yaml`), `.env` locally.
+- Source from Secret Manager in production (mounted by `.github/workflows/deploy.yml`), `.env` locally.
 - Rotation: add the new token alongside the old (an app id MAY appear twice
   during rotation), flip the caller, remove the old entry.
 

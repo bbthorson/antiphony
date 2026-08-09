@@ -1,7 +1,7 @@
 name: Deploy core-api
 
-# Builds the Dockerfile and ships apps/core-api to Cloud Run, replacing the
-# Firebase App Hosting git trigger described in apphosting.yaml.
+# Builds the Dockerfile and ships apps/core-api to Cloud Run. This replaced the
+# Firebase App Hosting git trigger that served api.antiphony.dev until cutover.
 #
 # ── Why not just `gcloud run deploy` and be done ──────────────────────────────
 # core-api boots fail-closed: `validateAllPins` resolves every tenant's did:web
@@ -13,7 +13,7 @@ name: Deploy core-api
 #
 # ── One-time setup ────────────────────────────────────────────────────────────
 # See deploy/README.md. In short: an Artifact Registry repo, a service account
-# with the roles apphosting.yaml lists, and a Workload Identity Federation pool
+# with the roles that file lists, and a Workload Identity Federation pool
 # trusting this repo. Nothing here reads a stored service-account key — the same
 # preference release.yml states for npm publishing.
 

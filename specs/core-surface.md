@@ -130,7 +130,7 @@ data request with no token → `401`.
 - The three public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,\n  + audio resolve) move from `optionalAuth` (token-optional) to a\n  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +\n  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open — they\n  carry no tenancy.
 - **Remove the default-tenant fallback:** delete `DEFAULT_ORIGIN_APP_ID` /
   `ANTIPHONY_ORIGIN_APP_ID` from `lib/origin-app.ts` and drop the env var from
-  `apphosting.yaml`. Today a tokenless read silently resolves against the
+  `deploy/cloudrun.env.yaml`. Today a tokenless read silently resolves against the
   `antiphony` default tenant (which holds no real data — hence the 404 on the
   earlier tokenless probe); that ambiguity goes away.
 
