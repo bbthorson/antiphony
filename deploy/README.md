@@ -145,14 +145,21 @@ workflow builds, deploys with `--no-traffic`, and smoke-tests the candidate URL 
 so a boot failure surfaces against a revision nobody is using. `api.antiphony.dev`
 is untouched throughout.
 
-One caveat on this very first run: `--no-traffic` is documented as reassigning
-whatever traffic LATEST held to the revision that held it *before* the deploy,
-and on a service that does not exist yet there is no such revision. Whether
-gcloud rejects the flag, warns, or serves the first revision anyway is worth
-watching rather than assuming. If it fails, deploy once without `--no-traffic`
-and `--tag` to create the service — nothing points at it yet, so the first
-revision taking traffic is harmless — then let every subsequent deploy use the
-gated path.
+The first run against a service that does not exist yet is a special case, and
+it is already handled — no manual bootstrap needed. **Answered by run
+[31316275817](https://github.com/bbthorson/antiphony/actions/runs/31316275817):**
+gcloud rejects the flag outright rather than warning or ignoring it —
+
+```
+ERROR: (gcloud.run.deploy) --no-traffic not supported when creating a new service.
+```
+
+— because there is no prior revision for the withheld traffic to stay on. The
+workflow now detects a missing service and drops `--no-traffic --tag` for that
+one run, so the first revision serves immediately. That is safe precisely
+because it is the first: no domain mapping exists, so nothing routes to it. The
+smoke test still gates, probing the service URL instead of a tag URL, and the
+promote step is skipped since that revision already holds all the traffic.
 
 Note also that after any `--no-traffic` deploy, LATEST stops receiving traffic
 automatically on future deploys. That is why the workflow promotes by explicit
