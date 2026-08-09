@@ -166,39 +166,145 @@ automatically on future deploys. That is why the workflow promotes by explicit
 revision name rather than `--to-latest`, and it is the intended end state, not
 drift.
 
-Before promoting, exercise the enrichment queue against the new service.
-`ANTIPHONY_TASKS_WORKER_URL` still names `api.antiphony.dev`, which is App
-Hosting, so until DNS moves the queue never calls Cloud Run. Point it at the
-candidate URL, deploy again, run a job through, then restore it. See the comment
-on that variable in `cloudrun.env.yaml`.
+### The enrichment queue — half tested, deliberately
+
+The Cloud Tasks → Cloud Run direction is **verified**. Enqueueing a task straight
+at the worker route needs no env change and mutates nothing, so it is worth
+re-running after any change to the runtime service account or the system token:
+
+```bash
+TOKEN="$(gcloud secrets versions access latest --secret=system-auth-token --project="$PROJECT_ID")"
+gcloud tasks create-http-task \
+  --queue=antiphony-processing --location="$REGION" --project="$PROJECT_ID" \
+  --url="$(gcloud run services describe "$SERVICE" --region "$REGION" \
+      --project "$PROJECT_ID" --format='value(status.url)')/api/v1/system/process-audio" \
+  --method=POST \
+  --header="Authorization: Bearer ${TOKEN}" \
+  --header="Content-Type: application/json" \
+  --body-content='{"originAppId":"voxpop","postId":"queue-probe-does-not-exist"}'
+```
+
+A nonexistent `postId` is the point: the run should reach Firestore, fail to
+claim a lease, and log `[audio-processing] lease not acquired`. That single line
+proves routing, `SYSTEM_AUTH_TOKEN`, and Firestore access from the runtime
+service account all work. The request log shows `200` with user agent
+`Google-Cloud-Tasks`; an unauthenticated `curl` to the same route gives `401`.
+
+```bash
+gcloud logging read \
+  'resource.type=cloud_run_revision AND resource.labels.service_name='"$SERVICE" \
+  --project "$PROJECT_ID" --limit 10 --freshness=10m \
+  --format='value(jsonPayload.msg,jsonPayload.postId)'
+```
+
+The **enqueue** direction is not tested and is not worth forcing.
+`ANTIPHONY_TASKS_WORKER_URL` names `api.antiphony.dev`, so jobs created through
+Cloud Run are still executed by App Hosting until step 7 — harmless, since both
+run the same code against the same Firestore. Exercising it early would mean
+creating a real post with audio, which writes to production Firestore for the
+sake of a path that becomes correct on its own at cutover. The seam that could
+not be inferred is the one already tested above.
 
 ## 7. Cut the domain over
 
-**Verify this step before relying on it.** Cloud Run's managed domain mappings
-live on the `beta` surface (`gcloud run domain-mappings` on the GA surface is the
-Anthos one) and are **not offered in every region** — `us-east4` needs checking.
-Run this first; if it errors or the region is unsupported, take the load-balancer
-route below instead.
+**`api.antiphony.dev` is already behind Cloudflare.** It resolves to Cloudflare
+addresses (104.21.x / 172.67.x) and answers with `server: cloudflare` and a
+`cf-ray` header, with `via: 1.1 google` underneath — Cloudflare is proxying to
+App Hosting as the origin. So this is **not** a DNS change and **not** a Google
+domain mapping: it is a change of origin inside Cloudflare, and the rest of this
+section is about doing that without a 404.
+
+That makes the cutover better than a DNS move in every way that matters here —
+no propagation wait, and rollback is flipping the origin back, in seconds.
+
+An earlier revision of this file prescribed `gcloud beta run domain-mappings
+create` without checking how the name actually resolves. It would not have
+broken anything, but it was the wrong mechanism for this setup.
+
+### The failure mode to design around
+
+Cloud Run routes by `Host`. Point Cloudflare at the `*.run.app` origin while it
+still forwards `Host: api.antiphony.dev`, and Google's frontend matches no
+service and returns its own **404** — before the container is ever reached.
+Verified against the live service:
 
 ```bash
-gcloud components install beta
+# 200 — Host matches the run.app name
+curl -s -o /dev/null -w '%{http_code}\n' https://<service>-<hash>-uk.a.run.app/health
+# 404 — Google's frontend error page, not the app
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: api.antiphony.dev' \
+  https://<service>-<hash>-uk.a.run.app/health
+```
+
+The 404 is indistinguishable at a glance from a broken deploy, so know it on
+sight: an HTML error page from Google rather than this API's JSON envelope means
+`Host`, not the service.
+
+Two ways to resolve it. Pick one — they are alternatives, not steps.
+
+### Option A — rewrite the Host at Cloudflare (no GCP prerequisites)
+
+Point the `api` record at the `*.run.app` hostname (proxied), then add a
+Cloudflare **Origin Rule** that overrides the Host header to that same
+`*.run.app` hostname. Nothing changes in GCP.
+
+Check two things in the dashboard, both of which vary by plan and neither of
+which is verified here:
+
+- **Host Header override** must be available in Origin Rules on this plan.
+- **SSL/TLS mode must be Full (strict)**, and the origin certificate is
+  `*.run.app`. If Cloudflare presents SNI for `api.antiphony.dev` rather than the
+  origin hostname, strict verification fails — an SNI override is the fix, and on
+  some plans that is not offered. If it is not, use Option B.
+
+### Option B — teach Cloud Run the hostname (keeps Cloudflare config vanilla)
+
+Create a managed domain mapping so Cloud Run itself accepts
+`Host: api.antiphony.dev`, then point Cloudflare's origin at the mapping target.
+Cloudflare then proxies unmodified, exactly as it does to App Hosting today.
+
+Confirmed: `us-east4` **is** a supported region for domain mappings (the
+supported set is `asia-east1`, `asia-northeast1`, `asia-southeast1`,
+`europe-north1`, `europe-west1`, `europe-west4`, `us-central1`, `us-east1`,
+`us-east4`, `us-west1`).
+
+The prerequisite is domain verification, and it is not done:
+`gcloud domains list-user-verified` returns `bradandmatt.com`, `kalamos.care`,
+`phonicfactory.com`, `scope.cards` — **not `antiphony.dev`**. Verify it first, or
+this fails on ownership rather than on region.
+
+```bash
+gcloud domains verify antiphony.dev            # one-time, follow the prompts
+gcloud components install beta                  # domain-mappings is a beta surface
 gcloud beta run domain-mappings create --service="$SERVICE" \
   --domain=api.antiphony.dev --region="$REGION" --project="$PROJECT_ID"
 ```
 
-Then update DNS to the records it prints, and delete the App Hosting backend once
-the new service has held traffic long enough to trust.
+### Ordering
 
-If domain mappings are unavailable, put a global external Application Load
-Balancer with a serverless NEG in front of the service and point
-`api.antiphony.dev` at its anycast IP. More moving parts and a small monthly
-cost, but it is the supported path everywhere and it is what you would want
-anyway before adding Cloud Armor or a CDN in front of the audio proxy.
+`ANTIPHONY_PDS_HOST` is `api.antiphony.dev`, and the boot gate refuses to start
+unless each tenant's `did:web` names that host — so the name has to keep
+resolving to *something* serving this code throughout. Switch the origin before
+deleting the App Hosting backend, never the reverse.
 
-Ordering matters here. `ANTIPHONY_PDS_HOST` is `api.antiphony.dev`, and the boot
-gate refuses to start unless each tenant's `did:web` points at that host — so the
-name has to keep resolving to *something* that serves this code throughout. Map
-the domain before deleting the backend, never the reverse.
+`ANTIPHONY_TASKS_WORKER_URL` needs no edit. It already names
+`api.antiphony.dev`, so it becomes correct the moment the origin flips — until
+then, jobs enqueued by Cloud Run are executed by App Hosting, which is harmless
+(same code, same Firestore) but means the enqueue path is not exercised until
+cutover. The Cloud Tasks → Cloud Run direction has been tested independently.
+
+### Verifying the flip
+
+`/health` reports the commit it was built from, and the two deployments disagree:
+App Hosting reports `sha: "dev"` (its buildpack never injected `COMMIT_SHA`),
+while the container reports a real 40-character sha. So one request tells you
+which is serving:
+
+```bash
+curl -s https://api.antiphony.dev/health
+```
+
+A real sha means the cutover took.
 
 ## Rollback
 
