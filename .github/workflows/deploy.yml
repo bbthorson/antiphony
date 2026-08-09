@@ -1,0 +1,207 @@
+name: Deploy core-api
+
+# Builds the Dockerfile and ships apps/core-api to Cloud Run, replacing the
+# Firebase App Hosting git trigger described in apphosting.yaml.
+#
+# ── Why not just `gcloud run deploy` and be done ──────────────────────────────
+# core-api boots fail-closed: `validateAllPins` resolves every tenant's did:web
+# over the network and calls `process.exit(1)` if custody cannot be proven. A
+# deploy can therefore fail for a reason that has nothing to do with this commit
+# — a did:web host being briefly unreachable is enough. So the new revision is
+# deployed with NO traffic, smoke-tested on its own tagged URL, and only then
+# promoted. A revision that cannot boot never serves a request.
+#
+# ── One-time setup ────────────────────────────────────────────────────────────
+# See deploy/README.md. In short: an Artifact Registry repo, a service account
+# with the roles apphosting.yaml lists, and a Workload Identity Federation pool
+# trusting this repo. Nothing here reads a stored service-account key — the same
+# preference release.yml states for npm publishing.
+
+on:
+    push:
+        branches: [master]
+        # Path filter so a docs-only or spec-only commit does not roll production.
+        # The risk is the inverse: a change to something load-bearing that is NOT
+        # listed here will not deploy, and the tree will silently diverge from the
+        # running revision. Add paths when you add build inputs; when in doubt,
+        # run this workflow by hand.
+        paths:
+            - 'apps/core-api/**'
+            - 'packages/**'
+            - 'package.json'
+            - 'package-lock.json'
+            - 'Dockerfile'
+            - '.dockerignore'
+            - 'deploy/**'
+            - '.github/workflows/deploy.yml'
+    workflow_dispatch:
+        inputs:
+            promote:
+                description: 'Send traffic to the new revision after the smoke test passes'
+                type: boolean
+                default: true
+
+permissions:
+    contents: read
+    # Required for Workload Identity Federation: Google exchanges this
+    # short-lived OIDC token for access, so no long-lived key is stored here.
+    id-token: write
+
+concurrency:
+    group: deploy-core-api
+    # Deliberately NOT cancel-in-progress. Cancelling between "deploy the
+    # revision" and "migrate traffic" leaves the service on the old revision with
+    # an untagged new one beside it — recoverable, but a state nobody chose.
+    cancel-in-progress: false
+
+env:
+    PROJECT_ID: antiphony-core
+    # Matches ANTIPHONY_TASKS_LOCATION in deploy/cloudrun.env.yaml. Deploying
+    # elsewhere costs a cross-region round trip on every enqueue.
+    REGION: us-east4
+    SERVICE: antiphony-core-api
+    REPOSITORY: antiphony
+
+jobs:
+    deploy:
+        name: build · deploy · smoke · promote
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - id: auth
+              uses: google-github-actions/auth@v2
+              with:
+                  # Configured once against this repo. Both values are project
+                  # identifiers rather than credentials, so they are repo
+                  # variables, not secrets.
+                  workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+                  service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+            - uses: google-github-actions/setup-gcloud@v2
+
+            - name: Configure Docker for Artifact Registry
+              run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+            # Tagged by commit sha, not `latest`. The sha tag is what makes a
+            # rollback a one-liner against a known image, and what the smoke test
+            # below asserts the running revision reports.
+            - name: Build and push
+              id: build
+              run: |
+                  IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/core-api"
+                  docker build \
+                    --build-arg "COMMIT_SHA=${GITHUB_SHA}" \
+                    --tag "${IMAGE}:${GITHUB_SHA}" \
+                    --tag "${IMAGE}:latest" \
+                    .
+                  docker push "${IMAGE}:${GITHUB_SHA}"
+                  docker push "${IMAGE}:latest"
+                  echo "image=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+            # --no-traffic + --tag gives the revision a private URL of its own
+            # while 100% of real traffic stays on the current revision.
+            #
+            # Sizing notes, both deliberate:
+            #   --memory 2Gi   ffmpeg passes run in-process and run.ts sets
+            #                  maxBuffer to 512MB, so a decode of a large upload
+            #                  can hold half a gigabyte of PCM in the Node heap.
+            #                  512Mi (the Cloud Run default) OOMs the container,
+            #                  which surfaces as a 503 on the worker route rather
+            #                  than a stage failure.
+            #   --timeout 900  the worker route can run two ffmpeg passes plus an
+            #                  ElevenLabs round trip; ffmpeg alone allows 120s per
+            #                  pass. The 300s default can cut a legitimate job.
+            - name: Deploy revision (no traffic)
+              id: deploy
+              run: |
+                  gcloud run deploy "${SERVICE}" \
+                    --image "${{ steps.build.outputs.image }}" \
+                    --region "${REGION}" \
+                    --project "${PROJECT_ID}" \
+                    --service-account "${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}" \
+                    --env-vars-file deploy/cloudrun.env.yaml \
+                    --set-secrets "ANTIPHONY_APP_TOKENS=antiphony-app-tokens:latest,SYSTEM_AUTH_TOKEN=system-auth-token:latest,ELEVENLABS_API_KEY=elevenlabs-api-key:latest" \
+                    --min-instances 0 \
+                    --max-instances 10 \
+                    --cpu 1 \
+                    --memory 2Gi \
+                    --timeout 900 \
+                    --ingress all \
+                    --allow-unauthenticated \
+                    --no-traffic \
+                    --tag candidate \
+                    --quiet
+
+                  # --allow-unauthenticated is not a gap. Every data route is gated
+                  # by a service token in middleware/auth.ts, and the anonymous
+                  # audio proxy is reached by `<audio src=…>` from a browser that
+                  # can present no IAM identity. Putting IAM in front would break
+                  # that surface and gate the rest twice.
+
+                  DESCRIBE="$(gcloud run services describe "${SERVICE}" \
+                    --region "${REGION}" --project "${PROJECT_ID}" --format json)"
+                  echo "revision=$(jq -r '.status.latestCreatedRevisionName' <<<"$DESCRIBE")" >> "$GITHUB_OUTPUT"
+                  echo "url=$(jq -r '.status.traffic[] | select(.tag=="candidate") | .url' <<<"$DESCRIBE")" >> "$GITHUB_OUTPUT"
+
+            # The strong check. /health is unauthenticated and reports the
+            # COMMIT_SHA that esbuild baked into the bundle, so asserting it
+            # equals this commit proves three things at once: the revision booted
+            # (the did:web custody gate passed), it is serving, and it is serving
+            # THIS code rather than a cached or mis-tagged image.
+            - name: Smoke test the candidate
+              run: |
+                  URL="${{ steps.deploy.outputs.url }}/health"
+                  echo "Probing ${URL}"
+                  for attempt in $(seq 1 10); do
+                      BODY="$(curl -fsS --max-time 15 "$URL" 2>/dev/null)" && break
+                      echo "attempt ${attempt}: not ready yet"
+                      sleep 6
+                  done
+                  if [ -z "${BODY:-}" ]; then
+                      echo "::error::Candidate revision ${{ steps.deploy.outputs.revision }} never answered /health."
+                      echo "Check boot logs — validateAllPins exits the process when a tenant did:web cannot be resolved:"
+                      echo "  gcloud run services logs read ${SERVICE} --region ${REGION} --project ${PROJECT_ID} --limit 200"
+                      exit 1
+                  fi
+                  echo "$BODY"
+                  SERVED_SHA="$(jq -r '.sha' <<<"$BODY")"
+                  if [ "$SERVED_SHA" != "$GITHUB_SHA" ]; then
+                      echo "::error::/health reports sha ${SERVED_SHA}, expected ${GITHUB_SHA}. The revision is not running this commit."
+                      exit 1
+                  fi
+                  echo "Candidate is serving ${SERVED_SHA}."
+
+            # Only reached if the candidate booted and identified itself. Removing
+            # the tag in the same call keeps `candidate` meaning "the revision
+            # currently under test" rather than accumulating on old revisions.
+            - name: Promote to 100% traffic
+              if: github.event_name == 'push' || inputs.promote
+              run: |
+                  gcloud run services update-traffic "${SERVICE}" \
+                    --region "${REGION}" \
+                    --project "${PROJECT_ID}" \
+                    --to-revisions "${{ steps.deploy.outputs.revision }}=100" \
+                    --remove-tags candidate \
+                    --quiet
+
+            - name: Summary
+              if: always()
+              run: |
+                  {
+                    echo "### ${SERVICE} — ${GITHUB_SHA:0:7}"
+                    echo ""
+                    echo "- image: \`${{ steps.build.outputs.image }}\`"
+                    echo "- revision: \`${{ steps.deploy.outputs.revision }}\`"
+                    if [ "${{ github.event_name }}" != "push" ] && [ "${{ inputs.promote }}" != "true" ]; then
+                      echo "- traffic: **not promoted** (candidate only)"
+                      echo "- candidate url: ${{ steps.deploy.outputs.url }}"
+                    else
+                      echo "- traffic: 100%"
+                    fi
+                    echo ""
+                    echo "Roll back to the previous revision:"
+                    echo '```bash'
+                    echo "gcloud run services update-traffic ${SERVICE} --region ${REGION} --project ${PROJECT_ID} --to-revisions PREVIOUS_REVISION=100"
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
