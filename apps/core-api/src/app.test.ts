@@ -1,5 +1,48 @@
-import { describe, it, expect } from 'vitest';
-import { app } from './app.js';
+import { describe, it, expect, vi } from 'vitest';
+
+// Firestore stubs, without which this file reaches the real thing.
+//
+// The CORS/CORP assertions below request `/api/v1/audio`, and that route carries
+// `rateLimit(RATE_LIMITS.read)` — middleware that runs BEFORE the handler and
+// calls `getAdminDb().runTransaction(...)`. Unmocked, the request therefore
+// waits on a live Firestore connection, and it never gets one in CI: with no
+// credentials present, firebase-admin sits in Application Default Credentials
+// resolution (metadata server, then retries) until vitest gives up at 5s.
+// That is what "Test timed out in 5000ms" on `answers a cross-origin request
+// without any CORS headers` was — a credential lookup, not anything about CORS.
+//
+// It is worse on a developer machine, where it does NOT fail: gcloud ADC is
+// usually present, so the test quietly authenticates and transacts against a
+// real `rate_limits` collection. Passing locally and hanging in CI is the same
+// bug wearing two faces.
+//
+// Mirrors the stubs in adapters/inbound/rest/audio.test.ts, which hit this first
+// and documented it there. The route's own behaviour is untouched: `url=nope`
+// still fails `extractObjectPath` and returns 400, which is all these header
+// assertions need.
+vi.mock('./lib/firebase-admin.js', () => ({
+    getAdminDb: () => ({
+        collection: () => ({ doc: () => ({}) }),
+        runTransaction: async (fn: (t: unknown) => Promise<boolean>) =>
+            fn({
+                get: async () => ({ exists: false, data: () => undefined }),
+                set: () => undefined,
+                update: () => undefined,
+            }),
+    }),
+    getAdmin: () => ({
+        firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
+    }),
+    getAdminAuth: () => ({}),
+    getAdminStorage: () => ({}),
+    isUsingEmulator: () => false,
+}));
+
+process.env.LOG_LEVEL = 'silent';
+
+// Dynamic, so the mock above is registered before app.ts pulls in the adapters
+// that import firebase-admin at module scope.
+const { app } = await import('./app.js');
 
 // The `parseAllowedOrigins` suite that stood here went with the CORS
 // middleware — see the note at the top of app.ts. Its replacement is the
