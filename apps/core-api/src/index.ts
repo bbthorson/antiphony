@@ -13,6 +13,7 @@ import { validateAllPins, checkTenantRegistryDrift } from './lib/app-did.js';
 import { parseAppTokens } from './middleware/service-auth.js';
 import { APP_CONFIG } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
+import { installShutdownHandlers } from './lib/shutdown.js';
 
 /** Bind to the port Cloud Run / App Hosting injects via `PORT`. */
 const port = Number(process.env.PORT) || 8080;
@@ -38,9 +39,15 @@ async function main(): Promise<void> {
     checkTenantRegistryDrift(parseAppTokens().map((a) => a.appId));
 
     const app = createApp();
-    serve({ fetch: app.fetch, port }, (info) => {
+    const server = serve({ fetch: app.fetch, port }, (info) => {
         logger.info({ port: info.port }, '[core-api] listening');
     });
+
+    // Installed only after `serve()` returns, so a SIGTERM arriving during the
+    // boot gate above is not caught here. That is deliberate: nothing is
+    // listening yet, so the right response to a signal then is the default one —
+    // die immediately — not a drain of zero connections.
+    installShutdownHandlers({ server, logger });
 }
 
 main().catch((err) => {
