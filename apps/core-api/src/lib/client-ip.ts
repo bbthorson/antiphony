@@ -1,29 +1,43 @@
 /**
  * Number of trusted reverse-proxy hops the platform appends to the RIGHT of
- * `X-Forwarded-For`.
+ * `X-Forwarded-For`. THIS IS TOPOLOGY-DEPENDENT — it must be re-measured
+ * whenever the edge in front of this service changes. It has now been wrong
+ * twice, both times silently, and both times the symptom was one shared
+ * rate-limit bucket rather than an error.
  *
- * Firebase App Hosting fronts Cloud Run with **two** Google infrastructure hops,
- * confirmed empirically from production XFF chains (June 2026 investigation).
- * Every chain observed on the backend has the exact shape:
+ * ── Current: Cloudflare → Google frontend → Cloud Run — 1 hop ────────────────
+ * Measured 2026-08-09, immediately after the App Hosting → Cloud Run cutover,
+ * by hitting the same anonymous route through both paths and comparing the
+ * chain length the `rate-limit.ts` warn reports:
  *
- *     <client-ip>, <GCLB-ip 35.219.x>, <GFE-ip 192.178.13.x>
+ *     via api.antiphony.dev  ->  <client-ip>, <cloudflare-egress-ip>   (2 entries)
+ *     direct to *.run.app    ->  <client-ip>                           (1 entry)
  *
- * The two rightmost entries are Google's load balancer and front-end (both
- * public Google ranges, so they can't be filtered by an is-private check); the
- * real client is the entry TWO hops in from the right. An earlier fix used 1
- * hop and so bucketed every caller on the stable `35.219.x` GCLB address —
- * i.e. one shared rate-limit bucket for the entire internet, which is how the
- * off-by-one was caught. With 2 hops the client is extracted correctly, and a
- * client that spoofs a leading XFF entry is ignored, since only what the edge
- * appended is trusted.
+ * Cloudflare adds exactly one entry over the direct path, so the client is ONE
+ * hop in from the right. Note the direct `*.run.app` URL is publicly reachable
+ * and bypasses Cloudflare entirely; such a request yields a 1-entry chain,
+ * `idx` of -1, and therefore 'unknown' — unbucketed, but fail-safe rather than
+ * spoofable.
  *
- * Overridable via the `TRUSTED_PROXY_HOPS` env var (deploy/cloudrun.env.yaml) so a
- * future platform topology change can be corrected without a code deploy.
- * The detector for that is the `warn` in `rate-limit.ts`: if the platform
- * changes its hop count, the entry this indexes to falls outside the chain and
- * extraction collapses to 'unknown' despite an XFF header being present, which
- * is precisely what that log fires on. Falls back to 2 when unset or
- * non-numeric.
+ * ── Previous: Firebase App Hosting — 2 hops ─────────────────────────────────
+ * Retired 2026-08-09. Kept because the default below is still 2, and because
+ * it is the shape `client-ip.test.ts` asserts against:
+ *
+ *     <client-ip>, <GCLB-ip 35.219.x>, <GFE-ip 192.178.13.x>           (3 entries)
+ *
+ * That earlier calibration also started as an off-by-one — 1 hop bucketed every
+ * caller on the stable `35.219.x` GCLB address, i.e. one shared rate-limit
+ * bucket for the entire internet, which is how it was caught the first time.
+ *
+ * Set via `TRUSTED_PROXY_HOPS` in deploy/cloudrun.env.yaml, so a topology change
+ * is correctable without a code deploy. The default stays 2 rather than tracking
+ * whatever this deployment happens to run: self-hosters on App Hosting are the
+ * ones relying on the fallback, and the hosted deploy sets the value explicitly.
+ *
+ * The detector is the `warn` in `rate-limit.ts`: if the platform changes its hop
+ * count, the entry this indexes to falls outside the chain and extraction
+ * collapses to 'unknown' despite an XFF header being present. That is exactly
+ * what fired after the cutover. Falls back to 2 when unset or non-numeric.
  */
 const TRUSTED_PROXY_HOPS = (() => {
     const raw = Number(process.env.TRUSTED_PROXY_HOPS);
