@@ -1,7 +1,7 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
+import { constantTimeEqual } from '../lib/constant-time.js';
 
 /**
  * System-auth middleware — verifies that the request comes from a trusted
@@ -35,15 +35,19 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  *
  * Why shared secret rather than e.g. Cloud Run identity tokens:
  *
- *   - Both deployments are Firebase App Hosting backends. App Hosting
- *     doesn't currently expose a clean service-account-to-service-
- *     account auth flow at the HTTP layer (Cloud Run does via
- *     metadata-server-issued ID tokens, but App Hosting's wrapper
- *     doesn't surface that as cleanly).
- *   - Shared secret is the simplest mechanism that works today.
- *     Rotation: change the secret in Secret Manager + re-deploy.
- *     Future hardening: GCP-issued ID tokens (this middleware is the
- *     swap point).
+ *   - Originally: both deployments were Firebase App Hosting backends, and
+ *     App Hosting's wrapper did not surface a clean service-account-to-
+ *     service-account flow at the HTTP layer the way Cloud Run does.
+ *   - THAT REASON EXPIRED at the 2026-08-09 Cloud Run migration. This side
+ *     now runs on Cloud Run and can both mint and verify metadata-server ID
+ *     tokens, so the constraint that chose a shared secret is gone. What
+ *     remains is that the callers — Cloud Tasks and each tenant's BFF — would
+ *     all have to move in lockstep, which is a bigger change than this
+ *     middleware.
+ *   - Shared secret still works and is not insecure; it is simply no longer
+ *     the only option. Rotation: change the secret in Secret Manager +
+ *     re-deploy. This middleware remains the swap point if ID tokens are
+ *     ever taken up.
  *
  * Configuration: set `SYSTEM_AUTH_TOKEN` in core-api's env (Secret
  * Manager, mounted by the deploy workflow's `--set-secrets` in prod;
@@ -54,18 +58,6 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * Constant-time comparison defends against timing side-channels on the
  * secret (same approach as service-auth).
  */
-
-/**
- * Constant-time string comparison. Hash both sides to fixed-length digests,
- * then compare with the native `crypto.timingSafeEqual` — no timing or
- * length leaks, no hand-rolled loop the JIT could optimize out of constant
- * time.
- */
-function constantTimeEqual(a: string, b: string): boolean {
-    const aHash = createHash('sha256').update(a).digest();
-    const bHash = createHash('sha256').update(b).digest();
-    return timingSafeEqual(aHash, bHash);
-}
 
 function extractBearer(authHeader: string | undefined): string | null {
     if (!authHeader) return null;

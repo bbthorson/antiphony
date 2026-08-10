@@ -13,6 +13,7 @@ import { systemAuthMintRoute } from './adapters/inbound/rest/system-auth-mint.js
 import { systemBlueskyIdentityRoute } from './adapters/inbound/rest/system-bluesky-identity.js';
 import { systemAtprotoSigninRoute } from './adapters/inbound/rest/system-atproto-signin.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
+import { originLock } from './middleware/origin-lock.js';
 
 /**
  * ## No CORS middleware — deliberately
@@ -52,13 +53,20 @@ import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-
  * ## Middleware order matters
  *
  *   1. request-id — sets `c.var.requestId`; must run before anything that
- *      reads it (error-handler, rate-limit, handlers).
+ *      reads it (error-handler, origin-lock, rate-limit, handlers).
  *   2. security-headers — global API-tier hardening (strict CSP, frame-deny,
  *      Cross-Origin-Resource-Policy); see middleware/security-headers.ts.
  *      Applied to every response, errors included.
- *   3. routes — each route opts into rate-limit per-endpoint via the
+ *   3. infra routes — `/`, `/health`, `/openapi.json`. Registered before the
+ *      origin lock and outside its `/api/v1/*` scope, so they answer on the
+ *      `*.run.app` hostname too. The deploy workflow's pre-promotion smoke
+ *      test depends on that.
+ *   4. origin-lock — `/api/v1/*` only; rejects anything that did not come
+ *      through Cloudflare. Must run before the route handlers, and after
+ *      request-id so its refusals carry a request id.
+ *   5. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit.
- *   4. error-handler — installed via `app.onError` so it catches throws
+ *   6. error-handler — installed via `app.onError` so it catches throws
  *      from handlers AND from middleware (rate-limit, request-id).
  *
  * There is no CORS step — see the note above this factory for why.
@@ -93,7 +101,17 @@ export function app(): OpenAPIHono {
         }),
     );
 
-    // 4. API routes.
+    // 4. Origin lock — every `/api/v1/*` request must carry the header
+    //    Cloudflare injects, proving it came through the CDN rather than
+    //    straight at the still-public `*.run.app` hostname. Scoped to the API
+    //    prefix on purpose: the infra routes above stay open on every hostname
+    //    because the deploy workflow smoke-tests `/health` on a candidate
+    //    revision's tag URL, which is by definition not yet behind Cloudflare.
+    //    No-op while ANTIPHONY_ORIGIN_SECRET is unset — see middleware/origin-lock.ts
+    //    for why this one fails OPEN when the rest of this codebase fails closed.
+    a.use('/api/v1/*', originLock());
+
+    // 5. API routes.
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
     a.route('/api/v1/posts', postsRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
@@ -111,13 +129,13 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/system/atproto', systemAtprotoSigninRoute);
     a.route('/api/v1/system/process-audio', systemProcessAudioRoute);
 
-    // 5. OpenAPI document — served at `/openapi.json`. Only routes
+    // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear
     //    in the spec. Public-doc scope: `/posts` and `/audio`.
     //    Transport/utility/system routes intentionally stay plain-Hono.
     a.doc('/openapi.json', { openapi: '3.0.0', info: OPENAPI_INFO, tags: [...OPENAPI_TAGS] });
 
-    // 6. Error handler — last, via `onError` so it catches throws from
+    // 7. Error handler — last, via `onError` so it catches throws from
     //    any middleware or handler above.
     a.onError(errorHandler);
 
