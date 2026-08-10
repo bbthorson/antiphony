@@ -48,11 +48,30 @@ import { constantTimeEqual } from '../lib/constant-time.js';
  * Doing (3) before (2) takes the API down for every caller. The `warn` on the
  * first unenforced request is the reminder that the lock is installed but idle.
  *
- * Rotation follows the same order: teach Cloudflare the new value first, then
- * move the secret. During the overlap both are wrong for somebody, so rotate
- * by adding a second accepted value if that ever matters — today it does not,
- * and a brief 403 window is preferable to carrying multi-value parsing nobody
- * has needed yet.
+ * ## Audit mode — verify the edge BEFORE anything can 403
+ *
+ * `ANTIPHONY_ORIGIN_LOCK_AUDIT=true` alongside the secret runs the full
+ * comparison and logs what it WOULD have done, then allows the request
+ * regardless. It exists because there is otherwise no way to confirm the
+ * Cloudflare Transform Rule is correct until enforcement is already live —
+ * a misspelled header name or a value with stray whitespace looks identical
+ * to a working rule until every caller is being refused.
+ *
+ * Note it compares, rather than merely checking the header is present. A rule
+ * that sends the right header with the wrong value is exactly the failure this
+ * needs to catch, and presence alone would call that healthy.
+ *
+ * So the real sequence is:
+ *
+ *   1. Deploy with the secret UNSET — no-op.
+ *   2. Add the Cloudflare Transform Rule.
+ *   3. Deploy with the secret set AND audit on — nothing is refused; the log
+ *      says whether the edge is sending the right value.
+ *   4. Drop the audit flag — enforcement begins, already verified.
+ *
+ * Rotation uses the same 3 → 4 pair rather than trusting the change blind.
+ * Logging is capped at one line per outcome per process, so leaving audit on
+ * costs two lines and does not turn request volume into log volume.
  */
 
 /** Header Cloudflare injects. Lowercase — Hono normalizes header lookups. */
@@ -66,16 +85,25 @@ export const ORIGIN_LOCK_HEADER = 'x-antiphony-origin';
  */
 const ORIGIN_SECRET_MIN_LENGTH = 32;
 
-/** Log the "installed but idle" warning once per process, not per request. */
-let warnedUnset = false;
+/**
+ * Once-per-process log latches. Bounded so that neither the idle state nor
+ * audit mode converts request volume into log volume.
+ */
+const logged = { unset: false, auditPass: false, auditFail: false };
+
+/** `true`/`1` only — anything else, including the empty string, is off. */
+function auditEnabled(): boolean {
+    const raw = process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT?.trim().toLowerCase();
+    return raw === 'true' || raw === '1';
+}
 
 export const originLock = (): MiddlewareHandler => {
     return async (c, next) => {
         const expected = process.env.ANTIPHONY_ORIGIN_SECRET?.trim();
 
         if (!expected || expected.length < ORIGIN_SECRET_MIN_LENGTH) {
-            if (!warnedUnset) {
-                warnedUnset = true;
+            if (!logged.unset) {
+                logged.unset = true;
                 logger.warn(
                     { minLength: ORIGIN_SECRET_MIN_LENGTH, configured: Boolean(expected) },
                     expected
@@ -87,7 +115,29 @@ export const originLock = (): MiddlewareHandler => {
         }
 
         const presented = c.req.header(ORIGIN_LOCK_HEADER);
-        if (!presented || !constantTimeEqual(presented, expected)) {
+        const ok = Boolean(presented) && constantTimeEqual(presented as string, expected);
+
+        // Audit mode: same verdict, no consequence. Deliberately BEFORE the
+        // refusal below so turning the flag on cannot 403 anything.
+        if (auditEnabled()) {
+            const latch = ok ? 'auditPass' : 'auditFail';
+            if (!logged[latch]) {
+                logged[latch] = true;
+                logger.warn(
+                    {
+                        path: c.req.path,
+                        headerPresent: Boolean(presented),
+                        wouldAllow: ok,
+                    },
+                    ok
+                        ? '[origin-lock] AUDIT: header present and matching — safe to drop ANTIPHONY_ORIGIN_LOCK_AUDIT and enforce'
+                        : '[origin-lock] AUDIT: would REFUSE this request — do NOT enforce yet; check the Cloudflare Transform Rule (header name and exact value)',
+                );
+            }
+            return next();
+        }
+
+        if (!ok) {
             logger.warn(
                 {
                     requestId: c.get('requestId'),
@@ -106,7 +156,9 @@ export const originLock = (): MiddlewareHandler => {
     };
 };
 
-/** Test seam — the once-per-process warning would otherwise leak across cases. */
+/** Test seam — the once-per-process latches would otherwise leak across cases. */
 export function __resetOriginLockWarning(): void {
-    warnedUnset = false;
+    logged.unset = false;
+    logged.auditPass = false;
+    logged.auditFail = false;
 }

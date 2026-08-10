@@ -343,7 +343,10 @@ production down.
 The enforcing side (Cloud Run) and the header-adding side (Cloudflare) cannot
 land atomically. **Set the secret before Cloudflare injects the header and every
 `/api/v1/*` request 403s** — the whole API, every tenant. The middleware fails
-OPEN when the var is absent precisely so these steps can be taken one at a time.
+OPEN when the var is absent, and audit mode (step 3) exists so the edge can be
+verified before anything can be refused. Do not skip it: a misspelled header
+name or a value with stray whitespace is indistinguishable from a working rule
+until enforcement is already live.
 
 **1. Generate a value and teach Cloudflare to send it.** In the dashboard:
 Rules → Transform Rules → Modify Request Header → *Set static* on the zone,
@@ -355,36 +358,37 @@ hostname, including the Cloud Tasks callbacks (they arrive via
 openssl rand -hex 32
 ```
 
-**2. Verify Cloudflare is actually sending it before enforcing anything.** The
-lock is still open, so a wrong answer here costs nothing:
+**2. Create the secret and grant the runtime SA access.** Read the value from a
+prompt rather than an argument, so it stays out of shell history:
 
 ```bash
-curl -s https://api.antiphony.dev/api/v1/audio | head -c 200   # still 400, lock open
-gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=antiphony-core-api AND jsonPayload.msg=~"origin-lock"' \
-  --project antiphony-core --limit 5 --freshness=10m --format='value(jsonPayload.msg)'
-```
-
-**3. Create the secret and grant the runtime SA access.**
-
-```bash
-printf '%s' '<the value from step 1>' | gcloud secrets create antiphony-origin-secret \
-  --data-file=- --project=antiphony-core
+read -rs ORIGIN_SECRET && printf '%s' "$ORIGIN_SECRET" \
+  | gcloud secrets create antiphony-origin-secret --data-file=- --project=antiphony-core \
+  && unset ORIGIN_SECRET
 
 gcloud secrets add-iam-policy-binding antiphony-origin-secret \
   --member="serviceAccount:antiphony-core-api@antiphony-core.iam.gserviceaccount.com" \
   --role=roles/secretmanager.secretAccessor --project=antiphony-core
 ```
 
-**4. Wire it and deploy.** Append to the `--set-secrets` list in
-`.github/workflows/deploy.yml`:
+**3. Deploy in AUDIT mode and confirm the edge.** Add both to the deploy
+command in `.github/workflows/deploy.yml` — the secret ref on `--set-secrets`,
+and `ANTIPHONY_ORIGIN_LOCK_AUDIT: "true"` in `deploy/cloudrun.env.yaml`. Nothing
+is refused in this state; the log reports the verdict it WOULD have reached.
 
-```
-ANTIPHONY_ORIGIN_SECRET=antiphony-origin-secret:latest
+```bash
+curl -s -o /dev/null "https://api.antiphony.dev/api/v1/audio?probe=audit"
+gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=antiphony-core-api AND jsonPayload.msg=~"AUDIT"' \
+  --project antiphony-core --limit 5 --freshness=10m --format='value(jsonPayload.msg,jsonPayload.wouldAllow)'
 ```
 
-Enforcement begins with that revision. The ref is intentionally absent until
-here — a `--set-secrets` entry for a secret that does not exist fails the
-deploy.
+`header present and matching` is the green light. `would REFUSE this request`
+means the Transform Rule is wrong — fix it and re-probe. **Enforcing from that
+state would 403 every caller**, which is precisely what this step is for.
+
+**4. Drop the audit flag and deploy.** Remove `ANTIPHONY_ORIGIN_LOCK_AUDIT`
+from `deploy/cloudrun.env.yaml`. Enforcement begins with that revision, already
+verified.
 
 ### Verifying the lock
 
@@ -397,13 +401,21 @@ curl -s -o /dev/null -w 'direct:         %{http_code}\n' \
 ```
 
 Expect `400` (the route's own missing-param error, i.e. it got through) and
-`403`. A `403` on the first line means Cloudflare is not injecting the header —
-roll back by removing the `--set-secrets` entry and redeploying, then fix the
-Transform Rule.
+`403`.
+
+If the first line ever returns `403`, traffic is a pointer and the previous
+revision is still there — this is seconds, not a rebuild:
+
+```bash
+gcloud run revisions list --service antiphony-core-api --region us-east4 --project antiphony-core
+gcloud run services update-traffic antiphony-core-api --region us-east4 --project antiphony-core \
+  --to-revisions PREVIOUS_REVISION=100
+```
 
 ### Rotation
 
-Same order: add the new value at Cloudflare first, then update the secret and
-redeploy. There is a brief window where one side is ahead of the other, so
-rotate during low traffic. The middleware accepts a single value by design —
-multi-value parsing is not carried for a case that has not come up.
+Same shape, and audit mode is the reason it is not a leap: add the new value at
+Cloudflare, redeploy with `ANTIPHONY_ORIGIN_LOCK_AUDIT: "true"`, confirm the log
+says matching, then drop the flag. The middleware accepts a single value by
+design — multi-value parsing is not carried for a case that has not come up, and
+audit mode removes the need for it.

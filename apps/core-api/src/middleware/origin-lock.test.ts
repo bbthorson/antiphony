@@ -26,10 +26,12 @@ describe('originLock', () => {
     beforeEach(() => {
         __resetOriginLockWarning();
         delete process.env.ANTIPHONY_ORIGIN_SECRET;
+        delete process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT;
     });
 
     afterEach(() => {
         delete process.env.ANTIPHONY_ORIGIN_SECRET;
+        delete process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT;
     });
 
     describe('enforcing (secret set)', () => {
@@ -98,6 +100,49 @@ describe('originLock', () => {
                 headers: { [ORIGIN_LOCK_HEADER]: 'anything at all' },
             });
             expect(res.status).toBe(200);
+        });
+    });
+    describe('audit mode (secret set + ANTIPHONY_ORIGIN_LOCK_AUDIT)', () => {
+        beforeEach(() => {
+            process.env.ANTIPHONY_ORIGIN_SECRET = SECRET;
+            process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT = 'true';
+        });
+
+        it('allows a request that WOULD be refused, so enabling audit cannot 403', async () => {
+            // The whole point: turning the flag on is safe even when the
+            // Cloudflare rule is wrong. The log says so; the caller is served.
+            const res = await appWithLock().request('/api/v1/thing');
+            expect(res.status).toBe(200);
+        });
+
+        it('allows a request with a mismatched value', async () => {
+            const res = await appWithLock().request('/api/v1/thing', {
+                headers: { [ORIGIN_LOCK_HEADER]: 'b'.repeat(48) },
+            });
+            expect(res.status).toBe(200);
+        });
+
+        it('allows a correctly-headered request', async () => {
+            const res = await appWithLock().request('/api/v1/thing', {
+                headers: { [ORIGIN_LOCK_HEADER]: SECRET },
+            });
+            expect(res.status).toBe(200);
+        });
+
+        it('enforces again once the flag is dropped', async () => {
+            delete process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT;
+            const res = await appWithLock().request('/api/v1/thing');
+            expect(res.status).toBe(403);
+        });
+
+        it('treats values other than true/1 as OFF, so a typo cannot silently disable the lock', async () => {
+            // `ANTIPHONY_ORIGIN_LOCK_AUDIT=yes` must NOT leave the door open.
+            for (const raw of ['yes', 'audit', '', 'TRUE ']) {
+                process.env.ANTIPHONY_ORIGIN_LOCK_AUDIT = raw;
+                const res = await appWithLock().request('/api/v1/thing');
+                const expected = raw.trim().toLowerCase() === 'true' ? 200 : 403;
+                expect({ raw, status: res.status }).toEqual({ raw, status: expected });
+            }
         });
     });
 });
