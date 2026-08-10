@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { logger } from '../lib/logger.js';
+import { constantTimeEqual } from '../lib/constant-time.js';
 
 /**
  * Service-token registry for app (service-to-service) auth — the contract in
@@ -66,18 +66,6 @@ function parseAppTokensUncached(raw: string | undefined): ServiceApp[] {
         apps.push({ appId, token });
     }
     return apps;
-}
-
-/**
- * Constant-time string comparison. Hash both sides to fixed-length digests,
- * then compare with the native `crypto.timingSafeEqual` — this eliminates
- * timing leaks entirely (including length leaks) without relying on a
- * hand-rolled loop the JIT could optimize out of constant time.
- */
-function constantTimeEqual(a: string, b: string): boolean {
-    const aHash = createHash('sha256').update(a).digest();
-    const bHash = createHash('sha256').update(b).digest();
-    return timingSafeEqual(aHash, bHash);
 }
 
 /**

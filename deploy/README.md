@@ -317,3 +317,93 @@ gcloud run revisions list --service="$SERVICE" --region="$REGION" --project="$PR
 gcloud run services update-traffic "$SERVICE" --region="$REGION" --project="$PROJECT_ID" \
   --to-revisions=PREVIOUS_REVISION=100
 ```
+
+## Locking the origin to Cloudflare
+
+`api.antiphony.dev` goes through Cloudflare, but the Cloud Run default hostname
+`*.run.app` stays publicly reachable and answers the same routes — so the WAF,
+DDoS absorption, and bot rules are one hostname away from being skipped.
+
+`middleware/origin-lock.ts` closes that: every `/api/v1/*` request must carry a
+secret header Cloudflare injects at the edge. `/`, `/health`, and
+`/openapi.json` stay open on both hostnames on purpose — § 6's smoke test probes
+`/health` on a candidate revision's tag URL, which by definition is not yet
+behind Cloudflare.
+
+**Disabling the default URL would be a stronger lock and is deliberately not
+what this does.** `--no-default-url` removes the candidate tag URL too, and with
+it the pre-promotion gate that exists because boot is fail-closed on did:web
+resolution. Also note `--ingress=internal-and-cloud-load-balancing` is NOT an
+option here: Cloudflare reaches this service over the public internet via
+`ghs.googlehosted.com`, not a Google load balancer, so restricting ingress takes
+production down.
+
+### The order is load-bearing
+
+The enforcing side (Cloud Run) and the header-adding side (Cloudflare) cannot
+land atomically. **Set the secret before Cloudflare injects the header and every
+`/api/v1/*` request 403s** — the whole API, every tenant. The middleware fails
+OPEN when the var is absent precisely so these steps can be taken one at a time.
+
+**1. Generate a value and teach Cloudflare to send it.** In the dashboard:
+Rules → Transform Rules → Modify Request Header → *Set static* on the zone,
+header `x-antiphony-origin`, value below. Applies to all requests to this
+hostname, including the Cloud Tasks callbacks (they arrive via
+`api.antiphony.dev`, so they inherit it).
+
+```bash
+openssl rand -hex 32
+```
+
+**2. Verify Cloudflare is actually sending it before enforcing anything.** The
+lock is still open, so a wrong answer here costs nothing:
+
+```bash
+curl -s https://api.antiphony.dev/api/v1/audio | head -c 200   # still 400, lock open
+gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=antiphony-core-api AND jsonPayload.msg=~"origin-lock"' \
+  --project antiphony-core --limit 5 --freshness=10m --format='value(jsonPayload.msg)'
+```
+
+**3. Create the secret and grant the runtime SA access.**
+
+```bash
+printf '%s' '<the value from step 1>' | gcloud secrets create antiphony-origin-secret \
+  --data-file=- --project=antiphony-core
+
+gcloud secrets add-iam-policy-binding antiphony-origin-secret \
+  --member="serviceAccount:antiphony-core-api@antiphony-core.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor --project=antiphony-core
+```
+
+**4. Wire it and deploy.** Append to the `--set-secrets` list in
+`.github/workflows/deploy.yml`:
+
+```
+ANTIPHONY_ORIGIN_SECRET=antiphony-origin-secret:latest
+```
+
+Enforcement begins with that revision. The ref is intentionally absent until
+here — a `--set-secrets` entry for a secret that does not exist fails the
+deploy.
+
+### Verifying the lock
+
+Both must hold. Through Cloudflare still works; direct is refused:
+
+```bash
+curl -s -o /dev/null -w 'via cloudflare: %{http_code}\n' https://api.antiphony.dev/api/v1/audio
+curl -s -o /dev/null -w 'direct:         %{http_code}\n' \
+  "$(gcloud run services describe antiphony-core-api --region us-east4 --project antiphony-core --format='value(status.url)')/api/v1/audio"
+```
+
+Expect `400` (the route's own missing-param error, i.e. it got through) and
+`403`. A `403` on the first line means Cloudflare is not injecting the header —
+roll back by removing the `--set-secrets` entry and redeploying, then fix the
+Transform Rule.
+
+### Rotation
+
+Same order: add the new value at Cloudflare first, then update the secret and
+redeploy. There is a brief window where one side is ahead of the other, so
+rotate during low traffic. The middleware accepts a single value by design —
+multi-value parsing is not carried for a case that has not come up.
