@@ -145,7 +145,7 @@ jobs:
                     --project "${PROJECT_ID}" \
                     --service-account "${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}" \
                     --env-vars-file deploy/cloudrun.env.yaml \
-                    --set-secrets "ANTIPHONY_APP_TOKENS=antiphony-app-tokens:latest,SYSTEM_AUTH_TOKEN=system-auth-token:latest,ELEVENLABS_API_KEY=elevenlabs-api-key:latest" \
+                    --set-secrets "ANTIPHONY_APP_TOKENS=antiphony-app-tokens:latest,SYSTEM_AUTH_TOKEN=system-auth-token:latest,ELEVENLABS_API_KEY=elevenlabs-api-key:latest,ANTIPHONY_ORIGIN_SECRET=antiphony-origin-secret:latest" \
                     --min-instances 0 \
                     --max-instances 10 \
                     --cpu 1 \
