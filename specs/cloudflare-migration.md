@@ -856,9 +856,11 @@ What the beta framing removes:
   breaking production, and the hedge costs more than the risk.
 - **No jose phase at all.** Deleted with the dead routes.
 
-- **Step 1 — delete the dead `/system/*` routes.** Confirmed no caller. Takes
-  Firebase Auth, three collections, and three of five stragglers out of scope
-  before anything is ported. Cheapest step, largest reduction in every later one.
+- **Step 1 — delete the dead `/system/*` routes.** ✅ **Done 2026-08-16.** Six routes,
+  `UserService`, the `UserDependencies` port and binding, and `getAdminAuth()` are
+  gone; Firebase Auth is out of the service entirely and the `users` / `handles` /
+  `atproto_oauth_states` collections have no writer. The public OpenAPI surface is
+  byte-identical. Cheapest step, largest reduction in every later one.
 - **Step 2 — schema + adapters + R2, together.** Apply
   [`neon-schema.sql`](./neon-schema.sql), write the Postgres and R2 bindings behind
   the existing ports, one-shot the data across, verify CID round-trip stability.

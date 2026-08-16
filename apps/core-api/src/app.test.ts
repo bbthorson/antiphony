@@ -33,7 +33,6 @@ vi.mock('./lib/firebase-admin.js', () => ({
     getAdmin: () => ({
         firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
     }),
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({}),
     isUsingEmulator: () => false,
 }));

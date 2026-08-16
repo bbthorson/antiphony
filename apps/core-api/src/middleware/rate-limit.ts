@@ -22,9 +22,15 @@ import { errorEnvelope } from '../lib/error-envelope.js';
  * addresses collapse to 'unknown' so they can't share one bucket.
  *
  * The core check logic lives in `checkRateLimit(key, options, requestId?)` —
- * a callable function the middleware wraps, and which
- * `POST /api/v1/system/rate-limit/check` also reuses so a trusted sibling
- * service can rate-limit without depending on `firebase-admin` itself.
+ * a callable function the middleware wraps.
+ *
+ * It was also exposed over HTTP at `POST /api/v1/system/rate-limit/check`, so a
+ * sibling service could share these buckets without depending on
+ * `firebase-admin` itself. That route is **gone**: the Vox Pop BFF serves its
+ * own check endpoint now (Stream 4 F7 G2) and nothing external shared the
+ * buckets any more. The function stays — it is what every `rateLimit(...)`
+ * below calls in-process — but the buckets are now private to this service,
+ * which is what makes moving them off Firestore a local decision.
  */
 
 export interface RateLimitOptions {
@@ -81,10 +87,10 @@ export interface CheckRateLimitResult {
 /**
  * Run a rate-limit check against the `rate_limits/{key}` doc in Firestore.
  *
- * Pure function — no Hono context binding. Used by:
- *   - The `rateLimit(...)` middleware factory below.
- *   - `POST /api/v1/system/rate-limit/check`, so a trusted sibling service can
- *     rate-limit against the same buckets without depending on `firebase-admin`.
+ * Pure function — no Hono context binding. Used by the `rateLimit(...)`
+ * middleware factory below. (It previously also backed
+ * `POST /api/v1/system/rate-limit/check`; that route was removed once the BFF
+ * began serving its own.)
  *
  * @param key — the Firestore doc id under `rate_limits/`. Typically
  *              `ratelimit_<ip>` or a custom key set by the caller.

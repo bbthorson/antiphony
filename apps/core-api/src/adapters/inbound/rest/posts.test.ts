@@ -27,7 +27,6 @@ vi.mock('../../../lib/idempotency.js', () => ({
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({ collection: () => ({ doc: () => ({}) }) }),
     getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({}),
     isUsingEmulator: () => false,
 }));

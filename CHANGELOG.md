@@ -8,6 +8,36 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Removed
+
+- **Six `/api/v1/system/*` endpoints**, all of them dead code with no caller:
+  `POST /system/auth/mint-session-cookie`, `PUT /system/users/{uid}/bluesky-identity`,
+  `POST /system/atproto/signin`, `GET|PUT|DELETE /system/atproto-state/{key}`,
+  `GET|PUT|DELETE /system/atproto-session/{key}`, and
+  `POST /system/rate-limit/check`.
+
+  Each had been re-homed in the Vox Pop BFF (its Stream 4 F7 A1/A2/G1/G2), and the
+  `CORE_API_BASE_URL` fallback that was the last live path back here was retired on
+  that side in E2. `POST /api/v1/system/process-audio` — the queue callback — is
+  unaffected and remains the only `/system/*` route.
+
+  Removed with them: `UserService`, the `UserDependencies` port and its Firebase
+  binding, `getAdminAuth()`, and the last Firebase Auth usage in the service
+  (`createCustomToken`, `createUser`, `deleteUser`, `createSessionCookie`).
+  **Antiphony no longer stores a user record** — the `users`, `handles`, and
+  `atproto_oauth_states` collections have no writer. Authorship remains the opaque
+  `authorId` / `authorDid` facets on a post, unchanged.
+
+  **The contract version does not move.** These routes were deliberately plain-Hono
+  and never appeared in the OpenAPI document, so `openapi.json` and
+  `openapi.surface.json` are byte-identical across the change and no OpenAPI consumer
+  observes anything. Recorded here anyway because endpoints were removed from the
+  running service, which is notable to an operator even when it is invisible to the
+  documented surface. See [`specs/core-bff-boundary.md`](./specs/core-bff-boundary.md)
+  § Surface disposition.
+
 ## [0.4.0] — 2026-07-18
 
 The hydrated audio embed now describes the audio it actually plays. **Minor

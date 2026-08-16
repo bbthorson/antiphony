@@ -6,12 +6,6 @@ import { errorHandler } from './middleware/error-handler.js';
 import { postsRoute } from './adapters/inbound/rest/posts.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
-import { rateLimitCheckRoute } from './adapters/inbound/rest/rate-limit-check.js';
-import { systemAtprotoStateRoute } from './adapters/inbound/rest/system-atproto-state.js';
-import { systemAtprotoSessionRoute } from './adapters/inbound/rest/system-atproto-session.js';
-import { systemAuthMintRoute } from './adapters/inbound/rest/system-auth-mint.js';
-import { systemBlueskyIdentityRoute } from './adapters/inbound/rest/system-bluesky-identity.js';
-import { systemAtprotoSigninRoute } from './adapters/inbound/rest/system-atproto-signin.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { originLock } from './middleware/origin-lock.js';
 
@@ -119,14 +113,13 @@ export function app(): OpenAPIHono {
     // precedence — Hono dispatches by registration order.
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
-    // System-auth'd rate-limit check for trusted sibling services (e.g. the
-    // Vox Pop BFF) so they can rate-limit without touching Firestore directly.
-    a.route('/api/v1/system/rate-limit', rateLimitCheckRoute);
-    a.route('/api/v1/system/atproto-state', systemAtprotoStateRoute);
-    a.route('/api/v1/system/atproto-session', systemAtprotoSessionRoute);
-    a.route('/api/v1/system/auth', systemAuthMintRoute);
-    a.route('/api/v1/system/users', systemBlueskyIdentityRoute);
-    a.route('/api/v1/system/atproto', systemAtprotoSigninRoute);
+    // The queue/Cloud Tasks callback — the only remaining `/system/*` route.
+    //
+    // Six others were removed in the dead-route sweep: the OAuth state and
+    // session stores, DID→uid signin, bluesky-identity, session-cookie minting,
+    // and the rate-limit check. Every one had been re-homed in the Vox Pop BFF
+    // (Stream 4 F7 A1/A2/G1/G2) and had no caller left. See
+    // specs/core-bff-boundary.md § Surface disposition.
     a.route('/api/v1/system/process-audio', systemProcessAudioRoute);
 
     // 6. OpenAPI document — served at `/openapi.json`. Only routes

@@ -136,7 +136,6 @@ const BLOB_BYTES = Buffer.from([1, 2, 3, 4]);
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => db,
     getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({
         bucket: () => ({
             name: 'test-bucket',

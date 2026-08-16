@@ -7,12 +7,13 @@ composing against this seam over HTTP. Retained as the decision record: the prin
 table and the join contract are the durable value; the "What B3 executes" / "Coupled
 BFF work" sections are historical now that both sides shipped.
 
-> ⚠️ **This doc previously claimed the `/system/atproto-*` + `/system/auth` block was
-> removed from core. It was not** — see § Surface disposition. The BFF's *dependency*
-> on those routes was removed; the routes are still mounted and now have no caller.
-> The public trim (`/users/*`, `/resolve/*`, `/atproto/disconnect`) did fully execute.
-> Corrected while investigating [`cloudflare-migration.md`](./cloudflare-migration.md),
-> where deleting them is step 1.
+> ⚠️ **This doc claimed the `/system/atproto-*` + `/system/auth` block was removed
+> from core for roughly six weeks while it was still mounted** — see § Surface
+> disposition, which keeps the record rather than quietly erasing it. The BFF's
+> *dependency* on those routes had been removed; the routes had not. They are now
+> genuinely deleted, along with `UserService` and the last Firebase Auth usage.
+> The public trim (`/users/*`, `/resolve/*`, `/atproto/disconnect`) had fully executed
+> all along.
 
 Companion to
 [`service-auth.md`](./service-auth.md) (the auth half), [`docs-content-scope.md`](./docs-content-scope.md)
@@ -55,14 +56,15 @@ fields; the BFF never sends core a profile.
 
 - `POST/GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`
 - `GET /api/v1/audio`, `POST /api/v1/audio/upload`
-- ~~`POST /api/v1/system/rate-limit`~~ — **also caller-less as of 2026-08-16.** Listed
-  here as a service-to-service helper so the BFF could rate-limit without touching
-  Firestore; Stream 4 F7 **G2** moved the check endpoint onto the Vox Pop BFF, which
-  now serves it itself (`packages/bff-client/rate-limit.ts` resolves only
-  `VOXPOP_API_BASE_URL`). The route joins the four below as dead code.
-  **Note the distinction:** the *route* has no caller, but `checkRateLimit()` — the
-  function behind it — is still what every `rateLimit(...)` middleware in core calls
-  in-process. The function stays; only the HTTP surface goes.
+- ~~`POST /api/v1/system/rate-limit`~~ — **removed 2026-08-16.** Listed here as a
+  service-to-service helper so the BFF could rate-limit without touching Firestore;
+  Stream 4 F7 **G2** moved the check endpoint onto the Vox Pop BFF, which serves it
+  itself (`packages/bff-client/rate-limit.ts` resolves only `VOXPOP_API_BASE_URL`),
+  leaving this one caller-less. Deleted with the block below.
+  **Note the distinction:** the *route* is gone, but `checkRateLimit()` — the function
+  behind it — is still what every `rateLimit(...)` middleware in core calls in-process.
+  The function stays; only the HTTP surface went. A useful side effect: nothing external
+  shares these buckets any more, so where they live became a purely internal decision.
 
 *(The `/api/v1/actors/*` mapping this doc originally listed here was removed — see the superseding note at the top; attribution is now the per-request `authorId` / `authorDid` on posts.)*
 
@@ -76,14 +78,18 @@ fields; the BFF never sends core a profile.
   keeps handle only as a non-authoritative display snapshot; see below).
 - `POST /api/v1/atproto/disconnect` — mutates the user profile's linked identity.
 
-**Re-homed in the BFF, but ⚠️ NOT YET removed from core** (corrected 2026-08-16):
+**Re-homed in the BFF — ✅ now actually removed from core** (2026-08-16):
 
-These four were listed above as removed. They are not — all four are still mounted in
-[`app.ts`](../apps/core-api/src/app.ts), and no removal commit exists in their history.
-What actually happened is narrower and worth stating precisely, because the two states
-look identical from the Vox Pop side and are opposite problems here:
+⚠️ **These were listed as removed for roughly six weeks while still mounted.** The
+claim was made when Vox Pop finished re-homing them, but the two states look identical
+from that side and are opposite problems here:
 
 > The BFF's **dependency on** these routes was removed. The routes themselves were not.
+
+The distinction is recorded rather than quietly fixed because it is the failure mode
+this doc is most prone to: a boundary is only half-moved when one side stops calling,
+and marking it done at that point leaves dead privileged endpoints serving. They are
+now genuinely deleted from [`app.ts`](../apps/core-api/src/app.ts) and the tree.
 
 - `POST /api/v1/system/auth/mint-session-cookie` — end-user session machinery.
 - `PUT /api/v1/system/users/{uid}/bluesky-identity` — profile-identity mutation; the BFF owns identity linking.
@@ -98,12 +104,18 @@ live path back to core — was **retired in E2**; nothing in that repo resolves 
 Vox Pop has since moved past the surface entirely, verifying Ed25519 session JWTs
 against its own JWKS.
 
-So these are **dead code with no caller**, not a boundary still being negotiated. They
-are also, incidentally, 100% of core's remaining Firebase Auth usage
-(`createCustomToken`, `createUser`, `deleteUser`, `createSessionCookie`) and the sole
-owners of the `users`, `handles`, and `atproto_oauth_states` collections — which is why
-deleting them is the first step of
-[`cloudflare-migration.md`](./cloudflare-migration.md) rather than a tidy-up.
+They were 100% of core's remaining **Firebase Auth** usage (`createCustomToken`,
+`createUser`, `deleteUser`, `createSessionCookie`) and the sole owners of the `users`,
+`handles`, and `atproto_oauth_states` collections — which is why deleting them was the
+first step of [`cloudflare-migration.md`](./cloudflare-migration.md) rather than a
+tidy-up. Gone with them: `UserService`, the `UserDependencies` port, its Firebase
+binding, and `getAdminAuth()`. **Antiphony now holds no user record at all** —
+authorship is the opaque `authorId` facet on a post and nothing more, which is exactly
+what the principle table above describes.
+
+The public API surface is byte-identical across the deletion (`openapi.json` and
+`openapi.surface.json` both unchanged), confirming these were always outside the
+documented contract.
 
 Rationale for the whole `/system/atproto-*` + `/system/auth` block: the OAuth ceremony is
 product UX tied to the calling app's origin (its callback URL is registered with the PDS),

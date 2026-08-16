@@ -61,7 +61,6 @@ const db = {
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => db,
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({ bucket: () => ({ name: 'test-bucket' }) }),
     isUsingEmulator: () => false,
 }));

@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     StorageService: { uploadFile: vi.fn() },
-    userService: {},
     audioPostService: {},
 }));
 
@@ -27,7 +26,6 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdmin: () => ({
         firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
     }),
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({}),
     isUsingEmulator: () => false,
 }));
