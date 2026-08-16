@@ -7,6 +7,87 @@ Auth pieces.
 This is an assessment, not a plan of record. It says what ports cleanly, what does
 not, and what the two genuine blockers are. Nothing here is committed to.
 
+## Status — read this first
+
+**Last updated 2026-08-16.** This document is long because it is the reasoning
+record. This section is the operational state.
+
+### Landed on master
+
+| PR | What |
+| :--- | :--- |
+| #81 | This investigation |
+| #83 | Six dead `/system/*` routes + the user-identity layer deleted; Firebase Auth gone |
+| #86 | Storage ports (`RateLimitStore`, `IdempotencyStore`, `SqlClient`) + all four Postgres bindings, tested against real PG18 via PGlite |
+| #87 | R2 blob store; audio proxy streams instead of 302-ing (contract `0.5.0`) |
+
+### In flight
+
+**#89 — step 3a, the composition root.** Also carries three things that missed
+the #87 merge: `neonSqlClient`, the `ANTIPHONY_R2_BUCKET` config, and
+`scripts/migrate-firestore-to-neon.ts`. Rebased on master and mergeable.
+
+### Remaining engineering
+
+- **3b — Worker entry + wrangler.** `export default { fetch, queue, scheduled }`
+  replacing `serve()`; delete `src/index.ts` and `lib/shutdown.ts`. Root
+  `wrangler.jsonc` becomes multi-worker (it is the docs assets Worker today, and
+  its header comment "Nothing in this file touches [core-api]" stops being true).
+  Bindings: R2 `BLOBS` → `antiphony-r2-bucket`, `HYPERDRIVE`, `PROCESSING_QUEUE`.
+  **Smart Placement on from the first deploy** — see § Geography.
+- **3c — Queues.** `dispatch()` → `env.PROCESSING_QUEUE.send(job)`; consumer is
+  `queue(batch, env)` calling the same `AudioProcessingService.process`. Keep
+  `POST /api/v1/system/process-audio` as manual re-drive. **Re-derive
+  `PROCESSING_LEASE_MS`**: a Queue consumer's ceiling is 15 min and the lease is
+  15 min, so they are now exactly equal with no margin (§ Cloud Tasks → Queues).
+- **3d — Boot gate + origin lock.** Four mechanisms, designed in § The boot gate:
+  CI deploy gate, lazy per-tenant validation folded into the auth middleware, a
+  cache distinguishing disproof from unreachability, an hourly drift cron. Delete
+  `originLock()` and `ANTIPHONY_ORIGIN_SECRET` — there is no origin to bypass on
+  Workers.
+- **3e — `rate_limits` → Durable Object.** The Postgres table is a bridge. Nothing
+  external shares those buckets any more (#83), so this is now a purely internal
+  decision.
+- **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
+  Antiphony, add `format`, move `trim`/`waveform` onto it. **Pace is not ours** —
+  it sits on a live Twilio path mid-cutover. See § The ffmpeg problem and
+  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+
+### Remaining operational — none of it blocked on code
+
+1. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
+2. **Set `ANTIPHONY_PUBLIC_BASE_URL`** before any deploy of `0.5.0`. Without it,
+   posts with audio hydrate without an embed (§ 2c).
+3. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
+   with `Storage Object Viewer` + `storage.buckets.get`.
+4. **Dry-run then run the records migration.** `npm run migrate:firestore-to-neon
+   -w @antiphony/core-api -- --dry-run`. Worth doing early regardless: it
+   validates every Firestore record against the current schemas and reports
+   pre-existing bad rows without writing.
+5. **Cut over** by setting `DATABASE_URL` / binding `BLOBS`. `/health` reports
+   which backend is live. Rollback is unsetting them.
+
+### Open questions
+
+1. **Rendition rate-limit key.** `GET /api/v1/audio` is IP-keyed at 60/min and
+   Twilio fetches from a small IP pool, so every concurrent call would share a
+   handful of buckets. Blocks the telephony cutover, not the migration.
+2. **`audio-rendition` region.** It is `us-east4`, next to both Neon (`us-east-1`)
+   and wherever Smart Placement parks the Worker. Confirm that is deliberate.
+3. **A migration tool.** `db/schema.sql` is apply-once DDL, not a versioned
+   chain. The first post-deploy schema change is when that stops being fine.
+
+### Two things most likely to bite
+
+- **The edge makes database reads slower**, not faster — Workers run near the
+  user, Neon is single-region `us-east-1`, and the current Cloud Run deployment
+  is already co-located with it. Smart Placement + Hyperdrive are both required,
+  and the regression is invisible when testing from the US east coast.
+- **The TTL sweep has no scheduler until 3b.** `antiphony_sweep_expired()` ships
+  with the schema but nothing calls it until the Worker's cron exists. Harmless
+  at beta volume (it is pure space reclamation) and the reason no interim
+  scheduler was built — but it is a thing that silently does not happen.
+
 ## Verdict
 
 The architecture was built for this. `packages/core` has zero Firebase imports by
