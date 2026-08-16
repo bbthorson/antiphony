@@ -1,0 +1,212 @@
+/**
+ * One-shot migration: Firestore records → Neon.
+ *
+ *     DATABASE_URL=postgres://…  \
+ *     GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
+ *     npm run migrate:firestore-to-neon -w @antiphony/core-api -- --dry-run
+ *
+ * ## Scope: records only. Blobs are NOT copied here.
+ *
+ * The audio bytes move with **Cloudflare Super Slurper** (R2 → Data Migration in
+ * the dashboard), which copies GCS → R2 natively given a read-only service
+ * account. It handles resumption, parallelism and verification far better than
+ * a bespoke loop would, and it needs no R2 credentials on this side — so
+ * writing that loop would be strictly worse code doing a strictly worse job.
+ *
+ * Object paths are unchanged across the copy (`blobs/{originAppId}/{cid}`), so
+ * nothing in the records needs rewriting to point at the new bucket. That is a
+ * property of content addressing, and it is why these two halves are
+ * independent and can run in either order.
+ *
+ * ## It verifies itself, because the failure mode is silent
+ *
+ * Every migrated post is read back and its CID recomputed. `jsonb` stores
+ * numbers as `numeric`, which is wider than JS — a coercion would change the
+ * record and therefore its CID, invalidating every StrongRef pointing at it
+ * without erroring anywhere. A post-migration audit would not catch it either,
+ * because both sides would agree with themselves.
+ *
+ * This is covered by unit tests against PGlite, but those use records this
+ * repository authored. Real data is the only thing that exercises real data, so
+ * the check runs on every row and the script exits non-zero if any row drifts.
+ *
+ * ## Safe to re-run
+ *
+ * Every write is an upsert keyed on the record's own id, so a partial run
+ * resumes by simply running again. Nothing is deleted from Firestore — cutover
+ * is a config change, and rollback is pointing back at the old binding.
+ */
+
+import { getAdminDb } from '../src/lib/firebase-admin.js';
+import { neonSqlClient, neonConnectionString } from '../src/adapters/outbound/postgres/client.js';
+import { postgresAudioPostDependencies } from '../src/adapters/outbound/postgres/audio-posts-dependencies.js';
+import { postgresAudioProcessingDependencies } from '../src/adapters/outbound/postgres/audio-processing-dependencies.js';
+import { cidForRecord } from '../src/lib/cid.js';
+import {
+    AudioPostRecordSchema,
+    TranscriptEnrichmentRecordSchema,
+} from 'shared/types/audio';
+import { COLLECTIONS, NSID } from 'shared/nsid';
+
+const DRY_RUN = process.argv.includes('--dry-run');
+/** Firestore page size. Small enough to keep memory flat on a large collection. */
+const PAGE = 200;
+
+interface Tally {
+    read: number;
+    written: number;
+    invalid: number;
+    cidDrift: number;
+}
+
+const posts: Tally = { read: 0, written: 0, invalid: 0, cidDrift: 0 };
+const transcripts: Tally = { read: 0, written: 0, invalid: 0, cidDrift: 0 };
+
+function log(...args: unknown[]): void {
+    console.log('[migrate]', ...args);
+}
+
+/**
+ * Page a Firestore collection by document id.
+ *
+ * Ordered by `__name__` rather than `createdAt` because this must visit every
+ * document exactly once: a createdAt-ordered scan can skip or repeat rows if
+ * two documents share a timestamp, and unlike the read path there is no second
+ * sort key available on every collection.
+ */
+async function* pages(collection: string): AsyncGenerator<FirebaseFirestore.QueryDocumentSnapshot[]> {
+    const db = getAdminDb();
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+    for (;;) {
+        let q = db.collection(collection).orderBy('__name__').limit(PAGE);
+        if (cursor) q = q.startAfter(cursor);
+        const snap = await q.get();
+        if (snap.empty) return;
+        yield snap.docs;
+        if (snap.docs.length < PAGE) return;
+        cursor = snap.docs[snap.docs.length - 1];
+    }
+}
+
+async function migratePosts(sql: ReturnType<typeof neonSqlClient>): Promise<void> {
+    const deps = postgresAudioPostDependencies(sql);
+
+    for await (const docs of pages(COLLECTIONS[NSID.AudioPost])) {
+        for (const doc of docs) {
+            posts.read++;
+            const parsed = AudioPostRecordSchema.safeParse({ id: doc.id, ...doc.data() });
+            if (!parsed.success) {
+                // Reported, not fatal: a record that fails validation would
+                // already be skipped by the READ path today, so it is not
+                // serving traffic and blocking the migration on it helps
+                // nobody. It does need a human to look at it.
+                posts.invalid++;
+                console.error(
+                    `[migrate] INVALID post ${doc.id}:`,
+                    JSON.stringify(parsed.error.issues),
+                );
+                continue;
+            }
+            const record = parsed.data;
+            if (DRY_RUN) continue;
+
+            await deps.savePost(record);
+            posts.written++;
+
+            // Read back and re-encode. The whole point of doing this inline
+            // rather than as a later audit is that a drift found now is one
+            // record to investigate; found later it is an unknown subset.
+            const readBack = await deps.getPostById(record.originAppId, record.id);
+            if (!readBack) {
+                posts.cidDrift++;
+                console.error(`[migrate] post ${record.id} did not read back after write`);
+                continue;
+            }
+            const before = await cidForRecord(
+                JSON.parse(JSON.stringify(record)) as Record<string, unknown>,
+            );
+            const after = await cidForRecord(
+                JSON.parse(JSON.stringify(readBack)) as Record<string, unknown>,
+            );
+            if (before !== after) {
+                posts.cidDrift++;
+                console.error(
+                    `[migrate] CID DRIFT on post ${record.id}: ${before} -> ${after}`,
+                );
+            }
+        }
+        log(`posts: ${posts.read} read, ${posts.written} written`);
+    }
+}
+
+async function migrateTranscripts(sql: ReturnType<typeof neonSqlClient>): Promise<void> {
+    const deps = postgresAudioProcessingDependencies(sql);
+
+    for await (const docs of pages(COLLECTIONS[NSID.AudioTranscript])) {
+        for (const doc of docs) {
+            transcripts.read++;
+            const parsed = TranscriptEnrichmentRecordSchema.safeParse({
+                id: doc.id,
+                ...doc.data(),
+            });
+            if (!parsed.success) {
+                transcripts.invalid++;
+                console.error(
+                    `[migrate] INVALID transcript ${doc.id}:`,
+                    JSON.stringify(parsed.error.issues),
+                );
+                continue;
+            }
+            if (DRY_RUN) continue;
+            // Upsert is keyed on subject_uri, so two Firestore transcripts for
+            // one post collapse to the last one written — which is the
+            // documented contract the old store could not enforce. Worth
+            // knowing if the counts come out lower than the read count.
+            await deps.saveTranscript(parsed.data);
+            transcripts.written++;
+        }
+        log(`transcripts: ${transcripts.read} read, ${transcripts.written} written`);
+    }
+}
+
+async function main(): Promise<void> {
+    const conn = neonConnectionString();
+    if ('missing' in conn) {
+        console.error(`[migrate] ${conn.missing} is not set`);
+        process.exit(1);
+    }
+    if (DRY_RUN) log('DRY RUN — reading and validating, writing nothing');
+
+    const sql = neonSqlClient(conn.url);
+
+    await migratePosts(sql);
+    await migrateTranscripts(sql);
+
+    log('---');
+    log('posts      ', JSON.stringify(posts));
+    log('transcripts', JSON.stringify(transcripts));
+    log('---');
+    log('Blobs are NOT migrated by this script — use Super Slurper (R2 > Data');
+    log('Migration in the dashboard). Object paths are unchanged, so records');
+    log('need no rewriting and the two halves can run in either order.');
+
+    const drift = posts.cidDrift + transcripts.cidDrift;
+    if (drift > 0) {
+        console.error(
+            `[migrate] FAILED: ${drift} record(s) changed CID through the round trip. ` +
+                'Do NOT cut over — every StrongRef pointing at those records would be wrong.',
+        );
+        process.exit(1);
+    }
+    const invalid = posts.invalid + transcripts.invalid;
+    if (invalid > 0) {
+        // Exit 0: these are pre-existing bad rows the read path already skips,
+        // so they are not a migration failure. Loud enough not to be missed.
+        log(`NOTE: ${invalid} record(s) failed validation and were skipped (see above).`);
+    }
+}
+
+main().catch((err) => {
+    console.error('[migrate] fatal', err);
+    process.exit(1);
+});

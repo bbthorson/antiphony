@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
-import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
+import { servicesFor } from '../../../composition.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
@@ -100,7 +100,7 @@ app.openapi(proxyRoute, async (c) => {
     // it is what this endpoint's own OpenAPI description has always claimed to
     // take — the code only ever handled URLs, so this closes that gap rather
     // than widening the contract.
-    const objectPath = StorageService.extractObjectPath(audioUrl) ?? bareObjectPath(audioUrl);
+    const objectPath = servicesFor(c.env).storage.extractObjectPath(audioUrl) ?? bareObjectPath(audioUrl);
     if (!objectPath) {
         return c.json(errorEnvelope(c, 'Invalid audio URL'), 400);
     }
@@ -116,7 +116,7 @@ app.openapi(proxyRoute, async (c) => {
     // multi-range header falls through to a normal 200.
     const range = parseRange(c.req.header('range'));
 
-    const read = await StorageService.openStream(objectPath, range ?? undefined);
+    const read = await servicesFor(c.env).storage.openStream(objectPath, range ?? undefined);
     if (!read) {
         return c.json(errorEnvelope(c, 'Audio not found'), 404);
     }

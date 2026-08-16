@@ -7,13 +7,13 @@ import type { AudioPostRecord } from 'shared/types/audio';
 vi.mock('../../../lib/app-did.js', () => ({
     getAppDid: () => 'did:web:example.com',
 }));
-vi.mock('../firebase/core-services-firebase.js', () => ({
-    StorageService: {
-        getSignedUrl: async () => 'https://signed.example/audio',
-        download: async () => null,
-        uploadFile: async () => undefined,
-    },
-}));
+/** Storage is a constructor argument now, so the binding takes a stub directly. */
+const storage = {
+    uploadFile: async () => 'r2://test/x',
+    openStream: async () => null,
+    download: async () => null,
+    extractObjectPath: () => null,
+};
 
 /**
  * Postgres `AudioProcessingDependencies` against real Postgres 18 (PGlite).
@@ -49,7 +49,7 @@ describe('postgresAudioProcessingDependencies', () => {
 
     beforeAll(async () => {
         db = await createTestDatabase();
-        deps = postgresAudioProcessingDependencies(db);
+        deps = postgresAudioProcessingDependencies(db, storage);
         posts = postgresAudioPostDependencies(db);
     });
     afterAll(async () => db.close());

@@ -7,6 +7,87 @@ Auth pieces.
 This is an assessment, not a plan of record. It says what ports cleanly, what does
 not, and what the two genuine blockers are. Nothing here is committed to.
 
+## Status — read this first
+
+**Last updated 2026-08-16.** This document is long because it is the reasoning
+record. This section is the operational state.
+
+### Landed on master
+
+| PR | What |
+| :--- | :--- |
+| #81 | This investigation |
+| #83 | Six dead `/system/*` routes + the user-identity layer deleted; Firebase Auth gone |
+| #86 | Storage ports (`RateLimitStore`, `IdempotencyStore`, `SqlClient`) + all four Postgres bindings, tested against real PG18 via PGlite |
+| #87 | R2 blob store; audio proxy streams instead of 302-ing (contract `0.5.0`) |
+
+### In flight
+
+**#89 — step 3a, the composition root.** Also carries three things that missed
+the #87 merge: `neonSqlClient`, the `ANTIPHONY_R2_BUCKET` config, and
+`scripts/migrate-firestore-to-neon.ts`. Rebased on master and mergeable.
+
+### Remaining engineering
+
+- **3b — Worker entry + wrangler.** `export default { fetch, queue, scheduled }`
+  replacing `serve()`; delete `src/index.ts` and `lib/shutdown.ts`. Root
+  `wrangler.jsonc` becomes multi-worker (it is the docs assets Worker today, and
+  its header comment "Nothing in this file touches [core-api]" stops being true).
+  Bindings: R2 `BLOBS` → `antiphony-r2-bucket`, `HYPERDRIVE`, `PROCESSING_QUEUE`.
+  **Smart Placement on from the first deploy** — see § Geography.
+- **3c — Queues.** `dispatch()` → `env.PROCESSING_QUEUE.send(job)`; consumer is
+  `queue(batch, env)` calling the same `AudioProcessingService.process`. Keep
+  `POST /api/v1/system/process-audio` as manual re-drive. **Re-derive
+  `PROCESSING_LEASE_MS`**: a Queue consumer's ceiling is 15 min and the lease is
+  15 min, so they are now exactly equal with no margin (§ Cloud Tasks → Queues).
+- **3d — Boot gate + origin lock.** Four mechanisms, designed in § The boot gate:
+  CI deploy gate, lazy per-tenant validation folded into the auth middleware, a
+  cache distinguishing disproof from unreachability, an hourly drift cron. Delete
+  `originLock()` and `ANTIPHONY_ORIGIN_SECRET` — there is no origin to bypass on
+  Workers.
+- **3e — `rate_limits` → Durable Object.** The Postgres table is a bridge. Nothing
+  external shares those buckets any more (#83), so this is now a purely internal
+  decision.
+- **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
+  Antiphony, add `format`, move `trim`/`waveform` onto it. **Pace is not ours** —
+  it sits on a live Twilio path mid-cutover. See § The ffmpeg problem and
+  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+
+### Remaining operational — none of it blocked on code
+
+1. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
+2. **Set `ANTIPHONY_PUBLIC_BASE_URL`** before any deploy of `0.5.0`. Without it,
+   posts with audio hydrate without an embed (§ 2c).
+3. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
+   with `Storage Object Viewer` + `storage.buckets.get`.
+4. **Dry-run then run the records migration.** `npm run migrate:firestore-to-neon
+   -w @antiphony/core-api -- --dry-run`. Worth doing early regardless: it
+   validates every Firestore record against the current schemas and reports
+   pre-existing bad rows without writing.
+5. **Cut over** by setting `DATABASE_URL` / binding `BLOBS`. `/health` reports
+   which backend is live. Rollback is unsetting them.
+
+### Open questions
+
+1. **Rendition rate-limit key.** `GET /api/v1/audio` is IP-keyed at 60/min and
+   Twilio fetches from a small IP pool, so every concurrent call would share a
+   handful of buckets. Blocks the telephony cutover, not the migration.
+2. **`audio-rendition` region.** It is `us-east4`, next to both Neon (`us-east-1`)
+   and wherever Smart Placement parks the Worker. Confirm that is deliberate.
+3. **A migration tool.** `db/schema.sql` is apply-once DDL, not a versioned
+   chain. The first post-deploy schema change is when that stops being fine.
+
+### Two things most likely to bite
+
+- **The edge makes database reads slower**, not faster — Workers run near the
+  user, Neon is single-region `us-east-1`, and the current Cloud Run deployment
+  is already co-located with it. Smart Placement + Hyperdrive are both required,
+  and the regression is invisible when testing from the US east coast.
+- **The TTL sweep has no scheduler until 3b.** `antiphony_sweep_expired()` ships
+  with the schema but nothing calls it until the Worker's cron exists. Harmless
+  at beta volume (it is pure space reclamation) and the reason no interim
+  scheduler was built — but it is a thing that silently does not happen.
+
 ## Verdict
 
 The architecture was built for this. `packages/core` has zero Firebase imports by
@@ -379,7 +460,13 @@ The poisoning defence that `audio-rendition` needs a bucket pin for disappears h
 the path is composed from a tenant-scoped source CID the service resolved itself, and
 only Antiphony can write to it.
 
-### Transcode on demand — decided
+### Transcode on demand — superseded for `mp3`
+
+> **[`mp3-rendition-stage.md`](./mp3-rendition-stage.md) is the decision of
+> record for the `mp3` rendition**, and it chose an eager per-tenant opt-in
+> stage. What follows describes the on-demand path, which still applies to any
+> format with no opt-in stage behind it — the two compose: a pre-generated
+> rendition is a cache hit, and everything else transcodes on first ask.
 
 **No eager rendition stage in the processing pipeline.** Transcode when a requesting
 service first asks, then cache. Renditions stay out of `PROCESSING_STAGES` entirely,
@@ -839,6 +926,64 @@ converts the rest of the migration from a rewrite into a set of adapter swaps.
   environments needs per-app configs — and the file's own header comment ("Nothing in
   this file touches [core-api]") stops being true.
 
+## Secrets: where each credential lives, and where it must not
+
+Worth stating explicitly because the obvious answer is wrong in one place. R2
+bucket: **`antiphony-r2-bucket`**, one bucket with two prefixes (`blobs/` and
+`renditions/`).
+
+| Consumer | Holds | Notes |
+| :--- | :--- | :--- |
+| Worker secrets | `SYSTEM_AUTH_TOKEN`, `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY` | **Not** the database. **Not** R2. |
+| Hyperdrive resource | the Neon connection string | `wrangler hyperdrive create` |
+| Rendition service (Cloud Run) | R2 **S3 API** key + secret, `SYSTEM_AUTH_TOKEN` | The only place a stored R2 key is unavoidable |
+| An operator's shell / CI | Neon connection string; a read-only GCS service account | Schema apply + migration only |
+
+**The database does not belong in a Worker secret.** With Hyperdrive the
+connection string lives on the Hyperdrive resource and the Worker reads
+`env.HYPERDRIVE.connectionString` — a local pooled string, not the Neon
+credential. `wrangler secret put DATABASE_URL` is the move only if Hyperdrive is
+skipped, and § Geography argues it should not be.
+
+**R2 needs no credential in the Worker at all.** Binding-based authorisation is
+why the R2 blob store has no signing code — and why dropping `getSignedUrl` made
+the binding simpler rather than harder. The Cloud Run rendition service is the
+exception, because it runs outside the Workers runtime and cannot hold a binding.
+
+**Cloudflare secrets are write-only from outside.** Nothing reads one back, which
+is exactly why the schema apply and the data migration cannot use them: those run
+in a shell, against Firestore and Neon, with no Worker involved.
+
+## Step 2d — the migration runbook
+
+Two independent halves. **Object paths are unchanged across the move**
+(`blobs/{originAppId}/{cid}`), so no record needs rewriting to point at the new
+bucket — a property of content addressing, and the reason these can run in
+either order or concurrently.
+
+**Blobs — Cloudflare Super Slurper, no code.** R2 → Data Migration in the
+dashboard copies GCS → R2 natively, given a service account with
+`Storage Object Viewer` plus `storage.buckets.get`. It handles resumption,
+parallelism and verification better than a bespoke loop would, and needs no R2
+credential on our side. Objects over 1 TB are skipped; nothing here approaches
+that (the upload route caps at 25 MB).
+
+**Records — `npm run migrate:firestore-to-neon -w @antiphony/core-api`.** Run by
+an operator with `DATABASE_URL` and `GOOGLE_APPLICATION_CREDENTIALS` in the
+environment. `--dry-run` reads and validates without writing.
+
+It **verifies itself**: every migrated post is read back and its CID recomputed,
+and the script exits non-zero on any drift. That check is inline rather than a
+later audit because the failure is silent — `jsonb` stores numbers as `numeric`,
+wider than JS, so a coercion would change a record and invalidate every
+StrongRef pointing at it while both sides continued to agree with themselves. A
+drift caught during the run is one record to investigate; caught afterwards it is
+an unknown subset.
+
+Re-running is safe: every write is an upsert keyed on the record's own id, so a
+partial run resumes by running again. Nothing is deleted from Firestore —
+cutover is a config change and rollback is pointing back at the old binding.
+
 ## Sequencing
 
 **Revised 2026-08-16.** The original six-phase plan was paced for a service with
@@ -910,8 +1055,13 @@ deliver value on Cloud Run alone, so an abandoned migration strands nothing.
 - **Rendition storage** — Antiphony owns the blob, canonical and derived. Consuming
   services store their own application metadata. Renditions live at
   `renditions/{originAppId}/{sourceCid}.{format}`.
-- **Eager vs lazy** — lazy. Transcode when a requesting service asks; cache after.
-  No new processing stage.
+- **Eager vs lazy** — **deferred to [`mp3-rendition-stage.md`](./mp3-rendition-stage.md)**,
+  which is the decision of record for the `mp3` stage and lands on eager via a
+  per-tenant create-time opt-in. That is the right call for the Twilio path (a
+  cold transcode on first `<Play>` is dead air on a live call) and it is not
+  actually in tension with lazy-by-default: an opt-in costs nothing for tenants
+  that never phone anything. Any format NOT covered by an opt-in stage still
+  resolves on demand.
 - **Audio proxy** — streams bytes rather than 302-ing to a signed URL. Settled by the
   rendition decision: a 302 cannot point at bytes that do not exist until the first
   request creates them.

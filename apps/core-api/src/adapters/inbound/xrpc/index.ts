@@ -6,7 +6,7 @@ import { buildPostUri } from '@antiphony/core/services/audio-posts';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { originLock } from '../../../middleware/origin-lock.js';
-import { audioPostService } from '../../outbound/firebase/core-services-firebase.js';
+import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { getAppDid } from '../../../lib/app-did.js';
 import { audioPlaybackUrl } from '../../../lib/audio-url.js';
@@ -134,7 +134,7 @@ export function xrpcRoute(): Hono {
             const parsed = parseQuery(c, GetPostQuerySchema, { id: c.req.query('id') });
             if (!parsed.ok) return parsed.response;
 
-            const view = await audioPostService.getPostView(
+            const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(
                 getOriginAppId(c),
                 parsed.value.id,
                 c.get('viewerUid'),
@@ -168,12 +168,12 @@ export function xrpcRoute(): Hono {
             // Resolve the parent first, for the same two reasons as the REST
             // thread route: the reply query keys on the parent's `at://` uri,
             // and a missing parent must read as 404 rather than an empty list.
-            const parent = await audioPostService.getPostView(originAppId, id, viewerUid);
+            const parent = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(originAppId, id, viewerUid);
             if (!parent) {
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
             }
 
-            const replies = await audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
+            const replies = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
                 limit,
                 cursorId: cursor,
             });
@@ -239,7 +239,7 @@ export function xrpcRoute(): Hono {
             const originAppId = getOriginAppId(c);
             const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
-            const created = await audioPostService.createPost({
+            const created = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.createPost({
                 originAppId,
                 authorId: uid,
                 authorDid: c.get('actingActorDid') ?? undefined,
@@ -300,13 +300,13 @@ export function xrpcRoute(): Hono {
 
             // Author check and persistence happen in the service, which throws
             // the 403/404/400 this adapter's `onError` renders.
-            await audioPostService.setProcessing(originAppId, id, uid, resolved);
+            await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.setProcessing(originAppId, id, uid, resolved);
 
             if (hasPendingStage(resolved)) {
                 await dispatchProcessing(originAppId, id);
             }
 
-            const view = await audioPostService.getPostView(originAppId, id, uid);
+            const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(originAppId, id, uid);
             if (!view) {
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
             }

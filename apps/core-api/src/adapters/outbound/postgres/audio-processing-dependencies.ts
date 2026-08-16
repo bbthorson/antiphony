@@ -4,10 +4,10 @@ import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { newTid } from '../../../lib/tid.js';
-import { StorageService } from '../firebase/core-services-firebase.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
 import { postgresAudioPostDependencies } from './audio-posts-dependencies.js';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
+import type { StorageService } from '@antiphony/core/services/storage';
 
 /**
  * Postgres-backed `AudioProcessingDependencies`.
@@ -34,6 +34,7 @@ import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-pr
 
 export function postgresAudioProcessingDependencies(
     sql: SqlClient,
+    StorageService: StorageService,
 ): AudioProcessingDependencies {
     const posts = postgresAudioPostDependencies(sql);
     const now = (): Date => new Date();

@@ -13,13 +13,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * of that, including that REST did not change.
  */
 
-vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    audioPostService: {
-        createPost: vi.fn(),
-        getPostView: vi.fn(),
-        getReplies: vi.fn(),
-        setProcessing: vi.fn(),
-    },
+// Handlers resolve services through the composition root rather than importing
+// a module-scoped singleton — a Worker gets its bindings on `env`, so
+// module-load construction is not available there.
+const audioPostService = {
+    createPost: vi.fn(),
+    getPostView: vi.fn(),
+    getReplies: vi.fn(),
+    setProcessing: vi.fn(),
+};
+
+vi.mock('../../../composition.js', () => ({
+    servicesFor: () => ({ audioPostService }),
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
@@ -43,7 +48,6 @@ process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.test';
 
 const { app } = await import('../../../app.js');
-const { audioPostService } = await import('../../outbound/firebase/core-services-firebase.js');
 
 const VIEW = {
     uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/p1',

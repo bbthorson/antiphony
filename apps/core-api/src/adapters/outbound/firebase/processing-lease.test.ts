@@ -67,9 +67,19 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 
 process.env.LOG_LEVEL = 'silent';
 
-const { firebaseAudioProcessingDependencies: deps } = await import(
+const { firebaseAudioProcessingDependencies } = await import(
     './audio-processing-dependencies.js'
 );
+
+// The binding is a factory now — storage arrives as an argument so the blob
+// backend can be chosen independently of the database. The lease surface never
+// reaches storage, so a stub is enough.
+const deps = firebaseAudioProcessingDependencies({
+    uploadFile: async () => '',
+    openStream: async () => null,
+    download: async () => null,
+    extractObjectPath: () => null,
+});
 const { COLLECTIONS, NSID } = await import('shared/nsid');
 
 const POSTS = COLLECTIONS[NSID.AudioPost];

@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
-import { StorageService } from '../../outbound/firebase/core-services-firebase.js';
+import { servicesFor } from '../../../composition.js';
 import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
@@ -130,7 +130,7 @@ app.openapi(uploadRoute, async (c) => {
         // Only reachable with a misconfigured origin app id — surface loudly.
         return c.json(errorEnvelope(c, 'Blob path could not be derived'), 400);
     }
-    await StorageService.uploadFile(buffer, path, mimeType);
+    await servicesFor(c.env).storage.uploadFile(buffer, path, mimeType);
 
     return c.json({
         success: true as const,

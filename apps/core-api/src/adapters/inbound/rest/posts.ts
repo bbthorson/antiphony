@@ -3,7 +3,7 @@ import { AudioPostViewSchema } from 'shared/types/audio';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
-import { audioPostService } from '../../outbound/firebase/core-services-firebase.js';
+import { servicesFor } from '../../../composition.js';
 import {
     checkIdempotency,
     saveIdempotencyResult,
@@ -117,11 +117,11 @@ app.openapi(listRoute, async (c) => {
     // to that author (the `rootAuthorId` facet), NOT the viewer's own posts. The
     // default view stays viewer-authored (`authorId == uid`).
     const items = rootAuthor
-        ? await audioPostService.getRepliesByRootAuthor(originAppId, rootAuthor, uid, {
+        ? await servicesFor(c.env).audioPostService.getRepliesByRootAuthor(originAppId, rootAuthor, uid, {
               limit,
               cursorId: cursor,
           })
-        : await audioPostService.getPostsForAuthor(originAppId, uid, uid, {
+        : await servicesFor(c.env).audioPostService.getPostsForAuthor(originAppId, uid, uid, {
               limit,
               cursorId: cursor,
               kind,
@@ -169,7 +169,7 @@ app.openapi(getByIdRoute, async (c) => {
     const postId = c.req.param('postId');
     const viewerUid = c.get('viewerUid');
 
-    const view = await audioPostService.getPostView(getOriginAppId(c), postId, viewerUid);
+    const view = await servicesFor(c.env).audioPostService.getPostView(getOriginAppId(c), postId, viewerUid);
     if (!view) {
         return c.json(errorEnvelope(c, 'Post not found'), 404);
     }
@@ -229,12 +229,12 @@ app.openapi(repliesRoute, async (c) => {
     // Resolve the parent so the thread query keys on the SAME `at://` uri the
     // client received on the parent view (and so a missing parent is a clean
     // 404 rather than an empty list).
-    const parent = await audioPostService.getPostView(originAppId, postId, viewerUid);
+    const parent = await servicesFor(c.env).audioPostService.getPostView(originAppId, postId, viewerUid);
     if (!parent) {
         return c.json(errorEnvelope(c, 'Post not found'), 404);
     }
 
-    const items = await audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
+    const items = await servicesFor(c.env).audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
         limit,
         cursorId: cursor,
     });
@@ -322,7 +322,7 @@ app.openapi(createRouteDef, async (c) => {
     // the view.
     const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
-    const created = await audioPostService.createPost({
+    const created = await servicesFor(c.env).audioPostService.createPost({
         originAppId,
         authorId: uid,
         // App-asserted AT Protocol DID (service path only) — trusted within
@@ -414,7 +414,7 @@ app.openapi(patchRoute, async (c) => {
 
     // Author check + persist happen in the service (throws 403/404/400 mapped by
     // the error handler). Content address is unchanged — processing is storage-layer.
-    await audioPostService.setProcessing(originAppId, postId, uid, resolved);
+    await servicesFor(c.env).audioPostService.setProcessing(originAppId, postId, uid, resolved);
 
     // Kick off any stage that's actually pending, through the same dispatch
     // seam as create. The re-read below only sees results under the inline
@@ -424,7 +424,7 @@ app.openapi(patchRoute, async (c) => {
     }
 
     // Re-read fresh so the view reflects any inline processing results.
-    const view = await audioPostService.getPostView(originAppId, postId, uid);
+    const view = await servicesFor(c.env).audioPostService.getPostView(originAppId, postId, uid);
     if (!view) {
         return c.json(errorEnvelope(c, 'Post not found'), 404);
     }

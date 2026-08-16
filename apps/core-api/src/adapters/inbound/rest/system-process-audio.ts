@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AudioProcessingService } from '@antiphony/core/services/audio-processing';
 import { requireSystemAuth } from '../../../middleware/system-auth.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
-import { firebaseAudioProcessingDependencies } from '../../outbound/firebase/audio-processing-dependencies.js';
+import { servicesFor } from '../../../composition.js';
 import { resolveProviders, resolveNotifier } from '../../../lib/audio-processing.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -101,7 +101,7 @@ app.post('/', requireSystemAuth(), async (c) => {
     // named in the payload. Wiring anything else here would run one tenant's
     // post through another tenant's pinned provider.
     const service = new AudioProcessingService(
-        firebaseAudioProcessingDependencies,
+        servicesFor(c.env as Record<string, unknown> | undefined).audioProcessingDeps,
         resolveProviders(originAppId),
         logger,
         resolveNotifier(),

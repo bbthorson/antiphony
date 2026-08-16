@@ -3,14 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Tests for `POST /api/v1/audio/upload`.
  *
- * Auth-gated. Multipart upload → content CID → StorageService.uploadFile at
+ * Auth-gated. Multipart upload → content CID → uploadFile at
  * the CID-derived path → returns `{ blob }` (the canonical AT Protocol blob
  * ref). Validates mime type allowlist and size cap.
  */
 
-vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    StorageService: { uploadFile: vi.fn() },
-    audioPostService: {},
+const uploadFile = vi.fn();
+vi.mock('../../../composition.js', () => ({
+    servicesFor: () => ({ storage: { uploadFile } }),
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
@@ -38,7 +38,6 @@ process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_APP_TOKENS = `antiphony:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
-const { StorageService } = await import('../../outbound/firebase/core-services-firebase.js');
 
 const AUTH = {
     authorization: `Bearer ${SERVICE_TOKEN}`,
@@ -106,7 +105,7 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('stores at the CID-derived tenancy path and returns the canonical blob ref', async () => {
-        vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
+        vi.mocked(uploadFile).mockResolvedValue('https://cdn/example');
 
         const bytes = new Uint8Array(100);
         const res = await app().request('/api/v1/audio/upload', {
@@ -126,8 +125,8 @@ describe('POST /api/v1/audio/upload', () => {
         expect(blob.mimeType).toBe('audio/m4a');
         expect(blob.size).toBe(100);
 
-        expect(vi.mocked(StorageService.uploadFile)).toHaveBeenCalledTimes(1);
-        const [bufferArg, pathArg, mimeArg] = vi.mocked(StorageService.uploadFile).mock.calls[0];
+        expect(vi.mocked(uploadFile)).toHaveBeenCalledTimes(1);
+        const [bufferArg, pathArg, mimeArg] = vi.mocked(uploadFile).mock.calls[0];
         expect(Buffer.isBuffer(bufferArg)).toBe(true);
         // Path is derived from tenancy + CID, never stored on the record.
         expect(pathArg).toBe(`blobs/antiphony/${blob.ref.$link}`);
@@ -135,7 +134,7 @@ describe('POST /api/v1/audio/upload', () => {
     });
 
     it('returns the same CID for identical bytes (content addressing)', async () => {
-        vi.mocked(StorageService.uploadFile).mockResolvedValue('https://cdn/example');
+        vi.mocked(uploadFile).mockResolvedValue('https://cdn/example');
 
         async function upload(): Promise<string> {
             const res = await app().request('/api/v1/audio/upload', {

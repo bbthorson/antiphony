@@ -11,7 +11,7 @@ import {
     type ProcessingStageMap,
     type ResolvedProcessing,
 } from 'shared/types/processing';
-import { firebaseAudioProcessingDependencies } from '../adapters/outbound/firebase/audio-processing-dependencies.js';
+import { servicesFor } from '../composition.js';
 import {
     stubTranscriber,
     stubDenoiser,
@@ -183,7 +183,7 @@ function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
     // providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
         return inlineDispatcher(
-            firebaseAudioProcessingDependencies,
+            servicesFor().audioProcessingDeps,
             resolveProviders(originAppId),
             logger,
             resolveNotifier(),
