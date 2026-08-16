@@ -1,7 +1,8 @@
 # XRPC Inbound Adapter & @atproto/lex Adoption Strategy
 
-**Status:** Proposed / Design Specification — August 2026  
-**Context:** Evaluation of upstream `@atproto/lex` (Bluesky Protocol Services) and native XRPC service interfaces alongside Antiphony's REST API.  
+**Status:** Phase 1 implemented (August 2026); Phases 2–3 proposed, gated on a
+concrete consumer. See §7.  
+**Context:** Evaluation of upstream Lexicon tooling (Bluesky Protocol Services) and native XRPC service interfaces alongside Antiphony's REST API.  
 **Related Specs:** [`atproto-authority-model.md`](./atproto-authority-model.md), [`core-bff-boundary.md`](./core-bff-boundary.md), [`core-surface.md`](./core-surface.md).
 
 ---
@@ -10,7 +11,7 @@
 
 | Topic | Decision | Primary Rationale |
 | :--- | :--- | :--- |
-| **`@atproto/lex` Adoption** | **Adopt as a Dev/CI validation oracle; do NOT replace `@antiphony/shared` Zod runtime.** | `@hono/zod-openapi` requires Zod schemas for OpenAPI 3.1 generation and REST route validation. `@atproto/lex` produces static TypeScript types without runtime validation or OpenAPI metadata. |
+| **Upstream lexicon tooling** | **Adopt as a Dev/CI validation oracle (`@atproto/lex-document`); do NOT replace `@antiphony/shared` Zod runtime.** ✅ implemented | `@hono/zod-openapi` requires Zod schemas for OpenAPI 3.1 generation and REST route validation. `@atproto/lex` codegen produces static TypeScript types without runtime validation or OpenAPI metadata. |
 | **XRPC Interface** | **Support native XRPC via a Hono inbound adapter (`/xrpc/*`) alongside REST (`/api/v1/*`).** | XRPC is HTTP under the hood. In Antiphony's hexagonal architecture, `/xrpc/*` is just another inbound adapter calling the same domain services (`PostService`, `AudioService`). |
 | **Third-Party Adapters** | **Do NOT use third-party libraries (e.g. `xrpc-hono`).** | Rolling a native Hono sub-router takes <100 lines of code, preserves zero external dependency bloat, and avoids third-party version mismatch or maintenance lag. |
 | **Data & Authority Boundary** | **Preserve App-as-Repo-Owner (Model B).** | `at://` authority remains the tenant's `did:web`. XRPC endpoints serve as service endpoints for the tenant's repository without leaking user keys or forcing un-redactable user DIDs into immutable CIDs. |
@@ -41,10 +42,12 @@ Bluesky has transitioned from the monolithic `@atproto/api` package to a modular
 
 ## 3. Why We Should (and Shouldn't) Adopt `@atproto/lex`
 
-### What We SHOULD Do: Use `@atproto/lex` in CI & Testing
-We should add `@atproto/lex` as a development/tooling dependency to:
-1. **Validate Lexicons:** Ensure all schemas in `lexicons/dev/antiphony/*.json` strictly conform to the latest official Lexicon specification.
+### What We SHOULD Do: Use Upstream Lexicon Tooling in CI & Testing
+Adopt upstream tooling as a development/tooling dependency to:
+1. **Validate Lexicons:** Ensure all schemas in `lexicons/dev/antiphony/*.json` strictly conform to the latest official Lexicon specification. Borrowing upstream's own encoding of the spec (rather than hand-rolling a validator) is the point: it moves when the spec moves, so drift arrives as a CI failure rather than a federation-time surprise.
 2. **Oracle Contract Testing:** Run automated parity checks ensuring `@antiphony/shared` Zod schemas and types do not drift from the lexicon definitions.
+
+The package that actually does this is **`@atproto/lex-document`** ("Lexicon document validation tools for AT"), which exports `lexiconDocumentSchema`. The `@atproto/lex` umbrella is the wrong dependency for the job — see §7 Phase 1.
 
 ### What We SHOULD NOT Do: Replace `@antiphony/shared` Zod Runtime
 We should **not** discard our Zod schemas in favor of generated `@atproto/lex` types because:
@@ -243,10 +246,29 @@ Standard ATProto error symbols used:
 
 ## 7. Rollout Plan
 
-1. **Phase 1: Lexicon Tooling & CI Validation**
-   * Add `@atproto/lex` as a workspace devDependency.
-   * Add `npm run test:lexicons` script to validate `lexicons/dev/antiphony/*.json`.
-   * Add oracle tests in `@antiphony/shared` to verify Zod schema alignment with Lexicon ASTs.
+1. **Phase 1: Lexicon Tooling & CI Validation** — ✅ **implemented** (PR #84).
+   * `@atproto/lex-document` as a root devDependency — **not** the `@atproto/lex`
+     umbrella this document originally named. The document schema is the whole
+     requirement; the umbrella additionally pulls in the CLI, codegen, network
+     resolver, and yargs, and does not even re-export `lexiconDocumentSchema`.
+   * `npm run test:lexicons` (`scripts/validate-lexicons.mjs`) validates every
+     document in `lexicons/` against `lexiconDocumentSchema`, asserts path/id
+     agreement, and resolves all internal refs.
+   * `packages/shared/types/lexicon-parity.test.ts` compares each lexicon def
+     against the Zod schema mirroring it — property sets, required-vs-optional,
+     `maxLength`, integer and array-element bounds. Legitimate divergences
+     (storage-layer fields, `$type`, `labels` → `selfLabels`) are declared
+     per-case, so an undeclared divergence fails and a stale declaration fails
+     too.
+   * Both run under `npm test`, which CI already invokes.
+
+   **Known scope line:** refs into other authorities (`app.bsky.*`,
+   `com.atproto.*`) are reported but not resolved. Resolving them means running
+   `lex install`, which vendors ~20 third-party documents (~140 KB of
+   `app.bsky.*`, `com.atproto.*`, `tools.ozone.*`) into `lexicons/` plus a
+   CID-pinned `lexicons.json` manifest, and puts either a network fetch or that
+   manifest in the CI path. Worth revisiting if a ref typo into a foreign
+   authority ever reaches production; deliberately not paid for up front.
 
 2. **Phase 2: Inbound XRPC Router** — *gated on a concrete consumer; see below.*
    * Make the auth middleware envelope-aware (§5.3). Prerequisite, not follow-up.
@@ -255,12 +277,13 @@ Standard ATProto error symbols used:
    * Implement queries and procedures for `dev.antiphony.audio.*` and `dev.antiphony.embed.*`.
    * Mount at `/xrpc/*` on the main Hono application, under the same auth middleware as REST.
 
-**Sequencing.** Phase 1 is self-contained and worth doing on its own merits —
-it costs a devDependency and a CI script, and it catches Zod/lexicon drift that
-nothing currently detects. Phases 2–3 commit the project to a second permanent
-public surface (its own error dialect, its own auth branch, its own egress
-profile). Nothing in the repo consumes `/xrpc/*` today. Build it when a caller
-exists, not because this document exists.
+**Sequencing.** Phase 1 was self-contained and stood on its own merits — one
+devDependency and a CI script, catching Zod/lexicon drift that nothing else
+detected — so it landed independently of the rest of this document. Phases 2–3
+commit the project to a second permanent public surface (its own error dialect,
+its own auth branch, its own egress profile). Nothing in the repo consumes
+`/xrpc/*` today. Build it when a caller exists, not because this document
+exists.
 
 3. **Phase 3: Service Discovery & DID Document Integration**
    * In tenant `did:web` documents (`/.well-known/did.json`), advertise the XRPC service endpoint:
