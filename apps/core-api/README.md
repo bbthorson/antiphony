@@ -87,11 +87,13 @@ npm run test -w @antiphony/core-api -- --run
 
 ## Deployment
 
-Cloud Run — the `antiphony-core-api` service in project `antiphony-core` serves `api.antiphony.dev`, built from the [`Dockerfile`](../../Dockerfile) at the repo root and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/cloudrun.env.yaml`](../../deploy/cloudrun.env.yaml) for the production config and [`deploy/README.md`](../../deploy/README.md) for the one-time IAM, Artifact Registry, and Workload Identity Federation setup. Credentials are Application Default Credentials from the runtime service account. Enrichment adds a Cloud Tasks queue and two secrets — see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
+Cloudflare Workers — the `antiphony-core-api` Worker serves `api.antiphony.dev`, configured by [`wrangler.jsonc`](./wrangler.jsonc) and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/README.md`](../../deploy/README.md) for the one-time setup: the Hyperdrive config, KV namespace, R2 bucket and queues the config names, plus the three Worker secrets.
+
+Every binding is authorised by being bound — there is no database URL, R2 key, or service-account credential anywhere in the config. Enrichment runs off the `PROCESSING_QUEUE` binding rather than Cloud Tasks; see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
 
 ## Why Hono, not Next.js
 
-Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is ~15MB total, TypeScript-first, and — being a plain Node server with no platform coupling — runs anywhere a container does.
+Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API surface (no RSC, no Image, no client hydration). Hono is small, TypeScript-first, and has no platform coupling — it runs natively on Workers, which is what let the runtime move happen without touching a single route handler.
 
 ## License
 

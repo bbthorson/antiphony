@@ -42,23 +42,36 @@ import { cloudTasksResolver } from './adapters/outbound/dispatch/cloud-tasks.js'
  * from inside a dependency, deep in a request — each seam takes its native half
  * by INSTALLATION, and this file is the only importer of any of them.
  *
- * ## Import it for side effects, first, from the Node entry only
+ * ## It has no runtime importer any more
+ *
+ * `src/index.ts` was the only one, and it went with the Cloud Run runtime. What
+ * keeps this file alive is that the **Firestore data has not been migrated
+ * yet**: `scripts/migrate-firestore-to-neon.ts` still has to read it, the
+ * Firebase-backed bindings below are what the pre-migration data lives behind,
+ * and their test suites are the only thing asserting those bindings still
+ * behave. Deleting them before the migration runs would delete the description
+ * of the data being migrated.
+ *
+ * So this is now a **test and migration-era** module, and it should go when the
+ * records migration has run and been verified — along with the Firebase
+ * adapters, `lib/firebase-admin.ts`, and the `firebase` arm of the composition
+ * root. That is step 2 teardown, not step 3.
+ *
+ * Import it for side effects, before anything calls `servicesFor()`:
  *
  *     import './native.js';
  *
- * The installs must happen before anything calls `servicesFor()`, which is why
- * `index.ts` imports this above everything else. `installFallbackBackends`
- * drops the memoised service graph on its way through, so an early build
- * cannot survive as a stale one — but relying on that would be relying on a
- * safety net rather than on order.
+ * `installFallbackBackends` drops the memoised service graph on its way
+ * through, so an early build cannot survive as a stale one — but relying on
+ * that would be relying on a safety net rather than on order.
  *
- * ## What a Worker gets instead
+ * ## What the Worker gets instead
  *
- * Nothing here, deliberately. Bindings are mandatory rather than optional
- * there (`composition.ts` throws on a missing one), `trim` and `waveform`
- * resolve unavailable and settle `skipped` until step 4 moves them onto the
- * rendition service, and durable dispatch comes from the Queues binding.
- * See specs/cloudflare-migration.md § Sequencing.
+ * Nothing here, deliberately. Bindings are mandatory rather than optional there
+ * (`composition.ts` throws on a missing one), `trim` and `waveform` resolve
+ * unavailable and settle `skipped` until step 4 moves them onto the rendition
+ * service, and durable dispatch comes from the Queues binding. See
+ * specs/cloudflare-migration.md § Sequencing.
  */
 
 installFallbackBackends({

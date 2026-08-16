@@ -45,6 +45,12 @@ process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_APP_TOKENS = `antiphony:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
+// Every gated route now proves its tenant's app-DID custody in the auth
+// middleware — the Workers replacement for the boot gate. Seed the snapshot
+// so these cases keep testing their own subject rather than a missing pin.
+const { seedValidatedPins } = await import('../../../lib/testing/seed-pins.js');
+await seedValidatedPins({ 'antiphony': 'did:web:antiphony.example' });
+
 
 const AUTH = {
     authorization: `Bearer ${SERVICE_TOKEN}`,

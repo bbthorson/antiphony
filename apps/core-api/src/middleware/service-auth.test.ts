@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 
 /**
@@ -10,6 +10,13 @@ import { Hono } from 'hono';
  */
 
 process.env.LOG_LEVEL = 'silent';
+
+// Both auth middlewares now prove the tenant's app-DID custody after matching
+// the credential — the Workers replacement for the boot gate (middleware/
+// auth.ts). This suite is about deriving tenancy FROM the credential, which
+// happens a step earlier, so the proof is stubbed out. Its ordering relative to
+// the token match is asserted in `auth.test.ts`.
+vi.mock('../lib/app-did.js', () => ({ ensureTenantPin: async () => undefined }));
 
 const { parseAppTokens } = await import('./service-auth.js');
 const { requireServiceToken, requireAuth } = await import('./auth.js');

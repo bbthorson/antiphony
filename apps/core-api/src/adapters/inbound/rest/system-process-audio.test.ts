@@ -28,6 +28,12 @@ vi.mock('../../../lib/audio-processing.js', () => ({
     resolveNotifier: () => ({ notify: async () => {} }),
 }));
 
+// The job runner proves the JOB's tenant custody before doing any work — a pass
+// mints `at://` uris and runs outside any request, so no middleware has done it.
+// Stubbed here; `app-did.test.ts` owns its behaviour, and worker.test.ts covers
+// what a refusal does to a queue message.
+vi.mock('../../../lib/app-did.js', () => ({ ensureTenantPin: async () => undefined }));
+
 const SYSTEM_TOKEN = 'sys-tok-abcdefghijklmnopqrstuvwxyz01234';
 process.env.SYSTEM_AUTH_TOKEN = SYSTEM_TOKEN;
 process.env.LOG_LEVEL = 'silent';

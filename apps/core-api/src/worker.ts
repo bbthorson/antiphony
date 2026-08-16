@@ -1,7 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { app as createApp } from './app.js';
-import { validateAllPins, checkTenantRegistryDrift } from './lib/app-did.js';
-import { parseAppTokens } from './middleware/service-auth.js';
+import { revalidateAllPins, type PinCacheKV } from './lib/app-did.js';
 import { APP_CONFIG } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
 import { servicesFor } from './composition.js';
@@ -65,79 +64,26 @@ function workerApp(): OpenAPIHono {
     return cachedApp;
 }
 
-/**
- * The interim boot gate.
- *
- * ## What this is standing in for
- *
- * On Cloud Run, `index.ts` runs `validateAllPins` before `serve()` and
- * `process.exit(1)`s on failure, so `getAppDid()` — a synchronous accessor that
- * serves only from that snapshot — can never answer with a DID whose custody we
- * have not proven. **Workers have no boot phase**, so that ordering has to come
- * from somewhere else.
- *
- * This is the smallest thing that preserves the actual property: validate the
- * whole pin set once per isolate, before the first request is served, and
- * fail closed if it does not validate. `getAppDid()` stays synchronous and
- * `packages/core` stays untouched.
- *
- * ## It is explicitly NOT the designed replacement
- *
- * Step 3d replaces this with four mechanisms — a CI deploy gate, lazy
- * *per-tenant* validation folded into the auth middleware, a KV cache that
- * distinguishes positive disproof from unreachability, and an hourly drift
- * cron. Two things this interim version gets wrong, both of which 3d fixes and
- * neither of which is worse than what Cloud Run does today:
- *
- *   - **Blast radius is global.** `validateAllPins` throws on the first
- *     failure, so one bad tenant fails every request in the isolate. Cloud Run
- *     has exactly this bug; per-tenant validation is what fixes it.
- *   - **A transient `did:web` outage is treated as disproof.** Absence of
- *     evidence is not evidence of absence, and the cache split in 3d is what
- *     tells them apart. Mitigated here only by retrying: a rejected promise is
- *     cleared rather than memoised, so a blip costs one failed request rather
- *     than poisoning the isolate for its lifetime.
- *
- * See specs/cloudflare-migration.md § The boot gate.
- */
-let pinGate: Promise<void> | undefined;
-
-function ensurePinsValidated(): Promise<void> {
-    pinGate ??= (async () => {
-        if (!APP_CONFIG.PDS_HOST) {
-            logger.warn(
-                '[core-api] ANTIPHONY_PDS_HOST unset — app-DID custody host-match check is DISABLED (endpoint existence still required)',
-            );
-        }
-        await validateAllPins({ expectedPdsHost: APP_CONFIG.PDS_HOST });
-        checkTenantRegistryDrift(parseAppTokens().map((a) => a.appId));
-    })().catch((err) => {
-        // Clear before rethrowing, so the NEXT request retries rather than
-        // inheriting this rejection. A memoised rejected promise would turn a
-        // five-second did:web timeout into a permanently broken isolate — the
-        // failure mode the deploy workflow already complains about ("a deploy
-        // can fail for a reason that has nothing to do with this commit").
-        pinGate = undefined;
-        throw err;
-    });
-    return pinGate;
-}
-
 export default {
+    /**
+     * ## There is no boot gate here, and that is the design
+     *
+     * On Cloud Run, `index.ts` proves every pin before `serve()` and
+     * `process.exit(1)`s on failure. Workers have no boot phase, and the
+     * replacement is deliberately not "do the same thing on the first request":
+     * that would keep the property this codebase's own analysis says the boot
+     * gate has by accident rather than by design — one bad tenant failing every
+     * other tenant's requests, because `validateAllPins` throws on the first
+     * failure.
+     *
+     * Custody is proven per tenant, in the auth middleware, which is the
+     * tenancy boundary and already resolves `originAppId`. Every route that can
+     * mint an `at://` uri carries `requireAuth()` or `requireServiceToken()`;
+     * the one anonymous route, the audio proxy, takes a blob path and mints
+     * nothing. See `middleware/auth.ts` § Why the pin check lives here, and
+     * specs/cloudflare-migration.md § The boot gate.
+     */
     async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
-        try {
-            await ensurePinsValidated();
-        } catch (err) {
-            // Fail closed, with the same meaning `process.exit(1)` had on Cloud
-            // Run: we cannot prove custody of the authority we would mint
-            // `at://` uris under, so we serve nothing. 503 rather than 500 —
-            // it is a readiness statement, and it is retryable.
-            logger.error({ err }, '[core-api] app-DID pin validation failed; refusing to serve');
-            return new Response(
-                JSON.stringify({ success: false, error: { message: 'Service unavailable' } }),
-                { status: 503, headers: { 'content-type': 'application/json' } },
-            );
-        }
         // Hono's `fetch` types `env` as an object; the handler signature keeps
         // it `unknown` so no second description of the bindings exists. The
         // cast is the one place those two meet.
@@ -156,7 +102,31 @@ export default {
      * own resolving.
      */
     async scheduled(_event: ScheduledController, env: unknown, _ctx: ExecutionContext): Promise<void> {
-        const { sql, backend } = servicesFor(env as Record<string, unknown>);
+        const bindings = env as Record<string, unknown>;
+
+        // Mechanism 4 of the boot-gate replacement: revalidate every pin off
+        // the request path, purely to report. This is the piece that actually
+        // delivers ONGOING custody — the property today's design checks only
+        // when a process happens to restart. It also matters precisely because
+        // this service is low-traffic: lazy validation alone might not
+        // re-check a quiet tenant for a long time, and revocation is what you
+        // want to notice quickly. See specs/cloudflare-migration.md § The boot
+        // gate.
+        //
+        // Reports rather than throws, and runs BEFORE the sweep so a drift
+        // report is not lost to a database problem.
+        const drift = await revalidateAllPins({
+            expectedPdsHost: APP_CONFIG.PDS_HOST,
+            kv: bindings?.PIN_CACHE as PinCacheKV | undefined,
+        });
+        if (drift.length > 0) {
+            logger.error(
+                { drift },
+                '[app-did] pin drift detected — a tenant DID no longer proves custody',
+            );
+        }
+
+        const { sql, backend } = servicesFor(bindings);
         if (!sql) {
             // Firestore has native TTL, so there is nothing to sweep. Logged
             // rather than silent: on a Worker this means the database binding
@@ -170,14 +140,15 @@ export default {
     /**
      * The audio-processing consumer. One message is one post.
      *
-     * ## The pin gate IS awaited here
+     * ## Custody is proven inside the job, not here
      *
-     * Unlike `scheduled`, this handler mints `at://` uris —
-     * `AudioProcessingService.process` reaches `getAppDid` through
-     * `buildPostUri` — and it runs outside any request, so nothing else has
-     * populated the snapshot for it. A failure retries the whole batch: an
-     * unresolvable `did:web` is infrastructure, the work was not attempted, and
-     * nothing was recorded.
+     * This handler mints `at://` uris — `AudioProcessingService.process`
+     * reaches `getAppDid` through `buildPostUri` — and runs outside any
+     * request, so no middleware has populated the snapshot for it. The check
+     * therefore lives in `runProcessingJob`, after the payload is parsed and
+     * the job's tenant is known, which is also where the HTTP re-drive route
+     * needs it. Proving the whole registry here instead would fail this post
+     * over a different tenant's DID.
      *
      * ## Why the batch is iterated sequentially
      *
@@ -200,17 +171,6 @@ export default {
         env: unknown,
         _ctx: ExecutionContext,
     ): Promise<void> {
-        try {
-            await ensurePinsValidated();
-        } catch (err) {
-            logger.error(
-                { err, queue: batch.queue, messages: batch.messages.length },
-                '[core-api] app-DID pin validation failed; returning the batch',
-            );
-            batch.retryAll();
-            return;
-        }
-
         for (const message of batch.messages) {
             const result = await runProcessingJob(
                 message.body,

@@ -17,7 +17,7 @@ import { logger } from '../../../lib/logger.js';
  * Both surfaces sit over the same domain services, which raise `ServiceError`.
  * This handler is the XRPC translation of that vocabulary; `middleware/
  * error-handler.ts` is the REST one. Mounted via the sub-app's `onError`, so it
- * also catches throws from shared middleware (auth, rate-limit, origin-lock) on
+ * also catches throws from shared middleware (auth, rate-limit) on
  * XRPC routes — Hono dispatches those to the mounted app's handler, not the
  * parent's.
  */

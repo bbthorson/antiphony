@@ -111,6 +111,29 @@
 		]
 	},
 
+	// ## The shared layer of the app-DID custody cache
+	//
+	// `middleware/auth.ts` proves each tenant's pin before a handler runs. That
+	// check is isolate-local first; this namespace is the layer underneath it,
+	// so a COLD isolate does not re-resolve a `did:web` document another
+	// isolate proved a minute ago.
+	//
+	// KV's eventual consistency is fine here and would not be for
+	// `idempotency_keys` — the difference is what a stale read costs. A stale
+	// idempotency answer breaks the guarantee outright; a stale custody proof
+	// is bounded by design, since the whole point of the layer below it is that
+	// an old proof is still the right thing to serve when the DID host is
+	// unreachable. The value carries its own `validatedAt` and the freshness
+	// and staleness bounds are enforced in code, not by the store.
+	//
+	//     npx wrangler kv namespace create PIN_CACHE
+	"kv_namespaces": [
+		{
+			"binding": "PIN_CACHE",
+			"id": "REPLACE_ME_WITH_wrangler_kv_namespace_create_OUTPUT"
+		}
+	],
+
 	// Audio blobs and their derived renditions. One bucket, two prefixes:
 	// `blobs/{originAppId}/{cid}` and `renditions/{originAppId}/{cid}.{format}`.
 	//
@@ -153,10 +176,16 @@
 	// proxy streams bytes rather than redirecting to a signed URL,
 	// `AudioEmbedView.url` is an absolute URL pointing back at this service.
 	// Without it a post with audio hydrates with no embed at all.
+	//
+	// ANTIPHONY_APP_DIDS is a var rather than a secret: DIDs are public by
+	// construction, and keeping it here is what lets the CI deploy gate
+	// (`npm run validate:pins`) prove the pins in the config about to ship
+	// without needing access to anything secret.
 	"vars": {
 		"ANTIPHONY_PUBLIC_BASE_URL": "https://api.antiphony.dev",
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
+		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
 		"NODE_ENV": "production",
 		"LOG_LEVEL": "info"
 	}

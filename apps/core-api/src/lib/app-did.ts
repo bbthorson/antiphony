@@ -133,9 +133,42 @@ export function atprotoPdsEndpoint(doc: unknown): string | null {
     return null;
 }
 
+/**
+ * Why a validation failed, and it is the load-bearing distinction in the whole
+ * module.
+ *
+ *   - **`disproof`** — we reached the DID document and it does not say what the
+ *     pin claims. The custody claim is FALSE. Fail closed immediately and evict
+ *     any cached answer, because a cached "yes" is now known to be wrong.
+ *   - **`unreachable`** — we could not get an answer. This is absence of
+ *     evidence, not evidence of absence, and treating it as disproof is what
+ *     turns a brief `did:web` outage into an outage of ours. Serve the
+ *     last-known-good within a staleness bound instead.
+ *
+ * The deploy workflow already complains about exactly this conflation: "A
+ * deploy can therefore fail for a reason that has nothing to do with this
+ * commit — a did:web host being briefly unreachable is enough."
+ */
+export type AppDidFailureKind = 'disproof' | 'unreachable';
+
 export type AppDidValidation =
     | { ok: true; did: string; pdsEndpoint: string; document: unknown }
-    | { ok: false; did: string; reason: string };
+    | { ok: false; did: string; reason: string; kind: AppDidFailureKind };
+
+/**
+ * Classify an HTTP status on the DID document fetch.
+ *
+ * **404/410 is disproof**: the server answered, definitively, that there is no
+ * document at the address the DID names. That is a real answer about the DID.
+ *
+ * **Every other non-2xx is unreachable**, including 401/403/429. Those are
+ * refusals to answer rather than answers — a rate limiter or a WAF in front of
+ * the DID host tells us nothing about custody, and failing closed on one would
+ * hand any intermediary the ability to take a tenant offline. 5xx likewise.
+ */
+function classifyHttpStatus(status: number): AppDidFailureKind {
+    return status === 404 || status === 410 ? 'disproof' : 'unreachable';
+}
 
 /**
  * Resolve + validate an app `did:web` against the four-point pinning contract:
@@ -149,32 +182,58 @@ export async function validateAppDid(
     opts: { expectedPdsHost?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<AppDidValidation> {
     const url = didWebToUrl(did);
-    if (!url) return { ok: false, did, reason: 'not-did-web' };
+    // A DID that cannot be turned into a URL at all is malformed, not offline.
+    if (!url) return { ok: false, did, reason: 'not-did-web', kind: 'disproof' };
     const doFetch = opts.fetchImpl ?? fetch;
     let doc: unknown;
     try {
-        // Time-box the resolve so a hanging did:web endpoint can't block boot;
-        // a timeout throws and is caught below, failing the pin closed.
+        // Time-box the resolve so a hanging did:web endpoint can't block a
+        // caller; a timeout throws and is caught below as `unreachable`.
         const res = await doFetch(url, { signal: AbortSignal.timeout(DID_FETCH_TIMEOUT_MS) });
-        if (!res.ok) return { ok: false, did, reason: `did-doc-http-${res.status}` };
+        if (!res.ok) {
+            return {
+                ok: false,
+                did,
+                reason: `did-doc-http-${res.status}`,
+                kind: classifyHttpStatus(res.status),
+            };
+        }
         doc = await res.json();
     } catch (err) {
-        return { ok: false, did, reason: `did-doc-fetch-failed: ${(err as Error).message}` };
+        // Network error, timeout, or a body that would not parse as JSON. The
+        // last one is arguably malformed rather than absent, but in practice it
+        // is what an intercepting proxy's HTML error page looks like — which is
+        // an outage wearing a document's clothes, so it is treated as one.
+        return {
+            ok: false,
+            did,
+            reason: `did-doc-fetch-failed: ${(err as Error).message}`,
+            kind: 'unreachable',
+        };
     }
+    // Everything below here read the real document. Any failure is the document
+    // contradicting the pin, which is disproof.
     if ((doc as { id?: string })?.id !== did) {
-        return { ok: false, did, reason: 'did-doc-id-mismatch' };
+        return { ok: false, did, reason: 'did-doc-id-mismatch', kind: 'disproof' };
     }
     const pdsEndpoint = atprotoPdsEndpoint(doc);
-    if (!pdsEndpoint) return { ok: false, did, reason: 'no-atproto-pds-endpoint' };
+    if (!pdsEndpoint) {
+        return { ok: false, did, reason: 'no-atproto-pds-endpoint', kind: 'disproof' };
+    }
     if (opts.expectedPdsHost) {
         let host: string;
         try {
             host = new URL(pdsEndpoint).host;
         } catch {
-            return { ok: false, did, reason: 'pds-endpoint-unparseable' };
+            return { ok: false, did, reason: 'pds-endpoint-unparseable', kind: 'disproof' };
         }
         if (host !== opts.expectedPdsHost) {
-            return { ok: false, did, reason: `pds-endpoint-host-mismatch: ${host} != ${opts.expectedPdsHost}` };
+            return {
+                ok: false,
+                did,
+                reason: `pds-endpoint-host-mismatch: ${host} != ${opts.expectedPdsHost}`,
+                kind: 'disproof',
+            };
         }
     }
     return { ok: true, did, pdsEndpoint, document: doc };
@@ -188,15 +247,279 @@ export interface ValidatedPin {
     did: string;
     pdsEndpoint: string;
     document: unknown;
+    /**
+     * When the custody proof was last actually obtained, in epoch millis.
+     *
+     * Deliberately NOT refreshed when a stale entry is served through an
+     * outage. If serving stale bumped this, a permanently unreachable DID
+     * document would be served forever — the staleness bound would keep
+     * resetting and never expire, which is the opposite of what it is for.
+     */
+    validatedAt: number;
+    /**
+     * Epoch millis before which no re-resolution is attempted, set only after a
+     * transient failure.
+     *
+     * Without it, an unreachable `did:web` host makes every request pay the
+     * full 5s fetch timeout before being served from the stale snapshot — so
+     * "the DID host is slow" becomes "our API is slow", which is most of the
+     * damage the stale-tolerance was added to prevent. The spec's "retry on the
+     * next request" is right about the intent and too eager about the rate.
+     */
+    retryNotBefore?: number;
 }
 
 /**
- * The validated snapshot, populated by `validateAllPins()` at boot. `null`
- * until then — `getAppDid()` throws in that window rather than serve an
- * unvalidated pin, so a missed boot gate fails loud instead of silently
- * degrading to plain-env behavior.
+ * The validated snapshot. Populated wholesale by `validateAllPins()` at boot
+ * under Node, and per tenant by `ensureTenantPin()` on Workers, which have no
+ * boot phase. `null` until either has run — `getAppDid()` throws in that window
+ * rather than serve an unvalidated pin, so a missed gate fails loud instead of
+ * silently degrading to plain-env behavior.
  */
 let validatedPins: Map<string, ValidatedPin> | null = null;
+
+// --- Layered per-tenant validation (the Workers boot-gate replacement) -------
+
+/**
+ * How long a validated pin is served before it is rechecked.
+ *
+ * Worth being precise about what this replaces, because it reads like a
+ * weakening and is not. The Cloud Run gate validates once at process start and
+ * serves that answer for the life of the process — thirty days, if the process
+ * lives thirty days. So the property it delivers is not "we have proven
+ * custody", it is "we had proven custody at process start". A one-hour recheck
+ * is *strictly stronger* than that on any long-lived instance.
+ */
+const PIN_FRESH_MS = 60 * 60 * 1000;
+
+/**
+ * How long a last-known-good pin may be served while the DID document is
+ * unreachable.
+ *
+ * This is the bound on the `unreachable` branch, and it is what stops "absence
+ * of evidence is not evidence of absence" from becoming "we never check again".
+ * A day is long enough that no realistic `did:web` outage reaches it and short
+ * enough that a genuinely abandoned DID stops being served.
+ */
+const PIN_STALE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+/** Minimum gap between re-resolution attempts while serving a stale pin. */
+const PIN_RETRY_BACKOFF_MS = 60 * 1000;
+
+/**
+ * The slice of a Cloudflare KV namespace this module uses.
+ *
+ * Declared structurally rather than by importing `@cloudflare/workers-types`,
+ * for the reasons `adapters/outbound/r2/bucket.ts` sets out. Absent under Node,
+ * where the boot gate populates the isolate-local layer instead and there is
+ * only one process to share between.
+ */
+export interface PinCacheKV {
+    get(key: string, type: 'json'): Promise<unknown | null>;
+    put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+    delete(key: string): Promise<void>;
+}
+
+export interface EnsurePinOptions {
+    expectedPdsHost?: string;
+    /** Shared across isolates, so a cold one need not re-fetch what a warm one proved. */
+    kv?: PinCacheKV;
+    fetchImpl?: typeof fetch;
+    /** Injectable clock, for tests. */
+    now?: () => number;
+}
+
+const kvKey = (originAppId: string) => `pin:${originAppId}`;
+
+/** A KV round trip must never be the reason a request fails. */
+async function readKvPin(kv: PinCacheKV, originAppId: string): Promise<ValidatedPin | null> {
+    try {
+        const raw = (await kv.get(kvKey(originAppId), 'json')) as ValidatedPin | null;
+        return raw && typeof raw.validatedAt === 'number' ? raw : null;
+    } catch (err) {
+        logger.warn({ err, originAppId }, '[app-did] pin cache read failed; resolving directly');
+        return null;
+    }
+}
+
+async function writeKvPin(kv: PinCacheKV, pin: ValidatedPin): Promise<void> {
+    try {
+        await kv.put(kvKey(pin.originAppId), JSON.stringify(pin), {
+            // Expire on the STALENESS bound, not the freshness one. KV is the
+            // last-known-good store; an entry past `PIN_FRESH_MS` is still
+            // useful as the thing to fall back on when the DID host is down,
+            // and evicting it at one hour would throw that away precisely when
+            // it is needed.
+            expirationTtl: Math.floor(PIN_STALE_TOLERANCE_MS / 1000),
+        });
+    } catch (err) {
+        logger.warn({ err, originAppId: pin.originAppId }, '[app-did] pin cache write failed');
+    }
+}
+
+function remember(pin: ValidatedPin): void {
+    validatedPins ??= new Map();
+    validatedPins.set(pin.originAppId, pin);
+}
+
+/**
+ * Prove custody for ONE tenant, from cache when possible, and make the result
+ * available to the synchronous `getAppDid`.
+ *
+ * This is the Workers replacement for the fail-closed boot gate, and it is
+ * called from the auth middleware — `requireAuth` and `requireServiceToken`
+ * already resolve `originAppId`, they are the tenancy boundary, and a pin is a
+ * tenancy property. Putting it there rather than in a fourth middleware avoids
+ * an ordering constraint between them, and means that by the time any handler
+ * runs the snapshot is populated and **`getAppDid()` stays synchronous** — which
+ * is what keeps `AudioPostService` and `AudioProcessingService` from having to
+ * become async for no benefit.
+ *
+ * Three layers, cheapest first:
+ *
+ *   1. **Isolate-local** — the `validatedPins` map. A warm isolate pays nothing.
+ *   2. **KV** — shared across isolates, so a cold isolate does not re-resolve a
+ *      document another isolate proved a minute ago.
+ *   3. **Resolve** — the actual `did:web` fetch.
+ *
+ * **Blast radius is per tenant.** `validateAllPins` throws on the first
+ * failure, so one bad pin fails the whole boot and takes every other tenant
+ * down with it. This 503s the offending tenant and leaves the rest serving.
+ *
+ * Throws on failure; the caller turns that into a refusal.
+ */
+export async function ensureTenantPin(
+    originAppId: string,
+    opts: EnsurePinOptions = {},
+): Promise<void> {
+    const now = opts.now?.() ?? Date.now();
+
+    const local = validatedPins?.get(originAppId);
+    if (local && now - local.validatedAt < PIN_FRESH_MS) return;
+    // Backing off after a transient failure. The entry is stale but within
+    // tolerance (checked when the backoff was set), so serving it is the same
+    // decision already made, just without re-paying the fetch timeout.
+    if (local && local.retryNotBefore !== undefined && now < local.retryNotBefore) return;
+
+    const did = parseAppDids().get(originAppId);
+    if (!did) {
+        // Not a cache miss — this tenant has no pin at all. Fail closed: an
+        // `at://` uri cannot be well-formed without a proven DID authority.
+        throw new Error(`[app-did] no app DID pinned for tenant "${originAppId}"`);
+    }
+
+    if (!local && opts.kv) {
+        const cached = await readKvPin(opts.kv, originAppId);
+        // `cached.did === did` guards the case that matters: the pin was
+        // repointed in config since the cache was written, so the cached proof
+        // is about a DID this deployment no longer claims.
+        if (cached && cached.did === did && now - cached.validatedAt < PIN_FRESH_MS) {
+            remember(cached);
+            return;
+        }
+    }
+
+    const result = await validateAppDid(did, {
+        expectedPdsHost: opts.expectedPdsHost,
+        fetchImpl: opts.fetchImpl,
+    });
+
+    if (result.ok) {
+        const pin: ValidatedPin = {
+            originAppId,
+            did: result.did,
+            pdsEndpoint: result.pdsEndpoint,
+            document: result.document,
+            validatedAt: now,
+        };
+        remember(pin);
+        if (opts.kv) await writeKvPin(opts.kv, pin);
+        return;
+    }
+
+    if (result.kind === 'disproof') {
+        // The custody claim is known false. Evict everywhere — a cached "yes"
+        // is now a cached wrong answer — and refuse.
+        validatedPins?.delete(originAppId);
+        if (opts.kv) await opts.kv.delete(kvKey(originAppId)).catch(() => undefined);
+        logger.error(
+            { originAppId, did, reason: result.reason },
+            '[app-did] custody DISPROVED — evicting and failing closed',
+        );
+        throw new Error(`[app-did] pin validation failed for tenant "${originAppId}": ${result.reason}`);
+    }
+
+    // Unreachable. Fall back to the last known good, from either layer, even if
+    // it is past `PIN_FRESH_MS` — that is the entire point of keeping it.
+    const lastGood = local ?? (opts.kv ? await readKvPin(opts.kv, originAppId) : null);
+    if (lastGood && lastGood.did === did && now - lastGood.validatedAt < PIN_STALE_TOLERANCE_MS) {
+        logger.warn(
+            {
+                originAppId,
+                did,
+                reason: result.reason,
+                staleForMs: now - lastGood.validatedAt,
+            },
+            '[app-did] did:web unreachable — serving the last proven custody snapshot',
+        );
+        // `validatedAt` carried over deliberately, so the staleness bound keeps
+        // counting from the last real proof rather than restarting here.
+        remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
+        return;
+    }
+
+    logger.error(
+        { originAppId, did, reason: result.reason },
+        '[app-did] did:web unreachable and no usable snapshot — failing closed',
+    );
+    throw new Error(
+        `[app-did] cannot prove custody for tenant "${originAppId}": ${result.reason}`,
+    );
+}
+
+/**
+ * Revalidate every configured pin, off the request path, purely to report.
+ *
+ * This is the mechanism that actually delivers ongoing custody — the property
+ * the boot gate only ever checked by accident, when a process happened to
+ * restart. Driven by the Worker's hourly Cron Trigger, which also matters on a
+ * low-traffic service: lazy validation alone might not re-check a quiet tenant
+ * for a long time, and revocation is exactly what you want to notice quickly.
+ *
+ * Reports rather than throws. Nothing is serving this call, and a pin that has
+ * genuinely drifted will fail closed on its own at the next request through
+ * `ensureTenantPin`. Returns the drifted tenants for the caller to log or alert
+ * on.
+ */
+export async function revalidateAllPins(
+    opts: EnsurePinOptions = {},
+): Promise<{ originAppId: string; did: string; reason: string; kind: AppDidFailureKind }[]> {
+    const drift: { originAppId: string; did: string; reason: string; kind: AppDidFailureKind }[] = [];
+    for (const [originAppId, did] of parseAppDids()) {
+        const result = await validateAppDid(did, {
+            expectedPdsHost: opts.expectedPdsHost,
+            fetchImpl: opts.fetchImpl,
+        });
+        if (result.ok) {
+            const pin: ValidatedPin = {
+                originAppId,
+                did: result.did,
+                pdsEndpoint: result.pdsEndpoint,
+                document: result.document,
+                validatedAt: opts.now?.() ?? Date.now(),
+            };
+            remember(pin);
+            if (opts.kv) await writeKvPin(opts.kv, pin);
+            continue;
+        }
+        drift.push({ originAppId, did, reason: result.reason, kind: result.kind });
+        if (result.kind === 'disproof') {
+            validatedPins?.delete(originAppId);
+            if (opts.kv) await opts.kv.delete(kvKey(originAppId)).catch(() => undefined);
+        }
+    }
+    return drift;
+}
 
 /**
  * Validate every configured pin against the four-point contract and snapshot
@@ -229,6 +552,7 @@ export async function validateAllPins(
             did: result.did,
             pdsEndpoint: result.pdsEndpoint,
             document: result.document,
+            validatedAt: Date.now(),
         });
     }
     validatedPins = snapshot;

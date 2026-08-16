@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 
 /**
@@ -15,6 +15,17 @@ import { Hono } from 'hono';
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.LOG_LEVEL = 'silent';
+
+/**
+ * Custody proof, stubbed. Both middlewares now `await ensureTenantPin` after
+ * matching the token — that is the Workers replacement for the fail-closed boot
+ * gate, and it belongs here because these two ARE the tenancy boundary (see
+ * middleware/auth.ts). Its own layering, caching and failure classification are
+ * `app-did.test.ts`'s subject; what this file asserts is that the gate runs, in
+ * the right order, and refuses correctly.
+ */
+const ensureTenantPin = vi.fn(async () => undefined);
+vi.mock('../lib/app-did.js', () => ({ ensureTenantPin }));
 
 const { requireServiceToken, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
     await import('./auth.js');
@@ -164,5 +175,64 @@ describe('requireAuth', () => {
             originAppId: 'test-app',
             actingActorDid: null,
         });
+    });
+});
+
+describe('the app-DID custody gate', () => {
+    it('proves custody for the tenant the credential resolved to', async () => {
+        ensureTenantPin.mockClear();
+        const res = await makeApp('service').request('/probe', {
+            headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
+        });
+
+        expect(res.status).toBe(200);
+        expect(ensureTenantPin).toHaveBeenCalledWith('test-app', expect.anything());
+    });
+
+    it('does not run before the credential is matched', async () => {
+        // Ordering, not an optimisation. Before the token matches there is no
+        // tenant to prove custody OF, and resolving a did:web for an
+        // unauthenticated caller would let anyone drive outbound requests at a
+        // host of their choosing by guessing app ids.
+        ensureTenantPin.mockClear();
+        const res = await makeApp('service').request('/probe', {
+            headers: { authorization: 'Bearer wrong-token-aaaaaaaaaaaaaaaaaaaaaaaa' },
+        });
+
+        expect(res.status).toBe(401);
+        expect(ensureTenantPin).not.toHaveBeenCalled();
+    });
+
+    it('503s the tenant whose custody cannot be proven', async () => {
+        // 503, not 401: the caller's credential was fine — that was established
+        // a line earlier. What failed is our ability to serve this tenant
+        // safely, which is a statement about us and is retryable. A 401 sends
+        // an integrator looking at their token.
+        ensureTenantPin.mockRejectedValueOnce(new Error('pds-endpoint-host-mismatch'));
+        const res = await makeApp('service').request('/probe', {
+            headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
+        });
+
+        expect(res.status).toBe(503);
+    });
+
+    it('gates requireAuth too, after the acting-actor check', async () => {
+        ensureTenantPin.mockClear();
+        const res = await makeApp('required').request('/probe', {
+            headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
+        });
+
+        // No acting actor ⇒ 401 before any custody work is attempted.
+        expect(res.status).toBe(401);
+        expect(ensureTenantPin).not.toHaveBeenCalled();
+
+        const ok = await makeApp('required').request('/probe', {
+            headers: {
+                authorization: `Bearer ${SERVICE_TOKEN}`,
+                [ACTING_ACTOR_HEADER]: 'user-1',
+            },
+        });
+        expect(ok.status).toBe(200);
+        expect(ensureTenantPin).toHaveBeenCalledWith('test-app', expect.anything());
     });
 });

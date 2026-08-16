@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { AudioProcessingService } from '@antiphony/core/services/audio-processing';
 import { servicesFor } from '../composition.js';
 import { resolveProviders, resolveNotifier } from './audio-processing.js';
+import { ensureTenantPin, type PinCacheKV } from './app-did.js';
+import { APP_CONFIG } from './app-config.js';
 import { logger } from './logger.js';
 
 /**
@@ -50,7 +52,7 @@ import { logger } from './logger.js';
  *     it immediately rather than waiting out the TTL.
  */
 
-export const ProcessAudioJobSchema = z.object({
+const ProcessAudioJobSchema = z.object({
     originAppId: z.string().min(1),
     postId: z.string().min(1),
 });
@@ -96,6 +98,30 @@ export async function runProcessingJob(
     }
 
     const { originAppId, postId } = parsed.data;
+
+    // Prove custody before doing any work. A processing pass mints `at://` uris
+    // — `AudioProcessingService.process` reaches `getAppDid` through
+    // `buildPostUri` — and both consume paths run outside any request, so no
+    // auth middleware has populated the snapshot for this tenant. Under Node
+    // the boot gate already did, and this is a map lookup.
+    //
+    // Failure is classified as `threw`, i.e. RETRYABLE, including for a
+    // positive disproof that a retry cannot fix. That is deliberate: three
+    // attempts and then the dead letter queue puts the job somewhere visible,
+    // where acking it would silently drop a post's processing over a
+    // configuration error. Losing work is the worse failure.
+    try {
+        await ensureTenantPin(originAppId, {
+            expectedPdsHost: APP_CONFIG.PDS_HOST,
+            kv: env?.PIN_CACHE as PinCacheKV | undefined,
+        });
+    } catch (err) {
+        logger.error(
+            { ...context, err, postId, originAppId },
+            '[audio-processing] worker: app-DID custody unproven; asking for redelivery',
+        );
+        return { outcome: 'threw', err };
+    }
 
     // Built per job, not per module, for the same reason `resolveProviders` is
     // read per request: a module-load singleton would freeze the provider set

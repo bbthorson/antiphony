@@ -5,7 +5,6 @@ import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'share
 import { buildPostUri } from '@antiphony/core/services/audio-posts';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
-import { originLock } from '../../../middleware/origin-lock.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { getAppDid } from '../../../lib/app-did.js';
@@ -114,14 +113,6 @@ export function xrpcRoute(): Hono {
     // REST keeps its own envelope; Hono routes throws from these routes (and
     // from the middleware below) to this handler.
     app.onError(xrpcErrorHandler);
-
-    // The origin lock, same as `/api/v1/*` — this surface reaches the same
-    // domain services, so leaving it off would make `/xrpc/*` the one way in
-    // that skips the CDN. It is registered HERE, not next to the REST lock in
-    // app.ts, because Hono dispatches a throw to the error handler of the app
-    // the middleware was registered on: declared on the parent, a refusal would
-    // reach an XRPC caller wearing the REST envelope.
-    app.use('*', originLock());
 
     // -----------------------------------------------------------------------
     // Query: dev.antiphony.audio.getPost

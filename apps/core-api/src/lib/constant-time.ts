@@ -10,7 +10,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
  * crash on a wrong-length guess and leak the expected length by doing so.
  *
  * Extracted here because three middlewares now compare a shared secret
- * (service-auth, system-auth, origin-lock) and a security primitive copied per
+ * (service-auth, system-auth) and a security primitive copied per
  * call site is one that drifts.
  */
 export function constantTimeEqual(a: string, b: string): boolean {

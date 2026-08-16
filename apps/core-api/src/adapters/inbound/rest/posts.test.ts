@@ -52,6 +52,12 @@ process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
+// Every gated route now proves its tenant's app-DID custody in the auth
+// middleware — the Workers replacement for the boot gate. Seed the snapshot
+// so these cases keep testing their own subject rather than a missing pin.
+const { seedValidatedPins } = await import('../../../lib/testing/seed-pins.js');
+await seedValidatedPins({ 'test-app': 'did:web:test-app.example' });
+
 const { checkIdempotency } = await import('../../../lib/idempotency.js');
 
 const VIEW = {
