@@ -53,6 +53,39 @@ the #87 merge: `neonSqlClient`, the `ANTIPHONY_R2_BUCKET` config, and
   it sits on a live Twilio path mid-cutover. See § The ffmpeg problem and
   [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
 
+### ⚠️ 2d has nothing to migrate — verified 2026-08-16
+
+A dry run against `antiphony-core` found the canonical collections **empty**:
+
+| Collection | Docs |
+| :--- | ---: |
+| `posts` | **0** |
+| `audio_transcripts` | **0** |
+| `prompts` | 17 |
+| `replies` | 33 |
+| `users` | 13 |
+
+Nothing has ever been written through `/api/v1/posts` in this project. The
+records migration is a no-op and the cutover is just pointing at Neon.
+
+**What IS there is the legacy Vox Pop model** the extraction inherited. A
+`prompts` document carries `audioUrl, authorId, createdAt, description,
+replyCount, status, title` — no `cid`, no `originAppId`, no `kind`, no `embed`,
+no `reply`. It is not an `AudioPostRecord`, and
+`migrate-firestore-to-neon.ts` correctly does not touch it.
+
+**Open decision, and it is a product one:** do those 17 prompts and 33 replies
+come across? That is a **model translation**, not a store swap — computing CIDs
+for records that never had one, assigning `originAppId`, deriving `kind`,
+rebuilding `reply.root` / `reply.parent` StrongRefs from the legacy parent
+links, and turning `audioUrl` into a content-addressed blob ref. Materially more
+work than 2d was, and out of scope for this migration unless someone decides
+otherwise. If the answer is "that is Vox Pop's data and it stays there", **step 2
+is done**.
+
+Note also that `users` / `handles` / `atproto_oauth_states` still hold rows but
+have had no reader since #83 deleted the identity layer. They are legacy too.
+
 ### Remaining operational — none of it blocked on code
 
 1. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
@@ -60,10 +93,10 @@ the #87 merge: `neonSqlClient`, the `ANTIPHONY_R2_BUCKET` config, and
    posts with audio hydrate without an embed (§ 2c).
 3. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
    with `Storage Object Viewer` + `storage.buckets.get`.
-4. **Dry-run then run the records migration.** `npm run migrate:firestore-to-neon
-   -w @antiphony/core-api -- --dry-run`. Worth doing early regardless: it
-   validates every Firestore record against the current schemas and reports
-   pre-existing bad rows without writing.
+4. ~~**Dry-run then run the records migration.**~~ **Done — nothing to migrate.**
+   See the section above. Re-run with `--allow-empty` if a confirmation is
+   wanted; the script needs `FIREBASE_PROJECT_ID=antiphony-core` and no
+   `DATABASE_URL` for a dry run.
 5. **Cut over** by setting `DATABASE_URL` / binding `BLOBS`. `/health` reports
    which backend is live. Rollback is unsetting them.
 

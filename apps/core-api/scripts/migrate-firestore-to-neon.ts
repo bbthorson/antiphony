@@ -1,9 +1,16 @@
 /**
  * One-shot migration: Firestore records → Neon.
  *
- *     DATABASE_URL=postgres://…  \
+ *     # Dry run — reads and validates only. Needs NO DATABASE_URL.
+ *     # Add --allow-empty if the store is genuinely empty; otherwise reading
+ *     # nothing is treated as a probable credential/project mismatch.
  *     GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
  *     npm run migrate:firestore-to-neon -w @antiphony/core-api -- --dry-run
+ *
+ *     # For real.
+ *     DATABASE_URL=postgres://…  \
+ *     GOOGLE_APPLICATION_CREDENTIALS=/path/key.json \
+ *     npm run migrate:firestore-to-neon -w @antiphony/core-api
  *
  * ## Scope: records only. Blobs are NOT copied here.
  *
@@ -39,6 +46,7 @@
 
 import { getAdminDb } from '../src/lib/firebase-admin.js';
 import { neonSqlClient, neonConnectionString } from '../src/adapters/outbound/postgres/client.js';
+import type { SqlClient } from '../src/ports/sql-client.js';
 import { postgresAudioPostDependencies } from '../src/adapters/outbound/postgres/audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from '../src/adapters/outbound/postgres/audio-processing-dependencies.js';
 import { cidForRecord } from '../src/lib/cid.js';
@@ -49,6 +57,13 @@ import {
 import { COLLECTIONS, NSID } from 'shared/nsid';
 
 const DRY_RUN = process.argv.includes('--dry-run');
+/**
+ * Acknowledge that reading zero records is expected.
+ *
+ * Without it, an empty read is treated as a probable misconfiguration rather
+ * than a clean result — see the exit check in `main`.
+ */
+const ALLOW_EMPTY = process.argv.includes('--allow-empty');
 /** Firestore page size. Small enough to keep memory flat on a large collection. */
 const PAGE = 200;
 
@@ -64,6 +79,16 @@ const transcripts: Tally = { read: 0, written: 0, invalid: 0, cidDrift: 0 };
 
 function log(...args: unknown[]): void {
     console.log('[migrate]', ...args);
+}
+
+/** The project the Admin SDK resolves to — for the summary and the empty-read diagnostic. */
+function resolvedProject(): string | undefined {
+    return (
+        process.env.FIREBASE_PROJECT_ID?.trim() ||
+        process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+        process.env.GCLOUD_PROJECT?.trim() ||
+        undefined
+    );
 }
 
 /**
@@ -88,7 +113,7 @@ async function* pages(collection: string): AsyncGenerator<FirebaseFirestore.Quer
     }
 }
 
-async function migratePosts(sql: ReturnType<typeof neonSqlClient>): Promise<void> {
+async function migratePosts(sql: SqlClient): Promise<void> {
     const deps = postgresAudioPostDependencies(sql);
 
     for await (const docs of pages(COLLECTIONS[NSID.AudioPost])) {
@@ -139,7 +164,7 @@ async function migratePosts(sql: ReturnType<typeof neonSqlClient>): Promise<void
     }
 }
 
-async function migrateTranscripts(sql: ReturnType<typeof neonSqlClient>): Promise<void> {
+async function migrateTranscripts(sql: SqlClient): Promise<void> {
     const deps = postgresAudioProcessingDependencies(sql);
 
     for await (const docs of pages(COLLECTIONS[NSID.AudioTranscript])) {
@@ -169,26 +194,69 @@ async function migrateTranscripts(sql: ReturnType<typeof neonSqlClient>): Promis
     }
 }
 
+/**
+ * A client that refuses every query, used for `--dry-run` without a database.
+ *
+ * NOT a no-op stub. A dry run must never write, so if one somehow reaches the
+ * database that is a defect in this script — and a stub quietly returning `[]`
+ * would hide it, leaving a "dry" run that had silently written. Throwing makes
+ * the bug loud at the moment it happens.
+ */
+function refusingClient(): SqlClient {
+    return {
+        async query(text: string): Promise<never> {
+            throw new Error(
+                '[migrate] BUG: --dry-run attempted a database query. ' +
+                    `Nothing should reach the store in a dry run. Statement: ${text.trim().slice(0, 120)}`,
+            );
+        },
+    };
+}
+
 async function main(): Promise<void> {
-    const conn = neonConnectionString();
-    if ('missing' in conn) {
-        console.error(`[migrate] ${conn.missing} is not set`);
-        process.exit(1);
-    }
     if (DRY_RUN) log('DRY RUN — reading and validating, writing nothing');
 
-    const sql = neonSqlClient(conn.url);
+    // A dry run reads Firestore and validates; it never writes. Requiring a
+    // connection string for it would gate the one command whose entire purpose
+    // is to be runnable BEFORE any of the Neon setup exists.
+    const conn = neonConnectionString();
+    if ('missing' in conn && !DRY_RUN) {
+        console.error(
+            `[migrate] ${conn.missing} is not set. ` +
+                '(Not needed for --dry-run, which writes nothing.)',
+        );
+        process.exit(1);
+    }
+
+    const sql: SqlClient = 'missing' in conn ? refusingClient() : neonSqlClient(conn.url);
+    if ('missing' in conn) log('no DATABASE_URL — validating against Firestore only');
 
     await migratePosts(sql);
     await migrateTranscripts(sql);
 
     log('---');
+    log('project    ', resolvedProject() ?? '(unset — application default credentials)');
     log('posts      ', JSON.stringify(posts));
     log('transcripts', JSON.stringify(transcripts));
     log('---');
     log('Blobs are NOT migrated by this script — use Super Slurper (R2 > Data');
     log('Migration in the dashboard). Object paths are unchanged, so records');
     log('need no rewriting and the two halves can run in either order.');
+
+    // Reading NOTHING from both collections is far more often a credential or
+    // project mismatch than a genuinely empty store — and it is the one outcome
+    // that looks identical to success. A green dry run over zero records is
+    // exactly the report that would convince an operator the migration is safe.
+    if (posts.read === 0 && transcripts.read === 0 && !ALLOW_EMPTY) {
+        console.error(
+            '[migrate] REFUSING to report success: read 0 posts and 0 transcripts.\n' +
+                `[migrate]   project: ${resolvedProject() ?? '(unset — application default credentials)'}\n` +
+                '[migrate] Check GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_PROJECT_ID point at the\n' +
+                '[migrate] project holding the data. If the store really is empty, re-run with\n' +
+                '[migrate] --allow-empty to acknowledge it.',
+        );
+        process.exit(1);
+    }
 
     const drift = posts.cidDrift + transcripts.cidDrift;
     if (drift > 0) {
