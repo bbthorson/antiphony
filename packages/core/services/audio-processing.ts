@@ -68,6 +68,17 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
 export const PROCESSING_LEASE_MS = 15 * 60 * 1000;
 
 /**
+ * Recorded as `denoiseModel` when a denoiser succeeds without naming itself.
+ *
+ * `DenoiserPort.model` is optional — not every denoiser has a model to report
+ * — but the STATE field cannot be, because the patch skips `undefined` and a
+ * skipped write silently leaves the prior denoiser's name over new bytes.
+ * "Something ran and did not say what" is the honest record; absence would
+ * read as "no denoise has ever run", which is a different and false claim.
+ */
+const UNNAMED_DENOISER = 'unnamed';
+
+/**
  * AudioProcessingService — runs one post's opted-in audio processing (B5).
  *
  * Order matters: **denoise first, then transcribe**, so the transcript is
@@ -352,6 +363,13 @@ export class AudioProcessingService {
                         // later pass would read these bytes under the ORIGINAL
                         // embed's mime type.
                         processedMimeType: cleaned.mimeType,
+                        // Always written, never conditional on the provider
+                        // naming itself. The patch skips `undefined` keys, so
+                        // omitting it would leave a PREVIOUS denoiser's name
+                        // describing bytes it did not produce — now a reachable
+                        // state, since per-stage selection exists precisely so
+                        // one post can meet two denoisers.
+                        denoiseModel: cleaned.model ?? UNNAMED_DENOISER,
                     });
                 } catch {
                     await this.settle(originAppId, postId, { denoise: 'failed' });

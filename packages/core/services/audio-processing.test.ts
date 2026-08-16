@@ -62,7 +62,13 @@ const stubTranscript = {
 function providers(over: Partial<ProcessingProviders> = {}): ProcessingProviders {
     return {
         transcriber: { transcribe: vi.fn(async () => stubTranscript) },
-        denoiser: { denoise: vi.fn(async () => ({ bytes: new Uint8Array([9, 9]), mimeType: 'audio/webm' })) },
+        denoiser: {
+            denoise: vi.fn(async () => ({
+                bytes: new Uint8Array([9, 9]),
+                mimeType: 'audio/webm',
+                model: 'stub-denoiser-1',
+            })),
+        },
         // Re-encodes to mp3 and shortens, mirroring the real adapter: the
         // trimmer is where the 320kbps inflation is undone, so a result whose
         // mimeType matched its input would not exercise the interesting path.
@@ -265,6 +271,90 @@ describe('AudioProcessingService.process', () => {
         const call = vi.mocked(failingDenoise.transcriber!.transcribe).mock.calls[0][0];
         expect(Array.from(call.bytes)).toEqual([1, 2, 3]);
         expect(patches).toContainEqual({ transcribe: 'ready' });
+    });
+
+    describe('denoise provenance', () => {
+        // A cleaned variant is a blob CID, not a record, so unlike a transcript
+        // it has nowhere of its own to carry which denoiser produced it.
+        // `denoiseModel` on the state is that record.
+
+        it('records the denoiser that produced the variant', async () => {
+            const post = makePost({ processing: { denoise: 'pending', updatedAt: new Date() } });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual(
+                expect.objectContaining({
+                    denoise: 'ready',
+                    processedBlobCid: CLEANED_CID,
+                    denoiseModel: 'stub-denoiser-1',
+                }),
+            );
+        });
+
+        it('overwrites a previous denoiser name when a different one re-runs', async () => {
+            // The staleness case, and the reason the write is unconditional.
+            // Per-stage provider selection exists so one post CAN meet two
+            // denoisers; leaving the old name over new bytes would make the
+            // provenance actively misleading rather than merely absent.
+            const post = makePost({
+                processing: {
+                    denoise: 'pending',
+                    processedBlobCid: CLEANED_CID,
+                    denoiseModel: 'elevenlabs/audio-isolation',
+                    updatedAt: new Date(),
+                },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual(
+                expect.objectContaining({ denoise: 'ready', denoiseModel: 'stub-denoiser-1' }),
+            );
+        });
+
+        it('records a placeholder when the denoiser names no model', async () => {
+            // `DenoiserPort.model` is optional, but the state field cannot go
+            // unwritten: the patch skips `undefined`, so silence here would
+            // leave the PREVIOUS denoiser's name describing these bytes.
+            const post = makePost({ processing: { denoise: 'pending', updatedAt: new Date() } });
+            const anonymous = providers({
+                denoiser: {
+                    denoise: vi.fn(async () => ({
+                        bytes: new Uint8Array([9, 9]),
+                        mimeType: 'audio/webm',
+                    })),
+                },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, anonymous).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual(
+                expect.objectContaining({ denoise: 'ready', denoiseModel: 'unnamed' }),
+            );
+        });
+
+        it('leaves the recorded model alone when denoise fails', async () => {
+            // A failed denoise does not touch `processedBlobCid` either — the
+            // variant still holds the previous denoiser's output, so the
+            // previous name still describes it truthfully.
+            const post = makePost({
+                processing: {
+                    denoise: 'pending',
+                    processedBlobCid: CLEANED_CID,
+                    denoiseModel: 'elevenlabs/audio-isolation',
+                    updatedAt: new Date(),
+                },
+            });
+            const failing = providers({
+                denoiser: { denoise: vi.fn(async () => { throw new Error('provider down'); }) },
+            });
+            const { deps, patches } = makeDeps(post);
+            await new AudioProcessingService(deps, failing).process('vox-pop', 'p1');
+
+            expect(patches).toContainEqual({ denoise: 'failed' });
+            expect(patches.some((patch) => 'denoiseModel' in patch)).toBe(false);
+        });
     });
 
     it('skips pending stages when the post has no audio', async () => {
