@@ -6,6 +6,11 @@
  * `serve()` entry point.
  */
 
+// FIRST, and for side effects: installs the Firebase bindings, the ffmpeg stage
+// adapters, and the Cloud Tasks dispatcher into their respective seams. Must
+// precede any import that could reach `servicesFor()`. See `native.ts`.
+import './native.js';
+
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { app as createApp } from './app.js';

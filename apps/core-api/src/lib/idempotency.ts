@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
-import { firebaseIdempotencyStore } from '../adapters/outbound/firebase/idempotency-store.js';
+import { servicesFor } from '../composition.js';
 import type { IdempotencyStore } from '../ports/idempotency-store.js';
 
 /**
@@ -23,6 +23,16 @@ import type { IdempotencyStore } from '../ports/idempotency-store.js';
  * independent records. Without it, the first caller's cached response could be
  * returned to a second (resource-id leak), or a second could pre-register a key
  * and force a spurious 409 for the first (write denial).
+ *
+ * ## The store comes from the composition root, not from a default argument
+ *
+ * It used to default to `firebaseIdempotencyStore`, and no caller ever passed
+ * anything else — so the Postgres binding that landed in #86 was unreachable in
+ * production no matter how the deployment was configured, and the Firestore
+ * import made `firebase-admin` reachable from every write route. Resolving it
+ * per request off `c.env` fixes both: the cutover switch in `composition.ts`
+ * actually governs this table, and a Worker bundle stops pulling in a CommonJS
+ * SDK it cannot run.
  */
 
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -55,15 +65,20 @@ function docId(uid: string, key: string): string {
     return `${uid}_${createHash('sha256').update(key).digest('hex')}`;
 }
 
+/** This request's store: the composed one, unless a caller names another. */
+function resolveStore(c: Context, store?: IdempotencyStore): IdempotencyStore {
+    return store ?? servicesFor(c.env as Record<string, unknown> | undefined).idempotencyStore;
+}
+
 export async function checkIdempotency(
     c: Context,
     uid: string,
-    store: IdempotencyStore = firebaseIdempotencyStore,
+    store?: IdempotencyStore,
 ): Promise<{ cached: unknown } | null> {
     const key = readKey(c);
     if (!key) return null;
 
-    const claim = await store.claim(docId(uid, key), TTL_MS);
+    const claim = await resolveStore(c, store).claim(docId(uid, key), TTL_MS);
     if (claim === 'in-progress') throw new IdempotencyInProgressError();
     if (claim === 'claimed') return null;
     return { cached: claim.replay };
@@ -73,9 +88,9 @@ export async function saveIdempotencyResult(
     c: Context,
     uid: string,
     body: unknown,
-    store: IdempotencyStore = firebaseIdempotencyStore,
+    store?: IdempotencyStore,
 ): Promise<void> {
     const key = readKey(c);
     if (!key) return;
-    await store.settle(docId(uid, key), body, TTL_MS);
+    await resolveStore(c, store).settle(docId(uid, key), body, TTL_MS);
 }

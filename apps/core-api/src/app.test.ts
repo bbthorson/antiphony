@@ -40,7 +40,11 @@ vi.mock('./lib/firebase-admin.js', () => ({
 process.env.LOG_LEVEL = 'silent';
 
 // Dynamic, so the mock above is registered before app.ts pulls in the adapters
-// that import firebase-admin at module scope.
+// that import firebase-admin at module scope. `native.js` first, for the same
+// reason `index.ts` imports it first: `/health` reports the composed backend,
+// and without the Firebase fallback installed an unbound deployment throws
+// rather than reporting `firebase`.
+await import('./native.js');
 const { app } = await import('./app.js');
 
 // The `parseAllowedOrigins` suite that stood here went with the CORS

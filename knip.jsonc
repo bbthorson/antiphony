@@ -29,7 +29,14 @@
             "project": ["scripts/**/*.mjs", "eslint-rules/**/*.mjs"]
         },
         "apps/core-api": {
-            "entry": ["scripts/*.ts"],
+            // TWO runtime entry points now. `src/worker.ts` knip finds by
+            // itself, from `main` in apps/core-api/wrangler.jsonc — and finding
+            // it is what makes knip stop applying its default entry patterns,
+            // which is what used to cover `src/index.ts`. So the Node entry has
+            // to be named here or the whole Cloud Run half of the app reads as
+            // dead, taking `@hono/node-server` with it. Listing `worker.ts` too
+            // would be redundant, and knip says so.
+            "entry": ["scripts/*.ts", "src/index.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
         },
         "apps/reference": {

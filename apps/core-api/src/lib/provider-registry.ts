@@ -11,9 +11,6 @@ import {
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
-import { ffmpegTrimmer } from '../adapters/outbound/ffmpeg/trimmer.js';
-import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
-import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
 import {
     TENANT_MODEL_VARS,
     TENANT_PROVIDER_VARS,
@@ -51,7 +48,7 @@ import { logger } from './logger.js';
  * adapters, per `specs/enrichment-pipeline.md` § Provider policy.
  */
 
-interface ProviderEntry<T> {
+export interface ProviderEntry<T> {
     /** The value this entry answers to in its stage's env var. */
     readonly name: string;
     /** Whether this deployment can actually run it right now. */
@@ -111,18 +108,57 @@ const DENOISERS: ProviderEntry<DenoiserPort>[] = [
 
 // Trim and waveform are LOCAL compute — no API key, so they are available on
 // their binary alone, and one probe governs both. That coupling is real (one
-// ffmpeg, two stages) and is preserved by SHARING the probe function rather
-// than by sharing a branch, which is what lets the two still be selected
-// independently.
+// ffmpeg, two stages) and survives the split below: `native-providers.ts`
+// still builds both entries from the SAME `ffmpegAvailable` probe, so the two
+// stages remain independently selectable without being independently probed.
+//
+// The ffmpeg entries are NOT declared here. They reach `node:child_process` and
+// `ffmpeg-static`, neither of which exists on Workers — `nodejs_compat` does
+// not provide `child_process`, and `ffmpeg-static` resolves its binary through
+// `__dirname` at module scope. `src/native.ts` installs them under Node. On a
+// Worker the arrays below are all there is, so trim and waveform resolve
+// unavailable and `resolveInitialProcessing` settles them `skipped` — which is
+// the truthful state until step 4 moves those stages onto the rendition
+// service. See specs/cloudflare-migration.md § The ffmpeg problem.
 const TRIMMERS: ProviderEntry<TrimmerPort>[] = [
-    { name: 'ffmpeg', available: ffmpegAvailable, create: () => ffmpegTrimmer },
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubTrimmer },
 ];
 
 const WAVEFORMS: ProviderEntry<WaveformPort>[] = [
-    { name: 'ffmpeg', available: ffmpegAvailable, create: () => ffmpegWaveform },
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubWaveform },
 ];
+
+/**
+ * The stage adapters that only a Node runtime can run. Installed at import time
+ * by `src/native.ts`; absent on Workers.
+ */
+export interface NativeProviders {
+    trimmer: ProviderEntry<TrimmerPort>;
+    waveform: ProviderEntry<WaveformPort>;
+}
+
+/**
+ * Register a native entry ahead of the stub, or replace an already-registered
+ * one of the same name.
+ *
+ * Order matters — the default scan takes the first available non-`explicitOnly`
+ * entry — so a native adapter has to land in FRONT of the list, not appended to
+ * it. Replacing by name rather than always prepending keeps a second call
+ * idempotent, which matters because a test that re-imports the entry point
+ * would otherwise stack duplicate entries and make the scan's result depend on
+ * how many times the module was loaded.
+ */
+function installEntry<T>(entries: ProviderEntry<T>[], entry: ProviderEntry<T>): void {
+    const existing = entries.findIndex((candidate) => candidate.name === entry.name);
+    if (existing >= 0) entries[existing] = entry;
+    else entries.unshift(entry);
+}
+
+/** Wire the Node-only stage adapters into the registry. See `NativeProviders`. */
+export function installNativeProviders(native: NativeProviders): void {
+    installEntry(TRIMMERS, native.trimmer);
+    installEntry(WAVEFORMS, native.waveform);
+}
 
 /**
  * Resolve one stage's provider.

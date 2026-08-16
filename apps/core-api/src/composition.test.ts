@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
+// Installs the Firebase bindings as the fallback, the way `index.ts` does under
+// Node. Without it every assertion about Firebase below describes a Worker
+// instead, where an unbound backend throws rather than falling through. That
+// half is asserted in `composition.worker.test.ts`, which has to be a separate
+// file because this import is module-graph-wide.
+import './native.js';
 import { createServices, readRuntimeEnv, servicesFor } from './composition.js';
 
 vi.mock('./lib/firebase-admin.js', () => ({

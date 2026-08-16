@@ -18,6 +18,11 @@ vi.mock('../../../composition.js', () => ({
             extractObjectPath: (url: string) => extractObjectPath(url),
             openStream: (path: string, range?: unknown) => openStream(path, range),
         },
+    // The rate-limit middleware resolves its store from here now, rather
+    // than defaulting to the Firestore binding. Under limit on every hit:
+    // these suites assert route behaviour, not rate-limit policy (that is
+    // middleware/rate-limit.test.ts).
+    rateLimitStore: { hit: async () => 'under' as const },
     }),
 }));
 

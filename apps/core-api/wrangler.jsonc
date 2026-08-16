@@ -1,0 +1,113 @@
+{
+	// Cloudflare Worker config for the core-api service — the `/api/v1/*` and
+	// `/xrpc/*` surface that runs on Cloud Run today.
+	//
+	// The repo now has TWO Workers, which is why this file exists rather than
+	// the root one growing a second entry: a wrangler config describes exactly
+	// one Worker. The root `wrangler.jsonc` stays the docs site's assets-only
+	// Worker, because the Cloudflare dashboard's "Connect to Git" build for it
+	// runs a bare `npx wrangler deploy` at the repo root and would find this one
+	// only if that command changed. Deploy this one explicitly:
+	//
+	//     npx wrangler deploy -c apps/core-api/wrangler.jsonc
+	//
+	// See specs/cloudflare-migration.md § Sequencing, step 3.
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "antiphony-core-api",
+	"main": "src/worker.ts",
+
+	// `nodejs_compat` is not optional here. `node:crypto` backs three things on
+	// the request path — `constantTimeEqual` (service-token comparison),
+	// `idempotency.ts`'s hashing, and the webhook notifier's HMAC — and the
+	// flag is what provides it. The compat DATE matters separately: from
+	// 2025-04-01 the runtime populates `process.env` from vars and secrets,
+	// which is what lets `app-config.ts`, `service-auth.ts`, and the provider
+	// registry keep reading `process.env` on both runtimes instead of growing a
+	// second config path.
+	"compatibility_date": "2025-11-01",
+	"compatibility_flags": ["nodejs_compat"],
+
+	// ## Smart Placement, on from the first deploy — not after measuring
+	//
+	// Workers run close to the USER. Neon is single-region on AWS `us-east-1`,
+	// and the Cloud Run deployment this replaces is in `us-east4` — the same
+	// metro, so database round trips are currently single-digit milliseconds.
+	// Moving to the edge is therefore a latency REGRESSION by default: a
+	// request served from London against a database in Virginia pays ~80ms per
+	// round trip, times however many sequential queries the handler makes.
+	//
+	// Smart Placement relocates execution close to the backend when a Worker
+	// makes several round trips to one origin, which is exactly this workload's
+	// shape. It is on from the start because the regression it prevents is
+	// INVISIBLE when testing from the US east coast — the one place the two
+	// topologies look identical. See specs/cloudflare-migration.md § Geography.
+	"placement": { "mode": "smart" },
+
+	"observability": { "enabled": true },
+
+	// ## The TTL sweep finally gets a caller
+	//
+	// `antiphony_sweep_expired()` has shipped with `db/schema.sql` since step 2
+	// with nothing calling it. It replaces the native Firestore TTL on
+	// `idempotency_keys` and `rate_limits`, which Postgres has no equivalent
+	// for, so without a trigger both tables grow forever.
+	//
+	// Hourly, at a minute that is not :00, because every cron in the world
+	// fires on the hour and there is no reason to join them. It is deliberately
+	// not `pg_cron`: Neon runs those jobs only while the compute is awake, and
+	// a beta service is idle nearly always — which is precisely when scale to
+	// zero should be on. A trigger outside the database fires regardless of
+	// compute state, and waking Neon is the feature rather than the
+	// precondition. See schema.sql § Why NOT pg_cron.
+	"triggers": { "crons": ["17 * * * *"] },
+
+	// Audio blobs and their derived renditions. One bucket, two prefixes:
+	// `blobs/{originAppId}/{cid}` and `renditions/{originAppId}/{cid}.{format}`.
+	//
+	// Binding-based authorisation is why there is no R2 credential anywhere in
+	// this config — and why dropping `getSignedUrl` made the blob store simpler
+	// rather than harder. See specs/cloudflare-migration.md § Secrets.
+	"r2_buckets": [
+		{
+			"binding": "BLOBS",
+			"bucket_name": "antiphony-r2-bucket"
+		}
+	],
+
+	// ## Hyperdrive, not a DATABASE_URL secret
+	//
+	// The Worker reads `env.HYPERDRIVE.connectionString`, which is a LOCAL
+	// pooled string — not the Neon credential. That is the whole point: the
+	// database never becomes a Worker secret, and nothing can read one back out
+	// of Cloudflare anyway.
+	//
+	// `id` is per-account and comes from `wrangler hyperdrive create`, so it
+	// cannot be committed meaningfully — the placeholder below has to be
+	// replaced before the first deploy, and `wrangler deploy` fails on it
+	// rather than starting up without a database. `readRuntimeEnv` still
+	// accepts a raw `DATABASE_URL` if Hyperdrive is ever skipped, but
+	// § Geography argues it should not be: the connection setup Hyperdrive
+	// removes is a full extra round trip to Virginia on every cold path.
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "REPLACE_ME_WITH_wrangler_hyperdrive_create_OUTPUT"
+		}
+	],
+
+	// Non-secret configuration. Everything else — SYSTEM_AUTH_TOKEN,
+	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY — is a Worker SECRET, set with
+	// `wrangler secret put`, and must never appear in this file.
+	//
+	// ANTIPHONY_PUBLIC_BASE_URL is required, not cosmetic: since the audio
+	// proxy streams bytes rather than redirecting to a signed URL,
+	// `AudioEmbedView.url` is an absolute URL pointing back at this service.
+	// Without it a post with audio hydrates with no embed at all.
+	"vars": {
+		"ANTIPHONY_PUBLIC_BASE_URL": "https://api.antiphony.dev",
+		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
+		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
+		"NODE_ENV": "production",
+		"LOG_LEVEL": "info"
+	}
+}

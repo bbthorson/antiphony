@@ -159,6 +159,40 @@ export function cloudTasksRequested(): boolean {
 }
 
 /**
+ * This adapter as a `DurableDispatcherResolver` — the form `lib/audio-
+ * processing.ts` installs. Returns `undefined` when Cloud Tasks is not
+ * configured, which is the signal to fall through to the noop dispatcher.
+ *
+ * The partial-config report lives here rather than at the seam because it is
+ * this adapter's own policy, and a non-obvious one:
+ *
+ * Partial config is a MISCONFIGURATION, not an opt-out, and the two must not
+ * degrade to the same silent noop. A deployment that set some of the queue vars
+ * believes it has durable dispatch and has none; every post sits `pending`
+ * forever with nothing saying why.
+ *
+ * Keyed on INTENT rather than on how many values are missing. Counting cannot
+ * work here: `GOOGLE_CLOUD_PROJECT` is set by the platform and
+ * `SYSTEM_AUTH_TOKEN` by every other `/system/*` route, so a deployment that
+ * cleanly opted out still reports only three missing and would trip any
+ * threshold — firing this error at every correctly-configured noop deployment,
+ * which is how a real misconfiguration gets tuned out.
+ */
+export function cloudTasksResolver(logger: Logger): () => ProcessingDispatchPort | undefined {
+    return () => {
+        const resolved = cloudTasksConfig();
+        if (resolved.config) return cloudTasksDispatcher(resolved.config, logger);
+        if (cloudTasksRequested()) {
+            logger.error(
+                { missing: resolved.missing },
+                '[audio-processing] Cloud Tasks dispatch is partially configured — falling back to noop, jobs will be dropped',
+            );
+        }
+        return undefined;
+    };
+}
+
+/**
  * ADC client, memoized. `GoogleAuth` caches the access token and refreshes it
  * before expiry, so this must not be rebuilt per call — a fresh instance would
  * re-fetch a token on every dispatch and put a metadata-server round-trip in

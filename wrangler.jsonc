@@ -9,9 +9,18 @@
 	//   Build command:  npm run build -w @antiphony/docs
 	//   (this file's `assets.directory` is what gets uploaded)
 	//
-	// Unrelated to the API: apps/core-api ships to Cloud Run via the root
-	// Dockerfile and .github/workflows/deploy.yml, and serves api.antiphony.dev
-	// behind Cloudflare. Nothing in this file touches it.
+	// The repo has TWO Workers now. This one is the docs site; core-api has its
+	// own config at `apps/core-api/wrangler.jsonc`, because a wrangler config
+	// describes exactly one Worker and the dashboard build for THIS one runs a
+	// bare `npx wrangler deploy` at the repo root — so it must keep finding
+	// this file and nothing else. Deploy the API explicitly:
+	//
+	//     npx wrangler deploy -c apps/core-api/wrangler.jsonc
+	//
+	// Nothing in this file touches core-api, and that stays true. What is no
+	// longer true is the line that used to be here saying core-api ships to
+	// Cloud Run via the root Dockerfile and .github/workflows/deploy.yml: it is
+	// mid-migration to Workers. See specs/cloudflare-migration.md.
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "antiphony",
 	"compatibility_date": "2025-01-01",

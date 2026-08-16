@@ -16,8 +16,6 @@ import { build } from 'esbuild';
  *     variants) that esbuild can't safely flatten. App Hosting runs
  *     `npm install` in the container, so `node_modules/firebase-admin` is
  *     present at runtime; keeping it external avoids bundling ~50MB.
- *   - `pino` — imports platform-specific worker scripts via `require()`
- *     which don't bundle cleanly.
  *   - `ffmpeg-static` — CJS that resolves its bundled binary through
  *     `path.join(__dirname, ...)` at module scope. Inlined into this ESM
  *     bundle that identifier does not exist, so the process dies on startup
@@ -40,7 +38,7 @@ const options = {
     target: 'node22',
     format: 'esm',
     outfile: 'dist/index.js',
-    external: ['firebase-admin', 'pino', 'pino-pretty', 'ffmpeg-static'],
+    external: ['firebase-admin', 'ffmpeg-static'],
     // esbuild needs the tsconfig to honor the path aliases (shared/*, @antiphony/core/*).
     tsconfig: 'tsconfig.json',
     sourcemap: true,

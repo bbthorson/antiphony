@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Logger } from 'pino';
+import type { Logger } from './logger.js';
 import { installShutdownHandlers, SHUTDOWN_GRACE_MS, type ClosableServer } from './shutdown.js';
 
 /**
