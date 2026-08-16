@@ -14,9 +14,11 @@
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present && npm run test:eslint-rules",
+    "test": "npm run test --workspaces --if-present && npm run test:eslint-rules && npm run test:lexicons",
     "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them — they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
     "test:eslint-rules": "node --test \"eslint-rules/*.test.mjs\"",
+    "//test:lexicons": "Validates lexicons/ against upstream's own encoding of the Lexicon spec (@atproto/lex-document), so a spec change upstream lands as a CI failure rather than a federation-time surprise. Lives at the root, not in a workspace, because lexicons/ is repo-level and belongs to no package. Refs into app.bsky.*/com.atproto.* are reported but NOT resolved — resolving them means vendoring ~20 third-party documents and putting a network fetch or CID-pinned manifest in the CI path (see specs/xrpc-and-atproto-lex-strategy.md §7). The Zod-vs-lexicon parity oracle is separate, in @antiphony/shared's vitest suite.",
+    "test:lexicons": "node scripts/validate-lexicons.mjs",
     "knip": "knip"
   },
   "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Three of these are load-bearing and one fails SILENTLY without its script: ffmpeg-static downloads the ffmpeg binary, and without it ffmpegAvailable() returns false, so the trim and waveform stages advertise themselves as unavailable and posts settle those stages as `skipped` rather than erroring. esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. @firebase/util, protobufjs, and fsevents (macOS-only) are here because they already run today under npm 10 — this file records the trust that exists rather than making a new decision. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump — and a re-blocked ffmpeg-static is exactly the silent failure above. Add entries with `npm install-scripts approve <pkg>` on npm 12+.",
@@ -29,6 +31,7 @@
     "sharp": true
   },
   "devDependencies": {
+    "@atproto/lex-document": "^0.1.9",
     "eslint": "^9.16.0",
     "knip": "^5.66.1",
     "typescript": "^5.7.2"
