@@ -839,6 +839,64 @@ converts the rest of the migration from a rewrite into a set of adapter swaps.
   environments needs per-app configs — and the file's own header comment ("Nothing in
   this file touches [core-api]") stops being true.
 
+## Secrets: where each credential lives, and where it must not
+
+Worth stating explicitly because the obvious answer is wrong in one place. R2
+bucket: **`antiphony-r2-bucket`**, one bucket with two prefixes (`blobs/` and
+`renditions/`).
+
+| Consumer | Holds | Notes |
+| :--- | :--- | :--- |
+| Worker secrets | `SYSTEM_AUTH_TOKEN`, `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY` | **Not** the database. **Not** R2. |
+| Hyperdrive resource | the Neon connection string | `wrangler hyperdrive create` |
+| Rendition service (Cloud Run) | R2 **S3 API** key + secret, `SYSTEM_AUTH_TOKEN` | The only place a stored R2 key is unavoidable |
+| An operator's shell / CI | Neon connection string; a read-only GCS service account | Schema apply + migration only |
+
+**The database does not belong in a Worker secret.** With Hyperdrive the
+connection string lives on the Hyperdrive resource and the Worker reads
+`env.HYPERDRIVE.connectionString` — a local pooled string, not the Neon
+credential. `wrangler secret put DATABASE_URL` is the move only if Hyperdrive is
+skipped, and § Geography argues it should not be.
+
+**R2 needs no credential in the Worker at all.** Binding-based authorisation is
+why the R2 blob store has no signing code — and why dropping `getSignedUrl` made
+the binding simpler rather than harder. The Cloud Run rendition service is the
+exception, because it runs outside the Workers runtime and cannot hold a binding.
+
+**Cloudflare secrets are write-only from outside.** Nothing reads one back, which
+is exactly why the schema apply and the data migration cannot use them: those run
+in a shell, against Firestore and Neon, with no Worker involved.
+
+## Step 2d — the migration runbook
+
+Two independent halves. **Object paths are unchanged across the move**
+(`blobs/{originAppId}/{cid}`), so no record needs rewriting to point at the new
+bucket — a property of content addressing, and the reason these can run in
+either order or concurrently.
+
+**Blobs — Cloudflare Super Slurper, no code.** R2 → Data Migration in the
+dashboard copies GCS → R2 natively, given a service account with
+`Storage Object Viewer` plus `storage.buckets.get`. It handles resumption,
+parallelism and verification better than a bespoke loop would, and needs no R2
+credential on our side. Objects over 1 TB are skipped; nothing here approaches
+that (the upload route caps at 25 MB).
+
+**Records — `npm run migrate:firestore-to-neon -w @antiphony/core-api`.** Run by
+an operator with `DATABASE_URL` and `GOOGLE_APPLICATION_CREDENTIALS` in the
+environment. `--dry-run` reads and validates without writing.
+
+It **verifies itself**: every migrated post is read back and its CID recomputed,
+and the script exits non-zero on any drift. That check is inline rather than a
+later audit because the failure is silent — `jsonb` stores numbers as `numeric`,
+wider than JS, so a coercion would change a record and invalidate every
+StrongRef pointing at it while both sides continued to agree with themselves. A
+drift caught during the run is one record to investigate; caught afterwards it is
+an unknown subset.
+
+Re-running is safe: every write is an upsert keyed on the record's own id, so a
+partial run resumes by running again. Nothing is deleted from Firestore —
+cutover is a config change and rollback is pointing back at the old binding.
+
 ## Sequencing
 
 **Revised 2026-08-16.** The original six-phase plan was paced for a service with
