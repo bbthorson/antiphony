@@ -1,8 +1,14 @@
--- Antiphony on Neon — draft schema
+-- Antiphony on Neon — schema
 --
--- Companion to specs/cloudflare-migration.md. This is a DRAFT for review, not a
--- migration: no migration tool is wired yet, and the § Open items at the bottom
--- are unresolved.
+-- Companion to specs/cloudflare-migration.md. Moved here from specs/ once the
+-- Postgres bindings began depending on it: adapters/outbound/postgres/*.test.ts
+-- applies THIS FILE to an in-process Postgres 18 (PGlite) and runs the real
+-- bindings against it, so a drift between the schema and the code that reads it
+-- fails the suite rather than production. It is the same file you apply to Neon.
+--
+-- No migration tool is wired yet — this is still apply-once DDL, not a
+-- versioned migration chain. That is the next thing to fix if the schema
+-- changes after first deploy.
 --
 -- Scope assumes Phase −1 has landed (the dead /system/* routes deleted), so
 -- `users`, `handles`, and `atproto_oauth_states` are absent by design — they

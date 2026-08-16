@@ -88,7 +88,7 @@ audio infrastructure.
 - **Renditions → no rows at all.** The path is derivable and existence is an R2
   HEAD. Nothing to store, nothing to fall out of sync.
 
-The draft is in [`neon-schema.sql`](./neon-schema.sql).
+The draft is in [`apps/core-api/db/schema.sql`](../apps/core-api/db/schema.sql).
 
 ### Notable improvements the schema buys
 
@@ -862,7 +862,7 @@ What the beta framing removes:
   `atproto_oauth_states` collections have no writer. The public OpenAPI surface is
   byte-identical. Cheapest step, largest reduction in every later one.
 - **Step 2 — schema + adapters + R2, together.** Apply
-  [`neon-schema.sql`](./neon-schema.sql), write the Postgres and R2 bindings behind
+  [`apps/core-api/db/schema.sql`](../apps/core-api/db/schema.sql), write the Postgres and R2 bindings behind
   the existing ports, one-shot the data across, verify CID round-trip stability.
   Ports for rate-limit and idempotency fold in here rather than being their own
   phase. The TTL sweep lands with the schema.
@@ -932,7 +932,7 @@ deliver value on Cloud Run alone, so an abandoned migration strands nothing.
   longer binds. **Hyperdrive at step 3 is now expected rather than optional**, given
   the `us-east-1` geography; the ports keep it a late-binding choice either way.
 - **Database** — Neon on AWS `us-east-1`, Postgres 18. Two consequences already
-  folded into [`neon-schema.sql`](./neon-schema.sql): PG18 makes generated columns
+  folded into [`apps/core-api/db/schema.sql`](../apps/core-api/db/schema.sql): PG18 makes generated columns
   `VIRTUAL` by default and virtual columns cannot be indexed, so the explicit
   `stored` keyword is load-bearing; and PG18 skip scan does **not** let one index
   serve both author queries, because the trailing column is a sort key.

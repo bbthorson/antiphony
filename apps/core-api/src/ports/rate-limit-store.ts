@@ -77,7 +77,7 @@ export interface RateLimitStore {
      *
      * A bucket whose window has closed resets rather than accumulating, so
      * `key` never needs explicit clearing. Expiry cleanup is the binding's
-     * concern (Firestore TTL; a sweep on Postgres — see specs/neon-schema.sql).
+     * concern (Firestore TTL; a sweep on Postgres — see db/schema.sql).
      *
      * Must not throw for an unreachable backend — return `'unavailable'`.
      * Throwing is reserved for programmer error (a malformed key, a missing
