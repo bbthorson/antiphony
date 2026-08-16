@@ -116,10 +116,12 @@
                                 "type": "object",
                                 "properties": {
                                   "text": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "maxLength": 3000
                                   },
                                   "title": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "maxLength": 3000
                                   },
                                   "reply": {
                                     "type": "object",
@@ -166,7 +168,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "maxItems": 3
                                   },
                                   "selfLabels": {
                                     "type": "array",
@@ -862,10 +865,12 @@
                           "type": "object",
                           "properties": {
                             "text": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 3000
                             },
                             "title": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 3000
                             },
                             "reply": {
                               "type": "object",
@@ -912,7 +917,8 @@
                               "type": "array",
                               "items": {
                                 "type": "string"
-                              }
+                              },
+                              "maxItems": 3
                             },
                             "selfLabels": {
                               "type": "array",
@@ -1230,10 +1236,12 @@
                           "type": "object",
                           "properties": {
                             "text": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 3000
                             },
                             "title": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 3000
                             },
                             "reply": {
                               "type": "object",
@@ -1280,7 +1288,8 @@
                               "type": "array",
                               "items": {
                                 "type": "string"
-                              }
+                              },
+                              "maxItems": 3
                             },
                             "selfLabels": {
                               "type": "array",
@@ -1729,10 +1738,12 @@
                                 "type": "object",
                                 "properties": {
                                   "text": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "maxLength": 3000
                                   },
                                   "title": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "maxLength": 3000
                                   },
                                   "reply": {
                                     "type": "object",
@@ -1779,7 +1790,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "maxItems": 3
                                   },
                                   "selfLabels": {
                                     "type": "array",

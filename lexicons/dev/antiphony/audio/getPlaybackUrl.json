@@ -1,0 +1,42 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getPlaybackUrl",
+    "description": "Resolve a stored audio blob CID to a playable URL. Exists because a blob CID is a content address, not a location: a client holding an embed's `audio.ref` needs somewhere to point an audio element.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns the playback URL for one blob within the caller's tenancy. The URL addresses this service's audio proxy, is stable, and carries no credential — so a response referencing it stays cacheable. It is NOT a direct storage URL and NOT time-limited.",
+            "parameters": {
+                "type": "params",
+                "required": ["cid"],
+                "properties": {
+                    "cid": {
+                        "type": "string",
+                        "format": "cid",
+                        "description": "Content address of the audio blob, as carried on dev.antiphony.embed.audio#audio."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["url"],
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "description": "Playable audio URL, scoped to the caller's tenancy."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "RecordNotFound",
+                    "description": "The CID does not form an addressable object for this tenancy."
+                }
+            ]
+        }
+    }
+}

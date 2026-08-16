@@ -1,0 +1,87 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.createPost",
+    "description": "Create an audio post. The audio is uploaded first through the blob-upload flow and referenced here as an embed; this procedure writes the record, not the bytes.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Writes a dev.antiphony.audio.post authored by the acting actor. Tenancy and authorship are stamped server-side from the credential and the asserted actor — supplying them in the body has no effect. `reply` presence makes the post a reply; its absence makes it a prompt.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "maxGraphemes": 300,
+                            "maxLength": 3000,
+                            "default": "",
+                            "description": "USER-authored text. May be empty when an audio embed is present, but a post with neither text nor audio is rejected."
+                        },
+                        "title": {
+                            "type": "string",
+                            "maxGraphemes": 300,
+                            "maxLength": 3000,
+                            "description": "Optional headline. Prompts only — supplying one alongside `reply` is rejected."
+                        },
+                        "embed": {
+                            "type": "union",
+                            "refs": ["dev.antiphony.embed.audio"],
+                            "description": "The audio attachment, referencing an already-uploaded blob."
+                        },
+                        "reply": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.post#replyRef",
+                            "description": "StrongRef root + parent. Present ⇒ this is a reply."
+                        },
+                        "langs": {
+                            "type": "array",
+                            "items": { "type": "string", "format": "language" },
+                            "maxLength": 3,
+                            "description": "BCP-47 language tags for the text."
+                        },
+                        "selfLabels": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Author-applied self-label values."
+                        },
+                        "processing": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#processingRequest",
+                            "description": "Opt-in audio processing for this post's audio. Runs asynchronously; the post is created either way."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["uri", "cid"],
+                    "properties": {
+                        "uri": {
+                            "type": "string",
+                            "format": "at-uri",
+                            "description": "at:// URI of the created post."
+                        },
+                        "cid": {
+                            "type": "string",
+                            "format": "cid",
+                            "description": "Content CID of the created record. Together with `uri` this is a StrongRef, directly usable as the `reply` target of a subsequent post."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidRequest",
+                    "description": "The payload failed validation — an empty post, or a reply carrying a title."
+                },
+                {
+                    "name": "Conflict",
+                    "description": "An earlier request with the same idempotency key is still in flight. Retry after it settles."
+                }
+            ]
+        }
+    }
+}

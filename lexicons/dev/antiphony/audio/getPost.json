@@ -1,0 +1,34 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getPost",
+    "description": "Fetch a single hydrated audio post. Tenancy-scoped: the calling application's service credential establishes which tenant is read, and a post belonging to another tenant is indistinguishable from one that does not exist.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns the hydrated view of one post. The acting actor, if the caller asserts one, determines the `viewer` state; a viewer-less read returns the public projection.",
+            "parameters": {
+                "type": "params",
+                "required": ["id"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The post's record key (rkey) — the last segment of its at:// URI."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#postView"
+                }
+            },
+            "errors": [
+                {
+                    "name": "RecordNotFound",
+                    "description": "No post with this key in the caller's tenancy. Also the answer for a post that exists in another tenancy."
+                }
+            ]
+        }
+    }
+}

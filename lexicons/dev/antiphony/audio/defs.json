@@ -1,0 +1,128 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.defs",
+    "description": "Shared view and request shapes for the dev.antiphony.audio.* methods. These are READ-TIME and REQUEST-TIME shapes, not records: nothing here is stored or enters a record CID. The stored contract is dev.antiphony.audio.post. Mirrors the Zod schemas in @antiphony/shared (types/audio.ts, types/processing.ts, api-codecs.ts), which the lexicon-parity oracle holds to these definitions.",
+    "defs": {
+        "postView": {
+            "type": "object",
+            "description": "The hydrated, client-facing shape of a post — the app.bsky.feed.defs#postView analogue. Record content plus opaque author references, a hydrated embed, and per-viewer state. Author identity is carried as REFERENCES, never a hydrated profile: Antiphony holds no user data, so the calling app joins on `authorId` to render a display identity.",
+            "required": ["uri", "cid", "kind", "authorId", "record", "viewer"],
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "format": "at-uri",
+                    "description": "The post's at:// URI. Its authority is the tenant app's DID, not the end user's."
+                },
+                "cid": {
+                    "type": "string",
+                    "format": "cid",
+                    "description": "Content CID of the canonical record, computed over the lexicon projection only (no storage or tenancy fields), so a StrongRef built from it is a verifiable content address."
+                },
+                "kind": {
+                    "type": "string",
+                    "knownValues": ["prompt", "reply"],
+                    "description": "Denormalized from `reply` presence on the record: `reply` set ⇒ `reply`, absent ⇒ `prompt`. A convenience for clients, not a second source of truth."
+                },
+                "authorId": {
+                    "type": "string",
+                    "description": "The authoring actor's app-scoped id — an opaque attribution reference, not a profile and not an AT Protocol identity."
+                },
+                "authorDid": {
+                    "type": "string",
+                    "format": "did",
+                    "description": "The author's AT Protocol DID, present only when the calling app asserted one it had itself verified."
+                },
+                "record": {
+                    "type": "ref",
+                    "ref": "#postRecord",
+                    "description": "The public lexicon fields of the post."
+                },
+                "embed": {
+                    "type": "union",
+                    "refs": ["dev.antiphony.embed.audio#view", "dev.antiphony.embed.recordWithAudio#view"],
+                    "description": "The hydrated attachment — a resolved playback URL plus the transcript lifted from the enrichment record. Absent when the post carries no audio."
+                },
+                "viewer": {
+                    "type": "ref",
+                    "ref": "#viewerState",
+                    "description": "The requesting viewer's relationship to this post."
+                }
+            }
+        },
+        "postRecord": {
+            "type": "object",
+            "description": "The public projection of a post record as it appears on a view: the lexicon fields only. The stored record additionally carries storage-layer facets (tenancy, author, processing state) that are deliberately absent here and from the record CID.",
+            "required": ["text", "createdAt"],
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "maxGraphemes": 300,
+                    "maxLength": 3000,
+                    "description": "USER-authored text. May be empty for a pure-audio post. NEVER the transcript."
+                },
+                "title": {
+                    "type": "string",
+                    "maxGraphemes": 300,
+                    "maxLength": 3000,
+                    "description": "Optional headline. A prompt feature; replies carry none."
+                },
+                "reply": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.post#replyRef",
+                    "description": "Present iff this post is a reply. Presence is the prompt/reply discriminator."
+                },
+                "langs": {
+                    "type": "array",
+                    "items": { "type": "string", "format": "language" },
+                    "maxLength": 3,
+                    "description": "BCP-47 language tags for the post text."
+                },
+                "selfLabels": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Author-applied self-label VALUES. A flattening of the record's com.atproto.label.defs#selfLabels: the view carries the bare strings, since a client rendering a content warning needs the value and nothing else."
+                },
+                "createdAt": {
+                    "type": "string",
+                    "format": "datetime",
+                    "description": "When the post was created (ISO 8601)."
+                }
+            }
+        },
+        "viewerState": {
+            "type": "object",
+            "description": "The requesting viewer's relationship to a post — the app.bsky #viewerState pattern. Computed per read from the caller's asserted acting actor; lives on the view and never on the record. An anonymous (viewer-less) read gets `isAuthor: false, canReply: false`.",
+            "required": ["isAuthor", "canReply"],
+            "properties": {
+                "isAuthor": {
+                    "type": "boolean",
+                    "description": "Whether the acting actor authored this post."
+                },
+                "canReply": {
+                    "type": "boolean",
+                    "description": "Whether the acting actor may reply. A prompt is repliable by any authenticated viewer; a reply only by its branch participants."
+                },
+                "replyDisabledReason": {
+                    "type": "string",
+                    "knownValues": ["unauthenticated", "not_a_participant"],
+                    "description": "Why `canReply` is false. Omitted when the viewer can reply."
+                }
+            }
+        },
+        "processingRequest": {
+            "type": "object",
+            "description": "An opt-in request for asynchronous audio processing. Every stage is off by default; only `true` asks for work. A stage this deployment has no provider for settles as `skipped` on the view rather than failing the request.",
+            "properties": {
+                "denoise": { "type": "boolean", "description": "Noise reduction. Byte-mutating." },
+                "trim": { "type": "boolean", "description": "Leading/trailing silence removal. Byte-mutating; runs after denoise." },
+                "transcribe": { "type": "boolean", "description": "Machine transcription. Derived — analysis over the final audio variant." },
+                "waveform": { "type": "boolean", "description": "Waveform peak extraction. Derived." },
+                "reprocess": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether a completed byte-mutating stage invalidates and recomputes the derived artifacts describing the superseded audio. Defaults to true — a transcript of replaced audio is wrong, not merely stale. Names no stage, so a request carrying only this asks for no work."
+                }
+            }
+        }
+    }
+}

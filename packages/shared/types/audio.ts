@@ -279,10 +279,15 @@ export type ViewerState = z.infer<typeof ViewerStateSchema>;
  * no stored embed — the embed comes hydrated on the view).
  */
 export const PostRecordPublicSchema = z.object({
-    text: z.string(),
-    title: z.string().optional(),
+    // `text`, `title` and `langs` keep the record's bounds, for the same reason
+    // `AudioEmbedViewSchema.alt` does: a view must never be able to carry a
+    // larger payload than the record it projects. The write path already
+    // enforces these, so no stored post can exceed them — stating them here
+    // keeps the published contract honest rather than adding a new constraint.
+    text: z.string().max(3000),
+    title: z.string().max(3000).optional(),
     reply: ReplyRefSchema.optional(),
-    langs: z.array(z.string()).optional(),
+    langs: z.array(z.string()).max(3).optional(),
     selfLabels: z.array(z.string()).optional(),
     createdAt: FirestoreTimestampSchema,
 });
