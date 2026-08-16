@@ -1,0 +1,50 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.reprocessPost",
+    "description": "(Re)run asynchronous audio processing on an existing post. Processing state is storage-layer and outside the record CID, so this changes no content address — which is why re-running enrichment is a procedure of its own rather than an edit.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Requests processing stages for a post's audio and returns the re-hydrated view. Author-only. No lexicon field is editable here: those feed the record CID, so changing one would mint a different record rather than update this one.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["id", "processing"],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Record key of the post to process."
+                        },
+                        "processing": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#processingRequest",
+                            "description": "The stages to run. A request enabling no stage is rejected rather than treated as a no-op."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#postView"
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidRequest",
+                    "description": "No processing stage was enabled, or the post has no audio to process."
+                },
+                {
+                    "name": "Forbidden",
+                    "description": "The acting actor is not the post's author."
+                },
+                {
+                    "name": "RecordNotFound",
+                    "description": "No post with this key in the caller's tenancy."
+                }
+            ]
+        }
+    }
+}

@@ -7,11 +7,15 @@ import {
     AudioEmbedSchema,
     AudioEmbedViewSchema,
     AudioPostRecordSchema,
+    AudioPostViewSchema,
+    PostRecordPublicSchema,
     ReplyRefSchema,
     TimedTranscriptSchema,
     TranscriptEnrichmentRecordSchema,
     TranscriptSegmentSchema,
+    ViewerStateSchema,
 } from './audio';
+import { ProcessingRequestSchema } from './processing';
 
 /**
  * Oracle tests: the `lexicons/dev/antiphony/*.json` documents are the contract,
@@ -140,6 +144,16 @@ function minOf(schema: z.ZodTypeAny): number | undefined {
     return def.checks?.find((c) => c.kind === 'min')?.value;
 }
 
+/**
+ * Whether a schema carries a `.default()` — i.e. it is optional on input but
+ * always present on output. Checked before unwrapping, since unwrapping is
+ * exactly what discards the `ZodDefault` this is looking for.
+ */
+function hasDefault(schema: z.ZodTypeAny | undefined): boolean {
+    if (!schema) return false;
+    return (schema._def as { typeName?: string }).typeName === 'ZodDefault';
+}
+
 /** The element schema of an array. */
 function elementOf(schema: z.ZodTypeAny): z.ZodTypeAny | undefined {
     const def = unwrap(schema)._def as { typeName?: string; type?: z.ZodTypeAny };
@@ -161,6 +175,17 @@ interface ParityCase {
     rename?: Record<string, string>;
     /** Lexicon properties deliberately not modeled in Zod, with the reason. */
     unmodeled?: Record<string, string>;
+    /**
+     * Properties the lexicon requires whose Zod counterpart reads as optional
+     * because it carries a `.default()`.
+     *
+     * This is a genuine mismatch in what "required" means on each side, not a
+     * loophole: Zod's optionality here describes what a caller may OMIT ON
+     * INPUT, while the lexicon describes what the server always EMITS. A
+     * defaulted boolean is absent from no response. Listing one asserts it
+     * really is defaulted — a plain `.optional()` would not satisfy this.
+     */
+    defaulted?: Record<string, string>;
 }
 
 const STORAGE_FIELDS =
@@ -206,6 +231,32 @@ const CASES: ParityCase[] = [
     { lexicon: 'dev.antiphony.audio.transcript#timedTranscript', schema: TimedTranscriptSchema },
     { lexicon: 'dev.antiphony.audio.transcript#segment', schema: TranscriptSegmentSchema },
     { lexicon: 'dev.antiphony.actor.profile#main', schema: ActorProfileRecordSchema },
+
+    // The XRPC view and request shapes (specs/xrpc-and-atproto-lex-strategy.md
+    // §7 Phase 2). These are read-time and request-time types rather than
+    // records — nothing here is stored or enters a record CID — but they are
+    // the contract the `/xrpc/*` surface publishes, so they drift exactly the
+    // same way the record types do.
+    {
+        lexicon: 'dev.antiphony.audio.defs#postView',
+        schema: AudioPostViewSchema,
+    },
+    {
+        lexicon: 'dev.antiphony.audio.defs#postRecord',
+        schema: PostRecordPublicSchema,
+    },
+    {
+        lexicon: 'dev.antiphony.audio.defs#viewerState',
+        schema: ViewerStateSchema,
+        defaulted: {
+            isAuthor: 'defaults to false; the server emits it on every view',
+            canReply: 'defaults to false; the server emits it on every view',
+        },
+    },
+    {
+        lexicon: 'dev.antiphony.audio.defs#processingRequest',
+        schema: ProcessingRequestSchema,
+    },
 ];
 
 describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
@@ -217,6 +268,7 @@ describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
     const rename = testCase.rename ?? {};
     const extras = testCase.extras ?? {};
     const unmodeled = testCase.unmodeled ?? {};
+    const defaulted = testCase.defaulted ?? {};
     const shape = shapeOf(testCase.schema);
 
     /** The Zod property carrying a given lexicon property, if any. */
@@ -236,12 +288,21 @@ describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
     });
 
     it('has no stale declared divergences', () => {
-        // Every `extras` / `rename` / `unmodeled` entry must still describe
-        // something real, so the declarations can't rot into a blanket exemption.
+        // Every `extras` / `rename` / `unmodeled` / `defaulted` entry must still
+        // describe something real, so the declarations can't rot into a blanket
+        // exemption.
         expect(Object.keys(extras).filter((name) => !(name in shape))).toEqual([]);
         expect(Object.keys(rename).filter((name) => !(name in lexProps))).toEqual([]);
         expect(Object.values(rename).filter((name) => !(name in shape))).toEqual([]);
         expect(Object.keys(unmodeled).filter((name) => !(name in lexProps))).toEqual([]);
+        // A `defaulted` entry must name a property the lexicon requires AND
+        // whose Zod counterpart genuinely carries a default — a plain
+        // `.optional()` is a real disagreement, not this exemption.
+        expect(
+            Object.keys(defaulted).filter(
+                (name) => !lexRequired.has(name) || !hasDefault(zodFor(name)),
+            ),
+        ).toEqual([]);
     });
 
     it('agrees on which properties are required', () => {
@@ -250,7 +311,9 @@ describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
             const zodProp = zodFor(name);
             if (!zodProp) continue;
             const requiredInLexicon = lexRequired.has(name);
-            const requiredInZod = !zodProp.isOptional();
+            // A defaulted property is input-optional but always emitted; the
+            // declaration above asserts that reading is accurate.
+            const requiredInZod = !zodProp.isOptional() || name in defaulted;
             if (requiredInLexicon !== requiredInZod) {
                 disagreements.push(
                     `${name}: lexicon says ${requiredInLexicon ? 'required' : 'optional'}, Zod says ${requiredInZod ? 'required' : 'optional'}`,

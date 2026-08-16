@@ -1,0 +1,64 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getThread",
+    "description": "Fetch a post together with its direct replies. One level deep, not a recursive tree: Antiphony's thread model is a prompt and the replies answering it, so a nested view would describe a structure the data does not have.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns the parent post and a cursor-paginated page of its direct replies, oldest first. A missing parent is an error rather than an empty page, so a caller can tell 'no replies yet' from 'no such post'.",
+            "parameters": {
+                "type": "params",
+                "required": ["id"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Record key of the parent post."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50,
+                        "description": "Maximum replies to return."
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor — the `cursor` from the previous page."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["parent", "replies"],
+                    "properties": {
+                        "parent": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#postView",
+                            "description": "The post the replies answer."
+                        },
+                        "replies": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#postView"
+                            },
+                            "description": "Direct replies, in thread order (oldest first)."
+                        },
+                        "cursor": {
+                            "type": "string",
+                            "description": "Cursor for the next page. Absent or null on the last page — set only when this page was full."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "RecordNotFound",
+                    "description": "No parent post with this key in the caller's tenancy."
+                }
+            ]
+        }
+    }
+}

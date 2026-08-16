@@ -37,15 +37,18 @@ import { xrpcError, xrpcErrorHandler } from './errors.js';
  * inter-service JWT auth is **out of scope**: Antiphony is not a PDS, and its
  * callers are applications, not federated servers (§5.3).
  *
- * ## Known gap: no lexicon method documents
+ * ## The lexicon documents are the contract
  *
- * `lexicons/dev/antiphony/` defines the *record* types but no query/procedure
- * documents for the five methods below, because the responses (`AudioPostView`
- * and friends) have no lexicon shape yet — they exist only as Zod schemas in
- * `@antiphony/shared`. Until those are written, a client cannot codegen against
- * this surface; it can only call it as documented HTTP. Defining the view
- * shapes as lexicon defs is the natural follow-up, and `npm run test:lexicons`
- * will validate them when they land.
+ * Each method below has a lexicon document under `lexicons/dev/antiphony/audio/`
+ * — `getPost.json`, `getThread.json`, and so on — with the shared view and
+ * request shapes in `defs.json`. Those are what a client codegens against, and
+ * they are the reason a route here should not quietly grow a field: the
+ * lexicon-parity oracle in `@antiphony/shared` holds the Zod schemas to those
+ * definitions, and `npm run test:lexicons` validates the documents themselves.
+ *
+ * Adding or changing a method therefore means touching three things together —
+ * the lexicon document, the Zod schema, and the handler. The tests fail if only
+ * two of them move.
  */
 
 /** Registered so `c.req.query()` parsing stays declarative and consistent. */
