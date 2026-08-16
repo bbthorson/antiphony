@@ -68,14 +68,56 @@ recorded in the commits:
 ### Remaining engineering
 
 - **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
-  Antiphony, add `format`, move `trim`/`waveform` onto it. **Pace is not ours** —
-  it sits on a live Twilio path mid-cutover. See § The ffmpeg problem and
-  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+  Antiphony, add `format`, move `trim`/`waveform` onto it. See § The ffmpeg
+  problem and [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+
+  **Its pace is still not entirely ours** — the service sits on a live Twilio
+  path, so a change to it is a change to real calls. But the specific blocker
+  this section used to name has cleared; see below.
 
   Until it lands, `trim` and `waveform` resolve **unavailable** on Workers and
   settle `skipped`. That is the truthful state, not a regression to fix in a
   hurry — but it is a capability the Cloud Run deployment had and this one does
   not, so it should not be discovered after the cutover.
+
+  ✅ **The sequencing caution below is satisfied.** § The ffmpeg problem says to
+  let Vox Pop's extraction soak and land its step 5 first, citing `aa6759e5` as
+  mid-cutover. Vox Pop `c48c4dee` (#887, 2026-08-16) retired `functions/`
+  entirely — source tree and deployed function — which is that step 5. The
+  stacked-reversal hazard is gone.
+
+### ⚠️ 2d has nothing to migrate — verified 2026-08-16
+
+A dry run against `antiphony-core` found the canonical collections **empty**:
+
+| Collection | Docs |
+| :--- | ---: |
+| `posts` | **0** |
+| `audio_transcripts` | **0** |
+| `prompts` | 17 |
+| `replies` | 33 |
+| `users` | 13 |
+
+Nothing has ever been written through `/api/v1/posts` in this project. The
+records migration is a no-op and the cutover is just pointing at Neon.
+
+**What IS there is the legacy Vox Pop model** the extraction inherited. A
+`prompts` document carries `audioUrl, authorId, createdAt, description,
+replyCount, status, title` — no `cid`, no `originAppId`, no `kind`, no `embed`,
+no `reply`. It is not an `AudioPostRecord`, and
+`migrate-firestore-to-neon.ts` correctly does not touch it.
+
+**Open decision, and it is a product one:** do those 17 prompts and 33 replies
+come across? That is a **model translation**, not a store swap — computing CIDs
+for records that never had one, assigning `originAppId`, deriving `kind`,
+rebuilding `reply.root` / `reply.parent` StrongRefs from the legacy parent
+links, and turning `audioUrl` into a content-addressed blob ref. Materially more
+work than 2d was, and out of scope for this migration unless someone decides
+otherwise. If the answer is "that is Vox Pop's data and it stays there", **step 2
+is done**.
+
+Note also that `users` / `handles` / `atproto_oauth_states` still hold rows but
+have had no reader since #83 deleted the identity layer. They are legacy too.
 
 ### Remaining operational — this is now the critical path
 
@@ -95,19 +137,39 @@ is the runbook.
 4. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
 5. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
    with `Storage Object Viewer` + `storage.buckets.get`.
-6. **Dry-run then run the records migration.** `npm run migrate:firestore-to-neon
-   -w @antiphony/core-api -- --dry-run`. Worth doing early regardless: it
-   validates every Firestore record against the current schemas and reports
-   pre-existing bad rows without writing.
+6. ~~**Run the records migration.**~~ **Nothing to migrate** — verified above.
+   Re-run with `--allow-empty` if a confirmation is wanted; a dry run needs
+   `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.
 7. **Point `api.antiphony.dev` at the Worker** and confirm on `/health`, which
    reports which store is actually wired.
 
-⚠️ **The data rollback is no longer a config flip.** On Cloud Run, unsetting
-`DATABASE_URL` fell back to Firestore. Worker bindings are mandatory —
-`composition.ts` throws rather than falling back — because a Worker holds no
-Application Default Credentials and could not reach Firestore if it tried. The
-migration deletes nothing from Firestore, so the data is still there, but
-recovering it means reverting the runtime, not the config.
+### What rollback actually looks like now
+
+Two things changed at once here, and they pull in opposite directions, so it is
+worth stating the combined position rather than either half.
+
+**A bad deploy is the easy case, and it got easier.** `wrangler rollback`, or
+the Deployments list in the dashboard. Instant, no rebuild — where the Cloud Run
+equivalent was a revision promotion.
+
+**A bad DATA cutover is the case that lost its escape hatch — and it turns out
+there was nothing behind that hatch anyway.** On Cloud Run, unsetting
+`DATABASE_URL` fell back to Firestore. Worker bindings are mandatory
+(`composition.ts` throws rather than falling back), because a Worker holds no
+Application Default Credentials and could not reach Firestore if it tried. So
+the store swap stopped being a config flip.
+
+But the fallback it replaced was never a meaningful records rollback: `posts`
+and `audio_transcripts` are **empty**, so falling back to Firestore would have
+meant falling back to nothing. The real recovery for a Neon problem is Neon's
+own — point-in-time restore or a branch — not a swap to a store that never held
+these records.
+
+**Blobs are the half where the old copy is real.** Super Slurper copies rather
+than moves, so GCS keeps every object, and the paths are identical on both sides
+(`blobs/{originAppId}/{cid}` — a property of content addressing). The bytes are
+therefore safe regardless. What is Worker-only is the access path, so reaching
+them again means a runtime with a GCS binding, not a config change.
 
 ### Open questions
 

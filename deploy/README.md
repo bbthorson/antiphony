@@ -50,7 +50,8 @@ The R2 bucket (`antiphony-r2-bucket`) is created in the dashboard, or with
 
 Three, and none of them appears in any committed file. Cloudflare secrets are
 write-only from outside — nothing reads one back — which is exactly why the
-schema apply and the data migration in step 5 cannot use them.
+schema apply in step 4 and the blob migration in step 5 cannot use them: those
+run in a shell, against Neon and GCS, with no Worker involved.
 
 ```bash
 cd apps/core-api
@@ -91,24 +92,35 @@ either order or concurrently.
 dashboard copies GCS → R2 natively, given a service account with
 `Storage Object Viewer` plus `storage.buckets.get`.
 
-**Records — the migration script.** Run by an operator with `DATABASE_URL` and
-`GOOGLE_APPLICATION_CREDENTIALS` in the environment:
+**Records — already done, because there is nothing to move.** A dry run against
+`antiphony-core` on 2026-08-16 found `posts` and `audio_transcripts` both
+**empty**: nothing has ever been written through `/api/v1/posts` in this
+project, so the cutover is just pointing at Neon. What the store does hold is
+the legacy Vox Pop model the extraction inherited (17 prompts, 33 replies, 13
+users), which is not an `AudioPostRecord` and which the script correctly
+ignores. Bringing that across would be a model translation rather than a store
+swap — see § 2d in the migration spec.
+
+To confirm it yourself:
 
 ```bash
-npm run migrate:firestore-to-neon -w @antiphony/core-api -- --dry-run
+FIREBASE_PROJECT_ID=antiphony-core \
+  npm run migrate:firestore-to-neon -w @antiphony/core-api -- --dry-run --allow-empty
 ```
 
-Worth running early regardless of when the cutover happens: `--dry-run` reads
-and validates every Firestore record against the current schemas and reports
-pre-existing bad rows without writing anything.
+A dry run needs no `DATABASE_URL` — it touches no database, and passing one it
+never uses is what an earlier version wrongly demanded. `--allow-empty` is
+required to acknowledge an empty store: reading zero records from both
+collections is far more often a credential or project mismatch than a genuinely
+empty one, so the script refuses to report success without it.
 
-Drop `--dry-run` to write. It **verifies itself** — every migrated post is read
-back and its CID recomputed, and it exits non-zero on any drift. That check is
-inline rather than a later audit because the failure is silent: `jsonb` stores
-numbers as `numeric`, wider than JS, so a coercion would change a record and
-invalidate every StrongRef pointing at it while both sides continued to agree
-with themselves. Drift caught during the run is one record to investigate;
-caught afterwards it is an unknown subset.
+If records ever DO need moving, dropping `--dry-run` writes them, and the script
+**verifies itself** — every migrated post is read back and its CID recomputed,
+exiting non-zero on any drift. That check is inline rather than a later audit
+because the failure is silent: `jsonb` stores numbers as `numeric`, wider than
+JS, so a coercion would change a record and invalidate every StrongRef pointing
+at it while both sides continued to agree with themselves. Drift caught during
+the run is one record to investigate; caught afterwards it is an unknown subset.
 
 Re-running is safe — every write is an upsert keyed on the record's own id, so
 a partial run resumes by running again. Nothing is deleted from Firestore.
@@ -151,13 +163,23 @@ a migration.
 (Workers & Pages → the Worker → Deployments), or `npx wrangler rollback`.
 Instant and needs no rebuild.
 
-**A bad data cutover:** this is the one that is no longer a config flip. On
-Cloud Run, unsetting `DATABASE_URL` fell back to Firestore. On Workers the
-bindings are mandatory — `composition.ts` throws rather than falling back —
+**A bad data cutover — records:** this is the one that stopped being a config
+flip. On Cloud Run, unsetting `DATABASE_URL` fell back to Firestore. On Workers
+the bindings are mandatory — `composition.ts` throws rather than falling back —
 because a Worker holds no Application Default Credentials and could not reach
-Firestore if it tried. So reverting the store means reverting the runtime.
-Nothing is deleted from Firestore by the migration, so the data is still there;
-recovering it means redeploying a Node build from before this cutover.
+Firestore if it tried.
+
+That matters less than it sounds, because the fallback was never a meaningful
+records rollback: `posts` and `audio_transcripts` are empty (§ 5), so falling
+back to Firestore would mean falling back to nothing. **The real recovery for a
+Neon problem is Neon's own** — point-in-time restore, or restoring onto a
+branch — not a swap to a store that never held these records.
+
+**A bad data cutover — blobs:** here the old copy is real. Super Slurper copies
+rather than moves, so GCS keeps every object, and the paths are identical on
+both sides (a property of content addressing). The bytes are safe regardless;
+what is Worker-only is the access path, so reaching them again means a runtime
+with a GCS binding rather than a config change.
 
 ## Operational notes
 
