@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/core-api",
-    "start": "node apps/core-api/dist/index.js",
-    "dev": "PORT=8090 ANTIPHONY_USE_EMULATOR=true npm run dev -w @antiphony/core-api",
+    "//dev": "Runs core-api on the Workers runtime against local bindings. Hyperdrive has no local emulation, so point WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE at a Postgres first.",
+    "dev": "npm run dev -w @antiphony/core-api",
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",

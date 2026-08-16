@@ -4,14 +4,12 @@ import type { AudioPostDependencies } from '@antiphony/core/ports/audio-posts-de
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
 import type { BlobStore } from '@antiphony/core/ports/storage-dependencies';
 
-import { firebaseBlobStore } from './adapters/outbound/firebase/storage-dependencies.js';
-import { firebaseAudioPostDependencies } from './adapters/outbound/firebase/audio-posts-dependencies.js';
-import { firebaseAudioProcessingDependencies } from './adapters/outbound/firebase/audio-processing-dependencies.js';
-import { firebaseRateLimitStore } from './adapters/outbound/firebase/rate-limit-store.js';
-import { firebaseIdempotencyStore } from './adapters/outbound/firebase/idempotency-store.js';
-
 import { r2BlobStore } from './adapters/outbound/r2/blob-store.js';
 import type { R2BucketLike } from './adapters/outbound/r2/bucket.js';
+import {
+    durableObjectRateLimitStore,
+    type DurableObjectNamespaceLike,
+} from './adapters/outbound/durable-objects/rate-limiter.js';
 import { neonSqlClient } from './adapters/outbound/postgres/client.js';
 import { postgresAudioPostDependencies } from './adapters/outbound/postgres/audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
@@ -54,6 +52,24 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
  * requests — which is the behaviour the module-scoped version had by accident
  * and this keeps on purpose. A `WeakMap` rather than a plain cache so a
  * short-lived env (tests, one-off scripts) is collectable.
+ *
+ * ## Why the Firebase half is injected rather than imported
+ *
+ * Selection logic all lives here — that is what makes this a composition root.
+ * What does NOT live here any more is the Firebase adapters themselves, because
+ * importing them puts `firebase-admin` in the module graph of every route and
+ * therefore in the Worker bundle. It cannot go there: it is CommonJS with
+ * native transitive dependencies (grpc, protobufjs), which is why
+ * `esbuild.config.mjs` has always kept it `external`. A Worker bundle has no
+ * `external` — whatever the graph reaches has to bundle.
+ *
+ * So the concrete Firebase objects arrive through `installFallbackBackends`,
+ * called by `src/native.ts`, which only the Node entry imports. The branch
+ * structure below is unchanged; the Worker simply runs with no fallback
+ * installed, where a missing binding is an error rather than a fall-through.
+ * That is the right behaviour there independently of bundling: a Worker holds
+ * no Application Default Credentials and could not reach Firestore if it tried,
+ * so falling back would trade one loud failure for a confusing per-request one.
  */
 
 export interface Services {
@@ -63,6 +79,13 @@ export interface Services {
     audioProcessingDeps: AudioProcessingDependencies;
     rateLimitStore: RateLimitStore;
     idempotencyStore: IdempotencyStore;
+    /**
+     * The raw SQL handle, when Postgres is the backend. Present for maintenance
+     * work that is not a domain operation and so has no port to reach through —
+     * today only the TTL sweep the Worker's cron drives. `undefined` on
+     * Firestore, which has native TTL and needs no sweep.
+     */
+    sql?: SqlClient;
     /** Which backend actually got wired — for `/health` and for log context. */
     backend: 'firebase' | 'postgres';
 }
@@ -83,6 +106,8 @@ export interface RuntimeEnv {
     /** R2 binding. Worker only. */
     r2Bucket?: R2BucketLike;
     r2BucketName?: string;
+    /** Durable Object namespace backing rate-limit buckets. Worker only. */
+    rateLimiter?: DurableObjectNamespaceLike;
 }
 
 /**
@@ -107,6 +132,7 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
         undefined;
 
     const r2Bucket = bindings.BLOBS as R2BucketLike | undefined;
+    const rateLimiter = bindings.RATE_LIMITER as DurableObjectNamespaceLike | undefined;
 
     return {
         databaseUrl: databaseUrl || undefined,
@@ -115,7 +141,51 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
             (typeof bindings.ANTIPHONY_R2_BUCKET === 'string'
                 ? bindings.ANTIPHONY_R2_BUCKET
                 : undefined) ?? R2_BUCKET_NAME,
+        // Probed the same way as the R2 binding: a value in the slot that is
+        // not the binding shape means someone set a var where a binding
+        // belongs, and building the store around it would fail later, inside a
+        // request, on the read path.
+        rateLimiter:
+            rateLimiter && typeof rateLimiter.idFromName === 'function' ? rateLimiter : undefined,
     };
+}
+
+/**
+ * The Firebase-backed halves, supplied by the Node entry point.
+ *
+ * `audioProcessingDeps` is a function because that binding closes over the
+ * `StorageService`, which is itself the result of a selection made above it —
+ * so it cannot be constructed until the blob store is chosen.
+ */
+export interface FallbackBackends {
+    blob: BlobStore;
+    audioPostDeps: AudioPostDependencies;
+    audioProcessingDeps: (storage: StorageService) => AudioProcessingDependencies;
+    rateLimitStore: RateLimitStore;
+    idempotencyStore: IdempotencyStore;
+}
+
+let fallbackBackends: FallbackBackends | undefined;
+
+/**
+ * Register the Firebase-backed bindings as the fallback for anything this
+ * environment has not bound natively. Called once, at import time, by
+ * `src/native.ts`. See § Why the Firebase half is injected.
+ */
+export function installFallbackBackends(backends: FallbackBackends): void {
+    fallbackBackends = backends;
+    // Anything already built was built without the fallback and may have
+    // resolved differently. Nothing should have been built this early, but if
+    // it was, a stale graph is the kind of bug that surfaces as one route
+    // talking to the wrong store.
+    resetServices();
+}
+
+/** What a deployment is missing when it has neither a binding nor a fallback. */
+function missingBinding(what: string, binding: string): Error {
+    return new Error(
+        `[composition] no ${what} available: bind ${binding}, or run under Node with the Firebase fallback installed (src/native.ts). See specs/cloudflare-migration.md § Secrets.`,
+    );
 }
 
 /**
@@ -128,36 +198,69 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
  * with blobs still on GCS is a valid, expected intermediate state.
  */
 export function createServices(env: RuntimeEnv): Services {
-    const blob: BlobStore =
+    const fallback = fallbackBackends;
+
+    const r2 =
         env.r2Bucket && env.r2BucketName
             ? r2BlobStore({ bucket: env.r2Bucket, bucketName: env.r2BucketName })
-            : firebaseBlobStore;
+            : undefined;
+    const blob: BlobStore = r2 ?? fallback?.blob ?? raise(missingBinding('blob store', 'BLOBS'));
 
     const storage = makeStorageService(blob);
 
-    let sql: SqlClient | undefined;
-    if (env.databaseUrl) sql = neonSqlClient(env.databaseUrl);
+    const sql: SqlClient | undefined = env.databaseUrl
+        ? neonSqlClient(env.databaseUrl)
+        : undefined;
 
-    const audioPostDeps = sql
-        ? postgresAudioPostDependencies(sql)
-        : firebaseAudioPostDependencies;
+    // Grouped rather than four parallel ternaries so the two halves cannot
+    // drift into a mixed graph — `backend` is reported on `/health` and has to
+    // describe every one of these, not just the first.
+    const db = sql
+        ? {
+              audioPostDeps: postgresAudioPostDependencies(sql),
+              audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),
+              rateLimitStore: postgresRateLimitStore(sql),
+              idempotencyStore: postgresIdempotencyStore(sql),
+              sql,
+              backend: 'postgres' as const,
+          }
+        : fallback
+          ? {
+                audioPostDeps: fallback.audioPostDeps,
+                audioProcessingDeps: fallback.audioProcessingDeps(storage),
+                rateLimitStore: fallback.rateLimitStore,
+                idempotencyStore: fallback.idempotencyStore,
+                backend: 'firebase' as const,
+            }
+          : raise(missingBinding('database', 'HYPERDRIVE'));
 
-    const audioProcessingDeps = sql
-        ? postgresAudioProcessingDependencies(sql, storage)
-        : firebaseAudioProcessingDependencies(storage);
+    // Rate limiting is selected on its OWN axis, ahead of the database.
+    //
+    // The other four stores move together because they are one record store
+    // seen from four angles. This one is not: it is a counter on the read path,
+    // the table in `db/schema.sql` is explicitly a bridge rather than a
+    // destination, and the Durable Object is where it is going. So a deployment
+    // on Postgres WITH the binding attached should already be using the binding
+    // — otherwise the last step of the migration would need its own cutover
+    // instead of just attaching the thing.
+    const rateLimitStore = env.rateLimiter
+        ? durableObjectRateLimitStore(env.rateLimiter)
+        : db.rateLimitStore;
 
     return {
-        audioPostService: new AudioPostService(audioPostDeps),
+        audioPostService: new AudioPostService(db.audioPostDeps),
         storage,
-        audioPostDeps,
-        audioProcessingDeps,
-        rateLimitStore: sql ? postgresRateLimitStore(sql) : firebaseRateLimitStore,
-        idempotencyStore: sql ? postgresIdempotencyStore(sql) : firebaseIdempotencyStore,
-        backend: sql ? 'postgres' : 'firebase',
+        ...db,
+        rateLimitStore,
     };
 }
 
-const cache = new WeakMap<object, Services>();
+/** Throw from an expression position, so the `??` chain above stays a chain. */
+function raise(err: Error): never {
+    throw err;
+}
+
+let cache = new WeakMap<object, Services>();
 /** Fallback slot for Node, where there is no env object to key on. */
 let nodeServices: Services | undefined;
 
@@ -179,7 +282,13 @@ export function servicesFor(env?: Record<string, unknown>): Services {
     return built;
 }
 
-/** Test-only: drop the memoised graphs so a case can rewire the backend. */
-export function resetServicesForTest(): void {
+/**
+ * Drop the memoised graphs so the next `servicesFor` rebuilds. Called when the
+ * fallback lands: anything built before it resolved against a different set of
+ * options, and a stale graph shows up as one route talking to the wrong store.
+ */
+function resetServices(): void {
     nodeServices = undefined;
+    // Reassigned rather than cleared: a WeakMap has no `clear()`.
+    cache = new WeakMap<object, Services>();
 }

@@ -1,0 +1,228 @@
+{
+	// Cloudflare Worker config for the core-api service — the `/api/v1/*` and
+	// `/xrpc/*` surface that runs on Cloud Run today.
+	//
+	// The repo now has TWO Workers, which is why this file exists rather than
+	// the root one growing a second entry: a wrangler config describes exactly
+	// one Worker. The root `wrangler.jsonc` stays the docs site's assets-only
+	// Worker, because the Cloudflare dashboard's "Connect to Git" build for it
+	// runs a bare `npx wrangler deploy` at the repo root and would find this one
+	// only if that command changed. Deploy this one explicitly:
+	//
+	//     npx wrangler deploy -c apps/core-api/wrangler.jsonc
+	//
+	// See specs/cloudflare-migration.md § Sequencing, step 3.
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "antiphony-core-api",
+	"main": "src/worker.ts",
+
+	// `nodejs_compat` is not optional here. `node:crypto` backs three things on
+	// the request path — `constantTimeEqual` (service-token comparison),
+	// `idempotency.ts`'s hashing, and the webhook notifier's HMAC — and the
+	// flag is what provides it. The compat DATE matters separately: from
+	// 2025-04-01 the runtime populates `process.env` from vars and secrets,
+	// which is what lets `app-config.ts`, `service-auth.ts`, and the provider
+	// registry keep reading `process.env` on both runtimes instead of growing a
+	// second config path.
+	"compatibility_date": "2025-11-01",
+	"compatibility_flags": ["nodejs_compat"],
+
+	// ## Smart Placement, on from the first deploy — not after measuring
+	//
+	// Workers run close to the USER. Neon is single-region on AWS `us-east-1`,
+	// and the Cloud Run deployment this replaces is in `us-east4` — the same
+	// metro, so database round trips are currently single-digit milliseconds.
+	// Moving to the edge is therefore a latency REGRESSION by default: a
+	// request served from London against a database in Virginia pays ~80ms per
+	// round trip, times however many sequential queries the handler makes.
+	//
+	// Smart Placement relocates execution close to the backend when a Worker
+	// makes several round trips to one origin, which is exactly this workload's
+	// shape. It is on from the start because the regression it prevents is
+	// INVISIBLE when testing from the US east coast — the one place the two
+	// topologies look identical. See specs/cloudflare-migration.md § Geography.
+	"placement": { "mode": "smart" },
+
+	"observability": { "enabled": true },
+
+	// ## The TTL sweep finally gets a caller
+	//
+	// `antiphony_sweep_expired()` has shipped with `db/schema.sql` since step 2
+	// with nothing calling it. It replaces the native Firestore TTL on
+	// `idempotency_keys` and `rate_limits`, which Postgres has no equivalent
+	// for, so without a trigger both tables grow forever.
+	//
+	// Hourly, at a minute that is not :00, because every cron in the world
+	// fires on the hour and there is no reason to join them. It is deliberately
+	// not `pg_cron`: Neon runs those jobs only while the compute is awake, and
+	// a beta service is idle nearly always — which is precisely when scale to
+	// zero should be on. A trigger outside the database fires regardless of
+	// compute state, and waking Neon is the feature rather than the
+	// precondition. See schema.sql § Why NOT pg_cron.
+	"triggers": { "crons": ["17 * * * *"] },
+
+	// ## Audio processing — producer and consumer are the same Worker
+	//
+	// `PROCESSING_QUEUE` replaces Cloud Tasks. The consumer is this script's
+	// `queue()` handler, so there is no worker URL to configure and no
+	// `SYSTEM_AUTH_TOKEN` stored per task the way Cloud Tasks had to.
+	//
+	// ### `max_batch_size` is 1, and that is a derivation, not a default
+	//
+	// One message is one full processing pass: a denoise call to ElevenLabs
+	// over a multi-megabyte upload, then transcription. The whole BATCH shares
+	// one consumer invocation, and that invocation is capped at 15 minutes — so
+	// a batch of N is N passes racing one 15-minute budget, and blowing it
+	// retries every message in the batch, including the ones that already
+	// succeeded. Billable stages would be re-billed.
+	//
+	// Memory says the same thing independently: `readBlobBytes` materialises a
+	// whole blob, the upload route caps at 25MB, and a Worker isolate has
+	// 128MB. Several of those at once is the one place that ceiling is close.
+	//
+	// So concurrency belongs BETWEEN invocations, where Cloudflare scales
+	// consumers horizontally on its own, not within one.
+	//
+	// ### Retries
+	//
+	// Only a pass that THREW is handed back — see lib/process-audio-job.ts for
+	// why that is the sole retryable outcome. Three attempts, then the dead
+	// letter queue, which must exist before this deploys:
+	//
+	//     npx wrangler queues create antiphony-processing
+	//     npx wrangler queues create antiphony-processing-dlq
+	"queues": {
+		"producers": [
+			{
+				"binding": "PROCESSING_QUEUE",
+				"queue": "antiphony-processing"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "antiphony-processing",
+				"max_batch_size": 1,
+				// Irrelevant at batch size 1 beyond "do not wait to fill a
+				// batch that is already full", which is what a low value says.
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"dead_letter_queue": "antiphony-processing-dlq"
+			}
+		]
+	},
+
+	// ## Rate-limit buckets
+	//
+	// One Durable Object per bucket key, addressed with `idFromName(key)`. This
+	// is the one table where Postgres was actively the wrong tool: a
+	// high-frequency counter write sitting on the READ path, so a network hop
+	// to a single-region database means every rate-limited request pays a round
+	// trip to Virginia before the handler starts.
+	//
+	// Per-key strongly-consistent counters are what Durable Objects are for,
+	// and input gating makes the read-increment-write atomic for free — where
+	// the Firestore binding needed a transaction plus a whole contention branch
+	// to get the same guarantee.
+	//
+	// The `rate_limits` table in db/schema.sql was always a bridge rather than
+	// a destination (its own comment says so). It stays, harmlessly, for a
+	// deployment without this binding attached.
+	//
+	// `migrations` is not optional: a Durable Object class is only addressable
+	// once a migration has declared it. `new_sqlite_classes` rather than
+	// `new_classes` because SQLite-backed is the current default storage
+	// backend and the only one available on new namespaces.
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "RATE_LIMITER",
+				"class_name": "RateLimiter"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["RateLimiter"]
+		}
+	],
+
+	// ## The shared layer of the app-DID custody cache
+	//
+	// `middleware/auth.ts` proves each tenant's pin before a handler runs. That
+	// check is isolate-local first; this namespace is the layer underneath it,
+	// so a COLD isolate does not re-resolve a `did:web` document another
+	// isolate proved a minute ago.
+	//
+	// KV's eventual consistency is fine here and would not be for
+	// `idempotency_keys` — the difference is what a stale read costs. A stale
+	// idempotency answer breaks the guarantee outright; a stale custody proof
+	// is bounded by design, since the whole point of the layer below it is that
+	// an old proof is still the right thing to serve when the DID host is
+	// unreachable. The value carries its own `validatedAt` and the freshness
+	// and staleness bounds are enforced in code, not by the store.
+	//
+	//     npx wrangler kv namespace create PIN_CACHE
+	"kv_namespaces": [
+		{
+			"binding": "PIN_CACHE",
+			"id": "REPLACE_ME_WITH_wrangler_kv_namespace_create_OUTPUT"
+		}
+	],
+
+	// Audio blobs and their derived renditions. One bucket, two prefixes:
+	// `blobs/{originAppId}/{cid}` and `renditions/{originAppId}/{cid}.{format}`.
+	//
+	// Binding-based authorisation is why there is no R2 credential anywhere in
+	// this config — and why dropping `getSignedUrl` made the blob store simpler
+	// rather than harder. See specs/cloudflare-migration.md § Secrets.
+	"r2_buckets": [
+		{
+			"binding": "BLOBS",
+			"bucket_name": "antiphony-r2-bucket"
+		}
+	],
+
+	// ## Hyperdrive, not a DATABASE_URL secret
+	//
+	// The Worker reads `env.HYPERDRIVE.connectionString`, which is a LOCAL
+	// pooled string — not the Neon credential. That is the whole point: the
+	// database never becomes a Worker secret, and nothing can read one back out
+	// of Cloudflare anyway.
+	//
+	// `id` is per-account and comes from `wrangler hyperdrive create`, so it
+	// cannot be committed meaningfully — the placeholder below has to be
+	// replaced before the first deploy, and `wrangler deploy` fails on it
+	// rather than starting up without a database. `readRuntimeEnv` still
+	// accepts a raw `DATABASE_URL` if Hyperdrive is ever skipped, but
+	// § Geography argues it should not be: the connection setup Hyperdrive
+	// removes is a full extra round trip to Virginia on every cold path.
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "REPLACE_ME_WITH_wrangler_hyperdrive_create_OUTPUT"
+		}
+	],
+
+	// Non-secret configuration. Everything else — SYSTEM_AUTH_TOKEN,
+	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY — is a Worker SECRET, set with
+	// `wrangler secret put`, and must never appear in this file.
+	//
+	// ANTIPHONY_PUBLIC_BASE_URL is required, not cosmetic: since the audio
+	// proxy streams bytes rather than redirecting to a signed URL,
+	// `AudioEmbedView.url` is an absolute URL pointing back at this service.
+	// Without it a post with audio hydrates with no embed at all.
+	//
+	// ANTIPHONY_APP_DIDS is a var rather than a secret: DIDs are public by
+	// construction, and keeping it here is what lets the CI deploy gate
+	// (`npm run validate:pins`) prove the pins in the config about to ship
+	// without needing access to anything secret.
+	"vars": {
+		"ANTIPHONY_PUBLIC_BASE_URL": "https://api.antiphony.dev",
+		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
+		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
+		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
+		"NODE_ENV": "production",
+		"LOG_LEVEL": "info"
+	}
+}

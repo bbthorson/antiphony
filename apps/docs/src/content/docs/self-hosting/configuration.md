@@ -15,8 +15,7 @@ Most of the variables below are Firebase credentials, because Firebase is the ba
 | `FIREBASE_STORAGE_BUCKET` | GCS bucket for audio uploads. |
 | `ADMIN_SERVICE_ACCOUNT_JSON` | Service account JSON for Firebase Admin (production). On Google infrastructure, Application Default Credentials are used instead. |
 | `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Rate limiting keys off that IP, so a value that doesn't match your actual proxy depth mis-attributes limits — too high lets a caller spoof the address, too low buckets every caller behind the proxy together. |
-| `PORT` | Port to bind. Defaults to `8080`; Cloud Run / App Hosting inject it automatically. |
-| `LOG_LEVEL` | pino log level. Defaults to `info`. |
+| `LOG_LEVEL` | One of `debug`, `info`, `warn`, `error`, `silent`. Defaults to `info` in production, `debug` otherwise. |
 | `NODE_ENV` | Standard Node environment flag (`production` in deploys). |
 
 :::note[Removed: `ANTIPHONY_ORIGIN_APP_ID`]
@@ -144,14 +143,14 @@ With neither `ANTIPHONY_PROCESSING_INLINE` nor the `ANTIPHONY_TASKS_*` vars set,
 
 ## Deployment
 
-The hosted reference deploy at `api.antiphony.dev` runs on **Cloud Run**, from the `Dockerfile` at the repo root. See [`deploy/cloudrun.env.yaml`](https://github.com/bbthorson/antiphony/blob/master/deploy/cloudrun.env.yaml) for the production config, [`deploy/README.md`](https://github.com/bbthorson/antiphony/blob/master/deploy/README.md) for the one-time project setup, and [`apps/core-api/README.md`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/README.md) for deploy notes.
+The hosted reference deploy at `api.antiphony.dev` runs on **Cloudflare Workers**, configured by [`apps/core-api/wrangler.jsonc`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/wrangler.jsonc). See [`deploy/README.md`](https://github.com/bbthorson/antiphony/blob/master/deploy/README.md) for the one-time setup.
 
-`core-api` is a plain Node service with no platform-specific dependencies, so other targets work too:
+The service layer is portable by construction — `packages/core` has zero backend imports and every backend touch goes through a port — so the reference deploy's choice of runtime is not a constraint on yours. What each target has to supply is a Postgres and a blob store behind the existing ports:
 
-- **Firebase App Hosting** — a Node buildpack target; needs a `start` script at the repo root.
-- **Fly.io / Render / a VM** — `npm run build` then run the Node entrypoint; set `PORT` and the Firebase credentials.
+- **Cloudflare Workers** — Hyperdrive in front of Neon, plus an R2 bucket. What the reference deploy runs.
+- **A container or VM** — any Postgres and any object store. You implement the `BlobStore` port against it; the Postgres bindings are already in the tree.
 
-Whatever the target, the only hard requirement is reachable Firebase credentials (or the emulator hosts). There is no CORS allowlist to configure: core-api runs no CORS middleware, because every caller is a backend holding a service token and the one browser-facing surface — the anonymous audio proxy — is an `<audio src=…>` no-cors load governed by `Cross-Origin-Resource-Policy`.
+The one hard requirement either way is a reachable Postgres. There is no CORS allowlist to configure: core-api runs no CORS middleware, because every caller is a backend holding a service token and the one browser-facing surface — the anonymous audio proxy — is an `<audio src=…>` no-cors load governed by `Cross-Origin-Resource-Policy`.
 
 ## Where next?
 

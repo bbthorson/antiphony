@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { extractClientIp } from '../lib/client-ip.js';
 import { ServiceError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
-import { firebaseRateLimitStore } from '../adapters/outbound/firebase/rate-limit-store.js';
+import { servicesFor } from '../composition.js';
 import type { RateLimitStore } from '../ports/rate-limit-store.js';
 
 /**
@@ -96,17 +96,24 @@ export interface CheckRateLimitResult {
  * `POST /api/v1/system/rate-limit/check`; that route was removed once the BFF
  * began serving its own.)
  *
- * @param key — the Firestore doc id under `rate_limits/`. Typically
- *              `ratelimit_<ip>` or a custom key set by the caller.
+ * @param key — the bucket id. Typically `ratelimit_<ip>` or a custom key set by
+ *              the caller.
  * @param options — limit + windowMs.
  * @param requestId — optional, threaded into log lines so the caller's
  *                    requestId correlates with core-api logs.
+ * @param store — REQUIRED, and deliberately has no default. It used to default
+ *                to `firebaseRateLimitStore`, and the middleware below never
+ *                passed anything — so the Postgres binding from #86 could not
+ *                be reached in production by any configuration, and the
+ *                Firestore import put `firebase-admin` on the module graph of
+ *                every rate-limited route. A required parameter is what stops
+ *                that from silently coming back.
  */
 export async function checkRateLimit(
     key: string,
     options: RateLimitOptions,
-    requestId?: string,
-    store: RateLimitStore = firebaseRateLimitStore,
+    requestId: string | undefined,
+    store: RateLimitStore,
 ): Promise<CheckRateLimitResult> {
     // Circuit breaker: the store is failing systemically; fail open.
     if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
@@ -182,7 +189,15 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
             );
         }
         const key = `ratelimit_${customKey || ip}`;
-        const result = await checkRateLimit(key, options, c.get('requestId'));
+        const result = await checkRateLimit(
+            key,
+            options,
+            c.get('requestId'),
+            // Resolved per request off the composition root, so the
+            // Firestore → Neon cutover governs these buckets like every other
+            // table rather than being quietly exempt from it.
+            servicesFor(c.env as Record<string, unknown> | undefined).rateLimitStore,
+        );
         if (!result.allowed) {
             // Thrown, not returned, so each inbound adapter serializes it in its
             // own dialect (REST envelope vs XRPC `{ error, message }`) — see the

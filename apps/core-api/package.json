@@ -4,14 +4,19 @@
   "private": true,
   "description": "Antiphony core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment — see specs/core-surface.md.",
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "node esbuild.config.mjs && npm run gen:openapi",
+    "//dev": "Needs WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE pointing at a Postgres — Hyperdrive has no local emulation of its own.",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "//check:worker-bundle": "Bundles the Worker and fails if a Node-only dependency is in it. Not covered by typecheck, tests, or `wrangler deploy` — all three are happy to ship a bundle that cannot run. See the script.",
+    "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
+    "//build": "Only regenerates the OpenAPI documents now. The Node bundle went with src/index.ts — `wrangler deploy` bundles the Worker itself, and `check:worker-bundle` is what guards that artifact.",
+    "build": "npm run gen:openapi",
     "gen:openapi": "tsx scripts/generate-openapi.ts",
+    "//validate:pins": "Deploy-time gate: proves every ANTIPHONY_APP_DIDS pin against its did:web document before anything ships. Mechanism 1 of the boot-gate replacement — see the script.",
+    "validate:pins": "tsx scripts/validate-pins.ts",
     "migrate:processed-blob-cid": "tsx scripts/migrate-processed-blob-cid.ts",
-        "migrate:firestore-to-neon": "tsx scripts/migrate-firestore-to-neon.ts",
-    "start": "node dist/index.js",
+    "migrate:firestore-to-neon": "tsx scripts/migrate-firestore-to-neon.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
@@ -20,7 +25,6 @@
     "@antiphony/core": "*",
     "@antiphony/shared": "*",
     "@atproto/syntax": "^0.6.4",
-    "@hono/node-server": "^1.14.0",
     "@hono/zod-openapi": "^0.19.10",
     "@ipld/dag-cbor": "^10.0.1",
     "@neondatabase/serverless": "^1.1.0",
@@ -29,20 +33,20 @@
     "google-auth-library": "^10.9.0",
     "hono": "^4.12.22",
     "multiformats": "^14.0.3",
-    "pino": "^9.5.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.5",
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.2",
     "globals": "^15.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.123.0"
   },
   "engines": {
     "node": ">=22"

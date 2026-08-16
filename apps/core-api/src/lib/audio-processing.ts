@@ -27,11 +27,6 @@ import {
 import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
 import { webhookNotifier } from '../adapters/outbound/webhook/notifier.js';
 import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
-import {
-    cloudTasksConfig,
-    cloudTasksDispatcher,
-    cloudTasksRequested,
-} from '../adapters/outbound/dispatch/cloud-tasks.js';
 import { logger } from './logger.js';
 
 /**
@@ -168,6 +163,38 @@ export function resolveNotifier(): ProcessingNotifierPort {
 }
 
 /**
+ * The durable dispatcher for this runtime, if it has one.
+ *
+ * Installed rather than imported, for the same reason the Firebase bindings are
+ * (see `composition.ts` § Why the Firebase half is injected): the Cloud Tasks
+ * adapter reaches `google-auth-library`, which a Worker bundle cannot carry —
+ * and would have no use for, since a Worker has no Application Default
+ * Credentials to authenticate an enqueue with.
+ *
+ * Returns `undefined` when this deployment has no durable dispatch configured.
+ * The resolver owns its OWN misconfiguration reporting: whether a partial
+ * config counts as an opt-out or an outage is a property of the queue being
+ * configured, not of this seam, and the two adapters answer it differently —
+ * Cloud Tasks reads four env vars that can disagree, a Queues binding is simply
+ * present or absent.
+ *
+ * Takes `env` because a Worker's bindings arrive on the invocation, not at
+ * module load, so `PROCESSING_QUEUE` cannot be closed over. The Cloud Tasks
+ * resolver ignores the argument and reads `process.env`, which is the shape of
+ * the whole runtime split.
+ */
+export type DurableDispatcherResolver = (
+    env?: Record<string, unknown>,
+) => ProcessingDispatchPort | undefined;
+
+let resolveDurableDispatcher: DurableDispatcherResolver | undefined;
+
+/** Register this runtime's durable dispatcher resolver. See the type above. */
+export function installDurableDispatcher(resolver: DurableDispatcherResolver): void {
+    resolveDurableDispatcher = resolver;
+}
+
+/**
  * Which dispatcher this deployment runs jobs through. Resolved per-request off
  * env, like `resolveProviders`, so a test can set the flag without a
  * module-load singleton fixing the choice at import time.
@@ -176,41 +203,23 @@ export function resolveNotifier(): ProcessingNotifierPort {
  * those must be the tenant's. The queue dispatchers do not: they only enqueue,
  * and the worker resolves providers for itself on the far side of the queue.
  */
-function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
+function resolveDispatcher(
+    originAppId: string,
+    env?: Record<string, unknown>,
+): ProcessingDispatchPort {
     // Inline wins, so a developer with queue config in their shell cannot
-    // accidentally enqueue against a real Cloud Tasks queue from a local run —
-    // the same precedence, and the same reasoning, as `_STUB` over real
-    // providers.
+    // accidentally enqueue against a real queue from a local run — the same
+    // precedence, and the same reasoning, as `_STUB` over real providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
         return inlineDispatcher(
-            servicesFor().audioProcessingDeps,
+            servicesFor(env).audioProcessingDeps,
             resolveProviders(originAppId),
             logger,
             resolveNotifier(),
         );
     }
 
-    const resolved = cloudTasksConfig();
-    if (resolved.config) return cloudTasksDispatcher(resolved.config, logger);
-
-    // Partial config is a MISCONFIGURATION, not an opt-out, and the two must
-    // not degrade to the same silent noop. A deployment that set some of the
-    // queue vars believes it has durable dispatch and has none; every post sits
-    // `pending` forever with nothing saying why.
-    //
-    // Keyed on INTENT rather than on how many values are missing. Counting
-    // cannot work here: `GOOGLE_CLOUD_PROJECT` is set by the platform and
-    // `SYSTEM_AUTH_TOKEN` by every other `/system/*` route, so a deployment
-    // that cleanly opted out still reports only three missing and would trip
-    // any threshold — firing this error at every correctly-configured
-    // noop deployment, which is how a real misconfiguration gets tuned out.
-    if (cloudTasksRequested()) {
-        logger.error(
-            { missing: resolved.missing },
-            '[audio-processing] Cloud Tasks dispatch is partially configured — falling back to noop, jobs will be dropped',
-        );
-    }
-    return noopDispatcher(logger);
+    return resolveDurableDispatcher?.(env) ?? noopDispatcher(logger);
 }
 
 /**
@@ -228,9 +237,13 @@ function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
  * a reconciliation sweep over `pending` posts, which is its own piece of work
  * and is not part of this seam.
  */
-export async function dispatchProcessing(originAppId: string, postId: string): Promise<void> {
+export async function dispatchProcessing(
+    originAppId: string,
+    postId: string,
+    env?: Record<string, unknown>,
+): Promise<void> {
     try {
-        await resolveDispatcher(originAppId).dispatch({ originAppId, postId });
+        await resolveDispatcher(originAppId, env).dispatch({ originAppId, postId });
     } catch (err) {
         logger.error({ err, postId, originAppId }, '[audio-processing] dispatch failed');
     }

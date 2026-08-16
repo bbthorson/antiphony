@@ -1,6 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
 import { ServiceError } from 'shared/errors';
 import { matchServiceToken } from './service-auth.js';
+import { ensureTenantPin, type PinCacheKV } from '../lib/app-did.js';
+import { APP_CONFIG } from '../lib/app-config.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Auth bridge middleware. Two variants — both require a valid service token
@@ -137,6 +140,60 @@ function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): void {
 }
 
 /**
+ * Prove custody of this tenant's app DID before any handler runs.
+ *
+ * ## Why the pin check lives in the auth middleware
+ *
+ * `src/index.ts` proves every pin at boot and `process.exit(1)`s on failure, so
+ * `getAppDid()` — a synchronous accessor serving only from that snapshot — can
+ * never answer with an authority we have not proven. Workers have no boot
+ * phase, so that ordering has to be established somewhere else, and this is the
+ * right somewhere: these two middlewares already resolve `originAppId`, they
+ * ARE the tenancy boundary, and a pin is a tenancy property. A fourth
+ * middleware would have to be ordered against them and would sometimes be
+ * ordered wrong.
+ *
+ * Doing the async work HERE is what keeps `getAppDid()` synchronous. Making the
+ * accessor async would ripple through `AudioPostService` and
+ * `AudioProcessingService` — into `packages/core`, which this migration has
+ * otherwise left untouched — for no benefit, since by the time a handler runs
+ * the snapshot is populated either way.
+ *
+ * ## Cost
+ *
+ * Nothing on a warm isolate: the check is a map lookup that returns
+ * immediately inside the freshness window. A cold isolate pays one KV read, and
+ * only a cold isolate whose KV entry has also aged out pays the `did:web`
+ * fetch, bounded by its existing 5s timeout. With one tenant in beta that is
+ * approximately nothing.
+ *
+ * ## 503, not 401
+ *
+ * The caller's credential was fine — we established that a line earlier. What
+ * failed is our ability to serve this tenant safely, which is a readiness
+ * statement about us and is retryable. A 401 would send an integrator looking
+ * at their token.
+ */
+async function tenantPinGate(c: Parameters<MiddlewareHandler>[0]): Promise<void> {
+    const originAppId = c.get('originAppId');
+    if (!originAppId) return;
+
+    const env = c.env as Record<string, unknown> | undefined;
+    try {
+        await ensureTenantPin(originAppId, {
+            expectedPdsHost: APP_CONFIG.PDS_HOST,
+            kv: env?.PIN_CACHE as PinCacheKV | undefined,
+        });
+    } catch (err) {
+        logger.error(
+            { err, originAppId, requestId: c.get('requestId') },
+            '[auth] app-DID custody unproven for tenant; refusing the request',
+        );
+        throw new ServiceError('Tenant temporarily unavailable', 503);
+    }
+}
+
+/**
  * Require a valid service token, but NOT an acting actor. Use on tenancy-scoped
  * reads that have a public (viewer-less) projection: the app must authenticate
  * so the credential establishes *which tenant* is being read, but it may omit
@@ -151,6 +208,7 @@ function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): void {
 export const requireServiceToken = (): MiddlewareHandler => {
     return async (c, next) => {
         serviceTokenGate(c);
+        await tenantPinGate(c);
         return next();
     };
 };
@@ -173,6 +231,7 @@ export const requireAuth = (): MiddlewareHandler => {
                 401,
             );
         }
+        await tenantPinGate(c);
         return next();
     };
 };

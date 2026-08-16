@@ -24,7 +24,14 @@ const audioPostService = {
 };
 
 vi.mock('../../../composition.js', () => ({
-    servicesFor: () => ({ audioPostService }),
+    servicesFor: () => ({
+        audioPostService,
+    // The rate-limit middleware resolves its store from here now, rather
+    // than defaulting to the Firestore binding. Under limit on every hit:
+    // these suites assert route behaviour, not rate-limit policy (that is
+    // middleware/rate-limit.test.ts).
+    rateLimitStore: { hit: async () => 'under' as const },
+    }),
 }));
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
@@ -38,6 +45,10 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
 // The uri it feeds is a fixed string here; `app-did.test.ts` covers resolution.
 vi.mock('../../../lib/app-did.js', () => ({
     getAppDid: () => 'did:web:test-app.example',
+    // Both auth middlewares now await this — the Workers replacement for the
+    // boot gate. Its own behaviour is `app-did.test.ts`'s subject; here it just
+    // has to not refuse, or every gated XRPC method below answers 503.
+    ensureTenantPin: async () => undefined,
 }));
 
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
@@ -429,22 +440,6 @@ describe('surface wiring', () => {
         const doc = await res.json();
 
         expect(Object.keys(doc.paths).some((p) => p.startsWith('/xrpc'))).toBe(false);
-    });
-
-    it('applies the origin lock, and refuses in the XRPC dialect', async () => {
-        // Without this, `/xrpc/*` would be the one route into these domain
-        // services that skips the CDN check the REST surface enforces.
-        process.env.ANTIPHONY_ORIGIN_SECRET = 'x'.repeat(48);
-        try {
-            const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1', {
-                headers: anonHeaders(),
-            });
-
-            expect(res.status).toBe(403);
-            expect(await res.json()).toEqual({ error: 'Forbidden', message: 'Forbidden' });
-        } finally {
-            delete process.env.ANTIPHONY_ORIGIN_SECRET;
-        }
     });
 
     it('404s an unknown method NSID', async () => {

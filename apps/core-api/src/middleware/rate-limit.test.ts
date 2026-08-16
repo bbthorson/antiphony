@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { RateLimitOptions } from './rate-limit.js';
 
 /**
  * `checkRateLimit` — the Firestore-backed counter behind both the `rateLimit`
@@ -90,11 +91,24 @@ function fakeDb(opts: { bucket?: Bucket; throwCode?: number | string } = {}) {
     };
 }
 
-/** Re-import for a clean circuit-breaker counter (module-scoped by design). */
+/**
+ * Re-import for a clean circuit-breaker counter (module-scoped by design),
+ * bound to the Firestore store.
+ *
+ * `checkRateLimit` takes its store as a REQUIRED argument — it used to default
+ * to the Firestore one, which meant the middleware could never reach any other
+ * binding. This suite is specifically about the Firestore binding's counting
+ * and failure classification, so it names it here rather than at fourteen call
+ * sites.
+ */
 async function freshCheckRateLimit() {
     vi.resetModules();
     const mod = await import('./rate-limit.js');
-    return mod.checkRateLimit;
+    const { firebaseRateLimitStore } = await import(
+        '../adapters/outbound/firebase/rate-limit-store.js'
+    );
+    return (key: string, options: RateLimitOptions, requestId?: string) =>
+        mod.checkRateLimit(key, options, requestId, firebaseRateLimitStore);
 }
 
 const LIMIT = { limit: 10, windowMs: 60_000 };

@@ -50,6 +50,12 @@ process.env.LOG_LEVEL = 'silent';
 // Import after mocks are registered
 // ---------------------------------------------------------------------------
 
+// Installs the Firebase fallback into the composition root. The rate-limit
+// and idempotency middleware now resolve their store from there rather than
+// defaulting to Firestore, so without this an unbound deployment throws
+// instead of composing — which is exactly what a Worker should do, and what
+// this Node-runtime suite is not testing.
+await import('../native.js');
 const { checkIdempotency, saveIdempotencyResult } = await import('./idempotency.js');
 
 // ---------------------------------------------------------------------------

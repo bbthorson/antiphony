@@ -9,6 +9,8 @@ import {
     didWebToUrl,
     atprotoPdsEndpoint,
     validateAppDid,
+    ensureTenantPin,
+    revalidateAllPins,
 } from './app-did.js';
 
 afterEach(() => {
@@ -259,5 +261,314 @@ describe('validateAppDid', () => {
         const r = await validateAppDid('did:web:did.voxpop.audio', { fetchImpl });
         expect(r.ok).toBe(false);
         if (!r.ok) expect(r.reason).toMatch(/did-doc-fetch-failed/);
+    });
+});
+
+/**
+ * The layered per-tenant gate — the Workers replacement for the fail-closed
+ * boot gate.
+ *
+ * The whole design turns on ONE distinction, so most of this file is about it:
+ * a **disproof** (we read the document and it contradicts the pin) must fail
+ * closed immediately, while an **unreachable** document (timeout, 5xx, network)
+ * is absence of evidence and must fall back to the last proven snapshot. Getting
+ * those the same way round is what turns a brief did:web outage into an outage
+ * of ours — which the deploy workflow already complains about in its own
+ * comments.
+ */
+
+const DID = 'did:web:tenant.example';
+const PINS = `vox-pop:${DID}`;
+
+/** A did:web document that proves custody, pointing its PDS at `host`. */
+function doc(host = 'api.antiphony.dev') {
+    return {
+        id: DID,
+        service: [
+            {
+                id: '#atproto_pds',
+                type: 'AtprotoPersonalDataServer',
+                serviceEndpoint: `https://${host}`,
+            },
+        ],
+    };
+}
+
+const okFetch = (body: unknown = doc()) =>
+    vi.fn(async () => ({ ok: true, json: async () => body })) as unknown as typeof fetch;
+
+const statusFetch = (status: number) =>
+    vi.fn(async () => ({ ok: false, status })) as unknown as typeof fetch;
+
+const deadFetch = () =>
+    vi.fn(async () => {
+        throw new Error('timeout');
+    }) as unknown as typeof fetch;
+
+/** An in-memory stand-in for the KV namespace. */
+function fakeKv() {
+    const store = new Map<string, string>();
+    return {
+        store,
+        kv: {
+            get: async (k: string) => {
+                const raw = store.get(k);
+                return raw ? JSON.parse(raw) : null;
+            },
+            put: async (k: string, v: string) => void store.set(k, v),
+            delete: async (k: string) => void store.delete(k),
+        },
+    };
+}
+
+describe('ensureTenantPin — freshness', () => {
+    it('proves custody and serves it synchronously afterwards', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const fetchImpl = okFetch();
+
+        await ensureTenantPin('vox-pop', { fetchImpl });
+
+        // The point of doing the async work in middleware: `getAppDid` stays
+        // synchronous, so packages/core never learns about any of this.
+        expect(getAppDid('vox-pop')).toBe(DID);
+    });
+
+    it('does not re-resolve inside the freshness window', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const fetchImpl = okFetch();
+
+        await ensureTenantPin('vox-pop', { fetchImpl });
+        await ensureTenantPin('vox-pop', { fetchImpl });
+
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-resolves once the entry ages past the freshness window', async () => {
+        // This is what makes the replacement STRONGER than the boot gate, not
+        // weaker: a Cloud Run process up for thirty days answers with a
+        // thirty-day-old custody proof, because it is only taken at startup.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const fetchImpl = okFetch();
+        let clock = 1_000_000;
+
+        await ensureTenantPin('vox-pop', { fetchImpl, now: () => clock });
+        clock += 2 * 60 * 60 * 1000; // two hours
+        await ensureTenantPin('vox-pop', { fetchImpl, now: () => clock });
+
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a tenant with no pin at all', async () => {
+        // Not a cache miss. An `at://` uri cannot be well-formed without a
+        // proven DID authority, so this fails closed.
+        process.env.ANTIPHONY_APP_DIDS = '';
+        await expect(ensureTenantPin('vox-pop', { fetchImpl: okFetch() })).rejects.toThrow(
+            /no app DID pinned/,
+        );
+    });
+});
+
+describe('ensureTenantPin — disproof vs unreachable', () => {
+    it('fails closed and EVICTS when the document contradicts the pin', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const { kv } = fakeKv();
+        let clock = 1_000_000;
+
+        // First, a good proof, cached in both layers.
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), kv, now: () => clock });
+        expect(getAppDid('vox-pop')).toBe(DID);
+
+        // Then the DID document is repointed at someone else's PDS.
+        clock += 2 * 60 * 60 * 1000;
+        await expect(
+            ensureTenantPin('vox-pop', {
+                fetchImpl: okFetch(doc('someone-else.example')),
+                kv,
+                expectedPdsHost: 'api.antiphony.dev',
+                now: () => clock,
+            }),
+        ).rejects.toThrow(/pds-endpoint-host-mismatch/);
+
+        // Eviction is the part that matters. A cached "yes" is now known to be
+        // a cached WRONG answer, so leaving it would keep serving a custody
+        // claim we have positively disproved.
+        expect(() => getAppDid('vox-pop')).toThrow();
+        expect(await kv.get('pin:vox-pop')).toBeNull();
+    });
+
+    it('serves the last proven snapshot when the document is unreachable', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        let clock = 1_000_000;
+
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), now: () => clock });
+        clock += 2 * 60 * 60 * 1000;
+
+        // Absence of evidence, not evidence of absence.
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: deadFetch(), now: () => clock }),
+        ).resolves.toBeUndefined();
+        expect(getAppDid('vox-pop')).toBe(DID);
+    });
+
+    it('stops serving stale once the tolerance is exhausted', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        let clock = 1_000_000;
+
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), now: () => clock });
+        clock += 25 * 60 * 60 * 1000; // past the 24h bound
+
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: deadFetch(), now: () => clock }),
+        ).rejects.toThrow(/cannot prove custody/);
+    });
+
+    it('does not let serving stale reset the staleness clock', async () => {
+        // The subtle one. If a stale serve refreshed `validatedAt`, the 24h
+        // bound would keep restarting and a permanently unreachable DID would
+        // be served forever — the bound would exist and never expire.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        let clock = 1_000_000;
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), now: () => clock });
+
+        // Serve stale repeatedly, each attempt past the retry backoff.
+        for (const hours of [2, 6, 12, 20]) {
+            clock = 1_000_000 + hours * 60 * 60 * 1000;
+            await ensureTenantPin('vox-pop', { fetchImpl: deadFetch(), now: () => clock });
+        }
+
+        clock = 1_000_000 + 25 * 60 * 60 * 1000;
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: deadFetch(), now: () => clock }),
+        ).rejects.toThrow(/cannot prove custody/);
+    });
+
+    it('backs off rather than paying the fetch timeout on every request', async () => {
+        // Without this, an unreachable did:web host makes every request wait
+        // out the 5s resolve before being served from the snapshot — "their DID
+        // host is slow" becomes "our API is slow", which is most of the damage
+        // the stale tolerance exists to prevent.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        let clock = 1_000_000;
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), now: () => clock });
+
+        clock += 2 * 60 * 60 * 1000;
+        const dead = deadFetch();
+        await ensureTenantPin('vox-pop', { fetchImpl: dead, now: () => clock });
+        // Three more requests within the backoff window.
+        clock += 1000;
+        await ensureTenantPin('vox-pop', { fetchImpl: dead, now: () => clock });
+        await ensureTenantPin('vox-pop', { fetchImpl: dead, now: () => clock });
+
+        expect(dead).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats 404 as disproof and 503 as unreachable', async () => {
+        // The server ANSWERED that there is no document (404) versus failed to
+        // answer at all (503). Only the first says anything about the DID.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+
+        const gone = await validateAppDid(DID, { fetchImpl: statusFetch(404) });
+        expect(gone.ok).toBe(false);
+        if (!gone.ok) expect(gone.kind).toBe('disproof');
+
+        const down = await validateAppDid(DID, { fetchImpl: statusFetch(503) });
+        expect(down.ok).toBe(false);
+        if (!down.ok) expect(down.kind).toBe('unreachable');
+    });
+
+    it('treats a 429 as unreachable, not as disproof', async () => {
+        // A rate limiter in front of the DID host tells us nothing about
+        // custody. Failing closed on one would hand any intermediary the
+        // ability to take a tenant offline.
+        const limited = await validateAppDid(DID, { fetchImpl: statusFetch(429) });
+        expect(limited.ok).toBe(false);
+        if (!limited.ok) expect(limited.kind).toBe('unreachable');
+    });
+});
+
+describe('ensureTenantPin — the KV layer', () => {
+    it('lets a cold isolate reuse what another isolate proved', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const { kv } = fakeKv();
+        const first = okFetch();
+
+        await ensureTenantPin('vox-pop', { fetchImpl: first, kv });
+        // A cold isolate: local map cleared, KV intact.
+        resetValidatedPinsForTest();
+
+        const second = okFetch();
+        await ensureTenantPin('vox-pop', { fetchImpl: second, kv });
+
+        expect(second).not.toHaveBeenCalled();
+        expect(getAppDid('vox-pop')).toBe(DID);
+    });
+
+    it('ignores a cached proof for a DID the config no longer pins', async () => {
+        // The pin was repointed in config since the cache was written, so the
+        // cached proof is about an authority this deployment no longer claims.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const { kv } = fakeKv();
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), kv });
+        resetValidatedPinsForTest();
+
+        process.env.ANTIPHONY_APP_DIDS = 'vox-pop:did:web:moved.example';
+        const refetch = vi.fn(async () => ({
+            ok: true,
+            json: async () => ({ ...doc(), id: 'did:web:moved.example' }),
+        })) as unknown as typeof fetch;
+
+        await ensureTenantPin('vox-pop', { fetchImpl: refetch, kv });
+
+        expect(refetch).toHaveBeenCalled();
+        expect(getAppDid('vox-pop')).toBe('did:web:moved.example');
+    });
+
+    it('resolves directly rather than failing when the cache is broken', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const brokenKv = {
+            get: async () => {
+                throw new Error('kv down');
+            },
+            put: async () => {
+                throw new Error('kv down');
+            },
+            delete: async () => undefined,
+        };
+
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: okFetch(), kv: brokenKv }),
+        ).resolves.toBeUndefined();
+        expect(getAppDid('vox-pop')).toBe(DID);
+    });
+});
+
+describe('revalidateAllPins — the drift cron', () => {
+    it('reports drift instead of throwing', async () => {
+        // Nothing is serving this call. A pin that has genuinely drifted fails
+        // closed on its own at the next request; the cron's job is to say so
+        // BEFORE that request, which is the ongoing-custody property the boot
+        // gate never had.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+
+        const drift = await revalidateAllPins({
+            fetchImpl: okFetch(doc('someone-else.example')),
+            expectedPdsHost: 'api.antiphony.dev',
+        });
+
+        expect(drift).toHaveLength(1);
+        expect(drift[0]).toMatchObject({ originAppId: 'vox-pop', kind: 'disproof' });
+    });
+
+    it('reports nothing when every pin still proves out', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        await expect(
+            revalidateAllPins({ fetchImpl: okFetch(), expectedPdsHost: 'api.antiphony.dev' }),
+        ).resolves.toEqual([]);
+    });
+
+    it('refreshes the snapshot, so a quiet tenant stays warm', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        await revalidateAllPins({ fetchImpl: okFetch() });
+        expect(getAppDid('vox-pop')).toBe(DID);
     });
 });

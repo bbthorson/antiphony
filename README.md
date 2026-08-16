@@ -13,7 +13,7 @@ audio-embed lexicon contribution, and the public REST surface that products
 | :--- | :--- |
 | `packages/shared` (`@antiphony/shared`) | Records, views, codecs, NSIDs — the published contract. Dual ESM/CJS build. |
 | `packages/core` (`@antiphony/core`) | Firebase-free domain services + ports (hexagonal). |
-| `apps/core-api` (`@antiphony/core-api`) | Hono REST API on Firebase App Hosting — wires `core` ports to Firebase bindings, serves `/api/v1/*`. |
+| `apps/core-api` (`@antiphony/core-api`) | Hono REST + XRPC API on Cloudflare Workers — wires `core` ports to Neon and R2 bindings, serves `/api/v1/*` and `/xrpc/*`. |
 | `apps/docs` (`@antiphony/docs`) | Astro/Starlight docs site, deployed to Cloudflare (see `wrangler.jsonc`). |
 | `apps/reference` (`@antiphony/reference`) | Minimal Vite/React reference client that drives the published contract end to end. |
 | `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.post`, `audio.transcript`, `embed.audio`, `embed.recordWithAudio`, `actor.profile`). |

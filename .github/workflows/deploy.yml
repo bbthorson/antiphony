@@ -1,246 +1,130 @@
 name: Deploy core-api
 
-# Builds the Dockerfile and ships apps/core-api to Cloud Run. This replaced the
-# Firebase App Hosting git trigger that served api.antiphony.dev until cutover.
+# Ships apps/core-api to Cloudflare Workers. This replaced the Cloud Run
+# deployment, which had itself replaced a Firebase App Hosting git trigger.
 #
-# ── Why not just `gcloud run deploy` and be done ──────────────────────────────
-# core-api boots fail-closed: `validateAllPins` resolves every tenant's did:web
-# over the network and calls `process.exit(1)` if custody cannot be proven. A
-# deploy can therefore fail for a reason that has nothing to do with this commit
-# — a did:web host being briefly unreachable is enough. So the new revision is
-# deployed with NO traffic, smoke-tested on its own tagged URL, and only then
-# promoted. A revision that cannot boot never serves a request.
+# ── Why this is so much shorter than the Cloud Run version ────────────────────
+# That workflow built a container, deployed it with NO traffic, smoke-tested it
+# on its own tagged URL, and only then promoted it. All of that existed for one
+# reason, stated in its own header: core-api booted fail-closed, resolving every
+# tenant's did:web over the network and calling `process.exit(1)` if custody
+# could not be proven — so a deploy could fail for a reason that had nothing to
+# do with the commit, and the apparatus was there to contain that.
+#
+# Workers have no boot phase, and the replacement gate is per-tenant and on the
+# request path (middleware/auth.ts). What is left of the deploy-time half is the
+# `validate:pins` step below, which proves the same thing BEFORE anything ships
+# rather than after. So the sequence collapses to: prove the pins, deploy.
+#
+# See specs/cloudflare-migration.md § The boot gate.
 #
 # ── One-time setup ────────────────────────────────────────────────────────────
-# See deploy/README.md. In short: an Artifact Registry repo, a service account
-# with the roles that file lists, and a Workload Identity Federation pool
-# trusting this repo. Nothing here reads a stored service-account key — the same
-# preference release.yml states for npm publishing.
+# Resources named in apps/core-api/wrangler.jsonc must exist first, and their
+# ids replace the placeholders in that file:
+#
+#     npx wrangler hyperdrive create antiphony-neon --connection-string "$DATABASE_URL"
+#     npx wrangler kv namespace create PIN_CACHE
+#     npx wrangler queues create antiphony-processing
+#     npx wrangler queues create antiphony-processing-dlq
+#
+# Then the secrets, which never appear in any committed file:
+#
+#     npx wrangler secret put SYSTEM_AUTH_TOKEN     -c apps/core-api/wrangler.jsonc
+#     npx wrangler secret put ANTIPHONY_APP_TOKENS  -c apps/core-api/wrangler.jsonc
+#     npx wrangler secret put ELEVENLABS_API_KEY    -c apps/core-api/wrangler.jsonc
+#
+# `CLOUDFLARE_API_TOKEN` is a repo secret with Workers Scripts:Edit, and
+# `CLOUDFLARE_ACCOUNT_ID` a repo variable (an identifier, not a credential).
 
 on:
     push:
         branches: [master]
-        # Path filter so a docs-only or spec-only commit does not roll production.
-        # The risk is the inverse: a change to something load-bearing that is NOT
-        # listed here will not deploy, and the tree will silently diverge from the
-        # running revision. Add paths when you add build inputs; when in doubt,
-        # run this workflow by hand.
+        # Path filter so a docs-only or spec-only commit does not roll
+        # production. The risk is the inverse: a change to something
+        # load-bearing that is NOT listed here will not deploy, and the tree
+        # will silently diverge from the running Worker. Add paths when you add
+        # build inputs; when in doubt, run this workflow by hand.
         paths:
             - 'apps/core-api/**'
             - 'packages/**'
             - 'package.json'
             - 'package-lock.json'
-            - 'Dockerfile'
-            - '.dockerignore'
-            - 'deploy/**'
             - '.github/workflows/deploy.yml'
     workflow_dispatch:
-        inputs:
-            promote:
-                description: 'Send traffic to the new revision after the smoke test passes'
-                type: boolean
-                default: true
 
 permissions:
     contents: read
-    # Required for Workload Identity Federation: Google exchanges this
-    # short-lived OIDC token for access, so no long-lived key is stored here.
-    id-token: write
 
 concurrency:
     group: deploy-core-api
-    # Deliberately NOT cancel-in-progress. Cancelling between "deploy the
-    # revision" and "migrate traffic" leaves the service on the old revision with
-    # an untagged new one beside it — recoverable, but a state nobody chose.
     cancel-in-progress: false
-
-env:
-    PROJECT_ID: antiphony-core
-    # Matches ANTIPHONY_TASKS_LOCATION in deploy/cloudrun.env.yaml. Deploying
-    # elsewhere costs a cross-region round trip on every enqueue.
-    REGION: us-east4
-    SERVICE: antiphony-core-api
-    REPOSITORY: antiphony
 
 jobs:
     deploy:
-        name: build · deploy · smoke · promote
+        name: prove pins · deploy
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
 
-            - id: auth
-              uses: google-github-actions/auth@v2
+            - uses: actions/setup-node@v4
               with:
-                  # Configured once against this repo. Both values are project
-                  # identifiers rather than credentials, so they are repo
-                  # variables, not secrets.
-                  workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-                  service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+                  node-version-file: .nvmrc
+                  cache: npm
 
-            - uses: google-github-actions/setup-gcloud@v2
+            - run: npm ci
 
-            - name: Configure Docker for Artifact Registry
-              run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-
-            # Tagged by commit sha, not `latest`. The sha tag is what makes a
-            # rollback a one-liner against a known image, and what the smoke test
-            # below asserts the running revision reports.
-            - name: Build and push
-              id: build
-              run: |
-                  IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/core-api"
-                  docker build \
-                    --build-arg "COMMIT_SHA=${GITHUB_SHA}" \
-                    --tag "${IMAGE}:${GITHUB_SHA}" \
-                    --tag "${IMAGE}:latest" \
-                    .
-                  docker push "${IMAGE}:${GITHUB_SHA}"
-                  docker push "${IMAGE}:latest"
-                  echo "image=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-
-            # --no-traffic + --tag gives the revision a private URL of its own
-            # while 100% of real traffic stays on the current revision.
+            # Mechanism 1 of the boot-gate replacement (specs/cloudflare-
+            # migration.md § The boot gate). Proves every app-DID pin in
+            # apps/core-api/wrangler.jsonc — the same file this deploy applies —
+            # before anything ships.
             #
-            # Sizing notes, both deliberate:
-            #   --memory 2Gi   ffmpeg passes run in-process and run.ts sets
-            #                  maxBuffer to 512MB, so a decode of a large upload
-            #                  can hold half a gigabyte of PCM in the Node heap.
-            #                  512Mi (the Cloud Run default) OOMs the container,
-            #                  which surfaces as a 503 on the worker route rather
-            #                  than a stage failure.
-            #   --timeout 900  the worker route can run two ffmpeg passes plus an
-            #                  ElevenLabs round trip; ffmpeg alone allows 120s per
-            #                  pass. The 300s default can cut a legitimate job.
-            - name: Deploy revision (no traffic)
-              id: deploy
+            # It does NOT replace the runtime check. Deploy-time correctness and
+            # ongoing custody are different properties: this one is about the
+            # pins in this commit, and ongoing custody is the per-request gate
+            # plus the hourly drift cron.
+            - name: Prove app-DID pins
+              run: npm run validate:pins -w @antiphony/core-api
+
+            # The Worker bundle is decided by the whole transitive import graph
+            # of the app, not by anything visible in worker.ts, so a Node-only
+            # dependency can arrive via an ordinary-looking import in a
+            # middleware file. `wrangler deploy` would ship it without
+            # complaint. CI runs this on every PR too; running it here as well
+            # is cheap and this is the step that actually matters.
+            - name: Assert the Worker bundle carries no Node-only dependency
+              run: npm run check:worker-bundle -w @antiphony/core-api
+
+            - name: Deploy
+              # Through the workspace script, so wrangler resolves from the
+              # workspace that declares it and picks up its wrangler.jsonc by
+              # sitting in the same directory.
+              #
+              # COMMIT_SHA is passed as a var rather than baked into the bundle.
+              # It used to be an esbuild `define`, and that went with the Node
+              # bundle — but `/health` still reports it, and "which commit is
+              # this deployment running" is exactly the question a migration
+              # makes hard to answer from the tree alone.
               run: |
-                  # `--no-traffic` is rejected outright when the service does not
-                  # exist yet: "--no-traffic not supported when creating a new
-                  # service." There is nothing to hold traffic on, so the flag has
-                  # no meaning and gcloud refuses rather than ignoring it.
-                  #
-                  # Detect and drop the gating flags for that one run rather than
-                  # requiring a manual bootstrap deploy. A workflow that needs a
-                  # documented hand-run before its first success is a workflow
-                  # whose first success nobody can reproduce.
-                  #
-                  # The safety story survives: the first revision does take traffic
-                  # immediately, but the service is brand new, so no DNS, no domain
-                  # mapping, and no caller points at it. The smoke test below still
-                  # gates — it just probes the service URL instead of a tag URL.
-                  if gcloud run services describe "${SERVICE}" \
-                      --region "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
-                      GATED=(--no-traffic --tag candidate)
-                      echo "gated=true" >> "$GITHUB_OUTPUT"
-                  else
-                      GATED=()
-                      echo "gated=false" >> "$GITHUB_OUTPUT"
-                      echo "::notice::Service ${SERVICE} does not exist yet. Creating it, which cannot be done with --no-traffic, so this first revision serves immediately. Nothing routes to it until a domain mapping exists."
-                  fi
+                  npm run deploy -w @antiphony/core-api -- \
+                    --var "COMMIT_SHA:${GITHUB_SHA}" \
+                    --var "BUILD_TIME:$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
-                  gcloud run deploy "${SERVICE}" \
-                    --image "${{ steps.build.outputs.image }}" \
-                    --region "${REGION}" \
-                    --project "${PROJECT_ID}" \
-                    --service-account "${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}" \
-                    --env-vars-file deploy/cloudrun.env.yaml \
-                    --set-secrets "ANTIPHONY_APP_TOKENS=antiphony-app-tokens:latest,SYSTEM_AUTH_TOKEN=system-auth-token:latest,ELEVENLABS_API_KEY=elevenlabs-api-key:latest,ANTIPHONY_ORIGIN_SECRET=antiphony-origin-secret:latest" \
-                    --min-instances 0 \
-                    --max-instances 10 \
-                    --cpu 1 \
-                    --memory 2Gi \
-                    --timeout 900 \
-                    --ingress all \
-                    --allow-unauthenticated \
-                    "${GATED[@]}" \
-                    --quiet
-
-                  # --allow-unauthenticated is not a gap. Every data route is gated
-                  # by a service token in middleware/auth.ts, and the anonymous
-                  # audio proxy is reached by `<audio src=…>` from a browser that
-                  # can present no IAM identity. Putting IAM in front would break
-                  # that surface and gate the rest twice.
-
-                  DESCRIBE="$(gcloud run services describe "${SERVICE}" \
-                    --region "${REGION}" --project "${PROJECT_ID}" --format json)"
-                  echo "revision=$(jq -r '.status.latestCreatedRevisionName' <<<"$DESCRIBE")" >> "$GITHUB_OUTPUT"
-
-                  # On a gated deploy the candidate tag has a URL of its own; on a
-                  # creating deploy there is no tag, so fall back to the service
-                  # URL. Empty here would make the smoke test curl "/health" as a
-                  # relative path and fail with a misleading error.
-                  URL="$(jq -r '.status.traffic[]? | select(.tag=="candidate") | .url' <<<"$DESCRIBE")"
-                  if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-                      URL="$(jq -r '.status.url' <<<"$DESCRIBE")"
-                  fi
-                  echo "url=${URL}" >> "$GITHUB_OUTPUT"
-
-            # The strong check. /health is unauthenticated and reports the
-            # COMMIT_SHA that esbuild baked into the bundle, so asserting it
-            # equals this commit proves three things at once: the revision booted
-            # (the did:web custody gate passed), it is serving, and it is serving
-            # THIS code rather than a cached or mis-tagged image.
-            - name: Smoke test the candidate
+            - name: Smoke test
               run: |
-                  URL="${{ steps.deploy.outputs.url }}/health"
-                  echo "Probing ${URL}"
-                  for attempt in $(seq 1 10); do
-                      BODY="$(curl -fsS --max-time 15 "$URL" 2>/dev/null)" && break
-                      echo "attempt ${attempt}: not ready yet"
-                      sleep 6
-                  done
-                  if [ -z "${BODY:-}" ]; then
-                      echo "::error::Candidate revision ${{ steps.deploy.outputs.revision }} never answered /health."
-                      echo "Check boot logs — validateAllPins exits the process when a tenant did:web cannot be resolved:"
-                      echo "  gcloud run services logs read ${SERVICE} --region ${REGION} --project ${PROJECT_ID} --limit 200"
-                      exit 1
-                  fi
-                  echo "$BODY"
-                  SERVED_SHA="$(jq -r '.sha' <<<"$BODY")"
-                  if [ "$SERVED_SHA" != "$GITHUB_SHA" ]; then
-                      echo "::error::/health reports sha ${SERVED_SHA}, expected ${GITHUB_SHA}. The revision is not running this commit."
-                      exit 1
-                  fi
-                  echo "Candidate is serving ${SERVED_SHA}."
-
-            # Only reached if the candidate booted and identified itself. Removing
-            # the tag in the same call keeps `candidate` meaning "the revision
-            # currently under test" rather than accumulating on old revisions.
-            #
-            # Skipped entirely on a creating deploy: that revision already holds
-            # 100% of traffic (the flags that would have withheld it are the ones
-            # gcloud rejects), and there is no `candidate` tag to remove — passing
-            # --remove-tags for a tag that was never set is an error, not a no-op.
-            - name: Promote to 100% traffic
-              if: >-
-                  (github.event_name == 'push' || inputs.promote)
-                  && steps.deploy.outputs.gated == 'true'
-              run: |
-                  gcloud run services update-traffic "${SERVICE}" \
-                    --region "${REGION}" \
-                    --project "${PROJECT_ID}" \
-                    --to-revisions "${{ steps.deploy.outputs.revision }}=100" \
-                    --remove-tags candidate \
-                    --quiet
-
-            - name: Summary
-              if: always()
-              run: |
-                  {
-                    echo "### ${SERVICE} — ${GITHUB_SHA:0:7}"
-                    echo ""
-                    echo "- image: \`${{ steps.build.outputs.image }}\`"
-                    echo "- revision: \`${{ steps.deploy.outputs.revision }}\`"
-                    if [ "${{ github.event_name }}" != "push" ] && [ "${{ inputs.promote }}" != "true" ]; then
-                      echo "- traffic: **not promoted** (candidate only)"
-                      echo "- candidate url: ${{ steps.deploy.outputs.url }}"
-                    else
-                      echo "- traffic: 100%"
+                  # `/health` is unauthenticated and reports which backend is
+                  # actually wired, which is the question that matters during a
+                  # migration: "which store is this deployment talking to" stops
+                  # being answerable from the commit alone.
+                  for attempt in 1 2 3 4 5; do
+                    if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
+                      echo "$BODY"
+                      echo "$BODY" | grep -q '"ok":true' && exit 0
                     fi
-                    echo ""
-                    echo "Roll back to the previous revision:"
-                    echo '```bash'
-                    echo "gcloud run services update-traffic ${SERVICE} --region ${REGION} --project ${PROJECT_ID} --to-revisions PREVIOUS_REVISION=100"
-                    echo '```'
-                  } >> "$GITHUB_STEP_SUMMARY"
+                    echo "attempt ${attempt} failed; retrying"
+                    sleep 5
+                  done
+                  echo "::error::/health did not report ok:true after the deploy"
+                  exit 1

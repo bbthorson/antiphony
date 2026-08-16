@@ -21,37 +21,70 @@ record. This section is the operational state.
 | #86 | Storage ports (`RateLimitStore`, `IdempotencyStore`, `SqlClient`) + all four Postgres bindings, tested against real PG18 via PGlite |
 | #87 | R2 blob store; audio proxy streams instead of 302-ing (contract `0.5.0`) |
 
+| #89 | Step 3a — the composition root, and the Firestore→Neon cutover switch |
+
 ### In flight
 
-**#89 — step 3a, the composition root.** Also carries three things that missed
-the #87 merge: `neonSqlClient`, the `ANTIPHONY_R2_BUCKET` config, and
-`scripts/migrate-firestore-to-neon.ts`. Rebased on master and mergeable.
+**Step 3 (b–e) — the Worker.** Four commits on
+`claude/cloudflare-migration-steps`:
+
+| Commit | What |
+| :--- | :--- |
+| 3b | Workers entry + per-app `wrangler.jsonc`, Smart Placement on, cron wired |
+| 3c | Queues replacing Cloud Tasks; `PROCESSING_LEASE_MS` re-derived |
+| 3d | Boot gate replaced by four mechanisms; origin lock deleted; **Cloud Run retired** |
+| 3e | `rate_limits` → Durable Object |
+
+Three things came out differently from how this section scoped them, all
+recorded in the commits:
+
+- **3b was not "an entry file replacing `serve()`."** `app.ts` and every route
+  handler are shared by both runtimes and a Worker bundle has no `external`
+  escape hatch, so the whole transitive import graph had to be able to run on
+  Workers. It could not: a first dry-run bundle came to 7MB and contained
+  `firebase-admin`, `google-auth-library`, `protobufjs` and `grpc`. Three
+  install seams now take the native half (`src/native.ts`), and
+  `check:worker-bundle` fails CI if any of it comes back.
+
+  Two of those imports were a **bug**, not a design: `middleware/rate-limit.ts`
+  and `lib/idempotency.ts` both defaulted their store argument to the Firestore
+  binding and no caller ever passed another, so the Postgres bindings from #86
+  were unreachable in production by any configuration.
+
+- **The lease had no margin on Cloud Run either.** `--timeout 900` already
+  equalled `PROCESSING_LEASE_MS`, and Cloud Tasks derived its deadline *from*
+  the lease, so all three numbers were one number. Queues did not introduce the
+  problem; it removed the last place to adjust it. Fixed by inverting the
+  derivation: `PROCESSING_EXECUTION_CEILING_MS` (15 min) names the fact, the
+  lease is derived to sit strictly above it (20 min), and dispatchers bound
+  themselves by the ceiling.
+
+- **3d took Cloud Run with it.** Deleting the origin lock and deleting
+  `src/index.ts` both presume the runtime has moved, and doing one without the
+  other leaves the tree incoherent. Decided 2026-08-16 to land both: the
+  Dockerfile, `deploy/cloudrun.env.yaml` and the no-traffic → smoke-test →
+  promote sequence are gone, and `deploy.yml` deploys the Worker.
 
 ### Remaining engineering
 
-- **3b — Worker entry + wrangler.** `export default { fetch, queue, scheduled }`
-  replacing `serve()`; delete `src/index.ts` and `lib/shutdown.ts`. Root
-  `wrangler.jsonc` becomes multi-worker (it is the docs assets Worker today, and
-  its header comment "Nothing in this file touches [core-api]" stops being true).
-  Bindings: R2 `BLOBS` → `antiphony-r2-bucket`, `HYPERDRIVE`, `PROCESSING_QUEUE`.
-  **Smart Placement on from the first deploy** — see § Geography.
-- **3c — Queues.** `dispatch()` → `env.PROCESSING_QUEUE.send(job)`; consumer is
-  `queue(batch, env)` calling the same `AudioProcessingService.process`. Keep
-  `POST /api/v1/system/process-audio` as manual re-drive. **Re-derive
-  `PROCESSING_LEASE_MS`**: a Queue consumer's ceiling is 15 min and the lease is
-  15 min, so they are now exactly equal with no margin (§ Cloud Tasks → Queues).
-- **3d — Boot gate + origin lock.** Four mechanisms, designed in § The boot gate:
-  CI deploy gate, lazy per-tenant validation folded into the auth middleware, a
-  cache distinguishing disproof from unreachability, an hourly drift cron. Delete
-  `originLock()` and `ANTIPHONY_ORIGIN_SECRET` — there is no origin to bypass on
-  Workers.
-- **3e — `rate_limits` → Durable Object.** The Postgres table is a bridge. Nothing
-  external shares those buckets any more (#83), so this is now a purely internal
-  decision.
 - **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
-  Antiphony, add `format`, move `trim`/`waveform` onto it. **Pace is not ours** —
-  it sits on a live Twilio path mid-cutover. See § The ffmpeg problem and
-  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+  Antiphony, add `format`, move `trim`/`waveform` onto it. See § The ffmpeg
+  problem and [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+
+  **Its pace is still not entirely ours** — the service sits on a live Twilio
+  path, so a change to it is a change to real calls. But the specific blocker
+  this section used to name has cleared; see below.
+
+  Until it lands, `trim` and `waveform` resolve **unavailable** on Workers and
+  settle `skipped`. That is the truthful state, not a regression to fix in a
+  hurry — but it is a capability the Cloud Run deployment had and this one does
+  not, so it should not be discovered after the cutover.
+
+  ✅ **The sequencing caution below is satisfied.** § The ffmpeg problem says to
+  let Vox Pop's extraction soak and land its step 5 first, citing `aa6759e5` as
+  mid-cutover. Vox Pop `c48c4dee` (#887, 2026-08-16) retired `functions/`
+  entirely — source tree and deployed function — which is that step 5. The
+  stacked-reversal hazard is gone.
 
 ### ⚠️ 2d has nothing to migrate — verified 2026-08-16
 
@@ -86,19 +119,57 @@ is done**.
 Note also that `users` / `handles` / `atproto_oauth_states` still hold rows but
 have had no reader since #83 deleted the identity layer. They are legacy too.
 
-### Remaining operational — none of it blocked on code
+### Remaining operational — this is now the critical path
 
-1. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
-2. **Set `ANTIPHONY_PUBLIC_BASE_URL`** before any deploy of `0.5.0`. Without it,
-   posts with audio hydrate without an embed (§ 2c).
-3. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
+Nothing is blocked on code, and **the Worker cannot deploy until 1–3 are done**:
+`wrangler.jsonc` carries `REPLACE_ME_…` placeholders that fail the deploy rather
+than starting up without a database. [`deploy/README.md`](../deploy/README.md)
+is the runbook.
+
+1. **Create the bindings.** Hyperdrive (from the Neon connection string), the
+   `PIN_CACHE` KV namespace, and both queues (`antiphony-processing` and its
+   dead-letter queue). Put the ids in `apps/core-api/wrangler.jsonc`.
+2. **Set the three Worker secrets** — `SYSTEM_AUTH_TOKEN`,
+   `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY`. Not the database (Hyperdrive
+   holds it), not R2 (the binding needs no credential).
+3. **Add the GitHub credentials** — `CLOUDFLARE_API_TOKEN` (secret, Workers
+   Scripts:Edit) and `CLOUDFLARE_ACCOUNT_ID` (variable).
+4. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
+5. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
    with `Storage Object Viewer` + `storage.buckets.get`.
-4. ~~**Dry-run then run the records migration.**~~ **Done — nothing to migrate.**
-   See the section above. Re-run with `--allow-empty` if a confirmation is
-   wanted; the script needs `FIREBASE_PROJECT_ID=antiphony-core` and no
-   `DATABASE_URL` for a dry run.
-5. **Cut over** by setting `DATABASE_URL` / binding `BLOBS`. `/health` reports
-   which backend is live. Rollback is unsetting them.
+6. ~~**Run the records migration.**~~ **Nothing to migrate** — verified above.
+   Re-run with `--allow-empty` if a confirmation is wanted; a dry run needs
+   `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.
+7. **Point `api.antiphony.dev` at the Worker** and confirm on `/health`, which
+   reports which store is actually wired.
+
+### What rollback actually looks like now
+
+Two things changed at once here, and they pull in opposite directions, so it is
+worth stating the combined position rather than either half.
+
+**A bad deploy is the easy case, and it got easier.** `wrangler rollback`, or
+the Deployments list in the dashboard. Instant, no rebuild — where the Cloud Run
+equivalent was a revision promotion.
+
+**A bad DATA cutover is the case that lost its escape hatch — and it turns out
+there was nothing behind that hatch anyway.** On Cloud Run, unsetting
+`DATABASE_URL` fell back to Firestore. Worker bindings are mandatory
+(`composition.ts` throws rather than falling back), because a Worker holds no
+Application Default Credentials and could not reach Firestore if it tried. So
+the store swap stopped being a config flip.
+
+But the fallback it replaced was never a meaningful records rollback: `posts`
+and `audio_transcripts` are **empty**, so falling back to Firestore would have
+meant falling back to nothing. The real recovery for a Neon problem is Neon's
+own — point-in-time restore or a branch — not a swap to a store that never held
+these records.
+
+**Blobs are the half where the old copy is real.** Super Slurper copies rather
+than moves, so GCS keeps every object, and the paths are identical on both sides
+(`blobs/{originAppId}/{cid}` — a property of content addressing). The bytes are
+therefore safe regardless. What is Worker-only is the access path, so reaching
+them again means a runtime with a GCS binding, not a config change.
 
 ### Open questions
 
@@ -113,13 +184,19 @@ have had no reader since #83 deleted the identity layer. They are legacy too.
 ### Two things most likely to bite
 
 - **The edge makes database reads slower**, not faster — Workers run near the
-  user, Neon is single-region `us-east-1`, and the current Cloud Run deployment
-  is already co-located with it. Smart Placement + Hyperdrive are both required,
-  and the regression is invisible when testing from the US east coast.
-- **The TTL sweep has no scheduler until 3b.** `antiphony_sweep_expired()` ships
-  with the schema but nothing calls it until the Worker's cron exists. Harmless
-  at beta volume (it is pure space reclamation) and the reason no interim
-  scheduler was built — but it is a thing that silently does not happen.
+  user, Neon is single-region `us-east-1`, and the Cloud Run deployment this
+  replaced was already co-located with it. Smart Placement is on from the first
+  deploy and Hyperdrive is bound, which is the mitigation; what remains is that
+  **the regression is invisible when testing from the US east coast**, so
+  measuring it needs a client that is not. Still worth measuring both before and
+  after rather than assuming the mitigation worked.
+- ~~**The TTL sweep has no scheduler.**~~ **Closed in 3b.** The Worker's cron
+  fires hourly at `:17` and drives `antiphony_sweep_expired()`. It logs at
+  `info` even when it deletes nothing, deliberately: a zero-row sweep is the
+  evidence that the cron is wired, and a sweep that quietly stops is otherwise
+  indistinguishable from one with nothing to do. Note the `rate_limits` half now
+  reads zero under the reference deployment by design — those buckets live in a
+  Durable Object (3e).
 
 ## Verdict
 
@@ -238,12 +315,15 @@ to zero is disabled. A beta service is idle nearly always, and idle is exactly w
 scale to zero should be on — pg_cron here would fire rarely and unpredictably, which
 is the same silent failure relocated into the database.
 
-No interim scheduler for the Cloud Run window. **The sweep is pure space
-reclamation**: both upserts already treat an expired row as absent, so deleting one
-is behaviourally identical to leaving it. It can run late, partially, or not at all
-without anything observable changing. At beta volume the accrual between now and
-step 3 is trivial, and a Cloud Scheduler job built to live three weeks carries more
-failure modes than the problem does. Run it by hand if it ever looks large.
+No interim scheduler was built for the Cloud Run window, and that call held.
+**The sweep is pure space reclamation**: both upserts already treat an expired row
+as absent, so deleting one is behaviourally identical to leaving it. It can run
+late, partially, or not at all without anything observable changing. At beta volume
+the accrual between the schema landing and the Worker was trivial, and a Cloud
+Scheduler job built to live three weeks would have carried more failure modes than
+the problem did. Run it by hand any time it looks large.
+
+✅ It has a caller now: the Worker's Cron Trigger, hourly at `:17`.
 
 ## Firestore → Neon
 
@@ -306,10 +386,10 @@ the extra fetch disappears.
 
 ### ⚠️ Geography: the edge makes this slower, not faster
 
-**Neon is on AWS `us-east-1` (N. Virginia); Postgres 18.** Cloud Run today is
-`us-east4` (Ashburn) — the same metro. Database round trips are currently
-single-digit milliseconds, and that is a property the migration can easily lose
-without noticing.
+**Neon is on AWS `us-east-1` (N. Virginia); Postgres 18.** The Cloud Run
+deployment this replaced was `us-east4` (Ashburn) — the same metro, so database
+round trips were single-digit milliseconds. That is a property the migration can
+easily lose without noticing, and losing it would not show up as an error.
 
 Workers run close to the **user**, not close to the database. A request served from
 London against a database in Virginia pays ~80 ms per round trip, multiplied by
@@ -393,15 +473,30 @@ job payload is two strings, far under the 128 KB message cap.
 Keep `POST /api/v1/system/process-audio` as a manual re-drive path — it costs nothing
 and is the thing you want at 3am.
 
-**One number needs re-deriving.** `DISPATCH_DEADLINE_S` in
-[`cloud-tasks.ts`](../apps/core-api/src/adapters/outbound/dispatch/cloud-tasks.ts) is
-set *at* `PROCESSING_LEASE_MS` (15 min) on the reasoning that a delivery must never
-outlive its own lease. A Queue consumer's ceiling is also 15 minutes, so the two are
-now exactly equal with no margin — a consumer running to its cap has a lease expiring
-underneath it, which is the overlap the lease exists to prevent. Either raise
-`PROCESSING_LEASE_MS` above the consumer cap, or enforce a shorter self-imposed
-deadline in the handler. This is a small change with a real correctness argument
-behind it and should not be carried over by accident.
+**✅ The lease was re-derived in 3c.** `DISPATCH_DEADLINE_S` was set *at*
+`PROCESSING_LEASE_MS` (15 min) on the reasoning that a delivery must never outlive
+its own lease — and a Queue consumer's ceiling is also 15 minutes, so the two were
+exactly equal with no margin.
+
+The equality was not a Queues problem. Cloud Run's `--timeout 900` already equalled
+the lease and Cloud Tasks derived its deadline *from* the lease, so all three numbers
+were one number; Queues only removed the last place to adjust it, its cap not being
+ours to move.
+
+So the derivation was inverted rather than nudged.
+`PROCESSING_EXECUTION_CEILING_MS` (15 min) now names what it always was — a fact
+about every runtime the pass executes in — and `PROCESSING_LEASE_MS` is derived to
+sit **strictly above** it, at 20 minutes. Dispatchers bound their delivery by the
+ceiling, never by the lease.
+
+Widening the lease rather than adding a self-imposed handler deadline: the deadline
+approach threads an `AbortController` through `AudioProcessingService` and every
+stage — the one part of this codebase the migration has otherwise left untouched —
+and makes correctness depend on our own timer firing and on `finally` running after
+a hard kill. Widening makes the platform enforce the ordering, with no code in the
+handler. The cost is that a killed pass holds its claim for the 5-minute margin; a
+pass reaching a 15-minute ceiling at all is pathological (ffmpeg is capped at 120s),
+so making that case wait is the right trade against permitting a double write in it.
 
 A side benefit: the Cloud Tasks adapter's documented concern about
 `SYSTEM_AUTH_TOKEN` being stored in the queue for each task's lifetime disappears —
@@ -924,9 +1019,17 @@ no seam to swap:
 | [`rest/system-atproto-session.ts`](../apps/core-api/src/adapters/inbound/rest/system-atproto-session.ts) | Direct Firestore CRUD on the session store |
 | [`rest/system-atproto-signin.ts`](../apps/core-api/src/adapters/inbound/rest/system-atproto-signin.ts) | Firebase Auth + direct Firestore batch on the rollback path |
 
-Putting ports in front of these is the single highest-value piece of prep, and it is
-worth doing **on Cloud Run, before any Cloudflare work starts** — it is the step that
-converts the rest of the migration from a rewrite into a set of adapter swaps.
+Putting ports in front of these was the single highest-value piece of prep, and the
+prediction held: it converted the rest of the migration from a rewrite into a set of
+adapter swaps. ✅ **All five are resolved** — three evaporated with the dead routes
+(#83) and the remaining two got ports in #86.
+
+One caveat that only surfaced in 3b, worth recording because the same shape can
+recur: a port is not reached just because it exists. Both `middleware/rate-limit.ts`
+and `lib/idempotency.ts` kept a *default argument* pointing at the Firestore binding,
+and no caller ever passed another — so the ports were in place, the Postgres bindings
+were written and tested, and production could not reach them by any configuration.
+The seam was real and the wiring was not.
 
 ## Smaller items
 
@@ -1044,9 +1147,11 @@ What the beta framing removes:
   the existing ports, one-shot the data across, verify CID round-trip stability.
   Ports for rate-limit and idempotency fold in here rather than being their own
   phase. The TTL sweep lands with the schema.
-- **Step 3 — the Worker.** Runtime swap, Queues replacing Cloud Tasks, streaming
-  audio proxy, boot-gate replacement, origin lock deleted, `rate_limits` to a
-  Durable Object. Root `wrangler.jsonc` restructures to per-app configs here.
+- **Step 3 — the Worker.** ✅ **Done 2026-08-16** (3a in #89; 3b–3e on
+  `claude/cloudflare-migration-steps`). Runtime swap, Queues replacing Cloud Tasks,
+  boot-gate replacement, origin lock deleted, `rate_limits` to a Durable Object,
+  per-app wrangler configs. The streaming audio proxy landed earlier, in #87.
+  Cloud Run was retired with it — see § Status.
 - **Step 4 — ffmpeg consolidation.** Bring `apps/audio-rendition` under Antiphony,
   add `format`, move `trim` and `waveform` onto it, retire the Vox Pop copy.
 
@@ -1107,8 +1212,11 @@ deliver value on Cloud Run alone, so an abandoned migration strands nothing.
   cache that distinguishes disproof from unreachability, and an hourly Cron Trigger
   for drift. Net stronger than today, because today's snapshot is taken once per
   process lifetime and never refreshed.
-- **Origin lock** — delete it at step 3. It is dead on Workers, but it is actively
-  protecting Cloud Run until then, so it stays until the runtime moves.
+- **Origin lock** — ✅ deleted in 3d, together with `src/index.ts` and the Cloud Run
+  deployment. The two could not be separated: deleting the lock while Cloud Run still
+  served would strip the `*.run.app` hostname of its only gate, and keeping the Node
+  entry while deleting the lock is incoherent. So "the runtime moves" became a single
+  decision rather than a sequence.
 - **Driver** — start on `@neondatabase/serverless` (HTTP). Deleting the dead routes
   takes `users`/`handles` with them, and the handle swap was the only operation
   wanting an interactive transaction — so the HTTP driver's batch-only limitation no

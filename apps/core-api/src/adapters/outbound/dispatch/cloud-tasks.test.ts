@@ -100,13 +100,24 @@ describe('cloudTasksDispatcher', () => {
         );
     });
 
-    it('bounds the delivery by the processing lease, not past it', async () => {
+    it('bounds the delivery STRICTLY inside the processing lease', async () => {
         // The coupling that keeps a delivery from outliving its own claim. A
-        // deadline LONGER than the lease lets the first runner still be writing
+        // deadline longer than the lease lets the first runner still be writing
         // when the lease lapses and a second one starts — the concurrent-write
         // hazard the lease exists to close, reached from the one direction the
         // lease cannot defend against itself.
-        const { PROCESSING_LEASE_MS } = await import('@antiphony/core/services/audio-processing');
+        //
+        // `toBeLessThan`, not `toBeLessThanOrEqual`. This assertion used to
+        // permit equality, and equality was in fact what shipped: the deadline
+        // derived from the lease, so the two were the same number and a
+        // delivery running to the cap had its claim lapsing at the same
+        // instant. Cloudflare Queues made that unfixable-in-place — its
+        // consumer cap is 15 minutes and is not ours to move — so the lease
+        // widened instead. Permitting equality here is what let the gap close
+        // unnoticed in the first place.
+        const { PROCESSING_LEASE_MS, PROCESSING_EXECUTION_CEILING_MS } = await import(
+            '@antiphony/core/services/audio-processing'
+        );
         const fetchImpl = okFetch();
 
         await cloudTasksDispatcher(CONFIG, loggerStub(), fetchImpl).dispatch({
@@ -115,7 +126,10 @@ describe('cloudTasksDispatcher', () => {
         });
 
         const deadlineS = Number(enqueuedTask(fetchImpl).dispatchDeadline.replace('s', ''));
-        expect(deadlineS).toBeLessThanOrEqual(PROCESSING_LEASE_MS / 1000);
+        expect(deadlineS).toBeLessThan(PROCESSING_LEASE_MS / 1000);
+        // And it tracks the ceiling every runtime enforces, rather than being
+        // free to drift from Cloud Run's own `--timeout 900`.
+        expect(deadlineS).toBe(PROCESSING_EXECUTION_CEILING_MS / 1000);
     });
 
     it('sets no task name, so a recompute re-dispatch is not deduped away', async () => {

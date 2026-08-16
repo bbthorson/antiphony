@@ -29,7 +29,14 @@
             "project": ["scripts/**/*.mjs", "eslint-rules/**/*.mjs"]
         },
         "apps/core-api": {
-            "entry": ["scripts/*.ts"],
+            // `src/worker.ts` is the only runtime entry, and knip finds it
+            // itself from `main` in apps/core-api/wrangler.jsonc — listing it
+            // here would be redundant and knip says so. `src/native.ts` is
+            // named because nothing in the Worker graph imports it: it installs
+            // the Firebase and ffmpeg bindings that only the Node runtime could
+            // use, and it survives the Cloud Run removal solely to keep those
+            // adapters exercised until the Firestore data is migrated off.
+            "entry": ["scripts/*.ts", "src/native.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
         },
         "apps/reference": {

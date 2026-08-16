@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AudioProcessingService, type ProcessingProviders } from './audio-processing';
+import {
+    AudioProcessingService,
+    PROCESSING_EXECUTION_CEILING_MS,
+    PROCESSING_LEASE_MS,
+    type ProcessingProviders,
+} from './audio-processing';
 import { buildPostUri } from './audio-posts';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
@@ -785,9 +790,18 @@ describe('AudioProcessingService.process', () => {
             });
         }
 
-        /** The lease `process()` derives from the frozen `deps.now()` clock. */
+        /**
+         * The lease `process()` derives from the frozen `deps.now()` clock.
+         *
+         * Derived from `PROCESSING_LEASE_MS` rather than restating its value.
+         * These assertions are about the service reading the constant off the
+         * right clock, not about what the constant is — and when the lease
+         * widened for the Queues cutover, a hardcoded 15 minutes here failed as
+         * if the code had broken. What the value must SATISFY is asserted
+         * separately, against the execution ceiling.
+         */
         function claimedLease() {
-            return new Date(new Date('2026-07-03T00:00:00Z').getTime() + 15 * 60 * 1000);
+            return new Date(new Date('2026-07-03T00:00:00Z').getTime() + PROCESSING_LEASE_MS);
         }
 
         it('does no work when the claim is declined', async () => {
@@ -842,9 +856,7 @@ describe('AudioProcessingService.process', () => {
             // Derived from `deps.now()`, not `Date.now()`, so the expiry is on
             // the same clock as every other timestamp the service writes.
             const [, , leaseUntil] = claim.mock.calls[0] as unknown as [string, string, Date];
-            expect(leaseUntil.getTime()).toBe(
-                new Date('2026-07-03T00:00:00Z').getTime() + 15 * 60 * 1000,
-            );
+            expect(leaseUntil.getTime()).toBe(claimedLease().getTime());
         });
 
         it('releases the lease when the pass succeeds', async () => {
@@ -900,5 +912,34 @@ describe('AudioProcessingService.process', () => {
 
             expect(deps.releaseProcessingLease).not.toHaveBeenCalled();
         });
+    });
+});
+
+describe('the lease / execution-ceiling invariant', () => {
+    it('gives the lease strictly more room than any runtime will let a pass use', () => {
+        // The whole reason both constants exist. A runner permitted to run as
+        // long as its own lease is one whose claim can expire while it is still
+        // writing, letting a second runner start underneath it — the
+        // concurrent-write hazard the lease exists to close, reached from the
+        // one direction the lease cannot defend against.
+        //
+        // These were the SAME number until the Queues cutover: 15 minutes each,
+        // because the dispatch deadline derived from the lease. Equality reads
+        // as "the delivery never outlives the claim" and is really the boundary
+        // case where the hazard is live rather than excluded. A test is the
+        // right place for this because nothing else fails when it stops
+        // holding — the overlap is rare, silent, and shows up as a double-billed
+        // stage or a clobbered record rather than as an error.
+        expect(PROCESSING_LEASE_MS).toBeGreaterThan(PROCESSING_EXECUTION_CEILING_MS);
+    });
+
+    it('leaves a margin worth having, not an epsilon', () => {
+        // A one-second gap would satisfy the assertion above and defend
+        // nothing: the ceiling is enforced by killing the pass, and a killed
+        // pass can keep running briefly before it stops. The margin has to
+        // cover that, so it is stated as a fraction of the ceiling rather than
+        // left to whatever the two constants happen to differ by.
+        const margin = PROCESSING_LEASE_MS - PROCESSING_EXECUTION_CEILING_MS;
+        expect(margin).toBeGreaterThanOrEqual(PROCESSING_EXECUTION_CEILING_MS / 4);
     });
 });

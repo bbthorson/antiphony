@@ -1,4 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+// The ffmpeg stage adapters are installed by the Node runtime, not imported by
+// the registry — see native.ts. Without this the `trim`/`waveform`
+// expectations below describe a Worker, where both stages are correctly
+// unavailable.
+import '../native.js';
 import { resolveInitialProcessing, hasPendingStage, processingCapabilities } from './audio-processing.js';
 
 /**

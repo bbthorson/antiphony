@@ -61,6 +61,13 @@ jobs:
             apps/core-api/openapi.json \
             apps/core-api/openapi.surface.json
 
+      # Bundles the Workers entry and fails if a Node-only dependency is in it.
+      # Nothing above catches that: `tsc` is happy, the tests are happy, and
+      # `wrangler deploy` bundles firebase-admin without complaint and ships a
+      # Worker that dies on its first request. Needs no Cloudflare credentials —
+      # it is `--dry-run` — which is what makes it safe to run on a PR.
+      - run: npm run check:worker-bundle -w @antiphony/core-api
+
       # The docs site is deployed separately (Cloudflare, see wrangler.jsonc) so
       # nothing else would catch a break here. `copy-openapi.mjs --strict` also
       # fails the build if core-api's spec is missing, tying the published docs

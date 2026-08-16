@@ -5,7 +5,6 @@ import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'share
 import { buildPostUri } from '@antiphony/core/services/audio-posts';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
-import { originLock } from '../../../middleware/origin-lock.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { getAppDid } from '../../../lib/app-did.js';
@@ -114,14 +113,6 @@ export function xrpcRoute(): Hono {
     // REST keeps its own envelope; Hono routes throws from these routes (and
     // from the middleware below) to this handler.
     app.onError(xrpcErrorHandler);
-
-    // The origin lock, same as `/api/v1/*` — this surface reaches the same
-    // domain services, so leaving it off would make `/xrpc/*` the one way in
-    // that skips the CDN. It is registered HERE, not next to the REST lock in
-    // app.ts, because Hono dispatches a throw to the error handler of the app
-    // the middleware was registered on: declared on the parent, a refusal would
-    // reach an XRPC caller wearing the REST envelope.
-    app.use('*', originLock());
 
     // -----------------------------------------------------------------------
     // Query: dev.antiphony.audio.getPost
@@ -253,7 +244,7 @@ export function xrpcRoute(): Hono {
             });
 
             if (hasPendingStage(initialProcessing)) {
-                await dispatchProcessing(originAppId, created.id);
+                await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
             }
 
             // `{ uri, cid }` — a StrongRef, the atproto convention for "what I
@@ -303,7 +294,7 @@ export function xrpcRoute(): Hono {
             await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.setProcessing(originAppId, id, uid, resolved);
 
             if (hasPendingStage(resolved)) {
-                await dispatchProcessing(originAppId, id);
+                await dispatchProcessing(originAppId, id, c.env as Record<string, unknown> | undefined);
             }
 
             const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(originAppId, id, uid);
