@@ -90,6 +90,25 @@ Naming a stage's provider explicitly lets you mix them — a real transcriber ne
 - **A named provider that isn't configured is a misconfiguration, not an opt-out.** `ANTIPHONY_TRANSCRIBER=elevenlabs` with no API key logs at `error` and leaves `transcribe` unavailable; it does **not** quietly fall back to another provider, on the same principle as the partial `ANTIPHONY_TASKS_*` set below.
 - **`stub` is only ever reachable by naming it.** A deployment that loses its API key reports the stage as unavailable and settles requests `skipped` — it never degrades into saving stub transcripts as real records. For stubs across the board, use `ANTIPHONY_PROCESSING_STUB` (below), which overrides all four of these.
 
+#### Choosing a provider or model per tenant
+
+Optional. Pins one tenant (`originAppId`) to a provider or model of its own, leaving every other tenant on the deployment default. Same `appId:value` shape as [`ANTIPHONY_APP_DIDS`](#tenant-identity) and the webhook registries.
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_APP_TRANSCRIBERS` | `voxpop:elevenlabs,acme:stub` |
+| `ANTIPHONY_APP_DENOISERS` | same shape |
+| `ANTIPHONY_APP_TRIMMERS` | same shape |
+| `ANTIPHONY_APP_WAVEFORMS` | same shape |
+| `ANTIPHONY_APP_STT_MODELS` | `voxpop:scribe_v2,acme:scribe_v1` — the transcription model per tenant |
+
+Selection resolves in three layers, narrowest first: **tenant pin → deployment default → first available provider.** A tenant with no entry is unaffected by these existing at all.
+
+- **This is ops config, not a tenant-facing feature.** A tenant cannot name its own provider or model over the API, so it can never invoke an arbitrary expensive model on your key. Changing a pin is a deploy, not a request.
+- **A bad pin is scoped to its tenant.** An unknown or unconfigured provider name logs at `error` and leaves that stage unavailable **for that tenant only** — its neighbours keep working, and it does not fall back to the deployment default (which would silently overrule the pin). A malformed entry drops with a log without taking out the rest of the variable.
+- **Capabilities are per tenant.** `processing` opt-ins settle `skipped` for a tenant whose pinned provider can't run, while the same request succeeds for a tenant on a working one.
+- **A model pin aimed at a provider with no model is reported and ignored.** `denoise`, `trim`, and `waveform` have no model to set — only `ANTIPHONY_APP_STT_MODELS` exists for that reason. The stage still runs, on the provider's own default.
+
 ### Dispatch
 
 Processing runs out of band, never inside the create/patch request. How it's triggered depends on these:

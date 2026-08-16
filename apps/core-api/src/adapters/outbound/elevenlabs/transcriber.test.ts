@@ -160,7 +160,7 @@ describe('elevenLabsTranscriber request', () => {
     const formOf = () => fetchMock.mock.calls[0]![1].body as FormData;
 
     it('strips the region subtag from a BCP-47 hint', async () => {
-        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en-US' });
+        await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en-US' });
         expect(formOf().get('language_code')).toBe('en');
     });
 
@@ -168,7 +168,7 @@ describe('elevenLabsTranscriber request', () => {
         // `langs` is a bare `z.string()`, so a POSIX-style `en_US` validates at
         // the API boundary and lands in an immutable record. Forwarding it
         // whole would 400 and lose the transcript.
-        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en_US' });
+        await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: 'en_US' });
         expect(formOf().get('language_code')).toBe('en');
     });
 
@@ -176,17 +176,59 @@ describe('elevenLabsTranscriber request', () => {
         // Regression: a whitespace hint is truthy but yields a blank code,
         // which fails the whole request with a 400 — losing a transcript over
         // a bad hint that is safe to omit.
-        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: '   ' });
+        await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav', langHint: '   ' });
         expect(formOf().has('language_code')).toBe(false);
     });
 
     it('omits language_code when no hint is given', async () => {
-        await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
         expect(formOf().has('language_code')).toBe(false);
     });
 
     it('normalizes the returned language to BCP-47', async () => {
-        const r = await elevenLabsTranscriber.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        const r = await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
         expect(r.lang).toBe('en');
+    });
+
+    describe('model binding', () => {
+        let savedModel: string | undefined;
+
+        beforeEach(() => {
+            savedModel = process.env.ELEVENLABS_STT_MODEL;
+            delete process.env.ELEVENLABS_STT_MODEL;
+        });
+
+        afterEach(() => {
+            if (savedModel === undefined) delete process.env.ELEVENLABS_STT_MODEL;
+            else process.env.ELEVENLABS_STT_MODEL = savedModel;
+        });
+
+        it('sends the adapter default when nothing overrides it', async () => {
+            await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+            expect(formOf().get('model_id')).toBe('scribe_v2');
+        });
+
+        it('sends the deployment model when the env var is set', async () => {
+            process.env.ELEVENLABS_STT_MODEL = 'scribe_v1';
+            await elevenLabsTranscriber().transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+            expect(formOf().get('model_id')).toBe('scribe_v1');
+        });
+
+        it('sends the bound model over the deployment env var', async () => {
+            // The tenant pin, closed over at wiring time. This is the whole
+            // mechanism: the model reaches the provider without ever appearing
+            // on `TranscriptionInput`, so core still names no vendor model.
+            process.env.ELEVENLABS_STT_MODEL = 'scribe_v1';
+            await elevenLabsTranscriber('scribe_v2').transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+            expect(formOf().get('model_id')).toBe('scribe_v2');
+        });
+
+        it('reports the bound model as transcript provenance', async () => {
+            const r = await elevenLabsTranscriber('scribe_v1').transcribe({
+                bytes: new Uint8Array([1]),
+                mimeType: 'audio/wav',
+            });
+            expect(r.model).toBe('scribe_v1');
+        });
     });
 });

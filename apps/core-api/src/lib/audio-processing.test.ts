@@ -12,6 +12,9 @@ import { resolveInitialProcessing, hasPendingStage, processingCapabilities } fro
  * they run on. Provider selection is env-driven, so env is test state.
  */
 
+/** A tenant with no per-tenant overrides — resolves the deployment default. */
+const TENANT = 'vox-pop';
+
 const PROVIDER_ENV = [
     'ANTIPHONY_PROCESSING_STUB',
     'ELEVENLABS_API_KEY',
@@ -19,6 +22,11 @@ const PROVIDER_ENV = [
     'ANTIPHONY_DENOISER',
     'ANTIPHONY_TRIMMER',
     'ANTIPHONY_WAVEFORM',
+    'ANTIPHONY_APP_TRANSCRIBERS',
+    'ANTIPHONY_APP_DENOISERS',
+    'ANTIPHONY_APP_TRIMMERS',
+    'ANTIPHONY_APP_WAVEFORMS',
+    'ANTIPHONY_APP_STT_MODELS',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -131,16 +139,72 @@ describe('per-stage provider selection', () => {
     });
 });
 
+describe('per-tenant provider selection', () => {
+    it('gives a pinned tenant a different provider from its neighbours', () => {
+        // The point of the tenant layer. No deployment default is set, and no
+        // key, so `acme` would otherwise have no transcriber at all.
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:stub';
+        expect(processingCapabilities('acme').transcribe).toBe(true);
+        expect(processingCapabilities('vox-pop').transcribe).toBe(false);
+    });
+
+    it('takes the deployment default for a tenant with no pin', () => {
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:stub';
+        expect(processingCapabilities('vox-pop').transcribe).toBe(true);
+    });
+
+    it('lets a tenant pin override the deployment default', () => {
+        // Narrowest layer wins: the deployment says elevenlabs (and has a key,
+        // so that would resolve), the tenant says stub.
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:stub';
+        expect(processingCapabilities('acme').transcribe).toBe(true);
+        expect(processingCapabilities('vox-pop').transcribe).toBe(true);
+    });
+
+    it('disables the stage for a tenant pinned to an unconfigured provider', () => {
+        // Misconfiguration at the tenant layer behaves exactly as at the
+        // deployment layer: logged, honestly unavailable, and NOT fallen back
+        // — including not falling back to the deployment default, which would
+        // silently overrule the pin.
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:elevenlabs';
+        expect(processingCapabilities('acme').transcribe).toBe(false);
+    });
+
+    it('does not fall back to the deployment default for an unknown tenant pin', () => {
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:whisper';
+        expect(processingCapabilities('acme').transcribe).toBe(false);
+        // The neighbour is untouched — one tenant's bad pin is not an outage.
+        expect(processingCapabilities('vox-pop').transcribe).toBe(true);
+    });
+
+    it('ignores a malformed entry without dropping the rest of the var', () => {
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'noseparator,acme:stub';
+        expect(processingCapabilities('acme').transcribe).toBe(true);
+    });
+
+    it('resolves the deployment wiring when no tenant is named', () => {
+        // `resolveProviders()` with no app id skips the tenant layer entirely,
+        // so a tenant pin cannot leak into a deployment-wide answer.
+        process.env.ANTIPHONY_APP_TRANSCRIBERS = 'acme:stub';
+        expect(processingCapabilities().transcribe).toBe(false);
+    });
+});
+
 describe('resolveInitialProcessing', () => {
     it('returns undefined when nothing is requested', () => {
-        expect(resolveInitialProcessing(undefined)).toBeUndefined();
-        expect(resolveInitialProcessing({})).toBeUndefined();
-        expect(resolveInitialProcessing({ transcribe: false, denoise: false })).toBeUndefined();
+        expect(resolveInitialProcessing(TENANT, undefined)).toBeUndefined();
+        expect(resolveInitialProcessing(TENANT, {})).toBeUndefined();
+        expect(resolveInitialProcessing(TENANT, { transcribe: false, denoise: false })).toBeUndefined();
     });
 
     it('marks requested stages pending when the deployment can do them', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(resolveInitialProcessing({ transcribe: true, denoise: true })).toEqual({
+        expect(resolveInitialProcessing(TENANT, { transcribe: true, denoise: true })).toEqual({
             transcribe: 'pending',
             denoise: 'pending',
             reprocess: true,
@@ -148,7 +212,7 @@ describe('resolveInitialProcessing', () => {
     });
 
     it('marks requested stages skipped when no provider is configured', () => {
-        expect(resolveInitialProcessing({ transcribe: true, denoise: true })).toEqual({
+        expect(resolveInitialProcessing(TENANT, { transcribe: true, denoise: true })).toEqual({
             transcribe: 'skipped',
             denoise: 'skipped',
             reprocess: true,
@@ -157,7 +221,7 @@ describe('resolveInitialProcessing', () => {
 
     it('only includes the stages the app actually requested', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(resolveInitialProcessing({ transcribe: true })).toEqual({
+        expect(resolveInitialProcessing(TENANT, { transcribe: true })).toEqual({
             transcribe: 'pending',
             reprocess: true,
         });
@@ -165,7 +229,7 @@ describe('resolveInitialProcessing', () => {
 
     it('carries an explicit reprocess opt-out through to the stored state', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(resolveInitialProcessing({ denoise: true, reprocess: false })?.reprocess).toBe(false);
+        expect(resolveInitialProcessing(TENANT, { denoise: true, reprocess: false })?.reprocess).toBe(false);
     });
 
     it('writes reprocess on every request, so a later one is not governed by an earlier opt-out', () => {
@@ -173,13 +237,13 @@ describe('resolveInitialProcessing', () => {
         // would leave a previous `reprocess: false` in place for a request
         // that never asked to opt out.
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
-        expect(resolveInitialProcessing({ denoise: true })?.reprocess).toBe(true);
+        expect(resolveInitialProcessing(TENANT, { denoise: true })?.reprocess).toBe(true);
     });
 
     it('does not treat reprocess alone as a request for work', () => {
         // It names no stage, so there is nothing to run.
-        expect(resolveInitialProcessing({ reprocess: true })).toBeUndefined();
-        expect(resolveInitialProcessing({ reprocess: false })).toBeUndefined();
+        expect(resolveInitialProcessing(TENANT, { reprocess: true })).toBeUndefined();
+        expect(resolveInitialProcessing(TENANT, { reprocess: false })).toBeUndefined();
     });
 });
 

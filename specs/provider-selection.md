@@ -12,6 +12,10 @@ denoiser's provenance value open, and it shipped as a fixed
 `elevenlabs/audio-isolation` rather than an env knob, because the endpoint
 accepts no `model_id` to select between.
 
+**Extended 2026-08-16 with per-tenant selection (§ 6)**, which supersedes half of
+§ 5. Read § 6 before § 5's first bullet — the two disagree by design, and § 6 is
+the current state.
+
 | Change | Where |
 | :--- | :--- |
 | Per-stage registry + selection | `apps/core-api/src/lib/provider-registry.ts` (new) |
@@ -21,6 +25,7 @@ accepts no `model_id` to select between.
 | `resolveModel()` convention + first-use logging | `apps/core-api/src/adapters/outbound/elevenlabs/client.ts` |
 | Selection tests | `apps/core-api/src/lib/audio-processing.test.ts` |
 | Operator docs | `apps/docs/.../self-hosting/configuration.md` § Providers |
+| **Per-tenant provider + model** | `apps/core-api/src/lib/tenant-provider-config.ts` (new) — see § 6 |
 
 ## The ask
 
@@ -95,7 +100,11 @@ and when the endpoint exposes one.
 ### 2.1 Shape
 
 New file `apps/core-api/src/lib/provider-registry.ts`. One entry per concrete
-implementation, each carrying its own availability probe:
+implementation, each carrying its own availability probe.
+
+> **Note:** the `port: T` field shown below became `create(model?): T` when
+> per-tenant selection landed — see § 6.2. The rest of this section is
+> unchanged and still describes the shipped behavior.
 
 ```ts
 interface ProviderEntry<T> {
@@ -288,10 +297,11 @@ deployment, none of which set the new vars.
 
 Named so the next person does not assume otherwise:
 
-- **No per-tenant or per-request model choice.** `resolveProviders()` is
-  deployment-shaped and stays that way. Making selection request-scoped is a
-  materially larger change — the seam has to take a parameter, and every call
-  site threads it — and nothing asks for it yet.
+- ~~**No per-tenant or per-request model choice.**~~ **Superseded 2026-08-16 for
+  the per-tenant half** — see § 6. Per-*request* choice remains out of scope,
+  and now deliberately rather than incidentally: it would let a tenant name an
+  arbitrary model on the deployment's key, which is a cost and abuse surface
+  that ops config does not have.
 - **No fallback chains.** One entry is selected; a provider outage fails the
   stage, which `AudioProcessingService` already settles per stage without
   affecting siblings.
@@ -299,3 +309,85 @@ Named so the next person does not assume otherwise:
   services make AI calls and need shared key custody, spend accounting, or rate
   limiting across them. Today `core-api` is the only caller, so a router would
   be a second service with one client and one more failure mode.
+
+---
+
+## 6. Per-tenant selection — added 2026-08-16
+
+§ 5 ruled this out on the grounds that "the seam has to take a parameter, and
+every call site threads it — and nothing asks for it yet." The first half was
+right and is exactly what happened; the second stopped being true.
+
+The cost estimate was also too high, because it assumed the model would have to
+cross the port. It does not — see § 6.2.
+
+### 6.1 Config surface
+
+Per-tenant registries in the established `appId:value` shape
+(`ANTIPHONY_APP_TOKENS`, `ANTIPHONY_APP_DIDS`, `ANTIPHONY_APP_WEBHOOK_URLS`),
+parsed in `apps/core-api/src/lib/tenant-provider-config.ts`:
+
+| Variable | Maps |
+| :--- | :--- |
+| `ANTIPHONY_APP_TRANSCRIBERS` | `originAppId → provider name` |
+| `ANTIPHONY_APP_DENOISERS` | same |
+| `ANTIPHONY_APP_TRIMMERS` | same |
+| `ANTIPHONY_APP_WAVEFORMS` | same |
+| `ANTIPHONY_APP_STT_MODELS` | `originAppId → transcription model id` |
+
+Three layers, narrowest first: **tenant pin → deployment default → first
+available**. A tenant with no entry resolves exactly as before, which is the
+regression gate.
+
+**Ops config, deliberately — not a request field.** The alternative shape was a
+`model` on the `processing` opt-in. Rejected: it is a contract change, and it
+would let a tenant invoke an arbitrary expensive model on the deployment's key.
+Ops config has neither problem, and a tenant's model is a commercial decision
+someone makes once, not per post.
+
+### 6.2 The model never crosses the port
+
+The obvious implementation — `model` on `TranscriptionInput` — would let
+`@antiphony/core` name a vendor model, breaking § Provider policy of
+`enrichment-pipeline.md`. Avoided by making the adapter a **factory**:
+
+```ts
+export function elevenLabsTranscriber(modelOverride?: string): TranscriberPort
+```
+
+The model is chosen at WIRING time and closed over, so what varies per tenant is
+composition (`resolveProviders(originAppId)`), not the contract. `TranscriberPort`
+is untouched. This is why the change came in smaller than § 5 predicted.
+
+Registry entries therefore hold `create(model?)` rather than a fixed instance,
+plus `acceptsModel` — an entry without it reports a tenant model rather than
+accepting one it would silently ignore. Only the ElevenLabs transcriber sets it
+today; `/audio-isolation` takes no `model_id`, and trim/waveform are local
+compute.
+
+### 6.3 Capabilities became tenant-scoped
+
+`processingCapabilities(originAppId)` and `resolveInitialProcessing(originAppId,
+request)` are the consequence, not an extra: a tenant pinned to a provider this
+deployment cannot run has that stage unavailable while its neighbours still do.
+Answering deployment-wide would advertise a stage the pinned tenant can never
+get and store `pending` for work nothing will perform.
+
+Threaded at four call sites, each of which already had the tenant in hand:
+both `posts.ts` routes, `dispatchProcessing`, and the `system-process-audio`
+worker. The worker resolves for the **job's** tenant, not the caller's — it is
+system-auth'd and the caller is the queue, so wiring the caller's tenancy would
+run one tenant's post through another's provider.
+
+### 6.4 Failure behavior, unchanged in kind
+
+A bad tenant pin behaves exactly as a bad deployment default: logged at `error`,
+stage honestly unavailable, **no fallback** — including no fallback to the
+deployment default, which would silently overrule the pin. Scoped to the tenant:
+one bad entry is not an outage for its neighbours, and a malformed pair drops
+with a log without taking out the rest of the variable.
+
+### 6.5 Still out of scope
+
+Per-*request* model choice (§ 5, now with a reason rather than a deferral) and
+cross-vendor fallback chains.

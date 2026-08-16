@@ -10,6 +10,13 @@ import { audioFile, postForm, resolveModel } from './client.js';
  * adapter groups words into sentences (see `groupIntoSegments`). That grouping
  * is adapter policy, deliberately: the port describes what a transcript IS,
  * not how a given provider slices it.
+ *
+ * **A FACTORY, not a singleton, so the model can be bound per tenant.** This is
+ * what keeps per-tenant model selection from violating the provider policy: the
+ * model is chosen at WIRING time and closed over, so it never appears on
+ * `TranscriptionInput` and `@antiphony/core` still names no vendor model. What
+ * varies per tenant is composition — `resolveProviders(originAppId)` — not the
+ * port.
  */
 
 const DEFAULT_MODEL = 'scribe_v2';
@@ -43,54 +50,67 @@ const SENTENCE_END = /[.!?。！？]["')\]]?$/;
  */
 const MAX_SEGMENT_MS = 12_000;
 
-export const elevenLabsTranscriber: TranscriberPort = {
-    async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-        const model = resolveModel('ELEVENLABS_STT_MODEL', DEFAULT_MODEL);
+/**
+ * Build a Scribe transcriber.
+ *
+ * `modelOverride` is one tenant's pinned model (`ANTIPHONY_APP_STT_MODELS`).
+ * Omitted — the normal case — the model resolves per call off
+ * `ELEVENLABS_STT_MODEL`, then the adapter default, exactly as before.
+ */
+export function elevenLabsTranscriber(modelOverride?: string): TranscriberPort {
+    return {
+        async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
+            // Resolved per call, not captured at build time, so the
+            // deployment-wide path keeps its "no module-load singleton"
+            // property. Only the tenant override is fixed at wiring, which is
+            // the whole reason this is a factory.
+            const model = modelOverride ?? resolveModel('ELEVENLABS_STT_MODEL', DEFAULT_MODEL);
 
-        const form = new FormData();
-        form.append('file', audioFile(input.bytes, input.mimeType));
-        form.append('model_id', model);
-        form.append('timestamps_granularity', 'word');
-        // Audio-event tags like "(laughter)" are transcription noise for a
-        // caption track; the post's own text is the place for that colour.
-        form.append('tag_audio_events', 'false');
-        // Scribe takes ISO-639-1/3; a BCP-47 hint like `en-US` needs its region
-        // subtag dropped or the request is rejected outright. Trim and re-check
-        // after splitting: a whitespace-only hint is truthy but yields a blank
-        // `language_code`, which fails the whole request with a 400 — losing a
-        // transcript over a bad hint that is safe to simply omit.
-        // Split on `_` too: `langs` is a bare `z.string()`, so a POSIX-style
-        // `en_US` validates and reaches an immutable record. Splitting on `-`
-        // alone would forward it whole and lose the transcript to a 400.
-        const langCode = input.langHint?.split(/[-_]/)[0]?.trim().toLowerCase();
-        if (langCode) {
-            form.append('language_code', langCode);
-        }
+            const form = new FormData();
+            form.append('file', audioFile(input.bytes, input.mimeType));
+            form.append('model_id', model);
+            form.append('timestamps_granularity', 'word');
+            // Audio-event tags like "(laughter)" are transcription noise for a
+            // caption track; the post's own text is the place for that colour.
+            form.append('tag_audio_events', 'false');
+            // Scribe takes ISO-639-1/3; a BCP-47 hint like `en-US` needs its region
+            // subtag dropped or the request is rejected outright. Trim and re-check
+            // after splitting: a whitespace-only hint is truthy but yields a blank
+            // `language_code`, which fails the whole request with a 400 — losing a
+            // transcript over a bad hint that is safe to simply omit.
+            // Split on `_` too: `langs` is a bare `z.string()`, so a POSIX-style
+            // `en_US` validates and reaches an immutable record. Splitting on `-`
+            // alone would forward it whole and lose the transcript to a 400.
+            const langCode = input.langHint?.split(/[-_]/)[0]?.trim().toLowerCase();
+            if (langCode) {
+                form.append('language_code', langCode);
+            }
 
-        const res = await postForm('/speech-to-text', form);
-        const body = (await res.json()) as ScribeResponse;
+            const res = await postForm('/speech-to-text', form);
+            const body = (await res.json()) as ScribeResponse;
 
-        const segments = groupIntoSegments(body.words ?? []);
-        const text = body.text?.trim();
-        const lang = normalizeLang(body.language_code);
+            const segments = groupIntoSegments(body.words ?? []);
+            const text = body.text?.trim();
+            const lang = normalizeLang(body.language_code);
 
-        return {
-            transcript: {
-                segments: segments.length > 0
-                    ? segments
-                    // Timings unavailable (or every word filtered out) but text
-                    // came back: the port explicitly allows one whole-clip
-                    // segment, which beats discarding a valid transcript.
-                    : text
-                        ? [{ startMs: 0, endMs: input.durationMs ?? 0, text }]
-                        : [],
-                ...(text ? { text } : {}),
-            },
-            ...(lang ? { lang } : {}),
-            model,
-        };
-    },
-};
+            return {
+                transcript: {
+                    segments: segments.length > 0
+                        ? segments
+                        // Timings unavailable (or every word filtered out) but text
+                        // came back: the port explicitly allows one whole-clip
+                        // segment, which beats discarding a valid transcript.
+                        : text
+                            ? [{ startMs: 0, endMs: input.durationMs ?? 0, text }]
+                            : [],
+                    ...(text ? { text } : {}),
+                },
+                ...(lang ? { lang } : {}),
+                model,
+            };
+        },
+    };
+}
 
 /**
  * Group Scribe's word list into sentence-shaped segments.
