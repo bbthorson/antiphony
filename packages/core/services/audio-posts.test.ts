@@ -33,7 +33,7 @@ function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDepe
         queryByRootAuthor: vi.fn(async () => []),
         queryReplies: vi.fn(async () => []),
         getTranscriptsBySubjectUris: vi.fn(async () => new Map<string, TranscriptEnrichmentRecord>()),
-        signAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `signed::${originAppId}::${blobCid}`),
+        resolveAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `proxy::${originAppId}::${blobCid}`),
         cidForRecord: vi.fn(async () => 'bafyreitestcid'),
         now: vi.fn(() => new Date('2026-06-26T00:00:00Z')),
         ...overrides,
@@ -239,7 +239,7 @@ describe('hydrateAudioPosts', () => {
 
         const [view] = await svc.hydrateAudioPosts([rec], null);
         // Signed via (originAppId, blobCid) — tenancy-scoped, CID-derived path.
-        expect(view.embed?.url).toBe(`signed::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
+        expect(view.embed?.url).toBe(`proxy::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
         expect(view.embed?.$type).toBe('dev.antiphony.embed.audio#view');
         expect(view.embed?.transcript).toEqual(transcript);
         expect(view.embed?.durationMs).toBe(4200);
@@ -259,7 +259,7 @@ describe('hydrateAudioPosts', () => {
         const rec = record({ processing: { denoise: 'ready', processedBlobCid: 'bafkreiclean', updatedAt: new Date() } });
         const [view] = await svc.hydrateAudioPosts([rec], null);
         // Playback signs the DENOISED cid, not the original embed cid.
-        expect(view.embed?.url).toBe('signed::vox-pop::bafkreiclean');
+        expect(view.embed?.url).toBe('proxy::vox-pop::bafkreiclean');
     });
 
     it('resolves url, duration and peaks together for a fully-processed post', async () => {
@@ -277,7 +277,7 @@ describe('hydrateAudioPosts', () => {
             },
         });
         const [view] = await svc.hydrateAudioPosts([rec], null);
-        expect(view.embed?.url).toBe('signed::vox-pop::bafkreitrimmed');
+        expect(view.embed?.url).toBe('proxy::vox-pop::bafkreitrimmed');
         expect(view.embed?.durationMs).toBe(2100);
         expect(view.embed?.waveform).toEqual([5, 100, 5]);
     });
@@ -293,7 +293,7 @@ describe('hydrateAudioPosts', () => {
             },
         });
         const [view] = await svc.hydrateAudioPosts([rec], null);
-        expect(view.embed?.url).toBe('signed::vox-pop::bafkreiclean');
+        expect(view.embed?.url).toBe('proxy::vox-pop::bafkreiclean');
         expect(view.embed?.durationMs).toBe(4200);
     });
 
@@ -323,7 +323,7 @@ describe('hydrateAudioPosts', () => {
     it('keeps playback on the original audio while denoise is still pending', async () => {
         const rec = record({ processing: { denoise: 'pending', updatedAt: new Date() } });
         const [view] = await svc.hydrateAudioPosts([rec], null);
-        expect(view.embed?.url).toBe(`signed::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
+        expect(view.embed?.url).toBe(`proxy::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
     });
 
     it('computes viewer.isAuthor from the viewer uid', async () => {
@@ -383,11 +383,11 @@ describe('hydrateAudioPosts', () => {
     it('omits the embed when there is no audio', async () => {
         const [view] = await svc.hydrateAudioPosts([record({ embed: undefined })], null);
         expect(view.embed).toBeUndefined();
-        expect(deps.signAudioUrl).not.toHaveBeenCalled();
+        expect(deps.resolveAudioUrl).not.toHaveBeenCalled();
     });
 
     it('omits the embed when the audio url cannot be signed', async () => {
-        (deps.signAudioUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+        (deps.resolveAudioUrl as ReturnType<typeof vi.fn>).mockResolvedValue(null);
         const [view] = await svc.hydrateAudioPosts([record()], null);
         expect(view.embed).toBeUndefined();
     });
@@ -480,7 +480,7 @@ describe('getRepliesByRootAuthor', () => {
         expect(views).toHaveLength(1);
         expect(views[0].kind).toBe('reply');
         // Hydration ran (signed url resolved) — same path as the other reads.
-        expect(views[0].embed?.url).toBe(`signed::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
+        expect(views[0].embed?.url).toBe(`proxy::vox-pop::${AUDIO_EMBED.audio.ref.$link}`);
     });
 
     it('returns [] when the author addresses no replies', async () => {

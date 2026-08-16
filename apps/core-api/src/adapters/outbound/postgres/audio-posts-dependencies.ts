@@ -7,8 +7,7 @@ import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { newTid } from '../../../lib/tid.js';
-import { blobObjectPath } from '../../../lib/blob-path.js';
-import { StorageService } from '../firebase/core-services-firebase.js';
+import { audioPlaybackUrl } from '../../../lib/audio-url.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
 import { hydrateRows, splitRecord, type PostRow } from './record-mapping.js';
 import type {
@@ -215,18 +214,11 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
             return map;
         },
 
-        async signAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
-            // Unchanged: the object path is derived from the CID, not stored,
-            // so this reaches the blob store rather than the database. Becomes
-            // an R2 proxy URL in step 2c.
-            const objectPath = blobObjectPath(originAppId, blobCid);
-            if (!objectPath) return null;
-            try {
-                return await StorageService.getSignedUrl(objectPath);
-            } catch (err) {
-                logger.error({ err, objectPath }, '[postgres] failed to sign audio URL');
-                return null;
-            }
+                resolveAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
+            // No storage call: the proxy URL is derived from the tenancy + CID,
+            // so hydrating a post no longer costs a signing round trip per
+            // audio embed.
+            return Promise.resolve(audioPlaybackUrl(originAppId, blobCid));
         },
 
         cidForRecord,

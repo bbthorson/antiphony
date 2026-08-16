@@ -8,6 +8,49 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] — 2026-08-16
+
+`GET /api/v1/audio` returns the audio instead of redirecting to it. **Minor
+rather than patch**: the status code and response body of a public endpoint
+change, which a client asserting on either will observe.
+
+### Changed
+
+- **`GET /api/v1/audio` streams the bytes (200) instead of 302-ing to a
+  short-lived signed URL.** It also answers `206` with `Content-Range` for a
+  single `bytes=` range, advertises `Accept-Ranges`, and is cached
+  `public, max-age=31536000, immutable`.
+
+  **Clients using `<audio src="…">` need no change** — a redirect and a direct
+  response are equivalent there, and seeking gets better because range support
+  is now ours rather than whatever the redirect target offered. Clients that
+  assert on a `302`, read the `Location` header, or follow the redirect
+  manually **do** need to change.
+
+  Why: R2 bindings cannot mint presigned URLs, so the redirect had no
+  implementation on the destination platform. Streaming is the better shape
+  regardless — no credential to store, no expiry to tune, no second hop, free
+  egress on R2, and `immutable` caching that a URL with a one-hour TTL could
+  never claim. It also fixes a documented caveat: a browser `fetch()` of this
+  endpoint never worked, because following the redirect needed CORS on the
+  storage bucket.
+
+- **`url` on `dev.antiphony.embed.audio#view` is now a stable URL to this
+  service's audio proxy**, not a signed storage URL. It no longer expires, so a
+  cached post view stays playable — previously the whole response was
+  effectively short-lived because one field inside it was.
+
+- The endpoint now accepts a **bare object path** as well as a full provider
+  URL. Its own description always claimed this; only URLs actually worked.
+
+### Added
+
+- **`ANTIPHONY_PUBLIC_BASE_URL` — required.** The absolute base this deployment
+  is reachable at (e.g. `https://api.antiphony.dev`). Post views embed a
+  playback URL pointing back at this service, so without it a post carrying
+  audio hydrates with no `embed`. Unset logs an error per hydration and degrades
+  to "no audio" rather than failing the request.
+
 ## [Unreleased]
 
 ### Removed

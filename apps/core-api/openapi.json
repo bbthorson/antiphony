@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths resolved to short-lived signed URLs.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -2239,14 +2239,14 @@
         "tags": [
           "Audio"
         ],
-        "summary": "Resolve audio to a signed URL",
-        "description": "Validates the requested object path against the served namespace (content-addressed `blobs/` paths) then 302-redirects to a short-lived signed URL (~1h TTL, cached ~50m). Anonymous — public audio playback for embeds and public pages.",
+        "summary": "Stream stored audio",
+        "description": "Validates the requested object path against the served namespace (content-addressed `blobs/` paths) then STREAMS the bytes. Anonymous — public audio playback for embeds and public pages.\n\nAccepts either a full provider URL or a bare object path. Supports a single `Range` header (`bytes=start-end`) and answers 206; an unparseable or multi-range header is ignored and the whole object is served. Responses are `immutable` — the bytes behind a content address never change.\n\n**Changed in 0.5.0:** this used to 302-redirect to a short-lived signed URL. It now returns the audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "REQUIRED. The canonical storage URL (or object path) of the audio to proxy. Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.",
-              "example": "https://storage.googleapis.com/<bucket>/blobs/<originAppId>/<cid>"
+              "description": "REQUIRED. The object path of the audio to serve, or a canonical storage URL. Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.",
+              "example": "blobs/<originAppId>/<cid>"
             },
             "required": true,
             "name": "url",
@@ -2254,8 +2254,27 @@
           }
         ],
         "responses": {
-          "302": {
-            "description": "Redirect (Location header) to a time-limited signed URL for the requested object."
+          "200": {
+            "description": "The audio bytes.",
+            "content": {
+              "audio/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range, with `Content-Range`.",
+            "content": {
+              "audio/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "400": {
             "description": "Missing or malformed `url`",

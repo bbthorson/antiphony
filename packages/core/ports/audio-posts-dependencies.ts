@@ -93,12 +93,18 @@ export interface AudioPostDependencies {
     getTranscriptsBySubjectUris(uris: string[]): Promise<Map<string, TranscriptEnrichmentRecord>>;
 
     /**
-     * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a short-lived,
-     * playable signed URL, scoped to the owning origin app (the blob lives at
-     * a tenancy-scoped path derived from the CID). Returns null when the CID
-     * can't be resolved to a storage object.
+     * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a playable URL,
+     * scoped to the owning origin app (the blob lives at a tenancy-scoped path
+     * derived from the CID). Returns null when no playable URL can be produced.
+     *
+     * **Was `signAudioUrl`.** It returned a short-lived signed URL straight to
+     * the storage bucket; it now returns a stable URL pointing at the
+     * deployment's own audio proxy, which streams the bytes. The rename is not
+     * cosmetic — nothing signs anything here any more, and a method still
+     * called `sign*` would have kept implying an expiry that callers might
+     * reasonably cache around.
      */
-    signAudioUrl(originAppId: string, blobCid: string): Promise<string | null>;
+    resolveAudioUrl(originAppId: string, blobCid: string): Promise<string | null>;
 
     /**
      * Compute the content CID for a canonical lexicon record — DAG-CBOR
