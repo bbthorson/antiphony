@@ -29,3 +29,19 @@ export function publicBaseUrl(): string | undefined {
     const raw = process.env.ANTIPHONY_PUBLIC_BASE_URL?.trim();
     return raw ? raw.replace(/\/+$/, '') : undefined;
 }
+
+/**
+ * R2 bucket holding audio blobs and their derived renditions.
+ *
+ * One bucket, two prefixes — `blobs/{originAppId}/{cid}` for canonical audio and
+ * `renditions/{originAppId}/{cid}.{format}` for derived ones. Separate buckets
+ * would buy separate lifecycle rules, which is the only real argument for them,
+ * and nothing needs that yet: renditions are regenerable but so cheap to keep
+ * that expiring them would cost more in cold transcodes than it saves. Splitting
+ * later is a prefix move, not a schema change.
+ *
+ * Only used to build the opaque `r2://{bucket}/{path}` handle `upload` returns;
+ * the actual access goes through the Worker's R2 binding, which carries its own
+ * authorisation and needs no credential here.
+ */
+export const R2_BUCKET_NAME = process.env.ANTIPHONY_R2_BUCKET || 'antiphony-r2-bucket';
