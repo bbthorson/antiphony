@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 
 /**
  * `checkRateLimit` — the Firestore-backed counter behind both the `rateLimit`
- * middleware and `POST /api/v1/system/rate-limit/check`.
+ * middleware. (It also covered `POST /api/v1/system/rate-limit/check` until
+ * that route was removed as dead; the shared logic is unchanged.)
  *
  * Worth testing directly, and previously untested, because its failure handling
  * is deliberately ASYMMETRIC and easy to invert:

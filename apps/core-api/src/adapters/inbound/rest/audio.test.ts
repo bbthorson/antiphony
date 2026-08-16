@@ -17,7 +17,6 @@ vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
         extractObjectPath: (url: string) => extractObjectPath(url),
         getSignedUrl: (path: string) => getSignedUrl(path),
     },
-    userService: {},
     audioPostService: {},
 }));
 
@@ -35,7 +34,6 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdmin: () => ({
         firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
     }),
-    getAdminAuth: () => ({}),
     getAdminStorage: () => ({}),
     isUsingEmulator: () => false,
 }));

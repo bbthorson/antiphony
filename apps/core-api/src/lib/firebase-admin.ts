@@ -1,6 +1,5 @@
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 
 // firebase-admin is CommonJS. Node's ESM loader only exposes the default
@@ -113,9 +112,11 @@ export function getAdminDb(): FirebaseFirestore.Firestore {
     return db;
 }
 
-export function getAdminAuth() {
-    return getAuth(getAdminApp());
-}
+// No `getAdminAuth`. Firebase Auth left this service with the `/system/atproto-*`
+// identity routes — `createCustomToken`, `createUser`, `deleteUser`, and
+// `createSessionCookie` were its only callers, and end-user identity is the
+// calling BFF's concern (specs/core-bff-boundary.md). Antiphony authenticates
+// APPLICATIONS via service tokens (middleware/service-auth.ts) and never a person.
 
 export function getAdminStorage() {
     return getStorage(getAdminApp());
