@@ -71,8 +71,24 @@ Opt-in processing runs four stages over a post's audio: **denoise** and **transc
 | Variable | Purpose |
 |---|---|
 | `ELEVENLABS_API_KEY` | Enables the ElevenLabs providers — Scribe (transcription) and Voice Isolator (denoise). **Presence alone selects them**; there is no separate enable flag. Absent → `denoise`/`transcribe` settle `skipped`. Store as a secret. |
-| `ELEVENLABS_STT_MODEL` | Optional. Overrides the default Scribe model id used for transcription. |
+| `ELEVENLABS_STT_MODEL` | Optional. Overrides the default Scribe model id used for transcription. Not validated against a list of known ids — a typo reaches the provider and fails the stage — so the resolved value is logged on first use. |
 | `ANTIPHONY_FFMPEG_PATH` | Optional. Path to an ffmpeg binary for the local-compute stages (`trim`, `waveform`). Defaults to the bundled `ffmpeg-static`; set this only to point at a system binary. Checked for executability at startup — a bad path means those stages advertise as unavailable rather than failing every post. |
+
+#### Choosing a provider per stage
+
+Optional, and rarely needed: with none of these set, each stage takes the first provider it can run, which is the behavior described above.
+
+| Variable | Purpose |
+|---|---|
+| `ANTIPHONY_TRANSCRIBER` | `elevenlabs` \| `stub` |
+| `ANTIPHONY_DENOISER` | `elevenlabs` \| `stub` |
+| `ANTIPHONY_TRIMMER` | `ffmpeg` \| `stub` |
+| `ANTIPHONY_WAVEFORM` | `ffmpeg` \| `stub` |
+
+Naming a stage's provider explicitly lets you mix them — a real transcriber next to a stub denoiser while evaluating one of them, say. Two behaviors are worth knowing before you reach for these:
+
+- **A named provider that isn't configured is a misconfiguration, not an opt-out.** `ANTIPHONY_TRANSCRIBER=elevenlabs` with no API key logs at `error` and leaves `transcribe` unavailable; it does **not** quietly fall back to another provider, on the same principle as the partial `ANTIPHONY_TASKS_*` set below.
+- **`stub` is only ever reachable by naming it.** A deployment that loses its API key reports the stage as unavailable and settles requests `skipped` — it never degrades into saving stub transcripts as real records. For stubs across the board, use `ANTIPHONY_PROCESSING_STUB` (below), which overrides all four of these.
 
 ### Dispatch
 

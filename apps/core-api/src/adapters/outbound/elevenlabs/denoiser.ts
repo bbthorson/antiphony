@@ -21,6 +21,19 @@ import { audioFile, postForm } from './client.js';
 /** What the API has been observed to return, used only if the header is absent. */
 const FALLBACK_MIME = 'audio/mpeg';
 
+/**
+ * Provenance for the cleaned variant, reported on `DenoiseResult.model`.
+ *
+ * A FIXED string, not an env-configurable model: `/audio-isolation` accepts no
+ * `model_id` today, so there is nothing to select between and a knob would
+ * imply a choice that does not exist. What this identifies is the provider and
+ * capability that produced a given variant — enough to tell pre- and
+ * post-switch artifacts apart, which is the whole point of recording it. If the
+ * endpoint ever exposes a model parameter, this becomes a `resolveModel()` call
+ * against `ELEVENLABS_ISOLATION_MODEL` and nothing else changes.
+ */
+const ISOLATION_MODEL = 'elevenlabs/audio-isolation';
+
 export const elevenLabsDenoiser: DenoiserPort = {
     async denoise(input: DenoiseInput): Promise<DenoiseResult> {
         const form = new FormData();
@@ -44,6 +57,7 @@ export const elevenLabsDenoiser: DenoiserPort = {
         return {
             bytes,
             mimeType: contentType && contentType !== 'application/json' ? contentType : FALLBACK_MIME,
+            model: ISOLATION_MODEL,
         };
     },
 };

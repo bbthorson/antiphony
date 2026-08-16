@@ -12,7 +12,14 @@ import { resolveInitialProcessing, hasPendingStage, processingCapabilities } fro
  * they run on. Provider selection is env-driven, so env is test state.
  */
 
-const PROVIDER_ENV = ['ANTIPHONY_PROCESSING_STUB', 'ELEVENLABS_API_KEY'] as const;
+const PROVIDER_ENV = [
+    'ANTIPHONY_PROCESSING_STUB',
+    'ELEVENLABS_API_KEY',
+    'ANTIPHONY_TRANSCRIBER',
+    'ANTIPHONY_DENOISER',
+    'ANTIPHONY_TRIMMER',
+    'ANTIPHONY_WAVEFORM',
+] as const;
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -45,6 +52,76 @@ describe('processingCapabilities', () => {
 
     it('reports every stage available when the stubs are wired', () => {
         process.env.ANTIPHONY_PROCESSING_STUB = 'true';
+        expect(processingCapabilities()).toEqual({
+            transcribe: true,
+            denoise: true,
+            trim: true,
+            waveform: true,
+        });
+    });
+
+    it('reproduces the pre-registry wiring when no stage names a provider', () => {
+        // The regression gate for per-stage selection: no deployment sets the
+        // new vars, so all of them must resolve exactly as the old single
+        // `if (elevenLabsApiKey())` branch did.
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        expect(processingCapabilities()).toEqual({
+            transcribe: true,
+            denoise: true,
+            trim: true,
+            waveform: true,
+        });
+    });
+});
+
+describe('per-stage provider selection', () => {
+    it('resolves each stage independently', () => {
+        // The point of the registry: a real transcriber next to a stub
+        // denoiser, which the old all-or-nothing key gate could not express.
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_DENOISER = 'stub';
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        const caps = processingCapabilities();
+        expect(caps.transcribe).toBe(true);
+        expect(caps.denoise).toBe(true);
+    });
+
+    it('never reaches a stub through the default scan', () => {
+        // The safety property. A deployment that lost its key must report
+        // `transcribe: false` — settling posts `skipped`, which the pipeline
+        // handles — and must NOT quietly fall through to the stub, which would
+        // save `[stub transcript]` as a real record against real posts.
+        expect(processingCapabilities().transcribe).toBe(false);
+        expect(processingCapabilities().denoise).toBe(false);
+    });
+
+    it('disables a stage whose named provider is not configured', () => {
+        // Misconfiguration, not opt-out: the operator named ElevenLabs and has
+        // no key. Logged, and the stage is honestly unavailable.
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        expect(processingCapabilities().transcribe).toBe(false);
+    });
+
+    it('disables a stage named with an unknown provider rather than falling back', () => {
+        // A key IS present, so the default scan would have found ElevenLabs.
+        // Falling through would overrule the operator's explicit choice
+        // silently — the failure mode this seam already rejects for dispatch.
+        process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_TRANSCRIBER = 'whisper';
+        expect(processingCapabilities().transcribe).toBe(false);
+    });
+
+    it('matches a provider name case-insensitively', () => {
+        process.env.ANTIPHONY_WAVEFORM = 'STUB';
+        expect(processingCapabilities().waveform).toBe(true);
+    });
+
+    it('lets the wholesale stub flag override every per-stage name', () => {
+        // `_STUB` still wins ahead of selection, so a dev shell that names a
+        // real provider cannot bill one.
+        process.env.ANTIPHONY_PROCESSING_STUB = 'true';
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        process.env.ANTIPHONY_DENOISER = 'whisper';
         expect(processingCapabilities()).toEqual({
             transcribe: true,
             denoise: true,

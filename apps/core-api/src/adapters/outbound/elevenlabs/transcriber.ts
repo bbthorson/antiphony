@@ -1,6 +1,6 @@
 import type { TranscriberPort, TranscriptionInput, TranscriptionResult } from '@antiphony/core/ports/transcription';
 import type { TranscriptSegment } from 'shared/types/audio';
-import { audioFile, postForm } from './client.js';
+import { audioFile, postForm, resolveModel } from './client.js';
 
 /**
  * ElevenLabs Scribe transcriber — the reference deployment's `TranscriberPort`.
@@ -45,7 +45,7 @@ const MAX_SEGMENT_MS = 12_000;
 
 export const elevenLabsTranscriber: TranscriberPort = {
     async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-        const model = process.env.ELEVENLABS_STT_MODEL?.trim() || DEFAULT_MODEL;
+        const model = resolveModel('ELEVENLABS_STT_MODEL', DEFAULT_MODEL);
 
         const form = new FormData();
         form.append('file', audioFile(input.bytes, input.mimeType));

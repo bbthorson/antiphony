@@ -18,12 +18,12 @@ import {
     stubTrimmer,
     stubWaveform,
 } from '../adapters/outbound/firebase/processing-providers.js';
-import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
-import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
-import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
-import { ffmpegTrimmer } from '../adapters/outbound/ffmpeg/trimmer.js';
-import { ffmpegWaveform } from '../adapters/outbound/ffmpeg/waveform.js';
-import { ffmpegAvailable } from '../adapters/outbound/ffmpeg/run.js';
+import {
+    selectTranscriber,
+    selectDenoiser,
+    selectTrimmer,
+    selectWaveform,
+} from './provider-registry.js';
 import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
 import { webhookNotifier } from '../adapters/outbound/webhook/notifier.js';
 import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
@@ -40,6 +40,10 @@ import { logger } from './logger.js';
  * Resolved per-request off env (like `getOriginAppId`) so tests and per-env
  * config take effect without a module-load singleton:
  *   - `ANTIPHONY_PROCESSING_STUB=true`   → wire the stub providers (dev/tests).
+ *   - `ANTIPHONY_{TRANSCRIBER,DENOISER,TRIMMER,WAVEFORM}` → name one stage's
+ *     provider explicitly. Unset (the normal case) selects the first available
+ *     one, which is what every existing deployment already gets. See
+ *     `provider-registry.ts`.
  *   - `ANTIPHONY_PROCESSING_INLINE=true` → wire the inline dispatcher, which
  *     runs processing synchronously inside the request. This is the local/test
  *     trigger.
@@ -68,7 +72,10 @@ export type { ProcessingCapabilities };
  */
 export function resolveProviders(): ProcessingProviders {
     // Stub wins when explicitly set, so a dev/test env with a real key lying
-    // around in the shell cannot accidentally bill a live provider.
+    // around in the shell cannot accidentally bill a live provider. Still a
+    // wholesale override, ahead of any per-stage selection: the per-stage
+    // `stub` names in the registry are for mixing one stub into an otherwise
+    // real deployment, not for expressing this.
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
         return {
             transcriber: stubTranscriber,
@@ -77,23 +84,21 @@ export function resolveProviders(): ProcessingProviders {
             waveform: stubWaveform,
         };
     }
-    // Trim and waveform are LOCAL compute — no API key, so they are available
-    // on their binary alone, and one probe governs both. Trim is the stage that
-    // can change the variant with no provider key configured anywhere, which is
-    // exactly the condition the recompute filter in `AudioProcessingService`
-    // had to be corrected for; waveform is the derived stage that condition was
-    // corrected FOR, and with ffmpeg present both are runnable together, so the
-    // stranded-artifact path needs a deployment missing the binary to reach.
-    const local = ffmpegAvailable()
-        ? { trimmer: ffmpegTrimmer, waveform: ffmpegWaveform }
-        : {};
 
-    // Real providers select off the API key alone — no separate enable flag to
-    // keep in sync with it. Key present ⇒ the stage is available.
-    if (elevenLabsApiKey()) {
-        return { transcriber: elevenLabsTranscriber, denoiser: elevenLabsDenoiser, ...local };
-    }
-    return local;
+    // Each stage selects independently off its own env var, defaulting to the
+    // first available provider — see `provider-registry.ts`. Real providers
+    // still select off their API key alone, with no separate enable flag to
+    // keep in sync with it: key present ⇒ the stage is available.
+    //
+    // An absent stage is `undefined` rather than an omitted key, which is the
+    // same thing to `capabilitiesOf` (it tests truthiness) and to every
+    // consumer of `ProcessingProviders`, whose fields are all optional.
+    return {
+        transcriber: selectTranscriber(),
+        denoiser: selectDenoiser(),
+        trimmer: selectTrimmer(),
+        waveform: selectWaveform(),
+    };
 }
 
 /**
