@@ -1,6 +1,9 @@
 # The `mp3` rendition stage — adopting Vox Pop's transcoder
 
-**Status:** Proposed 2026-08-16, not implemented. Adds a fifth B5 processing
+**Status:** Proposed 2026-08-16, not implemented. **Amended 2026-08-16** — the
+serving side below was written against a signed-URL blob route that no longer
+exists; see § "Amendment: signing is gone". The stage design, the
+`RENDITION_STAGES` axis, and the eager/lazy call are unaffected. Adds a fifth B5 processing
 stage that produces an mp3 encoding of a post's final audio variant, so
 consumers that cannot decode opus stop needing a request-time transcoder.
 Originates from `specs/future/cloudflare-migration.md` § 9 in `bbthorson/vox-pop`,
@@ -116,6 +119,33 @@ Store the mime type explicitly. `TrimResult` already documents why: blobs are
 served with their stored content type, so a mislabelled blob breaks playback
 with no exception, no failed stage, and nothing in the logs.
 
+## Amendment: signing is gone
+
+Landed after this spec was written (contract `0.5.0`, PR #87): **`GET /api/v1/audio`
+streams bytes and `BlobStore.getSignedUrl` was removed from the port.** R2
+bindings cannot mint presigned URLs, so the signed-URL indirection had no
+implementation on the destination platform.
+
+Two sentences below are therefore stale, and one argument changes:
+
+- **Option 1's "signs a URL for it" no longer describes anything.** The option
+  itself survives intact — it just becomes "builds a proxy URL for the mp3 CID",
+  which is `audioPlaybackUrl(originAppId, mp3BlobCid)`: string construction with
+  no storage call and no expiry. Strictly simpler than what this paragraph
+  originally proposed.
+- **"No change to the blob route at all" is no longer true** as a statement about
+  the current code — that route has already changed. It remains true as the
+  property being claimed: option 1 needs no *further* change to it.
+- **Option 2 loses its stated justification and gains a better one.** "The
+  signature covers the query string" is moot; `?format=mp3` is now simply a
+  query parameter on an endpoint that streams. The reason to prefer option 1 is
+  unchanged (it reuses content addressing rather than inventing a resolution
+  rule), so the ordering below stands.
+
+`specs/cloudflare-migration.md` independently sketched the `?format=` route
+while working out the R2 move. **This spec is the decision of record for the
+`mp3` stage**; that one has been narrowed to defer here.
+
 ## The serving side: the header will not work
 
 The proposal was an optional header on the blob `GET`. **`Accept: audio/mpeg` is
@@ -158,6 +188,12 @@ Both mechanisms already exist and they answer different questions:
 Recommendation: **eager for Vox Pop**, via the create-time opt-in. Its volume is
 tiny (13 blobs total) and the whole point is removing latency from the call path.
 Keep the stage off by default platform-wide, consistent with every other stage.
+
+That recommendation is reaffirmed on review: a cold transcode on the first
+`<Play>` fetch is dead air on a live call, which is the exact failure class this
+work exists to delete. A per-tenant opt-in also means "eager" costs nothing for
+tenants that never phone anything, so the two positions are not really in
+tension — lazy-by-default plus an eager opt-in IS this recommendation.
 
 ## Sequencing
 

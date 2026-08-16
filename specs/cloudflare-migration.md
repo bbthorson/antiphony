@@ -379,7 +379,13 @@ The poisoning defence that `audio-rendition` needs a bucket pin for disappears h
 the path is composed from a tenant-scoped source CID the service resolved itself, and
 only Antiphony can write to it.
 
-### Transcode on demand — decided
+### Transcode on demand — superseded for `mp3`
+
+> **[`mp3-rendition-stage.md`](./mp3-rendition-stage.md) is the decision of
+> record for the `mp3` rendition**, and it chose an eager per-tenant opt-in
+> stage. What follows describes the on-demand path, which still applies to any
+> format with no opt-in stage behind it — the two compose: a pre-generated
+> rendition is a cache hit, and everything else transcodes on first ask.
 
 **No eager rendition stage in the processing pipeline.** Transcode when a requesting
 service first asks, then cache. Renditions stay out of `PROCESSING_STAGES` entirely,
@@ -968,8 +974,13 @@ deliver value on Cloud Run alone, so an abandoned migration strands nothing.
 - **Rendition storage** — Antiphony owns the blob, canonical and derived. Consuming
   services store their own application metadata. Renditions live at
   `renditions/{originAppId}/{sourceCid}.{format}`.
-- **Eager vs lazy** — lazy. Transcode when a requesting service asks; cache after.
-  No new processing stage.
+- **Eager vs lazy** — **deferred to [`mp3-rendition-stage.md`](./mp3-rendition-stage.md)**,
+  which is the decision of record for the `mp3` stage and lands on eager via a
+  per-tenant create-time opt-in. That is the right call for the Twilio path (a
+  cold transcode on first `<Play>` is dead air on a live call) and it is not
+  actually in tension with lazy-by-default: an opt-in costs nothing for tenants
+  that never phone anything. Any format NOT covered by an opt-in stage still
+  resolves on demand.
 - **Audio proxy** — streams bytes rather than 302-ing to a signed URL. Settled by the
   rendition decision: a 302 cannot point at bytes that do not exist until the first
   request creates them.
