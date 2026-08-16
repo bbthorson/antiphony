@@ -17,8 +17,10 @@ vi.mock('@antiphony/core/services/audio-processing', () => ({
     },
 }));
 
-vi.mock('../../outbound/firebase/audio-processing-dependencies.js', () => ({
-    firebaseAudioProcessingDependencies: {},
+// The route resolves its deps through the composition root now, so the backend
+// choice is made there rather than fixed by this import.
+vi.mock('../../../composition.js', () => ({
+    servicesFor: () => ({ audioProcessingDeps: {} }),
 }));
 
 vi.mock('../../../lib/audio-processing.js', () => ({

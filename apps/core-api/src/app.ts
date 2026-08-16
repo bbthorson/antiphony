@@ -9,6 +9,7 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { originLock } from './middleware/origin-lock.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
+import { servicesFor } from './composition.js';
 
 /**
  * ## No CORS middleware — deliberately
@@ -93,6 +94,11 @@ export function app(): OpenAPIHono {
             ok: true,
             sha: process.env.COMMIT_SHA ?? 'dev',
             deployedAt: process.env.BUILD_TIME ?? null,
+            // Which bindings are actually wired. The Firestore -> Neon cutover
+            // is a configuration change, so "which store is this revision
+            // talking to" stops being answerable from the commit alone — and
+            // that is precisely the question during a migration.
+            backend: servicesFor(c.env as Record<string, unknown> | undefined).backend,
         }),
     );
 

@@ -12,12 +12,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const extractObjectPath = vi.fn();
 const openStream = vi.fn();
 
-vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    StorageService: {
-        extractObjectPath: (url: string) => extractObjectPath(url),
-        openStream: (path: string, range?: unknown) => openStream(path, range),
-    },
-    audioPostService: {},
+vi.mock('../../../composition.js', () => ({
+    servicesFor: () => ({
+        storage: {
+            extractObjectPath: (url: string) => extractObjectPath(url),
+            openStream: (path: string, range?: unknown) => openStream(path, range),
+        },
+    }),
 }));
 
 /** A `BlobRead` over fixed bytes, for the streaming assertions below. */

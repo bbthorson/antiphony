@@ -7,15 +7,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * threaded-replies path, and 404 on a missing/cross-tenant post.
  */
 
-vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
-    audioPostService: {
-        createPost: vi.fn(),
-        getPostView: vi.fn(),
-        getPostsForAuthor: vi.fn(),
-        getRepliesByRootAuthor: vi.fn(),
-        getReplies: vi.fn(),
-        setProcessing: vi.fn(),
-    },
+// Routes resolve services through the composition root now, rather than
+// importing a module-scoped singleton — a Worker gets its bindings on `env`, so
+// module-load construction is not available there.
+const audioPostService = {
+    createPost: vi.fn(),
+    getPostView: vi.fn(),
+    getPostsForAuthor: vi.fn(),
+    getRepliesByRootAuthor: vi.fn(),
+    getReplies: vi.fn(),
+    setProcessing: vi.fn(),
+};
+
+vi.mock('../../../composition.js', () => ({
+    servicesFor: () => ({ audioPostService }),
 }));
 
 vi.mock('../../../lib/idempotency.js', () => ({
@@ -40,7 +45,6 @@ process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
-const { audioPostService } = await import('../../outbound/firebase/core-services-firebase.js');
 const { checkIdempotency } = await import('../../../lib/idempotency.js');
 
 const VIEW = {
