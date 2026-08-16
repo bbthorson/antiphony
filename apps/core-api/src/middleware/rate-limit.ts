@@ -1,36 +1,40 @@
 import type { MiddlewareHandler } from 'hono';
-import { getAdminDb, getAdmin } from '../lib/firebase-admin.js';
 import { extractClientIp } from '../lib/client-ip.js';
 import { logger } from '../lib/logger.js';
 import { errorEnvelope } from '../lib/error-envelope.js';
+import { firebaseRateLimitStore } from '../adapters/outbound/firebase/rate-limit-store.js';
+import type { RateLimitStore } from '../ports/rate-limit-store.js';
 
 /**
- * Rate-limit middleware.
+ * Rate-limit middleware — IP-keyed, with a circuit breaker that fails open
+ * after 5 consecutive *systemic* store failures (30s cooldown).
  *
- * Firestore-backed, IP-keyed, with a circuit breaker that fails open after
- * 5 consecutive *systemic* Firestore errors (30s cooldown). Per-bucket
- * transaction contention (ABORTED / FAILED_PRECONDITION) fails CLOSED:
- * returns 429 rather than letting the request through. See `checkRateLimit`
- * below for the rationale, and rate-limit.test.ts for why that asymmetry is
- * the load-bearing part.
+ * Storage sits behind `RateLimitStore` (ports/rate-limit-store.ts); the policy
+ * below does not know what backs it. The split is deliberate and the port file
+ * explains it at length, but the short version: whether a bucket is over its
+ * limit is the store's question, and what to do when the store cannot answer
+ * is the deployment's. Only the first varies by backend.
  *
- * Buckets live in the `rate_limits` collection, keyed by client IP.
+ * **The asymmetry is the load-bearing part** (rate-limit.test.ts is built
+ * around it):
  *
- * IP extraction is handled by `extractClientIp` (lib/client-ip.ts), which
- * indexes in from the RIGHT of `X-Forwarded-For` by the trusted hop count —
- * entries further left are client-supplied and spoofable. Private/loopback
- * addresses collapse to 'unknown' so they can't share one bucket.
+ *   - `unavailable` — the store is systemically unwell. Fail **OPEN** after the
+ *     breaker trips: a storage outage must not take the whole API down.
+ *   - `over` — refuse. A Firestore binding also reports per-bucket contention
+ *     as `over` rather than `unavailable`, so a caller hammering one bucket
+ *     cannot trip the breaker and fail-open the limiter for everyone.
  *
- * The core check logic lives in `checkRateLimit(key, options, requestId?)` —
- * a callable function the middleware wraps.
+ * IP extraction is `extractClientIp` (lib/client-ip.ts), which indexes in from
+ * the RIGHT of `X-Forwarded-For` by the trusted hop count — entries further
+ * left are client-supplied and spoofable. Private/loopback addresses collapse
+ * to 'unknown' so they cannot share one bucket.
  *
- * It was also exposed over HTTP at `POST /api/v1/system/rate-limit/check`, so a
- * sibling service could share these buckets without depending on
- * `firebase-admin` itself. That route is **gone**: the Vox Pop BFF serves its
- * own check endpoint now (Stream 4 F7 G2) and nothing external shared the
- * buckets any more. The function stays — it is what every `rateLimit(...)`
- * below calls in-process — but the buckets are now private to this service,
- * which is what makes moving them off Firestore a local decision.
+ * `checkRateLimit(key, options, requestId?)` is the callable core the
+ * middleware wraps. It was also exposed over HTTP at
+ * `POST /api/v1/system/rate-limit/check` so a sibling service could share these
+ * buckets; that route is gone (the Vox Pop BFF serves its own — Stream 4 F7 G2)
+ * and nothing external shares them any more, which is what makes moving them
+ * off Firestore a purely internal decision.
  */
 
 export interface RateLimitOptions {
@@ -102,106 +106,52 @@ export async function checkRateLimit(
     key: string,
     options: RateLimitOptions,
     requestId?: string,
+    store: RateLimitStore = firebaseRateLimitStore,
 ): Promise<CheckRateLimitResult> {
-    // Circuit breaker: Firestore is failing; fail open.
+    // Circuit breaker: the store is failing systemically; fail open.
     if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
         if (Date.now() < circuitOpenUntil) {
             logger.warn({ requestId }, '[rate-limit] circuit open — skipping');
             return { allowed: true };
         }
+        // Cooldown elapsed — let one request through to probe the store rather
+        // than reopening the gate wholesale.
         consecutiveFailures = CIRCUIT_FAILURE_THRESHOLD - 1;
     }
 
-    const db = getAdminDb();
-    const admin = getAdmin();
-    const docRef = db.collection('rate_limits').doc(key);
-    const now = Date.now();
+    const outcome = await store.hit(key, {
+        limit: options.limit,
+        windowMs: options.windowMs,
+    });
 
-    try {
-        const isLimited = await db.runTransaction(async (t) => {
-            const doc = await t.get(docRef);
-            const data = doc.data();
-
-            if (!doc.exists || (data && now > data.resetTime)) {
-                const resetTime = now + options.windowMs;
-                // expiresAt: Firestore Timestamp for TTL auto-deletion,
-                // 1 hour after window close (buffer for in-flight reqs).
-                const expiresAt = admin.firestore.Timestamp.fromMillis(resetTime + 60 * 60 * 1000);
-                t.set(docRef, { count: 1, resetTime, expiresAt });
-                return false;
-            }
-            if (data && data.count >= options.limit) {
-                return true;
-            }
-            t.update(docRef, { count: (data?.count ?? 0) + 1 });
-            return false;
-        });
-
-        consecutiveFailures = 0;
-
-        if (isLimited) {
-            logger.warn({ requestId, key, limit: options.limit }, '[rate-limit] exceeded');
-            return { allowed: false };
-        }
-        return { allowed: true };
-    } catch (error: unknown) {
-        // Discriminate between "systemic failure" (Firestore is down; trip
-        // the circuit) and "per-request contention" (concurrent writes on
-        // the SAME rate-limit bucket — e.g. one hot IP). Per-request errors
-        // must NOT increment the global counter, or a single aggressive
-        // caller could trip the circuit and fail-open rate limiting for
-        // everyone by hammering their own bucket.
-        //
-        // Firestore grpc error codes:
-        //   - ABORTED (10): transaction conflict / contention — per-bucket, expected
-        //     under concurrent load on the same doc. Don't count.
-        //   - FAILED_PRECONDITION (9): stale data in transaction — same, per-bucket.
-        //   - DEADLINE_EXCEEDED (4): could be systemic OR contention timeout.
-        //     Treat as systemic (rare enough it's not worth tolerating silently).
-        //   - Everything else (UNAVAILABLE, INTERNAL, UNAUTHENTICATED, etc.): systemic.
-        //
-        // The `code` field is set by @google-cloud/firestore error types;
-        // we check it structurally rather than importing the full error
-        // type because the Admin SDK's error hierarchy isn't exported.
-        const code = (error as { code?: number | string } | null)?.code;
-        const isPerRequest = code === 10 || code === 'ABORTED' || code === 9 || code === 'FAILED_PRECONDITION';
-
-        if (isPerRequest) {
-            // Per-bucket contention: the Firestore Admin SDK already retried
-            // the transaction internally before this error bubbled up. Getting
-            // ABORTED here means many concurrent writers on the SAME bucket
-            // — which is exactly what the rate limit is supposed to catch.
-            // Fail CLOSED.
-            //
-            // Trade-off: legitimate bursts from shared-NAT IPs (corporate VPNs)
-            // will get 429s under contention. That's acceptable — they ARE
-            // exceeding the per-IP rate, and the alternative is letting
-            // attackers bypass the limiter by simply hammering one bucket.
-            //
-            // Not counted toward the systemic circuit breaker, since this is
-            // expected per-bucket behavior, not a Firestore-wide failure.
-            logger.warn(
-                { error, requestId, key },
-                '[rate-limit] transaction contention on bucket — failing closed',
-            );
-            return { allowed: false };
-        }
-
+    if (outcome === 'unavailable') {
         consecutiveFailures++;
         if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
             circuitOpenUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
             logger.error(
-                { error, cooldownMs: CIRCUIT_COOLDOWN_MS },
+                { requestId, cooldownMs: CIRCUIT_COOLDOWN_MS },
                 `[rate-limit] circuit opened after ${CIRCUIT_FAILURE_THRESHOLD} systemic failures`,
             );
-        } else {
-            logger.error({ error }, '[rate-limit] firestore systemic error');
         }
-        // Fail-OPEN on systemic Firestore errors — a Firestore outage
-        // shouldn't take the whole API down. Per-bucket contention is
-        // handled above and fails closed.
+        // Fail OPEN — a storage outage must not take the API down. Per-bucket
+        // contention never reaches here: a binding reports that as `over`.
         return { allowed: true };
     }
+
+    // The store answered, so it is healthy regardless of the verdict.
+    consecutiveFailures = 0;
+
+    if (outcome === 'over') {
+        logger.warn({ requestId, key, limit: options.limit }, '[rate-limit] exceeded');
+        return { allowed: false };
+    }
+    return { allowed: true };
+}
+
+/** Test-only: reset the module-scoped breaker between cases. */
+export function resetRateLimitCircuitForTest(): void {
+    consecutiveFailures = 0;
+    circuitOpenUntil = 0;
 }
 
 /**

@@ -1,34 +1,30 @@
-import admin from 'firebase-admin';
 import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
-import { getAdminDb } from './firebase-admin.js';
+import { firebaseIdempotencyStore } from '../adapters/outbound/firebase/idempotency-store.js';
+import type { IdempotencyStore } from '../ports/idempotency-store.js';
 
 /**
- * Idempotency-Key support for write endpoints.
+ * `Idempotency-Key` support for write endpoints.
  *
  * Flow:
  *   1. Handler calls `checkIdempotency(c, uid)`.
  *      - returns `{ cached: <response> }` → handler returns that directly (200)
- *      - returns `null` → proceed, the key is marked `processing`
+ *      - returns `null` → proceed, the key is marked in-flight
  *      - throws `IdempotencyInProgressError` → two concurrent requests;
  *        handler returns 409
  *   2. Handler performs the work.
  *   3. Handler calls `saveIdempotencyResult(c, uid, body)` before responding.
  *
- * Storage: Firestore `idempotency_keys/{uid}_{sha256(key)}` with `{status,
- * response, createdAt, completedAt, expiresAt}`. 24h TTL.
+ * Storage sits behind `IdempotencyStore` (ports/idempotency-store.ts). What
+ * stays HERE is the part that is HTTP contract rather than storage: reading the
+ * header case-insensitively, deriving a per-caller id from it, and the 24h TTL.
  *
- * The doc ID is namespaced by `uid` so that two different callers sending the
- * same raw key value get independent idempotency records. Without this, the
- * first user's cached response could be returned to a second user (resource-id
- * leak), or a second user could pre-register a key and force a spurious 409
- * for the first user (write denial).
- *
- * The header is read case-insensitively. `null` return when no header — the
- * caller proceeds without any idempotency behavior.
+ * The doc id is namespaced by `uid` so two callers sending the same raw key get
+ * independent records. Without it, the first caller's cached response could be
+ * returned to a second (resource-id leak), or a second could pre-register a key
+ * and force a spurious 409 for the first (write denial).
  */
 
-const COLLECTION = 'idempotency_keys';
 const TTL_MS = 24 * 60 * 60 * 1000;
 
 export class IdempotencyInProgressError extends Error {
@@ -62,63 +58,24 @@ function docId(uid: string, key: string): string {
 export async function checkIdempotency(
     c: Context,
     uid: string,
+    store: IdempotencyStore = firebaseIdempotencyStore,
 ): Promise<{ cached: unknown } | null> {
     const key = readKey(c);
     if (!key) return null;
 
-    const db = getAdminDb();
-    const docRef = db.collection(COLLECTION).doc(docId(uid, key));
-
-    const result = await db.runTransaction(async (t) => {
-        const doc = await t.get(docRef);
-        if (doc.exists) {
-            const data = doc.data();
-            const createdMs = (data?.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.();
-            // Expired keys: treat as a new request. Overwrites the prior
-            // record with a fresh processing marker.
-            if (createdMs && Date.now() - createdMs > TTL_MS) {
-                t.set(docRef, {
-                    status: 'processing',
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + TTL_MS),
-                });
-                return null;
-            }
-            if (data?.status === 'processing') {
-                throw new IdempotencyInProgressError();
-            }
-            if (data?.status === 'completed') {
-                return { cached: data.response };
-            }
-            return null;
-        }
-        // First time we've seen the key — mark as processing.
-        t.set(docRef, {
-            status: 'processing',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + TTL_MS),
-        });
-        return null;
-    });
-
-    return result;
+    const claim = await store.claim(docId(uid, key), TTL_MS);
+    if (claim === 'in-progress') throw new IdempotencyInProgressError();
+    if (claim === 'claimed') return null;
+    return { cached: claim.replay };
 }
 
-export async function saveIdempotencyResult(c: Context, uid: string, body: unknown): Promise<void> {
+export async function saveIdempotencyResult(
+    c: Context,
+    uid: string,
+    body: unknown,
+    store: IdempotencyStore = firebaseIdempotencyStore,
+): Promise<void> {
     const key = readKey(c);
     if (!key) return;
-
-    const db = getAdminDb();
-    await db
-        .collection(COLLECTION)
-        .doc(docId(uid, key))
-        .set(
-            {
-                status: 'completed',
-                response: body,
-                completedAt: admin.firestore.FieldValue.serverTimestamp(),
-                expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + TTL_MS),
-            },
-            { merge: true },
-        );
+    await store.settle(docId(uid, key), body, TTL_MS);
 }
