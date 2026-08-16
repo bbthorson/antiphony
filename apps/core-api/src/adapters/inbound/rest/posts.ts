@@ -341,7 +341,7 @@ app.openapi(createRouteDef, async (c) => {
     // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
     // inline awaits the work, a queue adapter awaits only the enqueue.
     if (hasPendingStage(initialProcessing)) {
-        await dispatchProcessing(originAppId, created.id);
+        await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
     }
 
     const responseBody = { success: true as const, data: { postId: created.id } };
@@ -420,7 +420,7 @@ app.openapi(patchRoute, async (c) => {
     // seam as create. The re-read below only sees results under the inline
     // dispatcher; a queued one settles after this response.
     if (hasPendingStage(resolved)) {
-        await dispatchProcessing(originAppId, postId);
+        await dispatchProcessing(originAppId, postId, c.env as Record<string, unknown> | undefined);
     }
 
     // Re-read fresh so the view reflects any inline processing results.

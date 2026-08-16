@@ -112,6 +112,12 @@ jobs:
             #   --timeout 900  the worker route can run two ffmpeg passes plus an
             #                  ElevenLabs round trip; ffmpeg alone allows 120s per
             #                  pass. The 300s default can cut a legitimate job.
+            #                  This number is `PROCESSING_EXECUTION_CEILING_MS`
+            #                  in packages/core/services/audio-processing.ts —
+            #                  the processing lease is derived to sit strictly
+            #                  above it, so raising this without raising the
+            #                  lease reopens the concurrent-write window the
+            #                  lease exists to close. Change both or neither.
             - name: Deploy revision (no traffic)
               id: deploy
               run: |

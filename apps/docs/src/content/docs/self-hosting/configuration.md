@@ -16,7 +16,7 @@ Most of the variables below are Firebase credentials, because Firebase is the ba
 | `ADMIN_SERVICE_ACCOUNT_JSON` | Service account JSON for Firebase Admin (production). On Google infrastructure, Application Default Credentials are used instead. |
 | `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Rate limiting keys off that IP, so a value that doesn't match your actual proxy depth mis-attributes limits — too high lets a caller spoof the address, too low buckets every caller behind the proxy together. |
 | `PORT` | Port to bind. Defaults to `8080`; Cloud Run / App Hosting inject it automatically. |
-| `LOG_LEVEL` | pino log level. Defaults to `info`. |
+| `LOG_LEVEL` | One of `debug`, `info`, `warn`, `error`, `silent`. Defaults to `info` in production, `debug` otherwise. |
 | `NODE_ENV` | Standard Node environment flag (`production` in deploys). |
 
 :::note[Removed: `ANTIPHONY_ORIGIN_APP_ID`]

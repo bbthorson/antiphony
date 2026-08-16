@@ -6,11 +6,26 @@ import { APP_CONFIG } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
 import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
+import { installDurableDispatcher } from './lib/audio-processing.js';
+import { queueResolver } from './adapters/outbound/dispatch/queue.js';
+import { runProcessingJob, shouldRetry } from './lib/process-audio-job.js';
 import type {
     ExecutionContext,
     ExportedHandler,
+    MessageBatch,
     ScheduledController,
 } from './lib/workers-runtime.js';
+
+/**
+ * The producing half of the queue seam, installed at module load the way
+ * `native.ts` installs the Cloud Tasks one under Node.
+ *
+ * The resolver reads `PROCESSING_QUEUE` off the per-invocation `env` rather
+ * than closing over a binding, because bindings do not exist at
+ * module-evaluation time — the same constraint that made the composition root
+ * a factory.
+ */
+installDurableDispatcher(queueResolver(logger));
 
 /**
  * Antiphony core-api — Cloudflare Workers entry point.
@@ -31,10 +46,9 @@ import type {
  *   - `fetch`     — the HTTP surface, unchanged from Cloud Run.
  *   - `scheduled` — the cron. Drives `antiphony_sweep_expired()`, which has had
  *                   no caller since it shipped with the schema.
- *   - `queue`     — NOT here yet; it lands with the Queues cutover in 3c,
- *                   alongside `PROCESSING_QUEUE` on the producing side. Until
- *                   then a Worker deployment has no durable dispatch and posts
- *                   with pending stages log through the noop dispatcher.
+ *   - `queue`     — the audio-processing consumer, replacing the Cloud Tasks
+ *                   push at `POST /api/v1/system/process-audio`. That route
+ *                   stays mounted as the manual re-drive path.
  */
 
 /**
@@ -151,5 +165,62 @@ export default {
             return;
         }
         await sweepExpired(sql, logger);
+    },
+
+    /**
+     * The audio-processing consumer. One message is one post.
+     *
+     * ## The pin gate IS awaited here
+     *
+     * Unlike `scheduled`, this handler mints `at://` uris —
+     * `AudioProcessingService.process` reaches `getAppDid` through
+     * `buildPostUri` — and it runs outside any request, so nothing else has
+     * populated the snapshot for it. A failure retries the whole batch: an
+     * unresolvable `did:web` is infrastructure, the work was not attempted, and
+     * nothing was recorded.
+     *
+     * ## Why the batch is iterated sequentially
+     *
+     * `max_batch_size` is 1 (see `wrangler.jsonc` for the derivation), so this
+     * loop sees one message in practice. It is still a loop, and still
+     * sequential, because both properties have to hold if that setting is ever
+     * raised: the batch shares one 15-minute invocation and one 128MB isolate,
+     * and `readBlobBytes` materialises a whole blob. Running passes
+     * concurrently would race several multi-megabyte buffers against that
+     * isolate; running them in parallel batches of any size races the clock.
+     *
+     * ## Settled per message, not per batch
+     *
+     * A poisoned payload is `ack()`ed on its own rather than dragging its
+     * batch-mates back through the queue with it. `retryAll()` is used only for
+     * the pin gate, where the failure genuinely is batch-wide.
+     */
+    async queue(
+        batch: MessageBatch<unknown>,
+        env: unknown,
+        _ctx: ExecutionContext,
+    ): Promise<void> {
+        try {
+            await ensurePinsValidated();
+        } catch (err) {
+            logger.error(
+                { err, queue: batch.queue, messages: batch.messages.length },
+                '[core-api] app-DID pin validation failed; returning the batch',
+            );
+            batch.retryAll();
+            return;
+        }
+
+        for (const message of batch.messages) {
+            const result = await runProcessingJob(
+                message.body,
+                env as Record<string, unknown> | undefined,
+                { messageId: message.id, queue: batch.queue },
+            );
+            // The ack/retry decision is `lib/process-audio-job.ts`'s, shared
+            // with the HTTP re-drive route so the two consumers cannot drift.
+            if (shouldRetry(result)) message.retry();
+            else message.ack();
+        }
     },
 } satisfies ExportedHandler;

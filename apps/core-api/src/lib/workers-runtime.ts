@@ -36,6 +36,28 @@ export interface ScheduledController {
 }
 
 /**
+ * One queue message, as delivered to a `queue` handler.
+ *
+ * `ack()` and `retry()` are per-message rather than per-batch, which is what
+ * lets one poisoned payload be dropped without dragging its batch-mates back
+ * through the queue with it.
+ */
+export interface Message<T> {
+    id: string;
+    body: T;
+    /** Settle this message as done. Not redelivered. */
+    ack(): void;
+    /** Hand this message back for redelivery, subject to `max_retries`. */
+    retry(): void;
+}
+
+export interface MessageBatch<T> {
+    queue: string;
+    messages: readonly Message<T>[];
+    retryAll(): void;
+}
+
+/**
  * A Worker's module-syntax entry object.
  *
  * `env` is `unknown` rather than a binding interface on purpose. The bindings
@@ -44,10 +66,15 @@ export interface ScheduledController {
  * the same shape. Typing them here would put a second, Worker-only description
  * of the environment next to that one, and the two would drift.
  */
-export interface ExportedHandler {
+export interface ExportedHandler<QueueMessage = unknown> {
     fetch?(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response>;
     scheduled?(
         controller: ScheduledController,
+        env: unknown,
+        ctx: ExecutionContext,
+    ): Promise<void>;
+    queue?(
+        batch: MessageBatch<QueueMessage>,
         env: unknown,
         ctx: ExecutionContext,
     ): Promise<void>;

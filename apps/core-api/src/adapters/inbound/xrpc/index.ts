@@ -253,7 +253,7 @@ export function xrpcRoute(): Hono {
             });
 
             if (hasPendingStage(initialProcessing)) {
-                await dispatchProcessing(originAppId, created.id);
+                await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
             }
 
             // `{ uri, cid }` — a StrongRef, the atproto convention for "what I
@@ -303,7 +303,7 @@ export function xrpcRoute(): Hono {
             await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.setProcessing(originAppId, id, uid, resolved);
 
             if (hasPendingStage(resolved)) {
-                await dispatchProcessing(originAppId, id);
+                await dispatchProcessing(originAppId, id, c.env as Record<string, unknown> | undefined);
             }
 
             const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(originAppId, id, uid);

@@ -174,10 +174,18 @@ export function resolveNotifier(): ProcessingNotifierPort {
  * Returns `undefined` when this deployment has no durable dispatch configured.
  * The resolver owns its OWN misconfiguration reporting: whether a partial
  * config counts as an opt-out or an outage is a property of the queue being
- * configured, not of this seam, and the Cloud Tasks adapter has a long-standing
- * answer that should not be re-litigated here.
+ * configured, not of this seam, and the two adapters answer it differently —
+ * Cloud Tasks reads four env vars that can disagree, a Queues binding is simply
+ * present or absent.
+ *
+ * Takes `env` because a Worker's bindings arrive on the invocation, not at
+ * module load, so `PROCESSING_QUEUE` cannot be closed over. The Cloud Tasks
+ * resolver ignores the argument and reads `process.env`, which is the shape of
+ * the whole runtime split.
  */
-export type DurableDispatcherResolver = () => ProcessingDispatchPort | undefined;
+export type DurableDispatcherResolver = (
+    env?: Record<string, unknown>,
+) => ProcessingDispatchPort | undefined;
 
 let resolveDurableDispatcher: DurableDispatcherResolver | undefined;
 
@@ -195,20 +203,23 @@ export function installDurableDispatcher(resolver: DurableDispatcherResolver): v
  * those must be the tenant's. The queue dispatchers do not: they only enqueue,
  * and the worker resolves providers for itself on the far side of the queue.
  */
-function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
+function resolveDispatcher(
+    originAppId: string,
+    env?: Record<string, unknown>,
+): ProcessingDispatchPort {
     // Inline wins, so a developer with queue config in their shell cannot
     // accidentally enqueue against a real queue from a local run — the same
     // precedence, and the same reasoning, as `_STUB` over real providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
         return inlineDispatcher(
-            servicesFor().audioProcessingDeps,
+            servicesFor(env).audioProcessingDeps,
             resolveProviders(originAppId),
             logger,
             resolveNotifier(),
         );
     }
 
-    return resolveDurableDispatcher?.() ?? noopDispatcher(logger);
+    return resolveDurableDispatcher?.(env) ?? noopDispatcher(logger);
 }
 
 /**
@@ -226,9 +237,13 @@ function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
  * a reconciliation sweep over `pending` posts, which is its own piece of work
  * and is not part of this seam.
  */
-export async function dispatchProcessing(originAppId: string, postId: string): Promise<void> {
+export async function dispatchProcessing(
+    originAppId: string,
+    postId: string,
+    env?: Record<string, unknown>,
+): Promise<void> {
     try {
-        await resolveDispatcher(originAppId).dispatch({ originAppId, postId });
+        await resolveDispatcher(originAppId, env).dispatch({ originAppId, postId });
     } catch (err) {
         logger.error({ err, postId, originAppId }, '[audio-processing] dispatch failed');
     }

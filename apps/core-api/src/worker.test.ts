@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * The Workers entry point — the runtime seam, not the routes.
  *
- * Two behaviours are worth pinning here because both are invisible in normal
- * operation and expensive when wrong:
+ * Three behaviours are worth pinning here because all of them are invisible in
+ * normal operation and expensive when wrong:
  *
  *   - **The interim boot gate fails closed, and RETRIES.** Cloud Run's gate is
  *     `process.exit(1)`, which a Worker has no equivalent for. What replaces it
@@ -14,13 +14,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  *   - **The cron actually reaches the sweep.** `antiphony_sweep_expired()`
  *     shipped with the schema and had no caller at all; a wiring mistake here
  *     reproduces exactly that, silently.
+ *   - **The queue consumer retries only what a retry could fix.** Denoise and
+ *     transcribe bill on the attempt, not on the success, so acking what should
+ *     retry loses work and retrying what should ack spends money. The decision
+ *     itself lives in `lib/process-audio-job.ts`, shared with the HTTP re-drive
+ *     route; what is asserted here is that this consumer honours it.
  */
 
 process.env.LOG_LEVEL = 'silent';
 
 const validateAllPins = vi.fn(async () => new Map());
 const sqlQuery = vi.fn(async () => [{ swept_table: 'rate_limits', deleted: 3 }]);
+const process_ = vi.fn(async () => true);
 let services: Record<string, unknown> = {};
+
+// The queue consumer's job is the ack/retry decision, not the pass itself —
+// `AudioProcessingService` has its own suite in packages/core.
+vi.mock('@antiphony/core/services/audio-processing', async (importOriginal) => ({
+    ...((await importOriginal()) as object),
+    AudioProcessingService: class {
+        process = process_;
+    },
+}));
 
 vi.mock('./lib/app-did.js', () => ({
     validateAllPins,
@@ -45,9 +60,39 @@ const ctx = { waitUntil: () => undefined, passThroughOnException: () => undefine
 beforeEach(() => {
     validateAllPins.mockClear();
     sqlQuery.mockClear();
+    process_.mockClear();
     validateAllPins.mockImplementation(async () => new Map());
-    services = { backend: 'postgres', sql: { query: sqlQuery } };
+    process_.mockImplementation(async () => true);
+    services = { backend: 'postgres', sql: { query: sqlQuery }, audioProcessingDeps: {} };
 });
+
+/** One queue message, with its settlement recorded. */
+function message(body: unknown, id = 'msg-1') {
+    const settled: string[] = [];
+    return {
+        settled,
+        msg: {
+            id,
+            body,
+            ack: () => settled.push('ack'),
+            retry: () => settled.push('retry'),
+        },
+    };
+}
+
+function batch(messages: ReturnType<typeof message>['msg'][]) {
+    const retried: string[] = [];
+    return {
+        retried,
+        value: {
+            queue: 'antiphony-processing',
+            messages,
+            retryAll: () => retried.push('all'),
+        },
+    };
+}
+
+const JOB = { originAppId: 'vox-pop', postId: 'p1' };
 
 describe('worker fetch — the interim boot gate', () => {
     it('serves once the pins validate', async () => {
@@ -132,5 +177,81 @@ describe('worker scheduled — the TTL sweep', () => {
 
         await expect(worker.scheduled(cron, {}, ctx)).resolves.toBeUndefined();
         expect(sqlQuery).not.toHaveBeenCalled();
+    });
+});
+
+describe('worker queue — the audio-processing consumer', () => {
+    it('acks a job that ran', async () => {
+        const worker = await freshWorker();
+        const m = message(JOB);
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(process_).toHaveBeenCalledWith('vox-pop', 'p1');
+        expect(m.settled).toEqual(['ack']);
+    });
+
+    it('acks a declined lease — a retry would only spin against the holder', async () => {
+        // `process()` returns false when another runner holds the post, or when
+        // there was nothing to do. Both are normal on an at-least-once queue,
+        // and the delivery decision is the same for all of them.
+        process_.mockResolvedValueOnce(false);
+        const worker = await freshWorker();
+        const m = message(JOB);
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(m.settled).toEqual(['ack']);
+    });
+
+    it('acks a malformed payload rather than replaying it until the queue gives up', async () => {
+        const worker = await freshWorker();
+        const m = message({ originAppId: 'vox-pop' });
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(process_).not.toHaveBeenCalled();
+        expect(m.settled).toEqual(['ack']);
+    });
+
+    it('retries ONLY when the pass threw', async () => {
+        // The one retryable outcome: an error escaping `process()` came from
+        // outside a stage's try/catch, so it is infrastructure rather than this
+        // post. Nothing was recorded and the lease was already released.
+        process_.mockRejectedValueOnce(new Error('database unreachable'));
+        const worker = await freshWorker();
+        const m = message(JOB);
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(m.settled).toEqual(['retry']);
+    });
+
+    it('settles each message on its own, so one bad payload does not drag the batch back', async () => {
+        process_.mockResolvedValueOnce(true);
+        const worker = await freshWorker();
+        const good = message(JOB, 'good');
+        const bad = message({ nope: true }, 'bad');
+        const b = batch([good.msg, bad.msg]);
+
+        await worker.queue(b.value, {}, ctx);
+
+        expect(good.settled).toEqual(['ack']);
+        expect(bad.settled).toEqual(['ack']);
+        expect(b.retried).toEqual([]);
+    });
+
+    it('returns the whole batch when the pin gate fails', async () => {
+        // This handler mints `at://` uris through `buildPostUri`, and it runs
+        // outside any request, so nothing else populated the snapshot for it.
+        // An unresolvable did:web is infrastructure: the work was not
+        // attempted and nothing was recorded, so the batch is genuinely
+        // batch-wide retryable.
+        validateAllPins.mockRejectedValue(new Error('did-doc-fetch-failed: timeout'));
+        const worker = await freshWorker();
+        const m = message(JOB);
+        const b = batch([m.msg]);
+
+        await worker.queue(b.value, {}, ctx);
+
+        expect(process_).not.toHaveBeenCalled();
+        expect(b.retried).toEqual(['all']);
+        expect(m.settled).toEqual([]);
     });
 });

@@ -1,5 +1,5 @@
 import { GoogleAuth } from 'google-auth-library';
-import { PROCESSING_LEASE_MS } from '@antiphony/core/services/audio-processing';
+import { PROCESSING_EXECUTION_CEILING_MS } from '@antiphony/core/services/audio-processing';
 import type {
     ProcessingDispatchPort,
     ProcessingJob,
@@ -57,20 +57,25 @@ const TASKS_API = 'https://cloudtasks.googleapis.com/v2';
 /**
  * How long Cloud Tasks lets one delivery run before aborting it.
  *
- * Derived from the lease rather than chosen, and that is the load-bearing part.
- * A delivery permitted to outlive its own lease is one whose claim can expire
- * mid-pass, letting a second runner start while the first is still writing —
- * the concurrent-write hazard the lease exists to close, reached from the one
- * direction the lease itself cannot defend against. Holding the deadline AT the
- * lease means Cloud Tasks kills the request no later than the claim lapses.
+ * Derived from the execution ceiling rather than chosen, and that is the
+ * load-bearing part. A delivery permitted to outlive its own lease is one whose
+ * claim can expire mid-pass, letting a second runner start while the first is
+ * still writing — the concurrent-write hazard the lease exists to close,
+ * reached from the one direction the lease itself cannot defend against.
+ *
+ * It used to derive from `PROCESSING_LEASE_MS` directly, which put the deadline
+ * exactly AT the lease — "never longer", but with no margin, so a delivery
+ * running to the cap had its claim lapsing at the same instant. The lease is
+ * now strictly wider than this ceiling (see `PROCESSING_LEASE_MS`), so the
+ * ordering is a real gap rather than a tie. The VALUE here is unchanged at
+ * 900s; only what it is derived from moved, which is the point — it now tracks
+ * Cloud Run's `--timeout 900` rather than a number that was free to drift.
  *
  * This bounds the overlap; it does not eliminate it. Cloud Tasks aborts the
  * HTTP *request*, and a worker that ignores client disconnect can keep running
- * briefly after. The residual window is small and bounded where it used to be
- * unbounded, but a stage that must never double-write still wants its own
- * check — see the note in the plan's step 8.
+ * briefly after — which the margin above now covers rather than merely noting.
  */
-const DISPATCH_DEADLINE_S = Math.floor(PROCESSING_LEASE_MS / 1000);
+const DISPATCH_DEADLINE_S = Math.floor(PROCESSING_EXECUTION_CEILING_MS / 1000);
 
 /** Budget for the enqueue call itself. This one IS in the request path. */
 const ENQUEUE_TIMEOUT_MS = 10_000;

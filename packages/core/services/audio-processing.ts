@@ -46,6 +46,24 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
 }
 
 /**
+ * The longest a runtime will let one processing pass run before killing it.
+ *
+ * Not a policy this codebase chooses — a fact about each place the pass
+ * executes, and the same number in all three:
+ *
+ *   - **Cloud Run** — `--timeout 900` in `.github/workflows/deploy.yml`, sized
+ *     for the worker route's two ffmpeg passes plus a denoise call.
+ *   - **Cloud Tasks** — `dispatchDeadline`, set from this constant by the
+ *     dispatcher so the delivery cannot outlast the runtime serving it.
+ *   - **Cloudflare Queues** — the consumer invocation cap, which is the
+ *     platform's own and cannot be raised.
+ *
+ * Named here, next to the lease, because the ONLY thing that matters about it
+ * is its relationship to the lease — see below.
+ */
+export const PROCESSING_EXECUTION_CEILING_MS = 15 * 60 * 1000;
+
+/**
  * How long a runner's exclusive claim on a post lasts.
  *
  * Bounded from BELOW by the longest plausible pass — denoise is a network call
@@ -55,17 +73,54 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
  * stuck after a runner dies without releasing, since nothing reclaims it
  * before expiry.
  *
- * 15 minutes sits well past any observed pass and inside Cloud Tasks' 30
- * minute maximum HTTP deadline, so the lease cannot outlive the delivery that
- * took it by more than the margin.
+ * ## The invariant: the lease must OUTLAST the execution ceiling
  *
- * **Exported so a dispatcher can bound its delivery by it.** The Cloud Tasks
- * adapter sets `dispatchDeadline` from this value, which is what keeps the two
- * numbers from drifting apart: a delivery allowed to run LONGER than the lease
- * is one that can outlive its own claim and race the runner that replaced it.
- * That coupling only holds if both read the same constant.
+ *     PROCESSING_LEASE_MS  >  PROCESSING_EXECUTION_CEILING_MS
+ *
+ * A runner permitted to run as long as its own lease is one whose claim can
+ * expire while it is still writing, letting a second runner start underneath
+ * it — the concurrent-write hazard the lease exists to close, reached from the
+ * one direction the lease cannot defend against.
+ *
+ * This was previously 15 minutes, i.e. *exactly* the ceiling, with no margin at
+ * all. That is easy to read as deliberate — the Cloud Tasks adapter derived its
+ * `dispatchDeadline` from this constant on the reasoning that a delivery must
+ * never outlive its own lease, and equality does satisfy "never longer". But
+ * equality is the boundary case where the hazard is live rather than excluded:
+ * a pass that runs to the cap has a lease lapsing at the same instant.
+ *
+ * Cloudflare Queues is what surfaced it — its consumer cap is 15 minutes and is
+ * not ours to adjust, so the two numbers coincided with no way to nudge either.
+ * The same coincidence was already true on Cloud Run, where `--timeout 900`
+ * equals the lease; Queues did not introduce the problem, it removed the last
+ * place to hide it.
+ *
+ * ## Why widen the lease rather than shorten the pass
+ *
+ * The alternative is a self-imposed deadline inside the handler, aborting the
+ * pass before the lease lapses. That works, and it is worse here: it threads an
+ * `AbortController` through `AudioProcessingService` and every stage — the one
+ * part of this codebase the migration has otherwise left untouched — and it
+ * makes correctness depend on our own timer firing and on `finally` running
+ * after a hard kill, neither of which is guaranteed.
+ *
+ * Widening the lease instead makes the platform enforce the ordering. Each
+ * runtime already kills the pass at the ceiling; with the lease strictly above
+ * it, "the runner stops before its claim expires" holds by construction, with
+ * no code in the handler.
+ *
+ * The cost is the flip side of the same fact: after a hard kill the claim sits
+ * unreleased for the margin, so a redelivery is declined until it lapses. That
+ * is 5 minutes on a pass that had already run 15 — an ffmpeg run is capped at
+ * 120s and every provider call is bounded, so a pass reaching the ceiling at
+ * all is pathological, and making the pathological case wait is the right
+ * trade against permitting a double write in it.
+ *
+ * **Exported so a dispatcher can bound its delivery.** Dispatchers derive their
+ * deadline from `PROCESSING_EXECUTION_CEILING_MS`, not from this — deriving it
+ * from the lease is precisely what produced the zero margin.
  */
-export const PROCESSING_LEASE_MS = 15 * 60 * 1000;
+export const PROCESSING_LEASE_MS = 20 * 60 * 1000;
 
 /**
  * Recorded as `denoiseModel` when a denoiser succeeds without naming itself.
