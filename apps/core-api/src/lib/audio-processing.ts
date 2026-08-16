@@ -70,7 +70,7 @@ export type { ProcessingCapabilities };
  * `AudioProcessingService` outside any request that resolved providers already.
  * Still called per invocation rather than memoized — see the module docstring.
  */
-export function resolveProviders(): ProcessingProviders {
+export function resolveProviders(originAppId?: string): ProcessingProviders {
     // Stub wins when explicitly set, so a dev/test env with a real key lying
     // around in the shell cannot accidentally bill a live provider. Still a
     // wholesale override, ahead of any per-stage selection: the per-stage
@@ -85,24 +85,35 @@ export function resolveProviders(): ProcessingProviders {
         };
     }
 
-    // Each stage selects independently off its own env var, defaulting to the
-    // first available provider — see `provider-registry.ts`. Real providers
-    // still select off their API key alone, with no separate enable flag to
-    // keep in sync with it: key present ⇒ the stage is available.
+    // Each stage selects independently — tenant pin, then deployment default,
+    // then the first available provider (see `provider-registry.ts`). Real
+    // providers still select off their API key alone, with no separate enable
+    // flag to keep in sync with it: key present ⇒ the stage is available.
+    //
+    // `originAppId` omitted resolves the DEPLOYMENT-wide wiring, skipping the
+    // tenant layer entirely. Every caller in the request path passes it; the
+    // parameter is optional only so a caller genuinely outside a tenancy has a
+    // meaningful answer rather than having to invent an app id.
     //
     // An absent stage is `undefined` rather than an omitted key, which is the
     // same thing to `capabilitiesOf` (it tests truthiness) and to every
     // consumer of `ProcessingProviders`, whose fields are all optional.
     return {
-        transcriber: selectTranscriber(),
-        denoiser: selectDenoiser(),
-        trimmer: selectTrimmer(),
-        waveform: selectWaveform(),
+        transcriber: selectTranscriber(originAppId),
+        denoiser: selectDenoiser(originAppId),
+        trimmer: selectTrimmer(originAppId),
+        waveform: selectWaveform(originAppId),
     };
 }
 
 /**
- * Which stages this deployment can actually perform right now.
+ * Which stages this TENANT can actually perform right now.
+ *
+ * Tenant-scoped, not deployment-scoped, because provider selection is: a tenant
+ * pinned to a provider this deployment cannot run has that stage unavailable
+ * while its neighbours still do. Answering deployment-wide here would advertise
+ * a stage the pinned tenant can never get, and `resolveInitialProcessing` would
+ * store `pending` for work nothing will ever perform.
  *
  * Delegates to `capabilitiesOf` rather than mapping providers to stages again:
  * `AudioProcessingService` filters its recompute set through the same function,
@@ -110,20 +121,21 @@ export function resolveProviders(): ProcessingProviders {
  * runnable but never recomputed serves a permanently stale artifact under a
  * `ready` status.
  */
-export function processingCapabilities(): ProcessingCapabilities {
-    return capabilitiesOf(resolveProviders());
+export function processingCapabilities(originAppId?: string): ProcessingCapabilities {
+    return capabilitiesOf(resolveProviders(originAppId));
 }
 
 /**
  * Resolve an app's opt-in request into the initial per-stage state to store:
- * `pending` when the deployment can do it, `skipped` when it can't. Returns
+ * `pending` when this tenant can do it, `skipped` when it can't. Returns
  * undefined when nothing was requested.
  */
 export function resolveInitialProcessing(
+    originAppId: string,
     request: ProcessingRequest | undefined,
 ): ResolvedProcessing | undefined {
     if (!request || !PROCESSING_STAGES.some((stage) => request[stage])) return undefined;
-    const caps = processingCapabilities();
+    const caps = processingCapabilities(originAppId);
     const state: ResolvedProcessing = {};
     for (const stage of PROCESSING_STAGES) {
         if (request[stage]) state[stage] = caps[stage] ? 'pending' : 'skipped';
@@ -159,8 +171,12 @@ export function resolveNotifier(): ProcessingNotifierPort {
  * Which dispatcher this deployment runs jobs through. Resolved per-request off
  * env, like `resolveProviders`, so a test can set the flag without a
  * module-load singleton fixing the choice at import time.
+ *
+ * Takes the tenant because the INLINE dispatcher wires providers eagerly, and
+ * those must be the tenant's. The queue dispatchers do not: they only enqueue,
+ * and the worker resolves providers for itself on the far side of the queue.
  */
-function resolveDispatcher(): ProcessingDispatchPort {
+function resolveDispatcher(originAppId: string): ProcessingDispatchPort {
     // Inline wins, so a developer with queue config in their shell cannot
     // accidentally enqueue against a real Cloud Tasks queue from a local run —
     // the same precedence, and the same reasoning, as `_STUB` over real
@@ -168,7 +184,7 @@ function resolveDispatcher(): ProcessingDispatchPort {
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
         return inlineDispatcher(
             firebaseAudioProcessingDependencies,
-            resolveProviders(),
+            resolveProviders(originAppId),
             logger,
             resolveNotifier(),
         );
@@ -214,7 +230,7 @@ function resolveDispatcher(): ProcessingDispatchPort {
  */
 export async function dispatchProcessing(originAppId: string, postId: string): Promise<void> {
     try {
-        await resolveDispatcher().dispatch({ originAppId, postId });
+        await resolveDispatcher(originAppId).dispatch({ originAppId, postId });
     } catch (err) {
         logger.error({ err, postId, originAppId }, '[audio-processing] dispatch failed');
     }

@@ -316,10 +316,11 @@ app.openapi(createRouteDef, async (c) => {
     const { text, title, embed, reply, langs, selfLabels, processing } = validation.data;
 
     const originAppId = getOriginAppId(c);
-    // Resolve the opt-in request against this deployment's capabilities: each
+    // Resolve the opt-in request against THIS TENANT's capabilities: each
     // requested stage starts `pending` (worker will do it) or `skipped` (no
-    // provider configured). Stored on the record; surfaced on the view.
-    const initialProcessing = resolveInitialProcessing(processing);
+    // provider configured for this tenant). Stored on the record; surfaced on
+    // the view.
+    const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
     const created = await audioPostService.createPost({
         originAppId,
@@ -401,9 +402,9 @@ app.openapi(patchRoute, async (c) => {
         );
     }
 
-    // Resolve the opt-in against this deployment's capabilities (pending/skipped).
+    // Resolve the opt-in against this tenant's capabilities (pending/skipped).
     // Undefined ⇒ the request named no stage (or only `false`s) — a no-op PATCH.
-    const resolved = resolveInitialProcessing(validation.data.processing);
+    const resolved = resolveInitialProcessing(originAppId, validation.data.processing);
     if (!resolved) {
         return c.json(
             errorEnvelope(c, 'Request must enable at least one processing stage'),

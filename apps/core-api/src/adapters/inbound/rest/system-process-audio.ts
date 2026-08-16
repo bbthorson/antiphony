@@ -95,9 +95,14 @@ app.post('/', requireSystemAuth(), async (c) => {
     // Built per request, not per module, for the same reason `resolveProviders`
     // is read per request: a module-load singleton would freeze the provider
     // set at import time and make env-driven config in tests inert.
+    //
+    // Providers resolve for the JOB's tenant, not the caller's: this route is
+    // system-auth'd and the caller is the queue, so the tenancy is the one
+    // named in the payload. Wiring anything else here would run one tenant's
+    // post through another tenant's pinned provider.
     const service = new AudioProcessingService(
         firebaseAudioProcessingDependencies,
-        resolveProviders(),
+        resolveProviders(originAppId),
         logger,
         resolveNotifier(),
     );
