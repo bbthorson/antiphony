@@ -127,6 +127,10 @@ export type ResolvedProcessing = z.infer<typeof ResolvedProcessingSchema>;
  *  - `processedMimeType` ↔ `embed.audio.mimeType` (providers may transcode)
  *  - `processedDurationMs` ↔ `embed.durationMs` (trim changes duration)
  *  - `waveformPeaks` ↔ `embed.waveform` (the client's peaks describe the original)
+ *
+ * `denoiseModel` is the exception: it has no canonical counterpart at all. It
+ * is provenance for the variant, recorded here because the variant is a blob
+ * CID rather than a record that could carry its own.
  */
 export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
     /**
@@ -149,6 +153,30 @@ export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
      * (i.e. trim). Absent when the variant's duration matches the original.
      */
     processedDurationMs: z.number().int().min(0).optional(),
+    /**
+     * Which denoiser produced the variant's denoise contribution — provenance,
+     * the counterpart to a transcript record's `model`.
+     *
+     * Lives here because a cleaned variant, unlike a transcript, has no record
+     * of its own to carry it: it is a blob CID on this state. Without it,
+     * changing denoisers leaves no way to tell which variants predate the
+     * switch, so nothing can identify what to re-run.
+     *
+     * Named for the STAGE, not the variant (`processedModel`), because it
+     * describes one link of the byte-mutating chain rather than the composed
+     * artifact. Trim contributes to the same variant and has no model, and a
+     * later external link would want its own field rather than to overwrite
+     * this one.
+     *
+     * Written on every successful denoise, never cleared — it moves with
+     * `processedBlobCid`, which is only ever set, never reset. A denoise that
+     * FAILS leaves both alone, which is correct: the variant still holds the
+     * previous denoiser's output, so the previous model still describes it.
+     *
+     * Internal, like the other variant fields — `toProcessingView` projects
+     * stages only, so this never reaches a client.
+     */
+    denoiseModel: z.string().optional(),
     /**
      * Peaks for the processed variant, once the `waveform` stage completes.
      * Same normalization and bounds as `embed.waveform` (0–100, max 1000), so

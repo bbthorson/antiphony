@@ -17,6 +17,7 @@ accepts no `model_id` to select between.
 | Per-stage registry + selection | `apps/core-api/src/lib/provider-registry.ts` (new) |
 | `resolveProviders()` rewired | `apps/core-api/src/lib/audio-processing.ts` |
 | `model?: string` provenance | `packages/core/ports/audio-denoiser.ts`, set in the ElevenLabs denoiser |
+| `denoiseModel` persisted on `ProcessingState` | `packages/shared/types/processing.ts`, written in `AudioProcessingService` — see § 3.2 |
 | `resolveModel()` convention + first-use logging | `apps/core-api/src/adapters/outbound/elevenlabs/client.ts` |
 | Selection tests | `apps/core-api/src/lib/audio-processing.test.ts` |
 | Operator docs | `apps/docs/.../self-hosting/configuration.md` § Providers |
@@ -229,16 +230,39 @@ export interface DenoiseResult {
 ```
 
 Optional, so the stub and the current ElevenLabs adapter satisfy it unchanged.
-The consumer side is the open question this proposal does **not** settle: unlike
-a transcript, a denoised variant has no record of its own to carry provenance —
-it is a blob CID on `ProcessingState`. Writing it down means either a
-`processedModel` field on `ProcessingState` (outside the record CID, like the
-rest of that state) or accepting that it lives only in logs. Decide that when
-adding the second denoiser; the port field is the cheap half and is worth having
-first.
 
 `TrimResult` and `WaveformResult` get nothing — both are local compute with no
 model.
+
+#### Persistence — settled 2026-08-16
+
+This proposal originally left the consumer side open, on the reasoning that a
+denoised variant has no record of its own to carry provenance (it is a blob CID
+on `ProcessingState`) and the choice between a state field and logs-only should
+wait for a second denoiser. **Settled early, as a state field**, because
+per-stage selection (§ 2) is itself what makes a post able to meet two
+denoisers — the condition the decision was waiting for arrived with the same
+change that created it.
+
+- **`denoiseModel` on `ProcessingStateSchema`**, not `processedModel`. It
+  describes one link of the byte-mutating chain, not the composed artifact:
+  trim contributes to the same variant and has no model, and a later external
+  link would want its own field rather than to overwrite this one.
+- **Internal.** `toProcessingView` projects stages only, so this never reaches a
+  client and the API contract is unchanged — no `CHANGELOG.md` entry, since that
+  file tracks the contract rather than storage.
+- **Written unconditionally on every successful denoise**, falling back to
+  `'unnamed'` when the provider names none. The port field is optional but the
+  state field cannot be: `patchProcessingState` skips `undefined` keys, so a
+  silent write would leave the *previous* denoiser's name describing new bytes —
+  worse than absence, because it reads as a positive claim.
+- **Never cleared.** It moves with `processedBlobCid`, which is only ever set,
+  never reset. A denoise that FAILS leaves both alone, which is correct: the
+  variant still holds the previous denoiser's output.
+- `stubDenoiser` now names itself `stub`, matching `stubTranscriber`.
+
+No migration. The field is optional and absent on every existing post, which
+reads correctly as "no denoise has run under a provenance-recording build."
 
 ---
 

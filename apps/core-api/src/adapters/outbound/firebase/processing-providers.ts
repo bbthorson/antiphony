@@ -29,10 +29,16 @@ export const stubTranscriber: TranscriberPort = {
     },
 };
 
-/** Placeholder denoiser — passes the bytes through unchanged. */
+/**
+ * Placeholder denoiser — passes the bytes through unchanged.
+ *
+ * Names itself `stub`, like `stubTranscriber` above, so a variant produced in
+ * a stub run is distinguishable from a real one on the stored state rather
+ * than only in the logs.
+ */
 export const stubDenoiser: DenoiserPort = {
     async denoise(input) {
-        return { bytes: input.bytes, mimeType: input.mimeType };
+        return { bytes: input.bytes, mimeType: input.mimeType, model: 'stub' };
     },
 };
 
