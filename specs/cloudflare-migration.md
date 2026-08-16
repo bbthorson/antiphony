@@ -499,13 +499,16 @@ seam, which is exactly where the boundary spec put it.
 - **The largest cross-repo risk is gone.** It was already-completed work, not pending
   work. Nothing needs coordinating with Vox Pop to delete dead routes.
 
-Also worth checking while in there: `packages/bff-client/rate-limit.ts` now points at
-the BFF's *own* rate-limit route, so `POST /api/v1/system/rate-limit` may have no
-external caller either. Antiphony's own middleware still uses `checkRateLimit`
-in-process, so the function stays regardless — but the route may be deletable too.
+**A fifth route is dead too.** Stream 4 F7 **G2** moved the rate-limit check endpoint
+onto the Vox Pop BFF, which now serves it itself — `packages/bff-client/rate-limit.ts`
+resolves only `VOXPOP_API_BASE_URL`. So `POST /api/v1/system/rate-limit/check` also has
+no external caller. Note the distinction that matters: the **route** is dead, but
+`checkRateLimit()` is still what every `rateLimit(...)` middleware in core calls
+in-process. The function stays; only the HTTP surface goes.
 
-**Correct the checkmark in [`core-bff-boundary.md`](./core-bff-boundary.md)**: it
-claims these were removed from core. They were removed from Vox Pop's *dependency
+**✅ The checkmark in [`core-bff-boundary.md`](./core-bff-boundary.md) is corrected**
+(2026-08-16). It claimed these were removed from core. They were removed from Vox Pop's
+*dependency
 on* core, which is a different statement, and the gap between the two is what made
 this look like an open question.
 
@@ -821,11 +824,14 @@ converts the rest of the migration from a rewrite into a set of adapter swaps.
   middleware, the config, and the deploy runbook section — noting that
   [472d1d5](https://github.com/bbthorson/antiphony/commit/472d1d5) enforced it three
   commits ago, so this should be raised before more is built on it.
-- **Rate limiting.** Cloudflare's native Rate Limiting binding is a candidate, but it
-  cannot replace the Neon-backed buckets outright: `POST /api/v1/system/rate-limit/check`
-  exists so sibling BFFs can share the *same* buckets, and a native binding is
-  per-Worker and not queryable that way. Buckets stay in Neon; the native binding is a
-  possible cheap pre-filter in front of them.
+- **Rate limiting — the constraint that shaped this has expired.** The earlier
+  reasoning here was that shared buckets had to stay queryable over HTTP, because
+  `POST /api/v1/system/rate-limit/check` let sibling BFFs share the *same* buckets and
+  a native binding is per-Worker. **That is no longer true** — Vox Pop's BFF serves its
+  own check endpoint now (see § Resolved), so nothing external shares these buckets.
+  With the sharing requirement gone, both cleaner options open up: Cloudflare's native
+  Rate Limiting binding, or the Durable Object recommended in § Where the metadata
+  lives. The Postgres table in the draft schema is a bridge, not a destination.
 - **Tests.** Most suites are pure and unaffected — the hexagonal split is doing its
   job. Anything touching bindings wants `@cloudflare/vitest-pool-workers`.
 - **`wrangler.jsonc` becomes multi-worker.** The root config today is the assets-only

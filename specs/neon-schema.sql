@@ -225,9 +225,14 @@ create index idempotency_expires_idx on idempotency_keys (expires_at);
 -- path, which is the single worst thing to put behind a network hop to
 -- Postgres. See specs/cloudflare-migration.md § Where the metadata lives.
 --
--- Check first whether it is still reachable at all — Vox Pop's
--- packages/bff-client/rate-limit.ts now points at the BFF's own route, so
--- `POST /api/v1/system/rate-limit/check` may have no external caller left.
+-- Nothing external shares these buckets any more: Stream 4 F7 G2 moved the
+-- check endpoint onto the Vox Pop BFF, which serves it itself. That removes the
+-- one constraint that required the buckets to live somewhere HTTP-queryable, so
+-- a Durable Object (or Cloudflare's native Rate Limiting binding) is now
+-- unobstructed. This table is a bridge to that, not a destination.
+--
+-- `checkRateLimit()` the FUNCTION stays either way — every rateLimit(...)
+-- middleware in core calls it in-process. It is the ROUTE that is dead.
 
 create table rate_limits (
     key           text        primary key,

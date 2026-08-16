@@ -1,11 +1,20 @@
 # Core ↔ BFF boundary (the seam)
 
-**Status:** proposed 2026-07-03; ✅ **fully implemented.** The "B3" trim described
-below executed — the profile/handle/identity surface was removed from core, and the
-Vox Pop BFF that owns it is now an **independent repository** composing against this
-seam over HTTP. Retained as the decision record: the principle table and the join
-contract are the durable value; the "What B3 executes" / "Coupled BFF work" sections
-are historical now that both sides shipped. Companion to
+**Status:** proposed 2026-07-03; **implemented, with one correction 2026-08-16.** The
+"B3" trim described below executed — the profile/handle/identity surface was removed
+from core, and the Vox Pop BFF that owns it is now an **independent repository**
+composing against this seam over HTTP. Retained as the decision record: the principle
+table and the join contract are the durable value; the "What B3 executes" / "Coupled
+BFF work" sections are historical now that both sides shipped.
+
+> ⚠️ **This doc previously claimed the `/system/atproto-*` + `/system/auth` block was
+> removed from core. It was not** — see § Surface disposition. The BFF's *dependency*
+> on those routes was removed; the routes are still mounted and now have no caller.
+> The public trim (`/users/*`, `/resolve/*`, `/atproto/disconnect`) did fully execute.
+> Corrected while investigating [`cloudflare-migration.md`](./cloudflare-migration.md),
+> where deleting them is step 1.
+
+Companion to
 [`service-auth.md`](./service-auth.md) (the auth half), [`docs-content-scope.md`](./docs-content-scope.md)
 (the docs half), and [`atproto-authority-model.md`](./atproto-authority-model.md) (the
 identity/authority axis — **resolved** to app-as-repo-owner; read it first).
@@ -46,7 +55,14 @@ fields; the BFF never sends core a profile.
 
 - `POST/GET /api/v1/posts`, `GET /api/v1/posts/{postId}`, `GET /api/v1/posts/{postId}/replies`
 - `GET /api/v1/audio`, `POST /api/v1/audio/upload`
-- `POST /api/v1/system/rate-limit` — service-to-service helper (the BFF rate-limits without touching Firestore)
+- ~~`POST /api/v1/system/rate-limit`~~ — **also caller-less as of 2026-08-16.** Listed
+  here as a service-to-service helper so the BFF could rate-limit without touching
+  Firestore; Stream 4 F7 **G2** moved the check endpoint onto the Vox Pop BFF, which
+  now serves it itself (`packages/bff-client/rate-limit.ts` resolves only
+  `VOXPOP_API_BASE_URL`). The route joins the four below as dead code.
+  **Note the distinction:** the *route* has no caller, but `checkRateLimit()` — the
+  function behind it — is still what every `rateLimit(...)` middleware in core calls
+  in-process. The function stays; only the HTTP surface goes.
 
 *(The `/api/v1/actors/*` mapping this doc originally listed here was removed — see the superseding note at the top; attribution is now the per-request `authorId` / `authorDid` on posts.)*
 
@@ -59,10 +75,35 @@ fields; the BFF never sends core a profile.
 - `GET /api/v1/resolve/{handle}` — handle→profile resolution is a profile concern (core
   keeps handle only as a non-authoritative display snapshot; see below).
 - `POST /api/v1/atproto/disconnect` — mutates the user profile's linked identity.
+
+**Re-homed in the BFF, but ⚠️ NOT YET removed from core** (corrected 2026-08-16):
+
+These four were listed above as removed. They are not — all four are still mounted in
+[`app.ts`](../apps/core-api/src/app.ts), and no removal commit exists in their history.
+What actually happened is narrower and worth stating precisely, because the two states
+look identical from the Vox Pop side and are opposite problems here:
+
+> The BFF's **dependency on** these routes was removed. The routes themselves were not.
+
 - `POST /api/v1/system/auth/mint-session-cookie` — end-user session machinery.
 - `PUT /api/v1/system/users/{uid}/bluesky-identity` — profile-identity mutation; the BFF owns identity linking.
 - `POST /api/v1/system/atproto` (signin), `/system/atproto-state/*`, `/system/atproto-session/*`
   — server-side backing for the OAuth ceremony; the BFF holds its own OAuth state/session.
+
+Vox Pop ported its own copies and cut over: `specs/archive/stream4-f7-execution.md`
+there records **A1** (#722 — atproto state + session stores), **A2** (bluesky-identity
++ signin, with `apps/web` repointed), and **G1** (`system-auth-mint.ts` ported verbatim
+and mounted on the BFF). The `CORE_API_BASE_URL` fallback that G1 left behind — the one
+live path back to core — was **retired in E2**; nothing in that repo resolves it today.
+Vox Pop has since moved past the surface entirely, verifying Ed25519 session JWTs
+against its own JWKS.
+
+So these are **dead code with no caller**, not a boundary still being negotiated. They
+are also, incidentally, 100% of core's remaining Firebase Auth usage
+(`createCustomToken`, `createUser`, `deleteUser`, `createSessionCookie`) and the sole
+owners of the `users`, `handles`, and `atproto_oauth_states` collections — which is why
+deleting them is the first step of
+[`cloudflare-migration.md`](./cloudflare-migration.md) rather than a tidy-up.
 
 Rationale for the whole `/system/atproto-*` + `/system/auth` block: the OAuth ceremony is
 product UX tied to the calling app's origin (its callback URL is registered with the PDS),
