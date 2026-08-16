@@ -10,8 +10,7 @@ import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { newTid } from '../../../lib/tid.js';
-import { blobObjectPath } from '../../../lib/blob-path.js';
-import { StorageService } from './core-services-firebase.js';
+import { audioPlaybackUrl } from '../../../lib/audio-url.js';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -195,18 +194,10 @@ export const firebaseAudioPostDependencies: AudioPostDependencies = {
         return map;
     },
 
-    async signAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
-        // The stored ref is a content CID; the object path is DERIVED from it
-        // (tenancy-scoped, deterministic — see lib/blob-path.ts), then a
-        // short-lived signed URL is minted (same machinery as the audio proxy).
-        const objectPath = blobObjectPath(originAppId, blobCid);
-        if (!objectPath) return null;
-        try {
-            return await StorageService.getSignedUrl(objectPath);
-        } catch (err) {
-            logger.error({ err, objectPath }, '[audio-posts-deps] failed to sign audio URL');
-            return null;
-        }
+        resolveAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
+        // No storage call: the proxy URL is derived from the tenancy + CID, so
+        // hydrating a post no longer costs a signing round trip per audio embed.
+        return Promise.resolve(audioPlaybackUrl(originAppId, blobCid));
     },
 
     cidForRecord,

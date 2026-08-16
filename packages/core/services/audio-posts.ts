@@ -437,11 +437,11 @@ export class AudioPostService {
                 },
                 proc,
             );
-            const signedUrl = await this.deps.signAudioUrl(record.originAppId, resolved.blobCid);
-            if (signedUrl) {
+            const playbackUrl = await this.deps.resolveAudioUrl(record.originAppId, resolved.blobCid);
+            if (playbackUrl) {
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
-                    url: signedUrl,
+                    url: playbackUrl,
                     durationMs: resolved.durationMs,
                     alt: embedRecord.alt,
                     waveform: resolved.waveform,

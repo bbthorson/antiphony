@@ -1,47 +1,41 @@
-import type { BlobStore } from '../ports/storage-dependencies';
+import type { BlobRange, BlobRead, BlobStore } from '../ports/storage-dependencies';
 
 /**
- * Default signed-URL expiry: 1 hour. Callers can override per-call.
- */
-const SIGNED_URL_EXPIRY_MS = 60 * 60 * 1000;
-
-/**
- * Public shape of the storage service — a const-object API rather than a
- * class, so callers use it as `StorageService.uploadFile(...)`.
+ * Public shape of the storage service — a const-object API rather than a class,
+ * so callers use it as `StorageService.uploadFile(...)`.
+ *
+ * `getSignedUrl` is gone: the audio proxy streams bytes now instead of
+ * redirecting to a time-limited URL, and no backend on the roadmap can mint one
+ * from a binding. See ports/storage-dependencies.ts for the reasoning.
  */
 export interface StorageService {
     /**
-     * Upload a file to the configured blob store. Returns the canonical URL
-     * for the stored object (provider-specific format) — callers persist
-     * this URL as-is.
+     * Upload bytes to the configured blob store. Returns the canonical URL for
+     * the stored object (provider-specific) — callers persist it as-is.
      */
-    uploadFile(buffer: Buffer, destinationPath: string, mimeType: string): Promise<string>;
+    uploadFile(bytes: Uint8Array, destinationPath: string, mimeType: string): Promise<string>;
 
-    /**
-     * Generate a time-limited signed URL for a storage object path.
-     * Defaults to 1-hour expiry if `expiresMs` is omitted.
-     */
-    getSignedUrl(objectPath: string, expiresMs?: number): Promise<string>;
+    /** Open an object for streaming, optionally a byte range. Null when absent. */
+    openStream(objectPath: string, range?: BlobRange): Promise<BlobRead | null>;
 
-    /** Download an object's raw bytes by object path, or null if it doesn't exist. */
-    download(objectPath: string): Promise<Buffer | null>;
+    /** Read an object's full bytes, or null when absent. */
+    download(objectPath: string): Promise<Uint8Array | null>;
 
-    /** Extract the storage object path from a full URL, or null if unrecognized. */
+    /** Extract the storage object path from a full URL, or null if unrecognised. */
     extractObjectPath(url: string): string | null;
 }
 
 /**
- * Factory that builds a StorageService around a BlobStore binding. Kept as
- * a factory (not a class) to preserve the const-object call shape callers
- * use (`StorageService.uploadFile(...)`).
+ * Factory that builds a StorageService around a BlobStore binding. Kept as a
+ * factory (not a class) to preserve the const-object call shape callers use.
  */
 export function makeStorageService(blob: BlobStore): StorageService {
     return {
-        uploadFile(buffer, destinationPath, mimeType) {
-            return blob.upload(buffer, destinationPath, mimeType);
+        uploadFile(bytes, destinationPath, mimeType) {
+            return blob.upload(bytes, destinationPath, mimeType);
         },
-        getSignedUrl(objectPath, expiresMs = SIGNED_URL_EXPIRY_MS) {
-            return blob.getSignedUrl(objectPath, expiresMs);
+        openStream(objectPath, range) {
+            return blob.openStream(objectPath, range);
         },
         download(objectPath) {
             return blob.download(objectPath);

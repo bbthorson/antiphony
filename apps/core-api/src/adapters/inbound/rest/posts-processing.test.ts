@@ -139,10 +139,9 @@ vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminStorage: () => ({
         bucket: () => ({
             name: 'test-bucket',
-            file: (path: string) => ({
+            file: (_path: string) => ({
                 download: async () => [BLOB_BYTES],
                 save: async () => undefined,
-                getSignedUrl: async () => [`https://signed.example/${path}`],
             }),
         }),
     }),
@@ -167,6 +166,15 @@ process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.ANTIPHONY_PROCESSING_INLINE = 'true';
+// Post views carry a playback URL pointing at this deployment's own audio proxy
+// (the proxy streams bytes now instead of redirecting to a signed storage URL),
+// so hydrating an embed needs a public base URL. Without it `audioPlaybackUrl`
+// returns null and the whole embed is omitted.
+process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test';
+
+/** The proxy URL a hydrated embed should carry for a blob under this tenant. */
+const proxyUrl = (cid: string) =>
+    `https://api.test/api/v1/audio?url=${encodeURIComponent(`blobs/test-app/${cid}`)}`;
 
 const { app } = await import('../../../app.js');
 const { cidForBytes } = await import('../../../lib/cid.js');
@@ -254,7 +262,7 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
         expect((data.embed?.transcript as { text?: string })?.text).toBe('[stub transcript]');
         // Playback resolves to the DENOISED variant's content-addressed blob.
         const denoisedCid = await cidForBytes(new Uint8Array(BLOB_BYTES));
-        expect(data.embed?.url).toBe(`https://signed.example/blobs/test-app/${denoisedCid}`);
+        expect(data.embed?.url).toBe(proxyUrl(denoisedCid));
     });
 
     it('marks a requested stage skipped when the deployment has no provider', async () => {
@@ -269,7 +277,7 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
         expect(data.embed?.processing).toEqual({ transcribe: 'skipped' });
         expect(data.embed?.transcript).toBeUndefined();
         // No denoise ⇒ playback stays on the original audio.
-        expect(data.embed?.url).toBe(`https://signed.example/blobs/test-app/${ORIGINAL_LINK}`);
+        expect(data.embed?.url).toBe(proxyUrl(ORIGINAL_LINK));
     });
 
     it('leaves posts without a processing opt-in completely unchanged', async () => {
@@ -279,6 +287,6 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
         const data = await getPost(postId);
         expect(data.embed?.processing).toBeUndefined();
         expect(data.embed?.transcript).toBeUndefined();
-        expect(data.embed?.url).toBe(`https://signed.example/blobs/test-app/${ORIGINAL_LINK}`);
+        expect(data.embed?.url).toBe(proxyUrl(ORIGINAL_LINK));
     });
 });

@@ -7,18 +7,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * envelope (Phase 4 of envelope standardization).
  */
 
-// StorageService.extractObjectPath + getSignedUrl are what the route touches.
+// StorageService.extractObjectPath + openStream are what the route touches.
 // Mock them via the core-services-firebase module so the route sees our stubs.
 const extractObjectPath = vi.fn();
-const getSignedUrl = vi.fn();
+const openStream = vi.fn();
 
 vi.mock('../../outbound/firebase/core-services-firebase.js', () => ({
     StorageService: {
         extractObjectPath: (url: string) => extractObjectPath(url),
-        getSignedUrl: (path: string) => getSignedUrl(path),
+        openStream: (path: string, range?: unknown) => openStream(path, range),
     },
     audioPostService: {},
 }));
+
+/** A `BlobRead` over fixed bytes, for the streaming assertions below. */
+function read(bytes: number[], over: Record<string, unknown> = {}) {
+    return {
+        body: new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(new Uint8Array(bytes));
+                controller.close();
+            },
+        }),
+        size: bytes.length,
+        totalSize: bytes.length,
+        mimeType: 'audio/webm',
+        ...over,
+    };
+}
 
 vi.mock('../../../lib/firebase-admin.js', () => ({
     getAdminDb: () => ({
@@ -106,29 +122,90 @@ describe('GET /api/v1/audio', () => {
         expect(res.status).toBe(403);
     });
 
-    it('redirects to a signed URL for a valid blobs/ path', async () => {
+    it('streams the bytes for a valid blobs/ path', async () => {
+        // Was a 302 to a signed GCS URL. It now serves the bytes: R2 bindings
+        // cannot mint presigned URLs, and streaming is the better shape anyway
+        // (no credential, no expiry, free egress, working range requests).
         extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
-        getSignedUrl.mockResolvedValue('https://signed.example.com/blobs/app-1/bafyreicid?sig=xyz');
+        openStream.mockResolvedValue(read([1, 2, 3, 4]));
 
         const res = await app().request(
             '/api/v1/audio?url=' +
                 encodeURIComponent('https://storage.googleapis.com/bucket/blobs/app-1/bafyreicid'),
-            { redirect: 'manual' },
         );
 
-        expect(res.status).toBe(302);
-        expect(res.headers.get('location')).toBe(
-            'https://signed.example.com/blobs/app-1/bafyreicid?sig=xyz',
-        );
-        expect(res.headers.get('cache-control')).toContain('max-age=3000');
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toBe('audio/webm');
+        expect(res.headers.get('content-length')).toBe('4');
+        expect(res.headers.get('accept-ranges')).toBe('bytes');
+        // Content-addressed, so the bytes behind a CID never change. The signed
+        // URL could only ever be `private, max-age=3000` because it expired.
+        expect(res.headers.get('cache-control')).toContain('immutable');
+        expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([1, 2, 3, 4]);
     });
 
-    it('returns 404 when the signed-URL generation fails', async () => {
-        extractObjectPath.mockReturnValue('blobs/app-1/bafyreimissing');
-        getSignedUrl.mockRejectedValue(new Error('object not found'));
+    it('accepts a bare object path, not just a provider URL', async () => {
+        // What `audioPlaybackUrl` now emits, and what this endpoint's OpenAPI
+        // description always claimed to take.
+        extractObjectPath.mockReturnValue(null);
+        openStream.mockResolvedValue(read([9]));
 
         const res = await app().request(
-            '/api/v1/audio?url=' + encodeURIComponent('https://storage.googleapis.com/bucket/blobs/app-1/bafyreimissing'),
+            '/api/v1/audio?url=' + encodeURIComponent('blobs/app-1/bafyreicid'),
+        );
+        expect(res.status).toBe(200);
+        expect(openStream).toHaveBeenCalledWith('blobs/app-1/bafyreicid', undefined);
+    });
+
+    it('rejects a foreign URL rather than reinterpreting it as a path', async () => {
+        // The bare-path fallback must not become an SSRF hole: anything with a
+        // scheme fails the URL parse and must NOT then be read as relative.
+        extractObjectPath.mockReturnValue(null);
+        const res = await app().request(
+            '/api/v1/audio?url=' + encodeURIComponent('https://evil.example/blobs/app-1/cid'),
+        );
+        expect(res.status).toBe(400);
+        expect(openStream).not.toHaveBeenCalled();
+    });
+
+    it('serves a 206 with Content-Range for a ranged request', async () => {
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        openStream.mockResolvedValue(read([20, 30], { size: 2, totalSize: 5 }));
+
+        const res = await app().request(
+            '/api/v1/audio?url=' + encodeURIComponent('blobs/app-1/bafyreicid'),
+            { headers: { range: 'bytes=1-2' } },
+        );
+
+        expect(res.status).toBe(206);
+        expect(res.headers.get('content-range')).toBe('bytes 1-2/5');
+        expect(openStream).toHaveBeenCalledWith('blobs/app-1/bafyreicid', {
+            offset: 1,
+            length: 2,
+        });
+    });
+
+    it('ignores an unparseable Range header and serves the whole object', async () => {
+        // RFC 9110 permits ignoring a Range we do not understand, and that is
+        // the safe failure: a misparsed range serves the wrong bytes under a
+        // 206 claiming they are right.
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        openStream.mockResolvedValue(read([1, 2, 3]));
+
+        const res = await app().request(
+            '/api/v1/audio?url=' + encodeURIComponent('blobs/app-1/bafyreicid'),
+            { headers: { range: 'bytes=0-1,5-6' } },
+        );
+        expect(res.status).toBe(200);
+        expect(openStream).toHaveBeenCalledWith('blobs/app-1/bafyreicid', undefined);
+    });
+
+    it('returns 404 when the object does not exist', async () => {
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreimissing');
+        openStream.mockResolvedValue(null);
+
+        const res = await app().request(
+            '/api/v1/audio?url=' + encodeURIComponent('blobs/app-1/bafyreimissing'),
         );
 
         expect(res.status).toBe(404);
