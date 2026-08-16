@@ -225,17 +225,22 @@ create index idempotency_expires_idx on idempotency_keys (expires_at);
 -- rate_limits  (Firestore: `rate_limits`)
 -- ---------------------------------------------------------------------------
 --
--- PROVISIONAL. This table exists so rate limiting keeps working while the
--- service is still on Cloud Run. Once the Worker lands, this workload should
--- move to a Durable Object: it is a high-frequency counter write on the READ
--- path, which is the single worst thing to put behind a network hop to
--- Postgres. See specs/cloudflare-migration.md § Where the metadata lives.
+-- NO LONGER THE PRIMARY STORE. The reference deployment now keeps these
+-- buckets in a Durable Object (adapters/outbound/durable-objects/
+-- rate-limiter.ts), which the composition root selects whenever the
+-- RATE_LIMITER binding is attached — ahead of the database, and on its own
+-- axis. This is a high-frequency counter write on the READ path, which is the
+-- single worst thing to put behind a network hop to Postgres.
 --
--- Nothing external shares these buckets any more: Stream 4 F7 G2 moved the
--- check endpoint onto the Vox Pop BFF, which serves it itself. That removes the
--- one constraint that required the buckets to live somewhere HTTP-queryable, so
--- a Durable Object (or Cloudflare's native Rate Limiting binding) is now
--- unobstructed. This table is a bridge to that, not a destination.
+-- Nothing external shares these buckets: Stream 4 F7 G2 moved the check
+-- endpoint onto the Vox Pop BFF, which serves it itself. That removed the one
+-- constraint requiring them to live somewhere HTTP-queryable.
+--
+-- The table STAYS, and is not vestigial. A self-hoster running core-api against
+-- their own Postgres with no Cloudflare bindings still needs somewhere to count
+-- — and keeping that possible is the same portability argument that put the
+-- domain data in Neon rather than D1 (see packages/core/README.md). Under the
+-- reference deployment it simply carries no writes.
 --
 -- `checkRateLimit()` the FUNCTION stays either way — every rateLimit(...)
 -- middleware in core calls it in-process. It is the ROUTE that is dead.
@@ -409,10 +414,13 @@ commit;
 -- roughly one window of its true size, and `idempotency_keys` (24h TTL) is
 -- swept far more often than it needs.
 --
--- ⚠️ Once `rate_limits` moves to a Durable Object (see the table's own note),
--- half this sweep becomes dead and should be deleted with it. A sweep quietly
--- deleting zero rows from a table nothing writes is the kind of thing that
--- survives for years.
+-- Note the `rate_limits` half sweeps nothing under the reference deployment,
+-- which keeps its buckets in a Durable Object — an object resets its own window
+-- in place and needs no reclamation. An earlier version of this comment said
+-- that half should be deleted when that happened. It should not: the table
+-- remains the store for a deployment with no Cloudflare bindings, and a sweep
+-- that skips an empty table costs one statement. What IS worth knowing is that
+-- a zero count there is the expected reading, not a broken sweep.
 
 -- ---------------------------------------------------------------------------
 -- No table for renditions — deliberately

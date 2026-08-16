@@ -6,6 +6,10 @@ import type { BlobStore } from '@antiphony/core/ports/storage-dependencies';
 
 import { r2BlobStore } from './adapters/outbound/r2/blob-store.js';
 import type { R2BucketLike } from './adapters/outbound/r2/bucket.js';
+import {
+    durableObjectRateLimitStore,
+    type DurableObjectNamespaceLike,
+} from './adapters/outbound/durable-objects/rate-limiter.js';
 import { neonSqlClient } from './adapters/outbound/postgres/client.js';
 import { postgresAudioPostDependencies } from './adapters/outbound/postgres/audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
@@ -102,6 +106,8 @@ export interface RuntimeEnv {
     /** R2 binding. Worker only. */
     r2Bucket?: R2BucketLike;
     r2BucketName?: string;
+    /** Durable Object namespace backing rate-limit buckets. Worker only. */
+    rateLimiter?: DurableObjectNamespaceLike;
 }
 
 /**
@@ -126,6 +132,7 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
         undefined;
 
     const r2Bucket = bindings.BLOBS as R2BucketLike | undefined;
+    const rateLimiter = bindings.RATE_LIMITER as DurableObjectNamespaceLike | undefined;
 
     return {
         databaseUrl: databaseUrl || undefined,
@@ -134,6 +141,12 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
             (typeof bindings.ANTIPHONY_R2_BUCKET === 'string'
                 ? bindings.ANTIPHONY_R2_BUCKET
                 : undefined) ?? R2_BUCKET_NAME,
+        // Probed the same way as the R2 binding: a value in the slot that is
+        // not the binding shape means someone set a var where a binding
+        // belongs, and building the store around it would fail later, inside a
+        // request, on the read path.
+        rateLimiter:
+            rateLimiter && typeof rateLimiter.idFromName === 'function' ? rateLimiter : undefined,
     };
 }
 
@@ -221,7 +234,25 @@ export function createServices(env: RuntimeEnv): Services {
             }
           : raise(missingBinding('database', 'HYPERDRIVE'));
 
-    return { audioPostService: new AudioPostService(db.audioPostDeps), storage, ...db };
+    // Rate limiting is selected on its OWN axis, ahead of the database.
+    //
+    // The other four stores move together because they are one record store
+    // seen from four angles. This one is not: it is a counter on the read path,
+    // the table in `db/schema.sql` is explicitly a bridge rather than a
+    // destination, and the Durable Object is where it is going. So a deployment
+    // on Postgres WITH the binding attached should already be using the binding
+    // — otherwise the last step of the migration would need its own cutover
+    // instead of just attaching the thing.
+    const rateLimitStore = env.rateLimiter
+        ? durableObjectRateLimitStore(env.rateLimiter)
+        : db.rateLimitStore;
+
+    return {
+        audioPostService: new AudioPostService(db.audioPostDeps),
+        storage,
+        ...db,
+        rateLimitStore,
+    };
 }
 
 /** Throw from an expression position, so the `??` chain above stays a chain. */

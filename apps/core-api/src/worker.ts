@@ -27,6 +27,16 @@ import type {
 installDurableDispatcher(queueResolver(logger));
 
 /**
+ * The rate-limit bucket, re-exported so the runtime can find it.
+ *
+ * A Durable Object class has to be a named export of the Worker's entry module
+ * — that is how `wrangler.jsonc`'s `durable_objects.bindings[].class_name`
+ * resolves. The implementation lives with the other outbound adapters, where it
+ * belongs; this line is the wiring.
+ */
+export { RateLimiter } from './adapters/outbound/durable-objects/rate-limiter.js';
+
+/**
  * Antiphony core-api — Cloudflare Workers entry point.
  *
  * The counterpart to `src/index.ts`, which is the Node/Cloud Run one. Route

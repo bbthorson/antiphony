@@ -111,6 +111,42 @@
 		]
 	},
 
+	// ## Rate-limit buckets
+	//
+	// One Durable Object per bucket key, addressed with `idFromName(key)`. This
+	// is the one table where Postgres was actively the wrong tool: a
+	// high-frequency counter write sitting on the READ path, so a network hop
+	// to a single-region database means every rate-limited request pays a round
+	// trip to Virginia before the handler starts.
+	//
+	// Per-key strongly-consistent counters are what Durable Objects are for,
+	// and input gating makes the read-increment-write atomic for free — where
+	// the Firestore binding needed a transaction plus a whole contention branch
+	// to get the same guarantee.
+	//
+	// The `rate_limits` table in db/schema.sql was always a bridge rather than
+	// a destination (its own comment says so). It stays, harmlessly, for a
+	// deployment without this binding attached.
+	//
+	// `migrations` is not optional: a Durable Object class is only addressable
+	// once a migration has declared it. `new_sqlite_classes` rather than
+	// `new_classes` because SQLite-backed is the current default storage
+	// backend and the only one available on new namespaces.
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "RATE_LIMITER",
+				"class_name": "RateLimiter"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["RateLimiter"]
+		}
+	],
+
 	// ## The shared layer of the app-DID custody cache
 	//
 	// `middleware/auth.ts` proves each tenant's pin before a handler runs. That

@@ -52,3 +52,52 @@ describe('composition root — no fallback installed (Worker)', () => {
         );
     });
 });
+
+describe('rate limiting selects on its own axis', () => {
+    it('prefers the Durable Object over the Postgres table when bound', async () => {
+        // The other four stores move together because they are one record
+        // store seen from four angles. This one does not: the `rate_limits`
+        // table is explicitly a bridge (db/schema.sql says so) and the Durable
+        // Object is the destination. Selecting it on the database's axis would
+        // mean the last step of the migration needed its own cutover instead
+        // of just attaching the binding.
+        //
+        // Asserted by behaviour rather than identity: the Postgres store would
+        // reach for `sql.query`, the Durable Object store routes through
+        // `idFromName`.
+        let routed: string | undefined;
+        const services = createServices({
+            databaseUrl: DB,
+            r2Bucket: fakeR2,
+            r2BucketName: 'antiphony-r2-bucket',
+            rateLimiter: {
+                idFromName: (name: string) => {
+                    routed = name;
+                    return {};
+                },
+                get: () => ({ fetch: async () => Response.json({ over: false }) }),
+            },
+        });
+
+        await services.rateLimitStore.hit('ratelimit_1.2.3.4', { limit: 1, windowMs: 1000 });
+
+        expect(routed).toBe('ratelimit_1.2.3.4');
+        // ...and the records backend is unaffected by that choice.
+        expect(services.backend).toBe('postgres');
+    });
+
+    it('falls back to the database-backed store without the binding', async () => {
+        const services = createServices({
+            databaseUrl: DB,
+            r2Bucket: fakeR2,
+            r2BucketName: 'antiphony-r2-bucket',
+        });
+
+        // No binding, so this is the Postgres store — which cannot reach a
+        // database here and reports `unavailable` rather than throwing, per
+        // the port.
+        await expect(
+            services.rateLimitStore.hit('k', { limit: 1, windowMs: 1000 }),
+        ).resolves.toBe('unavailable');
+    });
+});
