@@ -17,6 +17,17 @@
     "$schema": "https://unpkg.com/knip@5/schema.json",
 
     "workspaces": {
+        // The repo root is a workspace to knip too. Its source is `scripts/`,
+        // run from root npm scripts rather than imported by anything — without
+        // this entry, `validate-lexicons.mjs` reads as a dead file and its only
+        // dependency (`@atproto/lex-document`) as an unused devDependency.
+        // `eslint-rules/**` is in `project` but not `entry` purely so the
+        // `ignore` further down still has something to match; drop it and knip
+        // reports that ignore as redundant config.
+        ".": {
+            "entry": ["scripts/*.mjs"],
+            "project": ["scripts/**/*.mjs", "eslint-rules/**/*.mjs"]
+        },
         "apps/core-api": {
             "entry": ["scripts/*.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
