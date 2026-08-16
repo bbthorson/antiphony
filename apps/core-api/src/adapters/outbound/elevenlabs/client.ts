@@ -8,6 +8,8 @@
  * one adapter and changes nothing else.
  */
 
+import { logger } from '../../../lib/logger.js';
+
 const API_BASE = 'https://api.elevenlabs.io/v1';
 
 /** Default budget for one provider call. Audio processing is not interactive. */
@@ -21,6 +23,35 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 export function elevenLabsApiKey(): string | undefined {
     const key = process.env.ELEVENLABS_API_KEY?.trim();
     return key ? key : undefined;
+}
+
+/**
+ * Already-logged `envVar=model` pairs. Purely observability state — resolution
+ * itself stays per-call, so this never fixes a choice at module load.
+ */
+const loggedModels = new Set<string>();
+
+/**
+ * Resolve which model a stage runs, per the project convention:
+ * `<VENDOR>_<CAPABILITY>_MODEL`, read per call, defaulted to an adapter
+ * constant, and surfaced on the port's RESULT type as provenance.
+ *
+ * The value is deliberately NOT validated against a list of known model ids.
+ * That would catch a typo — `scibe_v2` is a valid string that fails at the
+ * provider with a 400, after the audio has been uploaded — but it would also
+ * mean a code change to adopt a model the vendor shipped that morning, which is
+ * a bad trade against a fast-moving vendor. Logging the resolved value on first
+ * use puts it in the deployment's log trail instead, so a typo is one query
+ * away rather than invisible.
+ */
+export function resolveModel(envVar: string, fallback: string): string {
+    const model = process.env[envVar]?.trim() || fallback;
+    const seen = `${envVar}=${model}`;
+    if (!loggedModels.has(seen)) {
+        loggedModels.add(seen);
+        logger.info({ envVar, model, isDefault: model === fallback }, '[elevenlabs] model resolved');
+    }
+    return model;
 }
 
 /** Raised for a non-2xx provider response, carrying the status for logging. */
