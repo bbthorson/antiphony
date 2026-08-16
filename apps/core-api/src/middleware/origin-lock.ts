@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { logger } from '../lib/logger.js';
-import { errorEnvelope } from '../lib/error-envelope.js';
+import { ServiceError } from 'shared/errors';
 import { constantTimeEqual } from '../lib/constant-time.js';
 
 /**
@@ -149,7 +149,13 @@ export const originLock = (): MiddlewareHandler => {
             );
             // 403, not 401: there is no credential the caller could supply to
             // fix this. They reached the wrong door.
-            return c.json(errorEnvelope(c, 'Forbidden'), 403);
+            //
+            // Thrown, not returned, so each inbound adapter serializes it in its
+            // own dialect (REST envelope vs XRPC `{ error, message }`) — see the
+            // note in middleware/auth.ts. `ServiceError` rather than
+            // `ForbiddenError` because that subclass would add
+            // `code: 'FORBIDDEN'`, which this response has never carried.
+            throw new ServiceError('Forbidden', 403);
         }
 
         return next();

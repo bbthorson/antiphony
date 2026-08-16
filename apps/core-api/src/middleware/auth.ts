@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
+import { ServiceError } from 'shared/errors';
 import { matchServiceToken } from './service-auth.js';
-import { errorEnvelope } from '../lib/error-envelope.js';
 
 /**
  * Auth bridge middleware. Two variants — both require a valid service token
@@ -104,21 +104,36 @@ function tryServiceAuth(
 
 /**
  * Shared service-token gate for both required-auth middlewares. Extracts the
- * bearer, rejects a missing or unrecognized token with a 401 (in the standard
- * error-envelope shape), and decorates the context on success. Returns the
- * 401 `Response` to short-circuit, or `null` when the caller should proceed.
+ * bearer, rejects a missing or unrecognized token, and decorates the context on
+ * success.
+ *
+ * ## Why this throws instead of returning a response
+ *
+ * This middleware is mounted under two inbound adapters that disagree about
+ * what an error looks like on the wire: REST answers with the standard envelope
+ * (`{ success: false, error: { message }, requestId }`) and XRPC answers with
+ * the AT Protocol shape (`{ error, message }`). A middleware that builds the
+ * response itself can only serve one of them, so it raises a typed
+ * `ServiceError` and each adapter's `onError` serializes it in its own dialect.
+ * Hono routes a throw from mounted middleware to the mounted sub-app's
+ * `onError`, which is what makes this work. See specs/xrpc-and-atproto-lex-
+ * strategy.md §5.3.
+ *
+ * `ServiceError` directly, rather than the `UnauthorizedError` subclass: that
+ * subclass carries `code: 'UNAUTHORIZED'`, and these responses have never had a
+ * `code`. Adding one is a client-visible change to the REST contract and is not
+ * this refactor's to make.
  */
-function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): Response | null {
+function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): void {
     const token = extractBearer(c.req.header('authorization'));
     if (!token) {
         setAnonymous(c);
-        return c.json(errorEnvelope(c, 'Authentication required'), 401);
+        throw new ServiceError('Authentication required', 401);
     }
     if (!tryServiceAuth(c, token)) {
         setAnonymous(c);
-        return c.json(errorEnvelope(c, 'Invalid service token'), 401);
+        throw new ServiceError('Invalid service token', 401);
     }
-    return null;
 }
 
 /**
@@ -135,8 +150,7 @@ function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): Response | null 
  */
 export const requireServiceToken = (): MiddlewareHandler => {
     return async (c, next) => {
-        const rejection = serviceTokenGate(c);
-        if (rejection) return rejection;
+        serviceTokenGate(c);
         return next();
     };
 };
@@ -149,14 +163,13 @@ export const requireServiceToken = (): MiddlewareHandler => {
  */
 export const requireAuth = (): MiddlewareHandler => {
     return async (c, next) => {
-        const rejection = serviceTokenGate(c);
-        if (rejection) return rejection;
+        serviceTokenGate(c);
 
         // requireAuth semantics need an acting user: an app calling a
         // viewer-required endpoint must say WHO is acting.
         if (!c.get('viewerUid')) {
-            return c.json(
-                errorEnvelope(c, 'X-Antiphony-Acting-Actor header required for this endpoint'),
+            throw new ServiceError(
+                'X-Antiphony-Acting-Actor header required for this endpoint',
                 401,
             );
         }

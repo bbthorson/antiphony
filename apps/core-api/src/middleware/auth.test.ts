@@ -19,6 +19,12 @@ process.env.LOG_LEVEL = 'silent';
 const { requireServiceToken, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
     await import('./auth.js');
 const { requestId } = await import('./request-id.js');
+// The auth middleware raises a typed `ServiceError` rather than building a
+// response, so that each inbound adapter can render it in its own dialect (REST
+// envelope vs XRPC `{ error, message }`) — see middleware/auth.ts. Serializing
+// therefore belongs to the error handler, and a harness without one would see a
+// bare Hono 500 instead of the 401 under test.
+const { errorHandler } = await import('./error-handler.js');
 
 /**
  * Build a fresh app wiring request-id + the middleware under test + a
@@ -27,6 +33,7 @@ const { requestId } = await import('./request-id.js');
  */
 function makeApp(middleware: 'service' | 'required') {
     const app = new Hono();
+    app.onError(errorHandler);
     app.use('*', requestId());
     app.get('/probe', middleware === 'service' ? requireServiceToken() : requireAuth(), (c) => {
         return c.json({

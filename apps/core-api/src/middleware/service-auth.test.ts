@@ -15,11 +15,15 @@ const { parseAppTokens } = await import('./service-auth.js');
 const { requireServiceToken, requireAuth } = await import('./auth.js');
 const { requestId } = await import('./request-id.js');
 const { getOriginAppId } = await import('../lib/origin-app.js');
+// Needed because the auth middleware now throws its 401 for the error handler
+// to serialize, rather than building the response itself (middleware/auth.ts).
+const { errorHandler } = await import('./error-handler.js');
 
 const TOKEN = 'a'.repeat(32) + '-vox-pop-service-token';
 
 function makeApp(middleware: 'service' | 'required') {
     const app = new Hono();
+    app.onError(errorHandler);
     app.use('*', requestId());
     app.get('/probe', middleware === 'service' ? requireServiceToken() : requireAuth(), (c) => {
         return c.json({
