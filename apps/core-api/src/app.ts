@@ -8,6 +8,7 @@ import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { originLock } from './middleware/origin-lock.js';
+import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
 
 /**
  * ## No CORS middleware — deliberately
@@ -104,6 +105,11 @@ export function app(): OpenAPIHono {
     //    No-op while ANTIPHONY_ORIGIN_SECRET is unset — see middleware/origin-lock.ts
     //    for why this one fails OPEN when the rest of this codebase fails closed.
     a.use('/api/v1/*', originLock());
+    // `/xrpc/*` is origin-locked too — see adapters/inbound/xrpc/index.ts, which
+    // installs the same middleware inside the sub-app. It has to be registered
+    // there rather than here: Hono routes a throw to the error handler of the
+    // app the middleware was registered on, so an origin-lock refusal declared
+    // at this level would answer an XRPC caller in the REST envelope.
 
     // 5. API routes.
     // Antiphony canonical audio-post surface (`dev.antiphony.audio.post`).
@@ -121,6 +127,13 @@ export function app(): OpenAPIHono {
     // (Stream 4 F7 A1/A2/G1/G2) and had no caller left. See
     // specs/core-bff-boundary.md § Surface disposition.
     a.route('/api/v1/system/process-audio', systemProcessAudioRoute);
+
+    // The XRPC inbound adapter — the same domain services as `/api/v1/*`,
+    // addressed by method NSID and answering in the AT Protocol error dialect.
+    // It carries its own `onError` (see adapters/inbound/xrpc/errors.ts); Hono
+    // dispatches throws from these routes there rather than to the REST handler
+    // installed below, which is what keeps the two envelopes apart.
+    a.route('/xrpc', xrpcRoute());
 
     // 6. OpenAPI document — served at `/openapi.json`. Only routes
     //    registered via `app.openapi(createRoute(...), handler)` appear

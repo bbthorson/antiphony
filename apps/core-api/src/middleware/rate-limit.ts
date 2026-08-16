@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { extractClientIp } from '../lib/client-ip.js';
+import { ServiceError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
-import { errorEnvelope } from '../lib/error-envelope.js';
 import { firebaseRateLimitStore } from '../adapters/outbound/firebase/rate-limit-store.js';
 import type { RateLimitStore } from '../ports/rate-limit-store.js';
 
@@ -184,9 +184,19 @@ export const rateLimit = (options: RateLimitOptions, customKey?: string): Middle
         const key = `ratelimit_${customKey || ip}`;
         const result = await checkRateLimit(key, options, c.get('requestId'));
         if (!result.allowed) {
-            return c.json(
-                errorEnvelope(c, options.message || 'Too many requests', { code: 'RATE_LIMITED' }),
+            // Thrown, not returned, so each inbound adapter serializes it in its
+            // own dialect (REST envelope vs XRPC `{ error, message }`) — see the
+            // note in middleware/auth.ts.
+            //
+            // `ServiceError` with an explicit code rather than `RateLimitError`:
+            // that subclass carries `code: 'RATE_LIMIT'`, and this response has
+            // always sent `'RATE_LIMITED'`. Swapping the string would silently
+            // break any client branching on it.
+            throw new ServiceError(
+                options.message || 'Too many requests',
                 429,
+                undefined,
+                'RATE_LIMITED',
             );
         }
         return next();

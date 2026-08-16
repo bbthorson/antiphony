@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { originLock, ORIGIN_LOCK_HEADER, __resetOriginLockWarning } from './origin-lock.js';
+import { errorHandler } from './error-handler.js';
 
 /**
  * The lock's whole job is to distinguish "arrived through Cloudflare" from
@@ -16,6 +17,10 @@ const SECRET = 'a'.repeat(48);
 
 function appWithLock() {
     const a = new Hono();
+    // The lock raises a typed `ServiceError` so each inbound adapter renders it
+    // in its own dialect (see middleware/origin-lock.ts); the error handler is
+    // what turns that into the 403 body asserted below.
+    a.onError(errorHandler);
     a.get('/health', (c) => c.json({ ok: true }));
     a.use('/api/v1/*', originLock());
     a.get('/api/v1/thing', (c) => c.json({ reached: true }));
