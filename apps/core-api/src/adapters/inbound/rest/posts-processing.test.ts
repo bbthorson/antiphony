@@ -176,9 +176,8 @@ process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test';
 const proxyUrl = (cid: string) =>
     `https://api.test/api/v1/audio?url=${encodeURIComponent(`blobs/test-app/${cid}`)}`;
 
-// First, like index.ts: installs the Firebase fallback and the ffmpeg stage
-// adapters. This suite asserts on `trim`/`waveform` capability and on posts
-// composed against the Firestore bindings, neither of which exists on a Worker.
+// Installs the Firebase fallback. This suite asserts on posts composed against
+// the Firestore bindings, which is a Node-runtime concern.
 await import('../../../native.js');
 const { app } = await import('../../../app.js');
 const { cidForBytes } = await import('../../../lib/cid.js');

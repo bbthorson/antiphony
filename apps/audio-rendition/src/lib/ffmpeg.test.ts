@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { runFfmpeg, ffmpegAvailable } from './run.js';
+import { runFfmpeg } from './ffmpeg.js';
 
 /**
  * Tests for the shared ffmpeg plumbing. These spawn a real process, but never
@@ -50,24 +50,5 @@ describe('runFfmpeg', () => {
         const big = new Uint8Array(1024 * 1024);
         const { stdout } = await runFfmpeg(['-c', 'exit 0'], big);
         expect(stdout.length).toBe(0);
-    });
-});
-
-describe('ffmpegAvailable', () => {
-    it('is false for a path that does not exist', () => {
-        process.env.ANTIPHONY_FFMPEG_PATH = '/nonexistent/ffmpeg';
-        expect(ffmpegAvailable()).toBe(false);
-    });
-
-    it('is false for a path that exists but is not executable', () => {
-        // The case a bare existence check would wrongly report as available,
-        // advertising the stage and then failing every post.
-        process.env.ANTIPHONY_FFMPEG_PATH = '/etc/hosts';
-        expect(ffmpegAvailable()).toBe(false);
-    });
-
-    it('is true for an executable path', () => {
-        process.env.ANTIPHONY_FFMPEG_PATH = '/bin/sh';
-        expect(ffmpegAvailable()).toBe(true);
     });
 });

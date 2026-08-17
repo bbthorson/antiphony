@@ -44,8 +44,8 @@ export { RateLimiter } from './adapters/outbound/durable-objects/rate-limiter.js
  * are shared verbatim; this file is only the runtime seam.
  *
  * Note what it deliberately does NOT import: `./native.js`. That module carries
- * `firebase-admin`, `ffmpeg-static`, and `google-auth-library`, none of which
- * can run here. See `native.ts` for the whole argument, and `composition.ts`
+ * `firebase-admin` and `google-auth-library`, neither of which can run here. See
+ * `native.ts` for the whole argument, and `composition.ts`
  * for what a Worker gets instead — bindings that are mandatory rather than
  * optional, so a misconfigured deployment fails loudly at its first request
  * instead of quietly talking to the wrong store.

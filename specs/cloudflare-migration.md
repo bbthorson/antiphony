@@ -76,8 +76,8 @@ recorded in the commits:
   | 4a | `?format=` on the audio proxy, over `renditions/{app}/{cid}.{format}` | ✅ done (contract `0.5.1`) |
   | 4b | `apps/audio-rendition` adopted into Antiphony, taking `{originAppId, cid, format}` | ✅ done |
   | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | ✅ done |
-  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | next |
-  | 4e | Vox Pop repoints telephony + creator-download at `?format=mp3` | **cross-repo, live Twilio path** |
+  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | ✅ done |
+  | 4e | Vox Pop repoints telephony + creator-download at `?format=mp3` | **cross-repo, live Twilio path** — next |
   | 4f | Retire Vox Pop's copy of the service | after 4e soaks |
 
   **Its pace is still not entirely ours from 4e on** — the service sits on a live
@@ -95,10 +95,12 @@ recorded in the commits:
   what [`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Open questions (4)
   guessed. It is still a change nobody has written down as Vox Pop's to make.
 
-  Until it lands, `trim` and `waveform` resolve **unavailable** on Workers and
-  settle `skipped`. That is the truthful state, not a regression to fix in a
-  hurry — but it is a capability the Cloud Run deployment had and this one does
-  not, so it should not be discovered after the cutover.
+  ✅ **The `trim` / `waveform` gap is closed.** Both resolved unavailable on
+  Workers between 3b and 4d — the truthful state, but a capability the Cloud Run
+  deployment had and its replacement did not. They now go over HTTP to the
+  service, so their availability is "is a transcode backend configured" rather
+  than "is a binary present", which is the only answerable form of the question
+  on a runtime that cannot hold the binary.
 
   ✅ **The sequencing caution below is satisfied.** § The ffmpeg problem says to
   let Vox Pop's extraction soak and land its step 5 first, citing `aa6759e5` as
@@ -698,6 +700,14 @@ Throughout, `TrimmerPort` and `WaveformPort` are unchanged — the adapters beco
 `fetch` at the rendition service instead of an `execFile`. `capabilitiesOf(providers)`
 and the stage-settling machinery never learn about any of this. It is a
 deployment-topology decision, not an architecture one.
+
+✅ **Landed in 4d, and the prediction held exactly.** Both ports are untouched;
+`adapters/outbound/rendition/stages.ts` is the `fetch`. One thing the prediction
+did not cover: it also removed an install seam. While those adapters reached
+`node:child_process` they had to be injected by the Node entry point to keep
+`ffmpeg-static` out of the Worker bundle — a `fetch` is portable, so the provider
+registry declares them like every other entry, and `ffmpeg-static` left core-api's
+dependencies entirely.
 
 **Memory, separately.** `readBlobBytes` materializes the whole blob, and the port doc
 flags this as portability hazard #1 against a 100 MB lexicon cap. In practice the

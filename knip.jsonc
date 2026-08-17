@@ -33,11 +33,20 @@
             // itself from `main` in apps/core-api/wrangler.jsonc — listing it
             // here would be redundant and knip says so. `src/native.ts` is
             // named because nothing in the Worker graph imports it: it installs
-            // the Firebase and ffmpeg bindings that only the Node runtime could
-            // use, and it survives the Cloud Run removal solely to keep those
-            // adapters exercised until the Firestore data is migrated off.
+            // the Firebase bindings that only the Node runtime could use, and it
+            // survives the Cloud Run removal solely to keep those adapters
+            // exercised until the Firestore data is migrated off. (It used to
+            // install the ffmpeg stage adapters too; those became a `fetch` at
+            // apps/audio-rendition and need no seam.)
             "entry": ["scripts/*.ts", "src/native.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
+        },
+        "apps/audio-rendition": {
+            // `esbuild.config.mjs` is the build, run from this workspace's own
+            // `build` script rather than imported by anything — the same shape
+            // as the root `scripts/*.mjs` entry above.
+            "entry": ["src/index.ts", "esbuild.config.mjs"],
+            "project": ["src/**/*.ts"]
         },
         "apps/reference": {
             "project": ["src/**/*.{ts,tsx}"]

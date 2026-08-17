@@ -4,8 +4,20 @@ Derives renditions of Antiphony audio blobs — today `mp3`, for callers that
 cannot decode webm/opus — and writes them to R2 where the audio proxy serves
 them from.
 
-`POST /render` with `{ originAppId, cid, format }` → the rendition exists at
-`renditions/{originAppId}/{cid}.{format}`.
+Three routes, two jobs:
+
+| Route | Job | Shape |
+| :--- | :--- | :--- |
+| `POST /render` | **Delivery** — derive an `mp3` for a caller that cannot decode webm/opus | `{originAppId, cid, format}` in, object path out; both ends talk to R2 |
+| `POST /trim` | **Ingest** — trim leading/trailing silence and re-encode | audio in, audio out |
+| `POST /waveform` | **Ingest** — render-ready peaks | audio in, numbers out |
+
+All three are system-authed with the same `SYSTEM_AUTH_TOKEN` core-api holds.
+
+The shapes differ deliberately, and the reason is in `app.ts` § Why `/trim` and
+`/waveform` take bytes: the ingest ports in `@antiphony/core` are `bytes in,
+result out`, and `AudioProcessingService` owns the storage either side because
+the derived CID goes into a record and is therefore Antiphony's to compute.
 
 ## Why a separate service at all
 
@@ -16,10 +28,11 @@ problem chose "one small container" over Cloudflare Containers (a new runtime
 and deploy system) and over `ffmpeg.wasm` (well past the Worker bundle limit
 before you reach its thread requirements).
 
-So core-api's `trim` and `waveform` stages, which used to `execFile` ffmpeg
-in-process on Cloud Run, resolve **unavailable** on Workers and settle
-`skipped`. Moving them onto this service is the next increment; this one lands
-the service and the `mp3` rendition it exists for.
+That applies to core-api's `trim` and `waveform` stages too — they used to
+`execFile` ffmpeg in-process on Cloud Run, and briefly resolved **unavailable**
+on Workers. They live here now, so both work again. Their availability in
+core-api is `is a transcode backend configured` rather than `is a binary
+present`, which is the honest question on a runtime that cannot have the binary.
 
 ## Adopted from Vox Pop, and mostly by deletion
 
@@ -55,16 +68,20 @@ It also removes the coupling that version's README flags as a known landmine:
 `ALLOWED_SOURCE_HOSTS` hardcoded to `storage.googleapis.com` while Antiphony's
 blobs move to R2. That would have been a code change on a live telephony path.
 
-## What it does NOT return
+## `/render` returns a path, not bytes
 
-Bytes. It reads the source from R2, transcodes, writes the rendition to R2, and
-answers with the object path.
+It reads the source from R2, transcodes, writes the rendition to R2, and answers
+with the object path.
 
 That is deliberate: the alternative is passing the audio through the Worker in
 both directions, and a Worker isolate has 128MB while `readBlobBytes`
 materialises a whole blob. Having both ends talk to R2 directly keeps the
 transcoded bytes out of the Worker entirely — the Worker's job on a miss is to
 ask, then stream from R2 exactly as it would on a hit.
+
+The ingest routes cannot do that, and the constraint is the ports rather than a
+preference — see the table above and `app.ts` for the argument. `/waveform` is
+the cheap half either way: only the request carries audio.
 
 ## Configuration
 

@@ -1,9 +1,4 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-// The ffmpeg stage adapters are installed by the Node runtime, not imported by
-// the registry — see native.ts. Without this the `trim`/`waveform`
-// expectations below describe a Worker, where both stages are correctly
-// unavailable.
-import '../native.js';
 import { resolveInitialProcessing, hasPendingStage, processingCapabilities } from './audio-processing.js';
 
 /**
@@ -23,6 +18,12 @@ const TENANT = 'vox-pop';
 const PROVIDER_ENV = [
     'ANTIPHONY_PROCESSING_STUB',
     'ELEVENLABS_API_KEY',
+    // `trim` and `waveform` are available when a TRANSCODE BACKEND is
+    // configured, not when a local binary happens to exist. Both stages now go
+    // over HTTP to apps/audio-rendition — a Worker cannot spawn ffmpeg — so
+    // these two vars are what governs their capability.
+    'ANTIPHONY_RENDITION_SERVICE_URL',
+    'SYSTEM_AUTH_TOKEN',
     'ANTIPHONY_TRANSCRIBER',
     'ANTIPHONY_DENOISER',
     'ANTIPHONY_TRIMMER',
@@ -50,17 +51,40 @@ afterEach(() => {
 });
 
 describe('processingCapabilities', () => {
-    it('reports both local stages with no API key configured', () => {
-        // Trim and waveform are local compute, so they need no key — they are
-        // available on their binary alone. Trim is what makes a variant change
-        // possible with no transcriber present, the condition the recompute
-        // filter handles; waveform is what it recomputes.
+    it('reports both ffmpeg stages with a transcode backend and no API key', () => {
+        // Trim and waveform need no PROVIDER key — they need a transcode
+        // backend. Trim is what makes a variant change possible with no
+        // transcriber present, the condition the recompute filter handles;
+        // waveform is what it recomputes.
+        process.env.ANTIPHONY_RENDITION_SERVICE_URL = 'https://rendition.test';
+        process.env.SYSTEM_AUTH_TOKEN = 'sys-tok-abc';
+
         expect(processingCapabilities()).toEqual({
             transcribe: false,
             denoise: false,
             trim: true,
             waveform: true,
         });
+    });
+
+    it('reports both ffmpeg stages UNAVAILABLE with no transcode backend', () => {
+        // The honest state, and the one a Worker with no backend configured is
+        // in: `resolveInitialProcessing` settles both `skipped` rather than
+        // leaving them `pending` for work nothing will perform.
+        expect(processingCapabilities()).toEqual({
+            transcribe: false,
+            denoise: false,
+            trim: false,
+            waveform: false,
+        });
+    });
+
+    it('reports them unavailable on a PARTIAL backend config', () => {
+        // A URL with no token is a stage that would 401 on every post. Half a
+        // config must not advertise a capability.
+        process.env.ANTIPHONY_RENDITION_SERVICE_URL = 'https://rendition.test';
+
+        expect(processingCapabilities()).toMatchObject({ trim: false, waveform: false });
     });
 
     it('reports every stage available when the stubs are wired', () => {
@@ -78,6 +102,8 @@ describe('processingCapabilities', () => {
         // new vars, so all of them must resolve exactly as the old single
         // `if (elevenLabsApiKey())` branch did.
         process.env.ELEVENLABS_API_KEY = 'test-key';
+        process.env.ANTIPHONY_RENDITION_SERVICE_URL = 'https://rendition.test';
+        process.env.SYSTEM_AUTH_TOKEN = 'sys-tok-abc';
         expect(processingCapabilities()).toEqual({
             transcribe: true,
             denoise: true,
