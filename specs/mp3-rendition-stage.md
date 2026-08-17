@@ -233,8 +233,22 @@ Actions "never reaches zero" *because* of this service. After this, it can.
    22.05 kHz, which is generous for a phone line (µ-law is 64 kbps at 8 kHz) and
    fine for a browser download. Keep it adapter policy, not contract — the same
    reasoning that keeps the trimmer's threshold out of `TrimmerPort`.
-4. **Does the creator-download path want this too?** Vox Pop's
-   `GET /replies/{id}/download` currently uses the same transcoder to serve a
-   named mp3. If it reads `mp3BlobCid` instead, the `filename` handling stays in
-   Vox Pop and Antiphony only supplies bytes — which seems right, but it means
-   the rendition serves two consumers with different needs.
+4. ~~**Does the creator-download path want this too?**~~ **Answered
+   2026-08-17, and the guess here was right.** The `filename` handling stays in
+   Vox Pop and Antiphony only supplies bytes.
+
+   What the question did not anticipate is *why* it would be forced. Antiphony's
+   adopted transcode service dropped `buildContentDisposition` — correctly, since
+   it writes to R2 and serves no browser — and `apps/web` was relying on that
+   header, because `download` on an anchor is ignored cross-origin. So the choice
+   was not "which is tidier" but "the header has no other home".
+
+   Vox Pop's BFF therefore streams the bytes and sets the header itself, which
+   changes `GET /replies/{id}/download` from returning a URL to returning bytes.
+   Recorded with its costs in
+   [`cloudflare-migration.md`](./cloudflare-migration.md) § Download filenames.
+
+   Note the addressing half of this spec did NOT survive: renditions resolve at
+   `renditions/{app}/{cid}.{format}` via `?format=`, not as a content-addressed
+   `mp3BlobCid` on the post view. See that spec's § Recommended reconciliation
+   and the 4a commit.
