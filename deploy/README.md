@@ -24,12 +24,22 @@ Four, and `wrangler deploy` fails on a config naming any that does not exist —
 which is the point: a missing binding is caught before a deploy rather than at
 the first request that needs it.
 
-```bash
-# The database. Hyperdrive holds the Neon credential; the Worker only ever sees
-# a LOCAL pooled connection string, which is why the database is not a secret.
-npx wrangler hyperdrive create antiphony-neon \
-  --connection-string "postgres://…@…us-east-1.aws.neon.tech/antiphony?sslmode=require"
+> ⛔ **Do not create the Hyperdrive config yet.** `core-api`'s SQL client is
+> `@neondatabase/serverless` in HTTP mode, which derives an HTTPS endpoint from
+> the connection string's hostname — and a Hyperdrive string points into
+> Cloudflare's network, not at Neon. Since `readRuntimeEnv` PREFERS Hyperdrive
+> when bound, binding it with the current driver breaks the database entirely.
+> See § Verified deploy blockers in
+> [`specs/cloudflare-migration.md`](../specs/cloudflare-migration.md) for the two
+> ways out. Until one is chosen, set the database as a Worker secret instead:
+>
+>     npx wrangler secret put DATABASE_URL -c apps/core-api/wrangler.jsonc
+>
+> and remove the `hyperdrive` block from `apps/core-api/wrangler.jsonc`. Neon's
+> pooled (`-pooler`) host is correct for that; the direct host is what Hyperdrive
+> would want, if and when it is used.
 
+```bash
 # The shared layer of the app-DID custody cache.
 npx wrangler kv namespace create PIN_CACHE
 
@@ -42,6 +52,18 @@ npx wrangler queues create antiphony-processing-dlq
 Each prints an id. Put them in `apps/core-api/wrangler.jsonc` in place of the
 `REPLACE_ME_…` placeholders and commit that — ids are per-account identifiers,
 not credentials.
+
+The GCP side of `apps/audio-rendition` needs one more grant that the workflow's
+header does not mention, found by running it: `github-deploy@` must be able to
+act as the Cloud Run runtime service account, or `gcloud run deploy` fails with
+`Permission 'iam.serviceaccounts.actAs' denied`.
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding \
+  636106936349-compute@developer.gserviceaccount.com \
+  --member "serviceAccount:github-deploy@antiphony-core.iam.gserviceaccount.com" \
+  --role roles/iam.serviceAccountUser --project antiphony-core
+```
 
 The R2 bucket (`antiphony-r2-bucket`) is created in the dashboard, or with
 `npx wrangler r2 bucket create antiphony-r2-bucket`.
@@ -71,6 +93,12 @@ what lets the deploy gate prove the pins without access to anything secret.
 | :--- | :--- | :--- |
 | Secret | `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts:Edit** |
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Account id — an identifier, not a credential |
+| Variable | `R2_ACCOUNT_ID` | Same account id, read by the audio-rendition deploy |
+
+**None of these existed as of 2026-08-17**, which is why both deploy workflows
+are red on master and why `api.antiphony.dev` still answers from a pre-cutover
+revision. `wrangler` fails before it validates any binding, so a missing token
+looks nothing like a missing Hyperdrive id in the logs — check the token first.
 
 ## 4. Apply the database schema
 
