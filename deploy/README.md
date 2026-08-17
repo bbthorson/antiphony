@@ -218,14 +218,17 @@ rather than a Worker because it spawns ffmpeg.
 already exist and 404s the rest. That is the right state for a deployment that
 pre-warms everything it needs, or that never phones anything.
 
-> ⚠️ **Skipping it is not the same as leaving the placeholder in.** As shipped,
-> `ANTIPHONY_RENDITION_SERVICE_URL` still reads
+> ⚠️ **Skipping it is not the same as leaving the placeholder in.** Until
+> 2026-08-17 `ANTIPHONY_RENDITION_SERVICE_URL` shipped as
 > `https://antiphony-audio-rendition-REPLACE_ME.us-east4.run.app`, and
-> `renditionServiceConfig()` only checks that the var is NON-EMPTY. A placeholder
-> therefore counts as configured — which is precisely the state that function's
-> own comment exists to prevent. Every mp3 miss then fetches a host that does not
-> resolve, waits, logs `[rendition] service unreachable`, and 404s anyway. To
-> genuinely skip the service, DELETE the var; to use it, set the real URL below.
+> `renditionServiceConfig()` only checks that the var is NON-EMPTY — so a
+> placeholder counted as configured, which is precisely the state that function's
+> own comment exists to prevent. Every mp3 miss fetched a host that does not
+> resolve, logged `[rendition] service unreachable`, and 404ed anyway.
+>
+> **The var is now deleted**, which is the honest form of "the service is
+> skipped". Restore it with the real Cloud Run URL when the service deploys —
+> never with a placeholder.
 
 `.github/workflows/deploy-audio-rendition.yml` ships it, and needs three
 Secret Manager secrets granted to the runtime service account

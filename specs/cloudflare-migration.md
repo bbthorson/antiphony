@@ -346,12 +346,13 @@ is one method, and every binding behind it is untouched either way.
    `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.
 7. ~~**Point `api.antiphony.dev` at the Worker.**~~ **Done 22:05Z** —
    `backend: postgres` on the live domain.
-8. **Deploy `audio-rendition`, or delete the placeholder URL.** Currently
-   neither: `ANTIPHONY_RENDITION_SERVICE_URL` still points at
+8. **Deploy `audio-rendition`.** The placeholder URL is deleted as of
+   2026-08-17, so the service is now genuinely skipped rather than apparently
+   configured: `GET /api/v1/audio?format=mp3` serves renditions that already
+   exist and 404s the rest, with no failed fetch per miss. (It had pointed at
    `…-REPLACE_ME.us-east4.run.app`, and `renditionServiceConfig()` treats any
-   non-empty value as configured — so every mp3 miss fetches a host that does not
-   resolve and logs `[rendition] service unreachable` before 404ing. **This is
-   what vox-pop's step 4f is waiting on**, and it needs an R2 S3 key first:
+   non-empty value as configured.) Deploying the service is still
+   **what vox-pop's step 4f is waiting on**, and it needs an R2 S3 key first:
    `r2-access-key-id` and `r2-secret-access-key` do not exist in Secret Manager
    (only `system-auth-token`, `antiphony-app-tokens`, `antiphony-origin-secret`,
    `elevenlabs-api-key` do).
