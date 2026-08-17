@@ -377,9 +377,15 @@ is one method, and every binding behind it is untouched either way.
    `r2-access-key-id` and `r2-secret-access-key` do not exist in Secret Manager
    (only `system-auth-token`, `antiphony-app-tokens`, `antiphony-origin-secret`,
    `elevenlabs-api-key` do).
-9. **The IP-keyed rate limit on `GET /api/v1/audio`** still needs a non-IP key or
-   an exemption before Twilio traffic arrives — see § Rate limiting. Unchanged by
-   the cutover, but now live rather than pending.
+9. **The IP-keyed rate limit on `GET /api/v1/audio` is half-fixed.**
+   Authenticated sibling services are exempt as of 2026-08-17
+   (`exemptServiceCallers`), which covers Vox Pop's BFF now that the
+   download-seam decision has it streaming these bytes — its whole traffic
+   shared one IP bucket, so the limit throttled a peer rather than an abuser.
+   **Twilio is not covered and cannot be**: it fetches `<Play>` as a bare `GET`
+   with no headers under our control, so it can never present a token. Concurrent
+   calls still share a handful of Twilio addresses. **A non-IP key is still
+   required before the telephony flag flips** — see § Rate limiting.
 
 ### What rollback actually looks like now
 
@@ -869,8 +875,27 @@ pool of Twilio IPs, so every concurrent call in the system shares a handful of
 buckets and a busy period throttles live calls. This is the same failure mode
 `system-auth-mint.ts` documents for IP-keyed limits on a system-to-system path
 ("every caller shares that server's IP, so an IP-keyed limit would collapse ALL
-logins into one bucket"). The rendition path needs either an exemption or a
-non-IP key before it carries telephony traffic.
+logins into one bucket").
+
+**The exemption half is done; the Twilio half is not, and the two are not
+substitutes.** `rateLimit(..., { exemptServiceCallers: true })` now skips the
+limit for a caller presenting a valid `ANTIPHONY_APP_TOKENS` bearer, and the
+audio route opts in. That fixes the *sibling-service* instance of this failure —
+Vox Pop's BFF streams these bytes rather than redirecting to them (§ Download
+filenames), so all of its traffic arrived from one address and collapsed into a
+single bucket.
+
+It does nothing for Twilio, which is the case that blocks the telephony cutover.
+Twilio fetches `<Play>` URLs as a bare `GET` and sets no headers under our
+control ([`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Why not content
+negotiation), so it cannot present a token and cannot be exempted by any
+credential-based rule. **That still needs a non-IP key.** The requested object
+path is the obvious candidate: it bounds abuse of one object without collapsing
+unrelated concurrent calls into a shared bucket, and it is available on the
+request without authenticating anyone. The exemption deliberately does not
+pretend to cover this — an exemption that looks like it solved the problem is
+worse than an open question, because the next person reads the code and stops
+looking.
 
 ### Requester-chosen output format
 
