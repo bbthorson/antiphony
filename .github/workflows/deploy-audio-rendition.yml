@@ -1,0 +1,146 @@
+name: Deploy audio-rendition
+
+# Ships apps/audio-rendition to Cloud Run.
+#
+# ── Why this one is a container and core-api is not ───────────────────────────
+# It spawns `ffmpeg`, and no Workers runtime can spawn a subprocess. See
+# specs/cloudflare-migration.md § The ffmpeg problem for why one small container
+# beat both Cloudflare Containers and ffmpeg.wasm.
+#
+# ── The flag that is a security control ───────────────────────────────────────
+# `--max-instances` is what caps what a runaway or hostile caller can spend on
+# ffmpeg. In the service this was adopted from it was load-bearing precisely
+# because that service was PUBLIC. Here `/render` is system-authed, so the cap is
+# a cost control rather than the primary defence — but it is still the only thing
+# bounding a bug in core-api that dispatched in a loop, so do not drop it.
+#
+# ── One-time setup ────────────────────────────────────────────────────────────
+# Reuses the Workload Identity Federation and Artifact Registry setup the
+# core-api Cloud Run deploy used before it moved to Workers; see this file's
+# git history if that has to be recreated.
+#
+# Secrets in Secret Manager, granted to the runtime service account:
+#   system-auth-token         — the same shared secret core-api holds
+#   r2-access-key-id          — R2 S3 API key
+#   r2-secret-access-key      — R2 S3 API secret
+#
+# `R2_ACCOUNT_ID` is a repo variable: an account identifier, not a credential.
+
+on:
+    push:
+        branches: [master]
+        paths:
+            - 'apps/audio-rendition/**'
+            - 'package.json'
+            - 'package-lock.json'
+            - '.github/workflows/deploy-audio-rendition.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    id-token: write
+
+concurrency:
+    group: deploy-audio-rendition
+    cancel-in-progress: false
+
+env:
+    PROJECT_ID: antiphony-core
+    REGION: us-east4
+    REPOSITORY: antiphony
+    SERVICE: antiphony-audio-rendition
+
+jobs:
+    deploy:
+        name: build · deploy · smoke
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - id: auth
+              uses: google-github-actions/auth@v2
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+                  service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+            - uses: google-github-actions/setup-gcloud@v2
+
+            - name: Configure Docker for Artifact Registry
+              run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+            # Tagged by commit sha, not `latest`. The sha tag is what makes a
+            # rollback a one-liner against a known image, and what the smoke test
+            # asserts the running revision reports.
+            #
+            # The Dockerfile asserts ffmpeg landed in the image (`ffmpeg
+            # -version` during build), so a broken base image fails here rather
+            # than 502-ing on some cache miss weeks later.
+            - name: Build and push
+              id: build
+              run: |
+                  IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/audio-rendition"
+                  docker build \
+                    -f apps/audio-rendition/Dockerfile \
+                    --tag "${IMAGE}:${GITHUB_SHA}" \
+                    .
+                  docker push "${IMAGE}:${GITHUB_SHA}"
+                  echo "image=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+            # Sizing notes, all deliberate:
+            #   --memory 1Gi        one blob in, one mp3 out, both in memory, and
+            #                       the upload route caps a blob at 25MB. 512Mi
+            #                       would probably do; 1Gi costs nothing at this
+            #                       volume and an OOM here is a caller hearing
+            #                       silence.
+            #   --timeout 120       a transcode of a voicemail-length clip is
+            #                       seconds. The caller's own budget is shorter
+            #                       than this, so a longer timeout would only
+            #                       hold a connection nobody is waiting on.
+            #   --max-instances 4   the abuse/runaway cap. See the note above.
+            #   --no-allow-unauthenticated is NOT set: core-api reaches this over
+            #                       the public URL with a bearer, the same shape
+            #                       every other /system/* caller uses. Moving to
+            #                       IAM invoker identity is the better mechanism
+            #                       and is the same coordinated change
+            #                       core-api's system-auth middleware names as
+            #                       its own swap point.
+            - name: Deploy
+              id: deploy
+              run: |
+                  gcloud run deploy "${SERVICE}" \
+                    --project "${PROJECT_ID}" \
+                    --region "${REGION}" \
+                    --image "${{ steps.build.outputs.image }}" \
+                    --platform managed \
+                    --allow-unauthenticated \
+                    --memory 1Gi \
+                    --timeout 120 \
+                    --max-instances 4 \
+                    --set-env-vars "NODE_ENV=production,LOG_LEVEL=info,ANTIPHONY_R2_BUCKET=antiphony-r2-bucket,R2_ACCOUNT_ID=${{ vars.R2_ACCOUNT_ID }},COMMIT_SHA=${GITHUB_SHA},BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                    --set-secrets "SYSTEM_AUTH_TOKEN=system-auth-token:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest" \
+                    --quiet
+                  URL="$(gcloud run services describe "${SERVICE}" \
+                    --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
+                  echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+            - name: Smoke test
+              run: |
+                  # /health only. A real transcode needs a source blob in R2 and
+                  # a bearer, neither of which belongs in CI — and the thing most
+                  # likely to be broken (a missing ffmpeg) is already asserted at
+                  # image build time.
+                  #
+                  # What this catches is a revision that will not start, and it
+                  # asserts the running sha so "is what I merged what is running"
+                  # is answered rather than assumed.
+                  for attempt in 1 2 3 4 5; do
+                    if BODY="$(curl -fsS --max-time 10 "${{ steps.deploy.outputs.url }}/health")"; then
+                      echo "$BODY"
+                      echo "$BODY" | grep -q "${GITHUB_SHA}" && exit 0
+                      echo "::warning::/health answered but reported a different sha"
+                    fi
+                    echo "attempt ${attempt} failed; retrying"
+                    sleep 5
+                  done
+                  echo "::error::/health did not report ${GITHUB_SHA}"
+                  exit 1

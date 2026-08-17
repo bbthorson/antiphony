@@ -67,13 +67,33 @@ recorded in the commits:
 
 ### Remaining engineering
 
-- **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
-  Antiphony, add `format`, move `trim`/`waveform` onto it. See § The ffmpeg
-  problem and [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+- **Step 4 — ffmpeg consolidation.** In progress on
+  `claude/step4-rendition-format`. See § The ffmpeg problem and
+  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
 
-  **Its pace is still not entirely ours** — the service sits on a live Twilio
-  path, so a change to it is a change to real calls. But the specific blocker
-  this section used to name has cleared; see below.
+  | | What | State |
+  | :--- | :--- | :--- |
+  | 4a | `?format=` on the audio proxy, over `renditions/{app}/{cid}.{format}` | ✅ done (contract `0.5.1`) |
+  | 4b | `apps/audio-rendition` adopted into Antiphony, taking `{originAppId, cid, format}` | ✅ done |
+  | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | next |
+  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | pending |
+  | 4e | Vox Pop repoints telephony + creator-download at `?format=mp3` | **cross-repo, live Twilio path** |
+  | 4f | Retire Vox Pop's copy of the service | after 4e soaks |
+
+  **Its pace is still not entirely ours from 4e on** — the service sits on a live
+  Twilio path, so a change to it is a change to real calls. But the specific
+  blocker this section used to name has cleared; see below. 4a–4d are Antiphony's
+  alone and touch no live caller.
+
+  ⚠️ **4e has a consequence worth deciding before it starts.** The adopted
+  service does not carry `buildContentDisposition` across: it writes to R2 and
+  returns a path, so it serves no browser and has no header to set. Vox Pop's
+  creator-download route currently gets `Content-Disposition: attachment;
+  filename=…` from the old service, so when it repoints it has to set that
+  header itself. That is the right side of the seam — the filename is composed
+  from a prompt title and a replier handle, both Vox Pop's data — and it matches
+  what [`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Open questions (4)
+  guessed. It is still a change nobody has written down as Vox Pop's to make.
 
   Until it lands, `trim` and `waveform` resolve **unavailable** on Workers and
   settle `skipped`. That is the truthful state, not a regression to fix in a
