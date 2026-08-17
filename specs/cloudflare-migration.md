@@ -191,6 +191,66 @@ is done**.
 Note also that `users` / `handles` / `atproto_oauth_states` still hold rows but
 have had no reader since #83 deleted the identity layer. They are legacy too.
 
+### ⛔ Verified deploy blockers — 2026-08-17
+
+Step 4 is merged (#94, `f03936f`). **Nothing is deployed**, and the reasons are
+now known from logs rather than guessed. `api.antiphony.dev` answers from
+`4f07b24` with `backend: firebase` — ten commits behind master, i.e. the last
+revision before the Workers cutover.
+
+| # | Blocker | Evidence |
+| :--- | :--- | :--- |
+| 1 | `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` do not exist | `Deploy core-api` fails at `wrangler deploy`: *"In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN"*. The log shows `CLOUDFLARE_ACCOUNT_ID:` empty |
+| 2 | `github-deploy@` cannot act as the Cloud Run runtime SA | `Deploy audio-rendition` fails at `gcloud run deploy`: *"Permission 'iam.serviceaccounts.actAs' denied on service account 636106936349-compute@…"*. Needs `roles/iam.serviceAccountUser` |
+| 3 | `R2_ACCOUNT_ID` repo variable does not exist | Same log: `R2_ACCOUNT_ID=` empty |
+| 4 | **The HTTP driver and Hyperdrive do not compose** | See below — this one is a code defect, not missing config |
+| 5 | Hyperdrive / KV / queue ids are `REPLACE_ME` placeholders | Never reached; blocker 1 fails first |
+
+**`deploy.yml` failing has been silent for ~17 hours.** Its run for #92
+(`d89f31d`) failed the same way at 2026-08-16T22:04, and because `Deploy` failed
+the `Smoke test` step was *skipped* — so the one step whose job is to say "what
+is live is not what you merged" never ran. Worth fixing independently of the
+credentials: a deploy job that fails silently is worse than one that fails.
+
+Both workflows carry `workflow_dispatch`, so master can be deployed without a new
+commit once the above exist.
+
+#### Blocker 4 in detail — the driver conflict
+
+`adapters/outbound/postgres/client.ts` uses `neon()` from
+`@neondatabase/serverless` in **HTTP mode**. That driver derives an HTTPS
+endpoint from the connection string's hostname and POSTs to `https://{host}/sql`.
+A Hyperdrive connection string points into Cloudflare's network, not at Neon, so
+the POST goes nowhere. And `readRuntimeEnv` *prefers* Hyperdrive when bound:
+
+    const databaseUrl = hyperdrive?.connectionString ?? DATABASE_URL ?? …
+
+So **binding Hyperdrive with the current driver breaks the database entirely.**
+
+This spec contains both halves of the conflict and they were never reconciled:
+§ Driver says "**Hyperdrive + `postgres.js`** over raw TCP is the better
+default", and § Answered says "start on `@neondatabase/serverless` (HTTP) …
+**Hyperdrive at step 3 is now expected rather than optional**". The
+`wrangler.jsonc` written in 3b took the Hyperdrive half without the driver half.
+
+Two ways out:
+
+- **A — ship without Hyperdrive.** Remove the `hyperdrive` block and set
+  `DATABASE_URL` as a Worker secret pointing at Neon's own host (the pooled
+  `-pooler` endpoint is fine; the HTTP driver is stateless). Works unchanged on
+  Workers, since the driver is just `fetch`. Keeps Smart Placement; loses
+  Hyperdrive's warm connections. **Recommended first**, because it is a config
+  change and unblocks everything else.
+- **B — keep Hyperdrive, replace the driver.** Swap `neonSqlClient` for
+  `postgres.js` or `pg` behind the unchanged `SqlClient` port, and create the
+  Hyperdrive config against the **direct, non-pooled** Neon host — Hyperdrive
+  pools itself, and stacking it on PgBouncer is discouraged. This is what
+  § Driver actually recommended, and it is a piece of work rather than a config
+  change.
+
+Note the ports make this a late-binding choice exactly as intended: `SqlClient`
+is one method, and every binding behind it is untouched either way.
+
 ### Remaining operational — this is now the critical path
 
 Nothing is blocked on code, and **the Worker cannot deploy until 1–3 are done**:
