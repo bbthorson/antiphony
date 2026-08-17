@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { servicesFor } from '../../../composition.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
@@ -48,6 +49,50 @@ const bareObjectPath = (value: string): string | null => {
     return value.startsWith('/') ? null : value;
 };
 
+/**
+ * The rate-limit bucket for one audio request: the object being asked for, and
+ * the format it is wanted in.
+ *
+ * ## Why not the client IP
+ *
+ * Twilio fetches `<Play>` URLs from a small pool of its own addresses, so an
+ * IP key puts every concurrent CALL IN THE SYSTEM into a handful of buckets: a
+ * busy period throttles live audio, and the thing being limited is unrelated
+ * requests colliding rather than anyone abusing anything. Keying on the object
+ * bounds what the limit is actually here to bound — repeated demand for the
+ * SAME rendition, which on a miss is a repeated ffmpeg transcode.
+ *
+ * Format is part of the key because the cost is per (object, format): a
+ * canonical stream and an mp3 transcode of the same blob are different work.
+ *
+ * ## Why this returns null so readily
+ *
+ * It runs BEFORE the handler validates anything, so every input here is
+ * hostile until proven otherwise. Anything that is not a well-formed path in
+ * the served namespace — junk, traversal, an unknown format — returns null and
+ * falls back to the caller's IP bucket. That is the load-bearing half: a key
+ * derived from the request has unbounded cardinality, so if arbitrary input
+ * could mint a bucket, an attacker would get a fresh limit on every request by
+ * varying one character. Only paths this service would actually serve get
+ * their own bucket, and `RATE_LIMITS.readAggregate` bounds the rest.
+ */
+export const audioBucketKey = (c: Context): string | null => {
+    const raw = c.req.query('url');
+    if (!raw) return null;
+
+    const objectPath =
+        servicesFor(c.env as Record<string, unknown> | undefined).storage.extractObjectPath(raw) ??
+        bareObjectPath(raw);
+    if (!objectPath || !prefixedPath(objectPath) || hasTraversalSegment(objectPath)) return null;
+
+    const requested = c.req.query('format');
+    if (requested === undefined) return `audio:canonical:${objectPath}`;
+    const format = asRenditionFormat(requested);
+    // An unsupported format is a 400 from the handler. Keying it would let a
+    // caller mint buckets from the format slot as easily as from the path.
+    return format ? `audio:${format}:${objectPath}` : null;
+};
+
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 // `url` is declared optional in the ZOD schema so the OpenAPIHono validator
@@ -94,7 +139,16 @@ const proxyRoute = createRoute({
         'audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.\n\n' +
         'Pass `format` to receive a derived rendition (e.g. `mp3` for telephony playback, which cannot ' +
         'decode webm/opus) instead of the canonical bytes. The canonical audio is never re-encoded.',
-    middleware: [rateLimit(RATE_LIMITS.read, { exemptServiceCallers: true })] as const,
+    middleware: [
+        // TWO limits, and they are not redundant. The aggregate one is IP-keyed
+        // and deliberately loose — it exists only because the object-keyed limit
+        // below has unbounded cardinality and therefore no aggregate bound of
+        // its own. The tight one is what actually governs demand for a single
+        // rendition. Aggregate first, so a flood is refused before it costs a
+        // second store round trip.
+        rateLimit(RATE_LIMITS.readAggregate, { exemptServiceCallers: true }),
+        rateLimit(RATE_LIMITS.read, { exemptServiceCallers: true, keyBy: audioBucketKey }),
+    ] as const,
     request: { query: QuerySchema },
     responses: {
         200: {
@@ -243,27 +297,31 @@ app.openapi(proxyRoute, async (c) => {
  * anyone actually plays are already warm, so the lazy path is the tail rather
  * than the norm.
  *
- * ⚠️ **The rate limit here is half-fixed, and the remaining half is the one
- * that matters for telephony.**
+ * **The rate limit here is keyed on the OBJECT, not the client IP** — the
+ * change that makes this route safe for telephony.
  *
- * This route carries `RATE_LIMITS.read` — 60/min, IP-keyed — on a path the miss
- * branch makes far more expensive than a read. Two distinct callers hit it and
- * only one is now handled:
+ * Twilio fetches `<Play>` URLs from a small pool of its own addresses and
+ * cannot present a credential (bare `GET`, no headers under our control), so an
+ * IP key collapsed every concurrent call in the system into a handful of
+ * buckets: a busy period throttled live audio, and no exemption could reach it.
+ * `audioBucketKey` keys on `(objectPath, format)` instead, which is also what
+ * the limit is actually for — repeated demand for one rendition is a repeated
+ * ffmpeg transcode on a miss, while two different calls playing two different
+ * clips are not competing for anything.
  *
- *   - **Sibling services** (Vox Pop's BFF, which streams these bytes rather
- *     than redirecting to them — see the download-seam decision) are exempted
- *     via `exemptServiceCallers`. They authenticate, and their traffic all
- *     arrives from one address, so the IP key collapsed an entire peer into a
- *     single bucket: the limit throttled a partner rather than an abuser.
+ * Three properties hold this together, and removing any one breaks it:
  *
- *   - **Twilio is NOT covered and cannot be.** It fetches `<Play>` URLs as a
- *     bare `GET` with no headers under our control (specs/mp3-rendition-stage.md
- *     § Why not content negotiation), so it can never present a token. Its
- *     fetches arrive from a small pool of Twilio addresses, so concurrent calls
- *     still share a handful of buckets and a busy period still throttles live
- *     audio. **That needs a non-IP key — the requested object path is the
- *     obvious candidate, since it bounds per-object abuse without collapsing
- *     unrelated calls together — and it is still open.**
+ *   1. **Unkeyable input falls back to the IP.** Junk, traversal, and unknown
+ *      formats do not mint buckets — otherwise varying one character would
+ *      hand an attacker a fresh limit per request.
+ *   2. **An IP-keyed aggregate sits above it** (`RATE_LIMITS.readAggregate`,
+ *      deliberately loose) because even well-formed keys are unbounded in
+ *      number. Object keying bounds per-object cost; that bounds total cost.
+ *   3. **Authenticated siblings are exempt** from both, since a peer's entire
+ *      traffic shares one address for the same reason Twilio's does.
+ *
+ * Cost: two store round trips per anonymous request instead of one. Cheap
+ * against an R2 read, and far cheaper than a transcode.
  */
 
 /**
