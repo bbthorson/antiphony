@@ -17,18 +17,27 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * It is also the driver that works everywhere this code runs during the
  * migration: a Node script, Cloud Run, and a Worker all have `fetch`.
  *
- * ## Hyperdrive
+ * ## Why NOT Hyperdrive — and what it would cost to have it
  *
- * At the Worker step this should sit behind Hyperdrive, and the reason is
- * geography rather than pooling: Neon is `us-east-1` and Workers execute near
+ * Geography argues for Hyperdrive: Neon is `us-east-1` and Workers execute near
  * the USER, so a request served far from Virginia pays a full round trip per
- * query. Hyperdrive terminates in Cloudflare's network and keeps warm
- * connections, and Smart Placement moves execution next to the backend.
+ * query. Hyperdrive terminates in Cloudflare's network and keeps connections
+ * warm.
  *
- * When that happens the connection string comes from `env.HYPERDRIVE.connectionString`
- * rather than an env var — the credential lives on the Hyperdrive resource and
- * the Worker never holds it. This factory takes the string as a parameter
- * precisely so that swap is a call-site change and not an edit here.
+ * This driver cannot use it. `neon()` in HTTP mode derives an HTTPS endpoint
+ * from the connection string's HOSTNAME and POSTs to `https://{host}/sql`; a
+ * Hyperdrive string names Cloudflare, which serves no such endpoint. So the
+ * deployed Worker reads `DATABASE_URL` — Neon's pooled host, a real credential
+ * held as a Worker secret — and `wrangler.jsonc` binds no Hyperdrive at all.
+ * Smart Placement carries the geography argument on its own in the meantime, by
+ * moving execution next to the backend rather than the connection next to the
+ * user.
+ *
+ * Adopting Hyperdrive therefore means REPLACING this file with a wire-protocol
+ * driver (`postgres.js` or `pg`) over Hyperdrive's TCP socket, against Neon's
+ * DIRECT host — Hyperdrive pools itself, so stacking it on PgBouncer is
+ * discouraged. `SqlClient` is one method, so that swap stays behind the port.
+ * See specs/cloudflare-migration.md § Verified deploy blockers, option B.
  */
 export function neonSqlClient(connectionString: string): SqlClient {
     const sql = neon(connectionString);

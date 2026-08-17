@@ -5,7 +5,7 @@
   "description": "Antiphony core HTTP service (Hono). Serves the public /api/v1/* surface as a standalone deployment — see specs/core-surface.md.",
   "type": "module",
   "scripts": {
-    "//dev": "Needs WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE pointing at a Postgres — Hyperdrive has no local emulation of its own.",
+    "//dev": "Needs DATABASE_URL in .dev.vars (gitignored) pointing at a Postgres — there is no Hyperdrive binding, so the database is a plain secret. Without it the graph has no database and the first request throws.",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "//check:worker-bundle": "Bundles the Worker and fails if a Node-only dependency is in it. Not covered by typecheck, tests, or `wrangler deploy` — all three are happy to ship a bundle that cannot run. See the script.",

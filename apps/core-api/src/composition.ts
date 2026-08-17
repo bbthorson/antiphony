@@ -137,8 +137,13 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
     const bindings = env ?? {};
 
     // Hyperdrive hands back a LOCAL pooled connection string — not the Neon
-    // credential. That is the whole point of it, and the reason the database
-    // never becomes a Worker secret. See specs/cloudflare-migration.md § Secrets.
+    // credential — and is preferred here for that reason. Nothing binds it
+    // today: an HTTPS-derived-from-hostname driver cannot talk to a string that
+    // points into Cloudflare's network, so the deployed Worker takes
+    // `DATABASE_URL` as a secret instead. See specs/cloudflare-migration.md
+    // § Verified deploy blockers. This preference stays because it is the
+    // correct order the moment the driver can use it (option B), and because
+    // inverting it would make a future Hyperdrive binding silently dead config.
     const hyperdrive = bindings.HYPERDRIVE as { connectionString?: string } | undefined;
     const databaseUrl =
         hyperdrive?.connectionString ??
@@ -247,7 +252,7 @@ export function createServices(env: RuntimeEnv): Services {
                 idempotencyStore: fallback.idempotencyStore,
                 backend: 'firebase' as const,
             }
-          : raise(missingBinding('database', 'HYPERDRIVE'));
+          : raise(missingBinding('database', 'DATABASE_URL (or HYPERDRIVE)'));
 
     // Rate limiting is selected on its OWN axis, ahead of the database.
     //

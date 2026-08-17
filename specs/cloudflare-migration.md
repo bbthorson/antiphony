@@ -198,13 +198,28 @@ now known from logs rather than guessed. `api.antiphony.dev` answers from
 `4f07b24` with `backend: firebase` — ten commits behind master, i.e. the last
 revision before the Workers cutover.
 
-| # | Blocker | Evidence |
-| :--- | :--- | :--- |
-| 1 | `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` do not exist | `Deploy core-api` fails at `wrangler deploy`: *"In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN"*. The log shows `CLOUDFLARE_ACCOUNT_ID:` empty |
-| 2 | `github-deploy@` cannot act as the Cloud Run runtime SA | `Deploy audio-rendition` fails at `gcloud run deploy`: *"Permission 'iam.serviceaccounts.actAs' denied on service account 636106936349-compute@…"*. Needs `roles/iam.serviceAccountUser` |
-| 3 | `R2_ACCOUNT_ID` repo variable does not exist | Same log: `R2_ACCOUNT_ID=` empty |
-| 4 | **The HTTP driver and Hyperdrive do not compose** | See below — this one is a code defect, not missing config |
-| 5 | Hyperdrive / KV / queue ids are `REPLACE_ME` placeholders | Never reached; blocker 1 fails first |
+| # | Blocker | Evidence | State |
+| :--- | :--- | :--- | :--- |
+| 1 | `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` do not exist | `Deploy core-api` fails at `wrangler deploy`: *"In a non-interactive environment, it's necessary to set a CLOUDFLARE_API_TOKEN"*. The log shows `CLOUDFLARE_ACCOUNT_ID:` empty | **Cleared** 2026-08-17 |
+| 2 | `github-deploy@` cannot act as the Cloud Run runtime SA | `Deploy audio-rendition` fails at `gcloud run deploy`: *"Permission 'iam.serviceaccounts.actAs' denied on service account 636106936349-compute@…"*. Needs `roles/iam.serviceAccountUser` | **Grant run** 2026-08-17, unverified from a deploy |
+| 3 | `R2_ACCOUNT_ID` repo variable does not exist | Same log: `R2_ACCOUNT_ID=` empty | **Cleared** 2026-08-17 |
+| 4 | **The HTTP driver and Hyperdrive do not compose** | See below — this one is a code defect, not missing config | **Decided: option A.** No Hyperdrive; `DATABASE_URL` is a Worker secret |
+| 5 | Hyperdrive / KV / queue ids are `REPLACE_ME` placeholders | Never reached; blocker 1 fails first | **Cleared** — KV + queues created, Hyperdrive block deleted |
+
+**What is still outstanding is one interactive command and a schema.** The four
+Worker secrets (`SYSTEM_AUTH_TOKEN`, `ANTIPHONY_APP_TOKENS`,
+`ELEVENLABS_API_KEY`, `DATABASE_URL`) prompt on stdin and hold values only the
+operator has, and step 4's `psql` apply needs the same Neon string. Nothing
+about them is a code or config change; see [`deploy/README.md`](../deploy/README.md)
+§ 2. Until `DATABASE_URL` is set, a deploy that otherwise succeeds throws at the
+first request — `composition.ts` raises rather than falling back, because a
+Worker holds no Application Default Credentials.
+
+The credentials went in under **Secrets** for all three names first, which reads
+as complete on the settings page and leaves `vars.CLOUDFLARE_ACCOUNT_ID` and
+`vars.R2_ACCOUNT_ID` empty — blockers 1 and 3 unchanged in effect. `secrets.FOO`
+and `vars.FOO` are separate namespaces; the workflows read `vars.` for both ids.
+Worth knowing, because the failure looks like a credential that *is* present.
 
 **`deploy.yml` failing has been silent for ~17 hours.** Its run for #92
 (`d89f31d`) failed the same way at 2026-08-16T22:04, and because `Deploy` failed
@@ -233,7 +248,12 @@ default", and § Answered says "start on `@neondatabase/serverless` (HTTP) …
 **Hyperdrive at step 3 is now expected rather than optional**". The
 `wrangler.jsonc` written in 3b took the Hyperdrive half without the driver half.
 
-Two ways out:
+Two ways out. **A was chosen on 2026-08-17** and is implemented: the
+`hyperdrive` block is deleted from `apps/core-api/wrangler.jsonc`, and the
+`## Why NOT Hyperdrive` block in `client.ts` carries the argument at the code.
+`readRuntimeEnv`'s preference for Hyperdrive is deliberately left in place —
+it is the correct order the moment a driver can use it, and inverting it would
+turn a future binding into silently dead config.
 
 - **A — ship without Hyperdrive.** Remove the `hyperdrive` block and set
   `DATABASE_URL` as a Worker secret pointing at Neon's own host (the pooled
@@ -258,14 +278,15 @@ Nothing is blocked on code, and **the Worker cannot deploy until 1–3 are done*
 than starting up without a database. [`deploy/README.md`](../deploy/README.md)
 is the runbook.
 
-1. **Create the bindings.** Hyperdrive (from the Neon connection string), the
-   `PIN_CACHE` KV namespace, and both queues (`antiphony-processing` and its
-   dead-letter queue). Put the ids in `apps/core-api/wrangler.jsonc`.
-2. **Set the three Worker secrets** — `SYSTEM_AUTH_TOKEN`,
-   `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY`. Not the database (Hyperdrive
-   holds it), not R2 (the binding needs no credential).
-3. **Add the GitHub credentials** — `CLOUDFLARE_API_TOKEN` (secret, Workers
-   Scripts:Edit) and `CLOUDFLARE_ACCOUNT_ID` (variable).
+1. ~~**Create the bindings.**~~ **Done** — `PIN_CACHE` and both queues exist and
+   their ids are committed; the R2 bucket already existed. No Hyperdrive, per
+   the decision above.
+2. **Set the four Worker secrets** — `SYSTEM_AUTH_TOKEN`,
+   `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY`, and `DATABASE_URL` (Neon's
+   pooled host, because option A). Not R2 — the binding needs no credential.
+   **This is the remaining blocker on a working deploy.**
+3. ~~**Add the GitHub credentials.**~~ **Done** — `CLOUDFLARE_API_TOKEN` as a
+   secret, `CLOUDFLARE_ACCOUNT_ID` and `R2_ACCOUNT_ID` as variables.
 4. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
 5. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
    with `Storage Object Viewer` + `storage.buckets.get`.

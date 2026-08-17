@@ -33,6 +33,12 @@ yarn-error.log*
 # local env files
 .env*
 !.env.example
+# Worker-local secrets for `wrangler dev`. NOT matched by `.env*`, and since
+# the driver decision made DATABASE_URL a secret (specs/cloudflare-migration.md
+# § Verified deploy blockers), this file is where a real Neon credential lands
+# on a developer's machine.
+.dev.vars
+.dev.vars.*
 # Committed dev (emulator) + prod (live) config for the reference app. No
 # real secrets — demo/localhost in .development; a PUBLIC Firebase web
 # apiKey + the live API URL in .production (see each file's header).
