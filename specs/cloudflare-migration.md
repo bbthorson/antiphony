@@ -9,8 +9,29 @@ not, and what the two genuine blockers are. Nothing here is committed to.
 
 ## Status — read this first
 
-**Last updated 2026-08-16.** This document is long because it is the reasoning
+**Last updated 2026-08-17.** This document is long because it is the reasoning
 record. This section is the operational state.
+
+> ### 🔴 LIVE on the Worker since 2026-08-17 22:05 UTC — one half still outstanding
+>
+> `api.antiphony.dev` resolves to the Cloudflare Worker. `/health` reports
+> `backend: postgres`.
+>
+> | | State |
+> |---|---|
+> | Records (posts, transcripts) | ✅ migrated — 14 + 11, `cidDrift: 0` |
+> | **Blobs (audio bytes)** | ❌ **NOT migrated — R2 is empty, every blob 404s** |
+>
+> **So audio is unavailable platform-wide until Super Slurper runs** (§ Step 2d).
+> Records resolve, post views carry embeds, and those embed URLs 404 when fetched —
+> which downstream apps see as "the audio failed", not as an outage.
+>
+> The DNS cutover preceded both data migrations, which cost a ~20-minute total
+> blackout. Read § Step 2d's precondition before repeating any part of this, and
+> § Execution record for what it looked like from outside (short version:
+> `/health` stayed green throughout).
+>
+> Firestore and GCS are untouched. Rollback is repointing the domain at Cloud Run.
 
 ### Landed on master
 
@@ -1265,6 +1286,22 @@ in a shell, against Firestore and Neon, with no Worker involved.
 
 ## Step 2d — the migration runbook
 
+> ### ⛔ Precondition, learned the hard way on 2026-08-17
+>
+> **Both halves must be complete BEFORE `api.antiphony.dev` points at the Worker.**
+> Not "around the same time" — before.
+>
+> The two halves are order-free *with respect to each other*. They are **not**
+> order-free with respect to the DNS cutover, and this document previously only
+> implied that. On 2026-08-17 the domain was repointed first and neither migration
+> had run, so the platform served an empty database and an empty bucket for ~20
+> minutes: every post 404'd, every blob 404'd, and every downstream consumer went
+> dark with it. See § Execution record below.
+>
+> Nothing was lost and rollback was always available — but the outage was free to
+> avoid by ordering, and reading "migrate the data once and switch" as a sequence
+> rather than a pair is the whole of the fix.
+
 Two independent halves. **Object paths are unchanged across the move**
 (`blobs/{originAppId}/{cid}`), so no record needs rewriting to point at the new
 bucket — a property of content addressing, and the reason these can run in
@@ -1292,6 +1329,97 @@ an unknown subset.
 Re-running is safe: every write is an upsert keyed on the record's own id, so a
 partial run resumes by running again. Nothing is deleted from Firestore —
 cutover is a config change and rollback is pointing back at the old binding.
+
+## Execution record — 2026-08-17
+
+What actually happened, in order, because the ordering is the lesson.
+
+| Time (UTC) | Event |
+|---|---|
+| 22:05:08 | `api.antiphony.dev` repointed to the Worker. `/health`: `backend: postgres` |
+| ~22:06 | Downstream voice call fails — the consuming app reports "the user has not set up a voicemail" |
+| 22:0x | Diagnosis: Neon empty (0 posts) **and** R2 empty (blobs 404) |
+| ~22:3x | `migrate:firestore-to-neon` run: **14 posts, 11 transcripts, `cidDrift: 0`** |
+| after | Records restored; audio still 404 pending Super Slurper |
+
+Neither data migration had been run. Firestore and GCS were untouched throughout —
+the sources still held everything, which is why this was an availability incident
+and not a data one.
+
+### What the failure looked like from outside
+
+Worth writing down, because none of it looked like an outage:
+
+- **`/health` returned `{"ok":true, ..., "backend":"postgres"}` the entire time.**
+  It reports which backend is *wired*, not whether that backend has anything in it,
+  so the status surface read green across an empty database. **This is worth
+  fixing** — a row count, or a `records: present|empty` signal, would have turned a
+  20-minute diagnosis into a glance.
+- **Every response was a well-formed success.** Post listings returned
+  `{"success":true,"data":{"items":[],"nextCursor":null}}`. A *successful query
+  returning zero rows* is indistinguishable from "this user has nothing" at every
+  layer above it — which is exactly how a consuming app ended up telling a caller
+  the account had no voicemail set up.
+- **The 404s were honest and unhelpful.** A blob request 404s identically whether
+  the CID is wrong or the bucket is empty.
+
+The one signal that *did* discriminate: an empty result from a query that
+succeeded, on a tenant known to have data. Nothing surfaced that automatically.
+
+### Verifying a cutover — the checks that actually distinguish states
+
+Run these against the Worker before repointing anything at it. Each is chosen
+because it fails differently for a different cause.
+
+```bash
+# 1. Records present? (Not just "does the query work" — a working query on an
+#    empty database is the failure mode above.)
+curl -s 'https://api.antiphony.dev/api/v1/posts?kind=prompt&limit=1' \
+  -H "Authorization: Bearer $ANTIPHONY_SERVICE_TOKEN" \
+  -H "X-Antiphony-Acting-Actor: <a uid known to have posts>"
+# items: [] on a tenant with posts  ->  Neon is empty. Run the records migration.
+
+# 2. Blobs present? Ask for one whose CID you know exists.
+curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
+  'https://api.antiphony.dev/api/v1/audio?url=blobs/<originAppId>/<cid>'
+# 404 -> R2 is empty. Run Super Slurper.  200 + real bytes -> blobs are there.
+
+# 3. Schema present? (Distinguishes "empty tables" from "no tables at all".)
+#    A missing table ERRORS; an empty one returns success with zero rows. So if
+#    check 1 returned a clean empty list, the schema exists and only data is
+#    missing — which is the good case, and means the migration is a plain insert.
+```
+
+### Rollback
+
+Point `api.antiphony.dev` back at the Cloud Run service. The old revision remains,
+Firestore and GCS are untouched, and the records migration deletes nothing — so
+the pre-cutover path stays fully intact until it is deliberately retired. Cutover
+is a config change in both directions.
+
+### Operational traps found the same day
+
+Two more, both in this project's Cloud Run era, both worth knowing before the next
+infrastructure change:
+
+- **`ANTIPHONY_PUBLIC_BASE_URL` unset for a day.** Declared required in the `0.5.0`
+  CHANGELOG, but its absence only degraded: `audioPlaybackUrl` returned null and
+  every post view hydrated with **no `embed`**, logging an error per hydration and
+  serving "no audio" rather than failing. **A required variable whose absence merely
+  degrades will not be noticed.** Assert required config at startup instead.
+- **A config-only `gcloud run services update` applied nothing, and reported
+  success.** The service's traffic was pinned to a named revision — correctly, as
+  the output of the smoke-gated `build · deploy · smoke · promote` pipeline — so the
+  update created a revision that received 0% of traffic while the CLI printed the
+  *old* revision as "serving 100 percent of traffic". Image deploys were never
+  affected; only config-only updates strand. Apply config through the pipeline, or
+  `update-traffic --to-revisions=<new>=100` after.
+
+The shape all three share, including the empty-database incident: **the tool
+reported success, the documentation asserted the intended state, and only
+behaviour disagreed.** Assertions that run in the pipeline are the only ones that
+fail loudly.
+
 
 ## Sequencing
 
