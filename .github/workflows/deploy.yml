@@ -114,17 +114,29 @@ jobs:
 
             - name: Smoke test
               run: |
-                  # `/health` is unauthenticated and reports which backend is
-                  # actually wired, which is the question that matters during a
-                  # migration: "which store is this deployment talking to" stops
-                  # being answerable from the commit alone.
+                  # Asserts the SHA, not `"ok":true`.
+                  #
+                  # `ok:true` is true of ANY healthy deployment at this hostname,
+                  # including one this workflow did not produce — so it passed
+                  # while `api.antiphony.dev` still answered from Cloud Run, and
+                  # would pass again on any stale Worker version. A smoke test
+                  # that cannot fail is worse than none, because it is read as
+                  # evidence. The sibling failure is already recorded: a `Deploy`
+                  # failure SKIPPED this step for 17 hours, so the one step whose
+                  # job is to say "live is not what you merged" never ran.
+                  #
+                  # `/health` reports `sha` from the COMMIT_SHA var set above, so
+                  # matching it against GITHUB_SHA proves THIS deploy is the one
+                  # serving. It also still prints `backend`, which answers the
+                  # other migration question — postgres or firebase — in the log.
                   for attempt in 1 2 3 4 5; do
                     if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
                       echo "$BODY"
-                      echo "$BODY" | grep -q '"ok":true' && exit 0
+                      echo "$BODY" | grep -q "\"sha\":\"${GITHUB_SHA}\"" && exit 0
                     fi
                     echo "attempt ${attempt} failed; retrying"
                     sleep 5
                   done
-                  echo "::error::/health did not report ok:true after the deploy"
+                  echo "::error::/health at api.antiphony.dev is not serving ${GITHUB_SHA}."
+                  echo "::error::If the domain route is not attached to the antiphony-core-api Worker yet, this failure is CORRECT and expected — the deploy succeeded, the hostname just still points elsewhere. Attach it (Workers & Pages -> antiphony-core-api -> Settings -> Domains & Routes), then re-run this workflow."
                   exit 1

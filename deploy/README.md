@@ -20,24 +20,24 @@ which carries the reasoning for each binding. This file is the runbook.
 
 ## 1. Create the resources the config names
 
-Four, and `wrangler deploy` fails on a config naming any that does not exist —
+Three, and `wrangler deploy` fails on a config naming any that does not exist —
 which is the point: a missing binding is caught before a deploy rather than at
 the first request that needs it.
 
-> ⛔ **Do not create the Hyperdrive config yet.** `core-api`'s SQL client is
-> `@neondatabase/serverless` in HTTP mode, which derives an HTTPS endpoint from
-> the connection string's hostname — and a Hyperdrive string points into
-> Cloudflare's network, not at Neon. Since `readRuntimeEnv` PREFERS Hyperdrive
-> when bound, binding it with the current driver breaks the database entirely.
-> See § Verified deploy blockers in
-> [`specs/cloudflare-migration.md`](../specs/cloudflare-migration.md) for the two
-> ways out. Until one is chosen, set the database as a Worker secret instead:
->
->     npx wrangler secret put DATABASE_URL -c apps/core-api/wrangler.jsonc
->
-> and remove the `hyperdrive` block from `apps/core-api/wrangler.jsonc`. Neon's
-> pooled (`-pooler`) host is correct for that; the direct host is what Hyperdrive
-> would want, if and when it is used.
+> ✅ **Done on 2026-08-17** for account `dd03fe171a20e2a1728b90c2f16ae4f4`. The
+> ids below are committed, so this section is a record rather than a step —
+> re-run it only for a fresh account.
+
+> **There is no Hyperdrive config, deliberately.** The driver conflict is
+> resolved as **option A**: `core-api`'s SQL client is `@neondatabase/serverless`
+> in HTTP mode, which derives an HTTPS endpoint from the connection string's
+> hostname, and a Hyperdrive string points into Cloudflare's network rather than
+> at Neon. Since `readRuntimeEnv` PREFERS Hyperdrive when bound, creating one
+> would break the database outright. The `hyperdrive` block is gone from
+> `apps/core-api/wrangler.jsonc` and the database is a Worker secret instead
+> (§ 2). Neon's pooled (`-pooler`) host is correct for that. Getting Hyperdrive
+> later is option B — a driver replacement, not a binding. See § Verified deploy
+> blockers in [`specs/cloudflare-migration.md`](../specs/cloudflare-migration.md).
 
 ```bash
 # The shared layer of the app-DID custody cache.
@@ -51,7 +51,14 @@ npx wrangler queues create antiphony-processing-dlq
 
 Each prints an id. Put them in `apps/core-api/wrangler.jsonc` in place of the
 `REPLACE_ME_…` placeholders and commit that — ids are per-account identifiers,
-not credentials.
+not credentials. Only `PIN_CACHE` has an id in the config; queues are bound by
+name, which is why the queue ids are recorded here and nowhere else:
+
+| Resource | Id |
+| :--- | :--- |
+| `PIN_CACHE` KV namespace | `7bdd861a89e7499d9a52366e8fa5d393` |
+| `antiphony-processing` | `83b13d87b09b4ded940cae4a914f173a` |
+| `antiphony-processing-dlq` | `d3da1758e098419490fec45ea12da07b` |
 
 The GCP side of `apps/audio-rendition` needs one more grant that the workflow's
 header does not mention, found by running it: `github-deploy@` must be able to
@@ -70,7 +77,7 @@ The R2 bucket (`antiphony-r2-bucket`) is created in the dashboard, or with
 
 ## 2. Secrets
 
-Three, and none of them appears in any committed file. Cloudflare secrets are
+Four, and none of them appears in any committed file. Cloudflare secrets are
 write-only from outside — nothing reads one back — which is exactly why the
 schema apply in step 4 and the blob migration in step 5 cannot use them: those
 run in a shell, against Neon and GCS, with no Worker involved.
@@ -80,12 +87,23 @@ cd apps/core-api
 npx wrangler secret put SYSTEM_AUTH_TOKEN
 npx wrangler secret put ANTIPHONY_APP_TOKENS
 npx wrangler secret put ELEVENLABS_API_KEY
+npx wrangler secret put DATABASE_URL
 ```
 
-**Not** the database (Hyperdrive holds it) and **not** R2 (binding-based
-authorisation needs no credential). `ANTIPHONY_APP_DIDS` is deliberately a
-`var` rather than a secret: DIDs are public, and keeping it in the config is
-what lets the deploy gate prove the pins without access to anything secret.
+`DATABASE_URL` is the fourth because option A won the driver decision (§ 1) —
+Neon's **pooled** (`-pooler`) connection string, the one real database
+credential this Worker holds. Under Hyperdrive it would not exist here at all,
+which is the trade that decision made: a secret to hold, in exchange for a
+driver that works today.
+
+**Not** R2 (binding-based authorisation needs no credential).
+`ANTIPHONY_APP_DIDS` is deliberately a `var` rather than a secret: DIDs are
+public, and keeping it in the config is what lets the deploy gate prove the pins
+without access to anything secret.
+
+Each `secret put` prompts for the value on stdin, so these are four
+interactive commands — nothing to paste into a file, and nothing that survives
+in shell history.
 
 ## 3. GitHub
 
@@ -95,10 +113,16 @@ what lets the deploy gate prove the pins without access to anything secret.
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Account id — an identifier, not a credential |
 | Variable | `R2_ACCOUNT_ID` | Same account id, read by the audio-rendition deploy |
 
-**None of these existed as of 2026-08-17**, which is why both deploy workflows
-are red on master and why `api.antiphony.dev` still answers from a pre-cutover
-revision. `wrangler` fails before it validates any binding, so a missing token
-looks nothing like a missing Hyperdrive id in the logs — check the token first.
+**All three exist as of 2026-08-17.** The `Kind` column is the whole content of
+this section: `secrets.FOO` and `vars.FOO` are separate namespaces in Actions, so
+an account id added under Secrets leaves `vars.CLOUDFLARE_ACCOUNT_ID` resolving
+to an empty string while the settings page looks complete. That is how these were
+first added, and it reproduces the original blocker exactly. The ids belong under
+Variables *because* they are not credentials: an unmasked empty value is visible
+in a log, where `***` is not.
+
+`wrangler` fails before it validates any binding, so a missing token looks
+nothing like a bad binding id in the logs — check the token first.
 
 ## 4. Apply the database schema
 

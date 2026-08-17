@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/core-api && npm run build -w @antiphony/audio-rendition",
-    "//dev": "Runs core-api on the Workers runtime against local bindings. Hyperdrive has no local emulation, so point WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE at a Postgres first.",
+    "//dev": "Runs core-api on the Workers runtime against local bindings. Put DATABASE_URL in apps/core-api/.dev.vars (gitignored) first — the database is a Worker secret, not a Hyperdrive binding.",
     "dev": "npm run dev -w @antiphony/core-api",
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",

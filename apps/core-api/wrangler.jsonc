@@ -166,7 +166,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "PIN_CACHE",
-			"id": "REPLACE_ME_WITH_wrangler_kv_namespace_create_OUTPUT"
+			"id": "7bdd861a89e7499d9a52366e8fa5d393"
 		}
 	],
 
@@ -183,30 +183,40 @@
 		}
 	],
 
-	// ## Hyperdrive, not a DATABASE_URL secret
+	// ## A DATABASE_URL secret, not Hyperdrive
 	//
-	// The Worker reads `env.HYPERDRIVE.connectionString`, which is a LOCAL
-	// pooled string — not the Neon credential. That is the whole point: the
-	// database never becomes a Worker secret, and nothing can read one back out
-	// of Cloudflare anyway.
+	// There is deliberately no `hyperdrive` block here, and its absence is the
+	// decision recorded in specs/cloudflare-migration.md § Verified deploy
+	// blockers as option A. `adapters/outbound/postgres/client.ts` runs
+	// `@neondatabase/serverless` in HTTP mode, which derives an HTTPS endpoint
+	// from the connection string's HOSTNAME — and a Hyperdrive string points
+	// into Cloudflare's network rather than at Neon, so binding Hyperdrive with
+	// this driver does not degrade the database, it breaks it outright.
+	// `readRuntimeEnv` PREFERS Hyperdrive when bound, so the break would be
+	// silent in config review and total at runtime.
 	//
-	// `id` is per-account and comes from `wrangler hyperdrive create`, so it
-	// cannot be committed meaningfully — the placeholder below has to be
-	// replaced before the first deploy, and `wrangler deploy` fails on it
-	// rather than starting up without a database. `readRuntimeEnv` still
-	// accepts a raw `DATABASE_URL` if Hyperdrive is ever skipped, but
-	// § Geography argues it should not be: the connection setup Hyperdrive
-	// removes is a full extra round trip to Virginia on every cold path.
-	"hyperdrive": [
-		{
-			"binding": "HYPERDRIVE",
-			"id": "REPLACE_ME_WITH_wrangler_hyperdrive_create_OUTPUT"
-		}
-	],
+	// So the connection string is a Worker secret instead, set out of band:
+	//
+	//     npx wrangler secret put DATABASE_URL -c apps/core-api/wrangler.jsonc
+	//
+	// Neon's POOLED (`-pooler`) host is the right one for it — the HTTP driver
+	// is stateless per query, so nothing is lost by pooling in front of it. The
+	// direct host is what Hyperdrive would want, and Hyperdrive is what
+	// § Geography argues for: it removes a full connection setup to Virginia on
+	// every cold path. Getting there means replacing this driver with one that
+	// speaks the wire protocol (option B), not adding a binding. Smart
+	// Placement, which addresses the same geography from the other end, is on
+	// either way.
+	//
+	// Being a secret, this is also the one binding a config review cannot
+	// confirm: `wrangler secret list` shows the name, never the value, so a
+	// DATABASE_URL pointing at the wrong branch looks identical to a correct
+	// one until `/health` reports `backend`.
 
 	// Non-secret configuration. Everything else — SYSTEM_AUTH_TOKEN,
-	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY — is a Worker SECRET, set with
-	// `wrangler secret put`, and must never appear in this file.
+	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY, DATABASE_URL — is a Worker
+	// SECRET, set with `wrangler secret put`, and must never appear in this
+	// file.
 	//
 	// ANTIPHONY_PUBLIC_BASE_URL is required, not cosmetic: since the audio
 	// proxy streams bytes rather than redirecting to a signed URL,
