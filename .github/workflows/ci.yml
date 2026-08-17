@@ -72,7 +72,13 @@ jobs:
       # nothing else would catch a break here. `copy-openapi.mjs --strict` also
       # fails the build if core-api's spec is missing, tying the published docs
       # to the contract built above.
+      #
+      # There used to be a step after this one asserting no diff on
+      # apps/docs/public/openapi.json. It could never fail: that path is
+      # gitignored (apps/docs/.gitignore) and untracked, so `git diff` over it
+      # is always empty. The drift it read as guarding against is covered for
+      # real by the two steps around it — the assert above is on TRACKED files,
+      # and `--strict` here fails the build if that source is missing. The docs
+      # copy is a build artifact derived from it, regenerated on every build
+      # including Cloudflare's, which runs this same command.
       - run: npm run build -w @antiphony/docs
-
-      - name: Assert the docs copy of the OpenAPI spec is committed
-        run: git diff --exit-code -- apps/docs/public/openapi.json
