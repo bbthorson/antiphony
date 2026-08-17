@@ -217,12 +217,22 @@ is done**.
 Note also that `users` / `handles` / `atproto_oauth_states` still hold rows but
 have had no reader since #83 deleted the identity layer. They are legacy too.
 
-### ⛔ Verified deploy blockers — 2026-08-17
+### ✅ Deployed — 2026-08-17T22:05Z. The cutover is done.
 
-Step 4 is merged (#94, `f03936f`). **Nothing is deployed**, and the reasons are
-now known from logs rather than guessed. `api.antiphony.dev` answers from
-`4f07b24` with `backend: firebase` — ten commits behind master, i.e. the last
-revision before the Workers cutover.
+    curl -s https://api.antiphony.dev/health
+    {"ok":true,"sha":"9b2d5b74…","backend":"postgres","deployedAt":"2026-08-17T22:05:08Z"}
+
+`api.antiphony.dev` serves the Worker against Neon. Every blocker below is
+closed, including one that only appeared once the earlier ones were out of the
+way. The section is kept rather than deleted: each row is a failure mode that
+looked like something else in the log, and the next deployment onto a fresh
+account will meet the same ones in the same order.
+
+**Order the blockers actually surfaced in**, which is not the order anyone
+predicted: missing token → ids in the wrong namespace → token too narrow for R2
+→ route not attached. Each was invisible until the one before it was fixed,
+because `wrangler` stops at the first failure and GitHub **skips** the smoke test
+when `Deploy` fails.
 
 | # | Blocker | Evidence | State |
 | :--- | :--- | :--- | :--- |
@@ -231,27 +241,42 @@ revision before the Workers cutover.
 | 3 | `R2_ACCOUNT_ID` repo variable does not exist | Same log: `R2_ACCOUNT_ID=` empty | **Cleared** 2026-08-17 |
 | 4 | **The HTTP driver and Hyperdrive do not compose** | See below — this one is a code defect, not missing config | **Decided: option A.** No Hyperdrive; `DATABASE_URL` is a Worker secret |
 | 5 | Hyperdrive / KV / queue ids are `REPLACE_ME` placeholders | Never reached; blocker 1 fails first | **Cleared** — KV + queues created, Hyperdrive block deleted |
+| 6 | **The API token was too narrow** — `Workers Scripts:Edit` only, as this repo's own runbook instructed | `Deploy` fails at `wrangler deploy`: *"A request to the Cloudflare API (/accounts/…/r2/buckets/antiphony-r2-bucket) failed. Authentication error [code: 10000]"* | **Cleared** — R2/KV/Queues added; see `deploy/README.md` § 3 |
+| 7 | `api.antiphony.dev` route not attached to the Worker | Worker healthy on `postgres` at `…workers.dev` while the domain still answered `4f07b24` / `firebase` | **Cleared** 22:05Z |
 
-**What is still outstanding is one interactive command and a schema.** The four
-Worker secrets (`SYSTEM_AUTH_TOKEN`, `ANTIPHONY_APP_TOKENS`,
-`ELEVENLABS_API_KEY`, `DATABASE_URL`) prompt on stdin and hold values only the
-operator has, and step 4's `psql` apply needs the same Neon string. Nothing
-about them is a code or config change; see [`deploy/README.md`](../deploy/README.md)
-§ 2. Until `DATABASE_URL` is set, a deploy that otherwise succeeds throws at the
-first request — `composition.ts` raises rather than falling back, because a
-Worker holds no Application Default Credentials.
+Three things are worth carrying out of this list, because each cost a cycle:
 
-The credentials went in under **Secrets** for all three names first, which reads
+**The credentials went in under Secrets for all three names first.** That reads
 as complete on the settings page and leaves `vars.CLOUDFLARE_ACCOUNT_ID` and
 `vars.R2_ACCOUNT_ID` empty — blockers 1 and 3 unchanged in effect. `secrets.FOO`
 and `vars.FOO` are separate namespaces; the workflows read `vars.` for both ids.
-Worth knowing, because the failure looks like a credential that *is* present.
+The failure looks like a credential that *is* present.
+
+**`wrangler deploy` validates every binding before uploading, and stops at the
+first one it cannot read.** So a too-narrow token reveals its gaps one red build
+at a time — R2 failed first, and KV and Queues were never reached to fail. Grant
+the whole set at once (§ 3 of the runbook lists it) rather than iterating.
+
+**Worker secrets cannot be verified by reading them.** `wrangler secret list`
+returns names only, so a `DATABASE_URL` holding the direct Neon host instead of
+the pooled one is indistinguishable from a correct one until the Worker runs.
+`/health`'s `backend` field is the first real confirmation, which is why it
+exists.
 
 **`deploy.yml` failing has been silent for ~17 hours.** Its run for #92
 (`d89f31d`) failed the same way at 2026-08-16T22:04, and because `Deploy` failed
 the `Smoke test` step was *skipped* — so the one step whose job is to say "what
 is live is not what you merged" never ran. Worth fixing independently of the
 credentials: a deploy job that fails silently is worse than one that fails.
+
+**The smoke test has been fixed — it now asserts the SHA, not `"ok":true`.**
+That grep was satisfied by *any* healthy deployment at the hostname, so it would
+have gone green against the Cloud Run revision the moment `Deploy` started
+succeeding — reporting a cutover that had not happened. The same blind spot as
+the skipped step, arriving from the other direction: a check that cannot fail is
+read as evidence. Its residual gap is narrow and worth knowing: a
+`workflow_dispatch` re-run of the same commit is satisfied by the previous deploy
+of that commit, because only `BUILD_TIME` distinguishes them.
 
 Both workflows carry `workflow_dispatch`, so master can be deployed without a new
 commit once the above exist.
@@ -297,30 +322,42 @@ turn a future binding into silently dead config.
 Note the ports make this a late-binding choice exactly as intended: `SqlClient`
 is one method, and every binding behind it is untouched either way.
 
-### Remaining operational — this is now the critical path
-
-Nothing is blocked on code, and **the Worker cannot deploy until 1–3 are done**:
-`wrangler.jsonc` carries `REPLACE_ME_…` placeholders that fail the deploy rather
-than starting up without a database. [`deploy/README.md`](../deploy/README.md)
-is the runbook.
+### Remaining operational — records and Workers are done; blobs and renditions are not
 
 1. ~~**Create the bindings.**~~ **Done** — `PIN_CACHE` and both queues exist and
    their ids are committed; the R2 bucket already existed. No Hyperdrive, per
    the decision above.
-2. **Set the four Worker secrets** — `SYSTEM_AUTH_TOKEN`,
-   `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY`, and `DATABASE_URL` (Neon's
-   pooled host, because option A). Not R2 — the binding needs no credential.
-   **This is the remaining blocker on a working deploy.**
+2. ~~**Set the four Worker secrets.**~~ **Done** — `SYSTEM_AUTH_TOKEN`,
+   `ANTIPHONY_APP_TOKENS`, `ELEVENLABS_API_KEY`, `DATABASE_URL`. The three that
+   already existed in GCP Secret Manager were piped straight from there into
+   `wrangler secret put`, so the values never appeared on screen and vox-pop's
+   existing service token keeps working unchanged.
 3. ~~**Add the GitHub credentials.**~~ **Done** — `CLOUDFLARE_API_TOKEN` as a
    secret, `CLOUDFLARE_ACCOUNT_ID` and `R2_ACCOUNT_ID` as variables.
-4. **Apply the schema.** `psql "$DATABASE_URL" -f apps/core-api/db/schema.sql`
+4. ~~**Apply the schema.**~~ **Done** — four tables in Neon. The file is one
+   `begin`/`commit`, so a failed apply rolls back whole; it is not idempotent, so
+   a second apply fails on `relation already exists` and changes nothing.
 5. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
-   with `Storage Object Viewer` + `storage.buckets.get`.
+   with `Storage Object Viewer` + `storage.buckets.get`. **Not done.** Object
+   paths are identical on both sides, so this can happen any time without
+   rewriting a record.
 6. ~~**Run the records migration.**~~ **Nothing to migrate** — verified above.
    Re-run with `--allow-empty` if a confirmation is wanted; a dry run needs
    `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.
-7. **Point `api.antiphony.dev` at the Worker** and confirm on `/health`, which
-   reports which store is actually wired.
+7. ~~**Point `api.antiphony.dev` at the Worker.**~~ **Done 22:05Z** —
+   `backend: postgres` on the live domain.
+8. **Deploy `audio-rendition`, or delete the placeholder URL.** Currently
+   neither: `ANTIPHONY_RENDITION_SERVICE_URL` still points at
+   `…-REPLACE_ME.us-east4.run.app`, and `renditionServiceConfig()` treats any
+   non-empty value as configured — so every mp3 miss fetches a host that does not
+   resolve and logs `[rendition] service unreachable` before 404ing. **This is
+   what vox-pop's step 4f is waiting on**, and it needs an R2 S3 key first:
+   `r2-access-key-id` and `r2-secret-access-key` do not exist in Secret Manager
+   (only `system-auth-token`, `antiphony-app-tokens`, `antiphony-origin-secret`,
+   `elevenlabs-api-key` do).
+9. **The IP-keyed rate limit on `GET /api/v1/audio`** still needs a non-IP key or
+   an exemption before Twilio traffic arrives — see § Rate limiting. Unchanged by
+   the cutover, but now live rather than pending.
 
 ### What rollback actually looks like now
 

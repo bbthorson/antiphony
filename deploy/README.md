@@ -109,9 +109,40 @@ in shell history.
 
 | Kind | Name | Value |
 | :--- | :--- | :--- |
-| Secret | `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts:Edit** |
+| Secret | `CLOUDFLARE_API_TOKEN` | API token — permissions below, and **`Workers Scripts:Edit` alone is not enough** |
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Account id — an identifier, not a credential |
 | Variable | `R2_ACCOUNT_ID` | Same account id, read by the audio-rendition deploy |
+
+### The token's permissions
+
+`wrangler deploy` validates **every binding in the config against the API**
+before it uploads anything, so the token needs read access to each resource the
+config names — not just the right to write a script. An earlier version of this
+file said `Workers Scripts:Edit`, and a deploy with exactly that failed:
+
+    A request to the Cloudflare API (/accounts/…/r2/buckets/antiphony-r2-bucket) failed.
+      Authentication error [code: 10000]
+
+Account permissions the current config requires:
+
+| Permission | Why |
+| :--- | :--- |
+| `Workers Scripts:Edit` | Upload the script |
+| `Workers R2 Storage:Edit` | The `BLOBS` binding — this is the one that failed above |
+| `Workers KV Storage:Edit` | The `PIN_CACHE` binding |
+| `Queues:Edit` | The producer and consumer bindings |
+| `Account Settings:Read` | Account lookup during deploy |
+
+Plus `User → Memberships:Read` and `User → User Details:Read`, whose absence
+prints warnings rather than failing, and `Zone → Workers Routes:Edit` **only if
+routes move into this config** — the route attached in step 7 was added through
+the dashboard, which needs nothing from this token.
+
+Validation **stops at the first binding that fails**, so a too-narrow token
+reveals its gaps one red build at a time. Grant the whole set at once. The token
+in use is broader still (AI, Containers, D1, Hyperdrive, Cloudchamber, Vectorize,
+SSL) — that is a build token reused across projects, not what this deploy needs;
+narrowing it to the table above would cost nothing here.
 
 **All three exist as of 2026-08-17.** The `Kind` column is the whole content of
 this section: `secrets.FOO` and `vars.FOO` are separate namespaces in Actions, so
@@ -187,10 +218,20 @@ rather than a Worker because it spawns ffmpeg.
 already exist and 404s the rest. That is the right state for a deployment that
 pre-warms everything it needs, or that never phones anything.
 
+> ⚠️ **Skipping it is not the same as leaving the placeholder in.** As shipped,
+> `ANTIPHONY_RENDITION_SERVICE_URL` still reads
+> `https://antiphony-audio-rendition-REPLACE_ME.us-east4.run.app`, and
+> `renditionServiceConfig()` only checks that the var is NON-EMPTY. A placeholder
+> therefore counts as configured — which is precisely the state that function's
+> own comment exists to prevent. Every mp3 miss then fetches a host that does not
+> resolve, waits, logs `[rendition] service unreachable`, and 404s anyway. To
+> genuinely skip the service, DELETE the var; to use it, set the real URL below.
+
 `.github/workflows/deploy-audio-rendition.yml` ships it, and needs three
 Secret Manager secrets granted to the runtime service account
 (`system-auth-token`, `r2-access-key-id`, `r2-secret-access-key`) plus an
-`R2_ACCOUNT_ID` repo variable. See
+`R2_ACCOUNT_ID` repo variable. As of 2026-08-17 only `system-auth-token` exists;
+the two R2 keys have never been created. See
 [`apps/audio-rendition/README.md`](../apps/audio-rendition/README.md).
 
 The R2 key is the **one place in Antiphony a stored R2 credential is
@@ -209,6 +250,20 @@ Push to `master`, or run the workflow by hand. It proves every app-DID pin,
 asserts the Worker bundle carries no Node-only dependency, deploys, and smoke
 tests `/health`.
 
+The smoke test asserts the **SHA**, not `"ok":true`. `ok:true` is true of any
+healthy deployment at that hostname — so it passed while `api.antiphony.dev`
+still answered from Cloud Run, and would pass on any stale version. It matches
+`/health`'s `sha` against `GITHUB_SHA` instead, which cannot be satisfied by
+something this workflow did not produce. Its one remaining blind spot: a
+`workflow_dispatch` re-run of the SAME commit is satisfied by the previous
+deploy of that commit, since only `BUILD_TIME` differs.
+
+That step is also the migration's most-repeated lesson: when `Deploy` fails,
+GitHub **skips** it, so the one step whose job is to say "live is not what you
+merged" is exactly the step that does not run. It stayed silent for 17 hours
+that way. A red `Deploy` is the thing to read; a green run with a skipped smoke
+test is not a deploy.
+
 To deploy from a laptop:
 
 ```bash
@@ -223,6 +278,17 @@ sides are Cloudflare, there is no origin behind the edge to reach around — whi
 is why the origin lock the Cloud Run deployment needed is gone rather than
 ported.
 
+> ✅ **Attached 2026-08-17T22:05Z. The cutover is done.** `api.antiphony.dev`
+> answers from the Worker on `backend: postgres`. Until the route existed the
+> Worker was reachable only at `antiphony-core-api.bbthorson.workers.dev`, and
+> the domain still served the Cloud Run revision `4f07b24` on `firebase` — the
+> two hostnames disagreeing is what a half-finished cutover looks like from
+> outside, and `/health` is what makes it visible.
+>
+> Rolling the cutover back is removing this route: the Cloud Run revision is
+> still running and untouched, so it resumes serving. That is a dashboard action,
+> not a redeploy.
+
 Confirm the cutover with the one route that answers without a credential:
 
 ```bash
@@ -232,6 +298,15 @@ curl -s https://api.antiphony.dev/health
 `backend` reports which store is actually wired (`postgres` or `firebase`),
 which is the question that stops being answerable from the commit alone during
 a migration.
+
+**`workers.dev` is on**, because the config sets no `workers_dev` key and the
+default is enabled — the deploy log warns about it, and preview URLs come with
+it. It is how the Worker was verified before the route existed. It also means a
+second public hostname reaching the same Worker, which is a real qualification
+of "no origin to reach around" above: every route but `/health` still needs a
+token, so it is not a hole, but anything configured at the edge for
+`api.antiphony.dev` does not apply there. Setting `"workers_dev": false` is the
+deliberate version of this decision, either way.
 
 ---
 
