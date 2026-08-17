@@ -53,7 +53,9 @@ import { constantTimeEqual } from '../lib/constant-time.js';
  * Manager, mounted by the deploy workflow's `--set-secrets` in prod;
  * `.env` for local dev). If the
  * env var is unset, all system-auth requests get 503 — fail-closed,
- * never silently downgrade to "all requests allowed".
+ * never silently downgrade to "all requests allowed". Surrounding whitespace
+ * on the stored value is ignored, so a secret piped in with a trailing
+ * newline still authenticates.
  *
  * Constant-time comparison defends against timing side-channels on the
  * secret (same approach as service-auth).
@@ -85,8 +87,18 @@ const SYSTEM_AUTH_TOKEN_MIN_LENGTH = 32;
  */
 export const requireSystemAuth = (): MiddlewareHandler => {
     return async (c, next) => {
-        const expected = process.env.SYSTEM_AUTH_TOKEN;
-        if (!expected || expected.trim().length === 0) {
+        // Trim ONCE and use the trimmed value for every subsequent check —
+        // the length gate below and the comparison further down must agree.
+        // A secret set by piping (`gcloud secrets versions access ... |
+        // wrangler secret put ...`) commonly carries a trailing newline; if
+        // only the gate trimmed, such a value would clear the gate and then
+        // fail every comparison, surfacing as "token mismatch" 401s that look
+        // like a wrong token. The stored value is write-only in Cloudflare, so
+        // that misdiagnosis is not something an operator can check by reading
+        // the secret back. `presented` needs no trim here — `extractBearer`
+        // already trims what it returns.
+        const expected = process.env.SYSTEM_AUTH_TOKEN?.trim();
+        if (!expected) {
             // Fail-closed — refusing the request is better than silently
             // letting it through. The deployment is misconfigured.
             logger.error(
@@ -96,14 +108,14 @@ export const requireSystemAuth = (): MiddlewareHandler => {
             return c.json(errorEnvelope(c, 'System auth not configured'), 503);
         }
 
-        if (expected.trim().length < SYSTEM_AUTH_TOKEN_MIN_LENGTH) {
+        if (expected.length < SYSTEM_AUTH_TOKEN_MIN_LENGTH) {
             // Token is set but too short to provide adequate security.
             // Fail-closed — refuse all requests until the secret is rotated.
             logger.error(
                 {
                     requestId: c.get('requestId'),
                     minLength: SYSTEM_AUTH_TOKEN_MIN_LENGTH,
-                    actualLength: expected.trim().length,
+                    actualLength: expected.length,
                 },
                 '[system-auth] SYSTEM_AUTH_TOKEN is too short; refusing (rotate to ≥32 chars)',
             );

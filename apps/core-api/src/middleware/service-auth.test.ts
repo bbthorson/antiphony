@@ -63,6 +63,18 @@ describe('parseAppTokens', () => {
         expect(parseAppTokens('vox-pop:short')).toEqual([]);
     });
 
+    // Same piped-secret hazard as SYSTEM_AUTH_TOKEN (middleware/system-auth.ts):
+    // the env value arrives with the source's trailing newline. Here the
+    // per-entry trim already covers it, so the token still matches — pinned so
+    // the trim isn't dropped as redundant.
+    it('trims a trailing newline off the whole config value', () => {
+        expect(parseAppTokens(`vox-pop:${TOKEN}\n`)).toEqual([{ appId: 'vox-pop', token: TOKEN }]);
+    });
+
+    it('measures token length after trimming (short token stays rejected)', () => {
+        expect(parseAppTokens(`vox-pop:${'a'.repeat(31)}\n`)).toEqual([]);
+    });
+
     it('allows one app id twice (rotation window)', () => {
         const apps = parseAppTokens(`vox-pop:${'x'.repeat(32)},vox-pop:${'y'.repeat(32)}`);
         expect(apps).toHaveLength(2);
