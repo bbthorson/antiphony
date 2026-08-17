@@ -94,7 +94,7 @@ const proxyRoute = createRoute({
         'audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.\n\n' +
         'Pass `format` to receive a derived rendition (e.g. `mp3` for telephony playback, which cannot ' +
         'decode webm/opus) instead of the canonical bytes. The canonical audio is never re-encoded.',
-    middleware: [rateLimit(RATE_LIMITS.read)] as const,
+    middleware: [rateLimit(RATE_LIMITS.read, { exemptServiceCallers: true })] as const,
     request: { query: QuerySchema },
     responses: {
         200: {
@@ -243,13 +243,27 @@ app.openapi(proxyRoute, async (c) => {
  * anyone actually plays are already warm, so the lazy path is the tail rather
  * than the norm.
  *
- * ⚠️ **The rate limit here is the weak link, and it is a known open question.**
- * This route carries `RATE_LIMITS.read` — 60/min, IP-keyed — and
- * specs/cloudflare-migration.md § Open questions records that Twilio fetches
- * from a small IP pool, so every concurrent call would share a handful of
- * buckets. That was already flagged as blocking the telephony cutover; the miss
- * path makes the same limit govern something more expensive than a read. It
- * needs a non-IP key or an exemption before Twilio traffic lands here.
+ * ⚠️ **The rate limit here is half-fixed, and the remaining half is the one
+ * that matters for telephony.**
+ *
+ * This route carries `RATE_LIMITS.read` — 60/min, IP-keyed — on a path the miss
+ * branch makes far more expensive than a read. Two distinct callers hit it and
+ * only one is now handled:
+ *
+ *   - **Sibling services** (Vox Pop's BFF, which streams these bytes rather
+ *     than redirecting to them — see the download-seam decision) are exempted
+ *     via `exemptServiceCallers`. They authenticate, and their traffic all
+ *     arrives from one address, so the IP key collapsed an entire peer into a
+ *     single bucket: the limit throttled a partner rather than an abuser.
+ *
+ *   - **Twilio is NOT covered and cannot be.** It fetches `<Play>` URLs as a
+ *     bare `GET` with no headers under our control (specs/mp3-rendition-stage.md
+ *     § Why not content negotiation), so it can never present a token. Its
+ *     fetches arrive from a small pool of Twilio addresses, so concurrent calls
+ *     still share a handful of buckets and a busy period still throttles live
+ *     audio. **That needs a non-IP key — the requested object path is the
+ *     obvious candidate, since it bounds per-object abuse without collapsing
+ *     unrelated calls together — and it is still open.**
  */
 
 /**

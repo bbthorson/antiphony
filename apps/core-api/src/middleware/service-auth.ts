@@ -73,6 +73,23 @@ function parseAppTokensUncached(raw: string | undefined): ServiceApp[] {
  * Compares against EVERY entry (no early exit) to keep timing flat.
  * Returns the matched app id, or null.
  */
+/**
+ * The app id behind an `Authorization` header, or null.
+ *
+ * Extraction and matching in one call, because every caller that wants one
+ * wants the other, and because a caller doing its own `Bearer ` slicing is how
+ * the prefix rules drift apart between call sites. Returns null for an absent,
+ * malformed, or unrecognised credential — the difference between those is not
+ * something a caller should branch on, and not something to tell a client.
+ */
+export function serviceCallerFrom(authHeader: string | undefined): string | null {
+    if (!authHeader) return null;
+    const prefix = 'Bearer ';
+    if (!authHeader.startsWith(prefix)) return null;
+    const token = authHeader.slice(prefix.length).trim();
+    return token ? matchServiceToken(token) : null;
+}
+
 export function matchServiceToken(presented: string): string | null {
     let matched: string | null = null;
     for (const app of parseAppTokens()) {

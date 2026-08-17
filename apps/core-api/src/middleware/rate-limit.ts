@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { extractClientIp } from '../lib/client-ip.js';
+import { serviceCallerFrom } from './service-auth.js';
 import { ServiceError } from 'shared/errors';
 import { logger } from '../lib/logger.js';
 import { servicesFor } from '../composition.js';
@@ -162,12 +163,52 @@ export function resetRateLimitCircuitForTest(): void {
 }
 
 /**
+ * Per-route knobs that are not the limit itself.
+ */
+export interface RateLimitBehaviour {
+    /** Fixed bucket id, replacing the client IP. */
+    customKey?: string;
+    /**
+     * Skip the limit entirely for a caller presenting a valid
+     * `ANTIPHONY_APP_TOKENS` bearer.
+     *
+     * **Opt-in per route, deliberately.** Most rate-limited routes already sit
+     * behind `requireServiceToken()`, so every caller that reaches them is
+     * authenticated — a blanket exemption would silently delete the write limit
+     * (10 per 15 min) rather than adjust it. This is for the routes that are
+     * ANONYMOUS by design and are also called service-to-service, where the
+     * IP key is actively wrong: every request from the sibling service carries
+     * that service's address, so one bucket absorbs all of its traffic and the
+     * limit throttles a peer instead of an abuser.
+     */
+    exemptServiceCallers?: boolean;
+}
+
+/**
  * Build a rate-limit middleware with the given options. Call per-route:
  *
  *   app.get('/api/v1/handles', rateLimit(RATE_LIMITS.read), async (c) => { ... })
  */
-export const rateLimit = (options: RateLimitOptions, customKey?: string): MiddlewareHandler => {
+export const rateLimit = (
+    options: RateLimitOptions,
+    behaviour: RateLimitBehaviour = {},
+): MiddlewareHandler => {
+    const { customKey, exemptServiceCallers } = behaviour;
     return async (c, next) => {
+        // Checked before the IP is even extracted: an authenticated peer's
+        // address is not a meaningful bucket, so computing one to discard it
+        // would only invite someone to "fix" the exemption by keying on it.
+        //
+        // An invalid or absent token falls through to the normal IP limit
+        // rather than being refused here — this middleware is not an
+        // authenticator, and several routes carrying it are anonymous by
+        // design. The trade this makes is explicit: a leaked app token now buys
+        // rate-limit exemption as well as tenancy, which is one more reason the
+        // 32-character minimum in service-auth.ts is enforced rather than
+        // advisory.
+        if (exemptServiceCallers && serviceCallerFrom(c.req.header('authorization'))) {
+            return next();
+        }
         const xff = c.req.header('x-forwarded-for');
         const ip = extractClientIp(xff);
         // The June 2026 H5 investigation confirmed the TRUSTED_PROXY_HOPS offset
