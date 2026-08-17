@@ -13,6 +13,62 @@ export const APP_CONFIG = {
 } as const;
 
 /**
+ * Configuration whose absence must stop a deployment rather than degrade it.
+ *
+ * Deliberately short. A var belongs here only when nothing else would report
+ * its absence: `SYSTEM_AUTH_TOKEN` and `ANTIPHONY_APP_TOKENS` already fail
+ * closed per request with their own log lines, `ANTIPHONY_R2_BUCKET` has a
+ * default, and `ANTIPHONY_PDS_HOST` and `ANTIPHONY_RENDITION_SERVICE_URL` are
+ * optional by design. Adding a var that some other check already covers buys
+ * nothing and makes a deployment brittle for no reason.
+ */
+const REQUIRED_VARS = ['ANTIPHONY_PUBLIC_BASE_URL'] as const;
+
+/**
+ * Throw unless every required var is present.
+ *
+ * ## Why this exists
+ *
+ * `ANTIPHONY_PUBLIC_BASE_URL` was unset on the deployed service from
+ * 2026-08-16T21:15 until 2026-08-17. `audioPlaybackUrl` returned null, so every
+ * post view hydrated with NO `embed` and no audio was reachable by any
+ * consumer — for a day, unnoticed. The value was documented as required and the
+ * code merely logged and degraded, which is the combination that let it survive:
+ * a per-hydration error log is indistinguishable from noise, and the response
+ * stayed a 200.
+ *
+ * So: reported once, at startup, by refusing to start.
+ *
+ * ## Why it reads `process.env`
+ *
+ * Because that is what `publicBaseUrl()` reads. A check that consults a
+ * different source than the consumer can pass while the consumer still sees
+ * nothing, which would be a worse failure than no check — it would prove the
+ * wrong thing. On Workers this is populated from `vars` and secrets (the compat
+ * date in wrangler.jsonc is what buys that), verified as available at module
+ * scope, not only inside a handler.
+ *
+ * ## Why this is not the boot gate that was deleted
+ *
+ * That gate resolved every tenant's `did:web` document over the network before
+ * serving, so a DNS blip became an outage and a restart was the only thing that
+ * re-checked custody. This is a local read of already-loaded configuration: no
+ * I/O, no dependency on anything outside the isolate, and nothing that can fail
+ * intermittently. It can only fail the same way twice.
+ */
+export function assertRequiredConfig(env: NodeJS.ProcessEnv = process.env): void {
+    const missing = REQUIRED_VARS.filter((name) => !env[name]?.trim());
+    if (missing.length === 0) return;
+
+    throw new Error(
+        `[app-config] missing required configuration: ${missing.join(', ')}. ` +
+            'Set it under "vars" in apps/core-api/wrangler.jsonc and redeploy. ' +
+            'If it IS set there and this still fires, suspect process.env population ' +
+            'rather than the value — see the compatibility_date note in that file.',
+    );
+}
+
+/**
  * Absolute base URL this deployment is reachable at (e.g. `https://api.antiphony.dev`),
  * with no trailing slash.
  *

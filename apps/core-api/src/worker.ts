@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { app as createApp } from './app.js';
 import { revalidateAllPins, type PinCacheKV } from './lib/app-did.js';
-import { APP_CONFIG } from './lib/app-config.js';
+import { APP_CONFIG, assertRequiredConfig } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
 import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
@@ -25,6 +25,18 @@ import type {
  * a factory.
  */
 installDurableDispatcher(queueResolver(logger));
+
+/**
+ * Refuse to start without the configuration a deployment must carry.
+ *
+ * At module scope on purpose: this is the only "startup" a Worker has, and a
+ * throw here fails the isolate rather than the request, so the deploy's smoke
+ * test sees it immediately instead of a consumer discovering it later through a
+ * post that hydrates with no audio. See `assertRequiredConfig` for why that
+ * specific failure is what this defends against, and why it is not a revival of
+ * the boot gate the migration deleted.
+ */
+assertRequiredConfig();
 
 /**
  * The rate-limit bucket, re-exported so the runtime can find it.

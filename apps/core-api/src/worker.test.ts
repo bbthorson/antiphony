@@ -20,6 +20,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 
 process.env.LOG_LEVEL = 'silent';
+// `worker.ts` calls `assertRequiredConfig()` at module scope, so importing it
+// without this throws — which is the point of the assertion, covered directly
+// in `app-config.test.ts`. Here it is setup, not the thing under test.
+process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test.antiphony.dev';
 
 const revalidateAllPins = vi.fn(async () => [] as unknown[]);
 const sqlQuery = vi.fn(async () => [{ swept_table: 'rate_limits', deleted: 3 }]);
