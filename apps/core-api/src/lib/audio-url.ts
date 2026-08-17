@@ -1,6 +1,5 @@
 import { publicBaseUrl } from './app-config.js';
 import { blobObjectPath } from './blob-path.js';
-import { logger } from './logger.js';
 
 /**
  * Build the playback URL for a stored blob — the value that lands in
@@ -32,13 +31,16 @@ export function audioPlaybackUrl(originAppId: string, blobCid: string): string |
     if (!objectPath) return null;
 
     const base = publicBaseUrl();
-    if (!base) {
-        // Fail loudly in the log but softly in the response: a misconfigured
-        // deployment should degrade to "audio unavailable", not 500 every read.
-        logger.error(
-            '[audio-url] ANTIPHONY_PUBLIC_BASE_URL is unset — post views cannot carry a playable audio URL',
-        );
-        return null;
-    }
+    // Unreachable in a deployed Worker: `assertRequiredConfig()` refuses to
+    // start without this. Kept as a null return rather than a throw because the
+    // caller's contract is already "null means no playable audio", and because
+    // this module is also imported by scripts that never boot the Worker.
+    //
+    // It used to log at `error` here instead — once per hydration, on the read
+    // path, in a response that stayed 200. That is precisely how an unset base
+    // URL went unnoticed for a day: the signal existed but was shaped like
+    // noise. The check moved to startup; this branch stopped being the place
+    // that reports it.
+    if (!base) return null;
     return `${base}/api/v1/audio?url=${encodeURIComponent(objectPath)}`;
 }
