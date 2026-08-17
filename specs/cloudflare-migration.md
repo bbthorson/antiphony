@@ -78,8 +78,8 @@ recorded in the commits:
   | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | ✅ done |
   | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | ✅ done |
   | 4e | Vox Pop repoints **telephony** at `?format=mp3` | ✅ code landed, **flag OFF** (vox-pop `d1fad798`) |
-  | 4e′ | Vox Pop repoints **creator-download** | ⛔ blocked on a filename decision — see below |
-  | 4f | Retire Vox Pop's copy of the service | blocked on 4e′ |
+  | 4e′ | Vox Pop repoints **creator-download** | ✅ decided (option 1) — ready to implement, see below |
+  | 4f | Retire Vox Pop's copy of the service | after 4e + 4e′ cut over |
 
   4e went in behind `ANTIPHONY_RENDITIONS`, unset. Because Vox Pop's Cloud Run
   vars live on the service rather than in its deploy workflow, the cutover is one
@@ -98,7 +98,7 @@ recorded in the commits:
   with no `format` support at all. The Worker is not deployed, the transcode
   service is not deployed, and open question 1 below is unresolved.
 
-### ⛔ 4f is blocked on a decision nobody has recorded: download filenames
+### ✅ Download filenames — decided 2026-08-17: the BFF streams the bytes
 
 Repointing the creator-download route would **silently regress downloads to
 CID-named files**, and `apps/web`'s own comment is why:
@@ -128,7 +128,33 @@ needs a decision rather than a default:
    never retires, and Vox Pop keeps a Google Cloud dependency its own migration
    spec § 13 wants gone.
 
-Until one is chosen, the old service stays deployed and 4f cannot start.
+**Option 1 is chosen.** Vox Pop's BFF fetches from Antiphony and sets
+`Content-Disposition` itself; the filename stays composed from prompt title +
+replier handle, which is Vox Pop's data and belongs on Vox Pop's side of the
+seam. This is also what
+[`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Open questions (4)
+guessed, so the two specs now agree.
+
+The costs are accepted rather than overlooked:
+
+- `GET /replies/{id}/download` changes from returning `{url, filename, format}`
+  to returning **bytes**, so `apps/web`'s `ReplyDetailPanel` changes with it —
+  its anchor-and-`download` dance goes away, because the header does that job
+  once the response is same-origin.
+- Download traffic flows **through** the BFF rather than being a redirect. Fine
+  on volume: a creator fetching their own reply is not a hot path.
+
+What that unblocks, and in what order: 4e′ can be implemented now, but 4f still
+waits for **both** 4e and 4e′ to have actually cut over, because until then the
+old service is still serving one of the two consumers.
+
+Note this is the one place the adoption's "mostly deletion" gets a bill.
+Dropping `buildContentDisposition` was right for the service — it writes to R2
+and serves no browser — but the header it produced was load-bearing for a
+consumer nobody was looking at, and that only surfaced when 4e went to repoint
+the second caller. Worth remembering as a pattern: deleting a defence is safe
+when the thing it defended is gone; deleting a *feature* needs its consumers
+enumerated first.
 
   **Its pace is still not entirely ours from 4e on** — the service sits on a live
   Twilio path, so a change to it is a change to real calls. But the specific
