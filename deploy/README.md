@@ -125,6 +125,32 @@ the run is one record to investigate; caught afterwards it is an unknown subset.
 Re-running is safe — every write is an upsert keyed on the record's own id, so
 a partial run resumes by running again. Nothing is deleted from Firestore.
 
+## 5b. Deploy the transcode service (optional)
+
+`apps/audio-rendition` derives `mp3` renditions for callers that cannot decode
+webm/opus — Twilio's `<Play>` being the one that matters. It is a container
+rather than a Worker because it spawns ffmpeg.
+
+**Skippable.** Without it, `GET /api/v1/audio?format=mp3` serves renditions that
+already exist and 404s the rest. That is the right state for a deployment that
+pre-warms everything it needs, or that never phones anything.
+
+`.github/workflows/deploy-audio-rendition.yml` ships it, and needs three
+Secret Manager secrets granted to the runtime service account
+(`system-auth-token`, `r2-access-key-id`, `r2-secret-access-key`) plus an
+`R2_ACCOUNT_ID` repo variable. See
+[`apps/audio-rendition/README.md`](../apps/audio-rendition/README.md).
+
+The R2 key is the **one place in Antiphony a stored R2 credential is
+unavoidable** — everywhere else access is a Worker binding. Scope it to the one
+bucket: `blobs/` read, `renditions/` write.
+
+Then point core-api at it by replacing the `REPLACE_ME` in
+`ANTIPHONY_RENDITION_SERVICE_URL` in `apps/core-api/wrangler.jsonc` with the
+deployed Cloud Run URL. That var and `SYSTEM_AUTH_TOKEN` go together — a URL
+with no token is a rendition path that looks configured and 401s on every miss,
+which core-api logs once at startup rather than per request.
+
 ## 6. Deploy
 
 Push to `master`, or run the workflow by hand. It proves every app-DID pin,

@@ -222,6 +222,13 @@
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
 		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
+		// The transcode backend for on-demand renditions (apps/audio-rendition).
+		// Absent is a supported state: the audio proxy then serves renditions
+		// that already exist and 404s the rest, which is what a deployment
+		// pre-warming everything it needs wants. Reached with SYSTEM_AUTH_TOKEN,
+		// so both must be present or neither — a URL with no token is a
+		// rendition path that looks configured and 401s on every miss.
+		"ANTIPHONY_RENDITION_SERVICE_URL": "https://antiphony-audio-rendition-REPLACE_ME.us-east4.run.app",
 		"NODE_ENV": "production",
 		"LOG_LEVEL": "info"
 	}

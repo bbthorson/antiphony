@@ -30,10 +30,19 @@ parameter is optional and every existing request is answered exactly as before.
   a caller that asked for mp3 is the exact failure this parameter exists to
   remove, and it is one that presents as silence rather than as an error.
 
-  A format with no rendition stored answers `404` with a message naming the
-  format, distinct from the audio itself being absent. Transcode-on-miss lands
-  with the rendition service; until then the renditions that exist are the ones
-  the per-tenant processing opt-in pre-warms.
+  A format with no rendition stored is **transcoded on demand** when a
+  transcode backend is configured, then served. Without one — a valid state — the
+  response is a `404` with a message naming the format, distinct from the audio
+  itself being absent, and the renditions that exist are the ones the per-tenant
+  processing opt-in pre-warmed.
+
+  The on-demand path is **bounded**: a `(cid, format)` pair costs one transcode
+  ever, because the result is cached, and the backend refuses any pair whose
+  source blob does not exist. The wait is bounded too — a transcode that does not
+  finish inside the request's budget answers `404` and lands for the next
+  request, rather than holding the connection open. That matters because the
+  consumer this exists for is a Twilio `<Play>` fetch on a live call, where
+  waiting is dead air.
 
 ## [0.5.0] — 2026-08-16
 

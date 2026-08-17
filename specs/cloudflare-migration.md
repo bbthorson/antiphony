@@ -75,8 +75,8 @@ recorded in the commits:
   | :--- | :--- | :--- |
   | 4a | `?format=` on the audio proxy, over `renditions/{app}/{cid}.{format}` | ✅ done (contract `0.5.1`) |
   | 4b | `apps/audio-rendition` adopted into Antiphony, taking `{originAppId, cid, format}` | ✅ done |
-  | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | next |
-  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | pending |
+  | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | ✅ done |
+  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | next |
   | 4e | Vox Pop repoints telephony + creator-download at `?format=mp3` | **cross-repo, live Twilio path** |
   | 4f | Retire Vox Pop's copy of the service | after 4e soaks |
 
@@ -196,6 +196,13 @@ them again means a runtime with a GCS binding, not a config change.
 1. **Rendition rate-limit key.** `GET /api/v1/audio` is IP-keyed at 60/min and
    Twilio fetches from a small IP pool, so every concurrent call would share a
    handful of buckets. Blocks the telephony cutover, not the migration.
+
+   **4c sharpened this.** The same limit now governs a request that can start an
+   ffmpeg run, not just a storage read. The total work is still bounded by the
+   corpus rather than the request rate — a `(cid, format)` pair transcodes once
+   ever, and the backend refuses any pair with no source blob — so this is a
+   burst-shaping problem rather than an unbounded one. But it is the same limit,
+   doing more, on the route Twilio is about to point at.
 2. **`audio-rendition` region.** It is `us-east4`, next to both Neon (`us-east-1`)
    and wherever Smart Placement parks the Worker. Confirm that is deliberate.
 3. **A migration tool.** `db/schema.sql` is apply-once DDL, not a versioned
