@@ -232,13 +232,24 @@
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
 		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
-		// The transcode backend for on-demand renditions (apps/audio-rendition).
-		// Absent is a supported state: the audio proxy then serves renditions
-		// that already exist and 404s the rest, which is what a deployment
-		// pre-warming everything it needs wants. Reached with SYSTEM_AUTH_TOKEN,
-		// so both must be present or neither — a URL with no token is a
-		// rendition path that looks configured and 401s on every miss.
-		"ANTIPHONY_RENDITION_SERVICE_URL": "https://antiphony-audio-rendition-REPLACE_ME.us-east4.run.app",
+		// ANTIPHONY_RENDITION_SERVICE_URL is DELIBERATELY ABSENT.
+		//
+		// It names the transcode backend for on-demand renditions
+		// (apps/audio-rendition), which is not deployed. Absent is a supported
+		// state: the audio proxy serves renditions that already exist and 404s
+		// the rest.
+		//
+		// A PLACEHOLDER IS NOT ABSENT. `renditionServiceConfig()` checks only
+		// that the value is non-empty, so `…-REPLACE_ME.us-east4.run.app` —
+		// which shipped here until 2026-08-17 — counted as configured: every
+		// mp3 miss fetched a host that does not resolve, waited, logged
+		// `[rendition] service unreachable`, and 404ed anyway. That is the
+		// looks-configured-but-never-succeeds state the adapter's own comment
+		// exists to prevent, reached through the one input it does not check.
+		//
+		// Restore it with the real Cloud Run URL when the service deploys. It
+		// and SYSTEM_AUTH_TOKEN go together: a URL with no token is the same
+		// failure wearing a 401.
 		"NODE_ENV": "production",
 		"LOG_LEVEL": "info"
 	}
