@@ -68,6 +68,25 @@ jobs:
       # it is `--dry-run` — which is what makes it safe to run on a PR.
       - run: npm run check:worker-bundle -w @antiphony/core-api
 
+      # audio-rendition is the one deployable that is a container, and the image
+      # is where its real preconditions live — none of which anything above
+      # touches. `npm run build` compiles its TypeScript in the host's tree; it
+      # does not exercise the pinned npm, the repo-root build context the
+      # workspace install needs, or the `ffmpeg -version` assert in the runtime
+      # stage. That assert is the load-bearing one: the service spawns a bare
+      # `ffmpeg` off PATH and nothing in package.json declares one, so the image
+      # is the only place that dependency is checked at all.
+      #
+      # Same invocation as .github/workflows/deploy-audio-rendition.yml, minus
+      # the push and the registry tag — it builds and discards, so it needs no
+      # GCP credentials and is safe on a PR from a fork.
+      #
+      # Without this, the first build of the Dockerfile ever is on master,
+      # inside the workflow that then runs `gcloud run deploy` — so a broken
+      # image is found after merge, on the deploy path, rather than here.
+      - name: Build the audio-rendition image
+        run: docker build -f apps/audio-rendition/Dockerfile .
+
       # The docs site is deployed separately (Cloudflare, see wrangler.jsonc) so
       # nothing else would catch a break here. `copy-openapi.mjs --strict` also
       # fails the build if core-api's spec is missing, tying the published docs
