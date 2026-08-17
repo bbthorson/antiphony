@@ -118,4 +118,50 @@ describe('requireSystemAuth', () => {
         });
         expect(res.status).toBe(401);
     });
+
+    // The stored secret is set by piping Secret Manager's output into
+    // `wrangler secret put`, which carries the source value's trailing
+    // newline into the env var. The length gate and the comparison must agree
+    // about that whitespace: if only the gate trimmed, these would clear the
+    // gate and then 401 on every request as a "token mismatch" — and the
+    // stored value is write-only, so an operator couldn't tell that apart
+    // from a genuinely wrong token.
+    it('accepts the clean token when the stored secret has a trailing newline', async () => {
+        process.env.SYSTEM_AUTH_TOKEN = `${VALID_TOKEN}\n`;
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: `Bearer ${VALID_TOKEN}` },
+        });
+        expect(res.status).toBe(200);
+    });
+
+    it('accepts the clean token when the stored secret has surrounding spaces', async () => {
+        process.env.SYSTEM_AUTH_TOKEN = `  ${VALID_TOKEN}  `;
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: `Bearer ${VALID_TOKEN}` },
+        });
+        expect(res.status).toBe(200);
+    });
+
+    it('returns 503 when the secret only reaches 32 chars by counting whitespace', async () => {
+        // 31 real chars + a newline. The length gate measures the trimmed
+        // value, so this is too short — never a 32-char secret that then
+        // fails to match.
+        process.env.SYSTEM_AUTH_TOKEN = `${'a'.repeat(31)}\n`;
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: `Bearer ${'a'.repeat(31)}` },
+        });
+        expect(res.status).toBe(503);
+        const body = await res.json();
+        expect(body.error.message).toMatch(/misconfigured/);
+    });
+
+    it('returns 503 when the secret is only whitespace', async () => {
+        process.env.SYSTEM_AUTH_TOKEN = '   \n';
+        const res = await makeApp().request('/protected', {
+            headers: { authorization: 'Bearer anything' },
+        });
+        expect(res.status).toBe(503);
+        const body = await res.json();
+        expect(body.error.message).toMatch(/not configured/);
+    });
 });
