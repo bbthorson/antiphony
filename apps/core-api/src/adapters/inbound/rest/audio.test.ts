@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Tests for `GET /api/v1/audio?url=...`.
@@ -12,6 +12,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const extractObjectPath = vi.fn();
 const openStream = vi.fn();
 
+/**
+ * `undefined` by default, so the existing cases describe a deployment with no
+ * transcode backend — which is a supported state, and the one where a missing
+ * rendition is simply a 404. The miss-path suite sets it.
+ */
+let renditionService: { ensure: (r: unknown) => Promise<boolean> } | undefined;
+
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         storage: {
@@ -23,6 +30,7 @@ vi.mock('../../../composition.js', () => ({
     // these suites assert route behaviour, not rate-limit policy (that is
     // middleware/rate-limit.test.ts).
     rateLimitStore: { hit: async () => 'under' as const },
+    renditionService,
     }),
 }));
 
@@ -220,5 +228,188 @@ describe('GET /api/v1/audio', () => {
             success: false,
             error: { message: 'Audio not found' },
         });
+    });
+});
+
+describe('GET /api/v1/audio?format= — derived renditions', () => {
+    beforeEach(() => {
+        // Reset first — the suite above resets in its own `beforeEach`, and a
+        // describe-level hook here REPLACES nothing, it just runs after. Call
+        // counts leak between cases without this.
+        vi.resetAllMocks();
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+    });
+
+    it('serves the derived object, not the canonical one', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3], { mimeType: 'audio/mpeg' }));
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(200);
+        // The path is derived from the source's own tenant and CID — no lookup,
+        // which on a cache hit is the whole request.
+        expect(openStream).toHaveBeenCalledWith('renditions/app-1/bafyreicid.mp3', undefined);
+    });
+
+    it('leaves the canonical path untouched when no format is asked for', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3]));
+
+        await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid');
+
+        expect(openStream).toHaveBeenCalledWith('blobs/app-1/bafyreicid', undefined);
+    });
+
+    it('types the response from the FORMAT, not from the store', async () => {
+        // The store reports whatever was set when the object was written. An
+        // mp3 served as application/octet-stream because a Content-Type went
+        // missing is the kind of thing Twilio answers by playing nothing.
+        openStream.mockResolvedValue(read([1, 2, 3], { mimeType: undefined }));
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    });
+
+    it('400s an unsupported format rather than serving the canonical bytes', async () => {
+        // Falling back to webm/opus is the worst available answer for the one
+        // caller this exists for: Twilio cannot decode it and does not say so.
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=wav');
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error.message).toMatch(/Unsupported format/);
+        expect(openStream).not.toHaveBeenCalled();
+    });
+
+    it('does not let a format value reach the storage key as caller bytes', async () => {
+        const res = await app().request(
+            '/api/v1/audio?url=blobs/app-1/bafyreicid&format=' + encodeURIComponent('mp3 -f concat'),
+        );
+
+        expect(res.status).toBe(400);
+        expect(openStream).not.toHaveBeenCalled();
+    });
+
+    it('404s a missing rendition with a message that names the format', async () => {
+        // Until the transcode service lands, a miss is the honest answer for
+        // anything not pre-warmed — and the message has to distinguish "this
+        // audio does not exist" from "this audio has no mp3 yet".
+        openStream.mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(404);
+        expect((await res.json()).error.message).toMatch(/no mp3 rendition/i);
+    });
+
+    it('still refuses a path outside the served namespace', async () => {
+        extractObjectPath.mockReturnValue('secrets/keys.json');
+
+        const res = await app().request('/api/v1/audio?url=x&format=mp3');
+
+        expect(res.status).toBe(403);
+        expect(openStream).not.toHaveBeenCalled();
+    });
+
+    it('serves a range from the rendition, not from the source', async () => {
+        openStream.mockResolvedValue(
+            read([2, 3], { size: 2, totalSize: 9, mimeType: 'audio/mpeg' }),
+        );
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3', {
+            headers: { range: 'bytes=1-2' },
+        });
+
+        expect(res.status).toBe(206);
+        expect(openStream).toHaveBeenCalledWith('renditions/app-1/bafyreicid.mp3', {
+            offset: 1,
+            length: 2,
+        });
+    });
+});
+
+describe('GET /api/v1/audio?format= — transcode on miss', () => {
+    const ensure = vi.fn();
+
+    beforeEach(() => {
+        vi.resetAllMocks();
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        renditionService = { ensure: (r: unknown) => ensure(r) };
+    });
+
+    afterEach(() => {
+        renditionService = undefined;
+    });
+
+    it('asks the service on a miss, then serves the built rendition', async () => {
+        openStream.mockResolvedValueOnce(null); // the miss
+        ensure.mockResolvedValue(true);
+        openStream.mockResolvedValueOnce(read([1, 2, 3], { mimeType: 'audio/mpeg' })); // the re-read
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(200);
+        // The tenant and CID come from the SOURCE path, not from the caller's
+        // query string — that is what keeps the request tenant-scoped.
+        expect(ensure).toHaveBeenCalledWith({
+            originAppId: 'app-1',
+            cid: 'bafyreicid',
+            format: 'mp3',
+        });
+        expect(openStream).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-reads rather than trusting the answer', async () => {
+        // The service writes to R2 and we read from R2, so only the read
+        // establishes that the rendition is servable.
+        openStream.mockResolvedValueOnce(null);
+        ensure.mockResolvedValue(true);
+        openStream.mockResolvedValueOnce(null); // built, but somehow still unreadable
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(404);
+    });
+
+    it('404s without a second read when the service declines', async () => {
+        openStream.mockResolvedValueOnce(null);
+        ensure.mockResolvedValue(false);
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(404);
+        expect(openStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('never asks the service on a HIT', async () => {
+        // The cache hit is the whole request on this path. A service call there
+        // would put a network round trip in front of every warm rendition.
+        openStream.mockResolvedValue(read([1, 2, 3], { mimeType: 'audio/mpeg' }));
+
+        await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(ensure).not.toHaveBeenCalled();
+    });
+
+    it('never asks the service for the CANONICAL object', async () => {
+        // Only derived objects are buildable. A missing canonical blob is a
+        // missing blob — there is nothing to transcode it from.
+        openStream.mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid');
+
+        expect(res.status).toBe(404);
+        expect(ensure).not.toHaveBeenCalled();
+    });
+
+    it('404s a miss with no backend configured, and asks nothing', async () => {
+        // A deployment that pre-warms every rendition it needs wants exactly
+        // this: serve what exists, refuse the rest, transcode nothing.
+        renditionService = undefined;
+        openStream.mockResolvedValue(null);
+
+        const res = await app().request('/api/v1/audio?url=blobs/app-1/bafyreicid&format=mp3');
+
+        expect(res.status).toBe(404);
+        expect(ensure).not.toHaveBeenCalled();
     });
 });

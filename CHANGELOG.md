@@ -8,6 +8,42 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] — 2026-08-16
+
+`GET /api/v1/audio` takes an optional `format`. **Patch, not minor**: the
+parameter is optional and every existing request is answered exactly as before.
+
+### Added
+
+- **`GET /api/v1/audio?format=mp3` serves a derived rendition** of the audio
+  instead of the canonical bytes, from
+  `renditions/{originAppId}/{sourceCid}.{format}`. Responses carry the format's
+  own content type and the same `immutable` caching as the canonical path.
+
+  Why: Twilio's `<Play>` cannot decode webm/opus, and does not say so — it plays
+  static. `format` is the read-path answer to that, and the canonical blob is
+  never re-encoded, because its CID is what every record, blob ref, and dedup
+  guarantee rides on.
+
+  The format set is **closed** (`mp3` today). An unrecognised value is a `400`
+  rather than a silent fall-through to the canonical audio: serving webm/opus to
+  a caller that asked for mp3 is the exact failure this parameter exists to
+  remove, and it is one that presents as silence rather than as an error.
+
+  A format with no rendition stored is **transcoded on demand** when a
+  transcode backend is configured, then served. Without one — a valid state — the
+  response is a `404` with a message naming the format, distinct from the audio
+  itself being absent, and the renditions that exist are the ones the per-tenant
+  processing opt-in pre-warmed.
+
+  The on-demand path is **bounded**: a `(cid, format)` pair costs one transcode
+  ever, because the result is cached, and the backend refuses any pair whose
+  source blob does not exist. The wait is bounded too — a transcode that does not
+  finish inside the request's budget answers `404` and lands for the next
+  request, rather than holding the connection open. That matters because the
+  consumer this exists for is a Twilio `<Play>` fetch on a live call, where
+  waiting is dead air.
+
 ## [0.5.0] — 2026-08-16
 
 `GET /api/v1/audio` returns the audio instead of redirecting to it. **Minor

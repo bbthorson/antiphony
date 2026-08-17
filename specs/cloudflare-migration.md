@@ -67,18 +67,90 @@ recorded in the commits:
 
 ### Remaining engineering
 
-- **Step 4 — ffmpeg consolidation.** Bring Vox Pop's `apps/audio-rendition` under
-  Antiphony, add `format`, move `trim`/`waveform` onto it. See § The ffmpeg
-  problem and [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
+- **Step 4 — ffmpeg consolidation.** In progress on
+  `claude/step4-rendition-format`. See § The ffmpeg problem and
+  [`mp3-rendition-stage.md`](./mp3-rendition-stage.md).
 
-  **Its pace is still not entirely ours** — the service sits on a live Twilio
-  path, so a change to it is a change to real calls. But the specific blocker
-  this section used to name has cleared; see below.
+  | | What | State |
+  | :--- | :--- | :--- |
+  | 4a | `?format=` on the audio proxy, over `renditions/{app}/{cid}.{format}` | ✅ done (contract `0.5.1`) |
+  | 4b | `apps/audio-rendition` adopted into Antiphony, taking `{originAppId, cid, format}` | ✅ done |
+  | 4c | Wire transcode-on-miss: the proxy calls the service when a rendition is absent | ✅ done |
+  | 4d | Move `trim` / `waveform` onto the service, restoring both stages on Workers | ✅ done |
+  | 4e | Vox Pop repoints **telephony** at `?format=mp3` | ✅ code landed, **flag OFF** (vox-pop `d1fad798`) |
+  | 4e′ | Vox Pop repoints **creator-download** | ⛔ blocked on a filename decision — see below |
+  | 4f | Retire Vox Pop's copy of the service | blocked on 4e′ |
 
-  Until it lands, `trim` and `waveform` resolve **unavailable** on Workers and
-  settle `skipped`. That is the truthful state, not a regression to fix in a
-  hurry — but it is a capability the Cloud Run deployment had and this one does
-  not, so it should not be discovered after the cutover.
+  4e went in behind `ANTIPHONY_RENDITIONS`, unset. Because Vox Pop's Cloud Run
+  vars live on the service rather than in its deploy workflow, the cutover is one
+  `gcloud run services update` with a one-command undo and no deploy.
+
+  It turned out to be a **query-parameter append, not a translation**: the
+  routing contract hands telephony `AudioEmbedView.url`, which since `0.5.0` is
+  the audio proxy, so an mp3 is `&format=mp3` on a URL it already has. The
+  adapter validates the host and path before appending, because `format` means
+  nothing to `storage.googleapis.com` — an older record's signed URL would take
+  the parameter and serve webm/opus, which Twilio plays as static while reporting
+  success.
+
+  **Do not set the flag yet.** Verified 2026-08-17: `api.antiphony.dev/health`
+  reports sha `4f07b24` and `backend: firebase` — an older Cloud Run revision
+  with no `format` support at all. The Worker is not deployed, the transcode
+  service is not deployed, and open question 1 below is unresolved.
+
+### ⛔ 4f is blocked on a decision nobody has recorded: download filenames
+
+Repointing the creator-download route would **silently regress downloads to
+CID-named files**, and `apps/web`'s own comment is why:
+
+> `download` on the anchor is ignored cross-origin, which is fine: the rendition
+> sets `Content-Disposition` and wins.
+
+The route hands the browser a URL. The old transcode service set that header from
+a `filename` query parameter. Antiphony's audio route sets no such header — the
+service was adopted **without** `buildContentDisposition`, deliberately, because
+it now writes to R2 and serves no browser at all.
+
+So this is not a break (it degrades to the `original` fallback's existing
+behaviour) but it is a regression of the feature that route exists for, and it
+needs a decision rather than a default:
+
+1. **The BFF streams the bytes** and sets `Content-Disposition` itself. Correct
+   side of the seam — the filename is composed from a prompt title and a replier
+   handle, both Vox Pop's data — and it is what
+   [`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Open questions (4)
+   guessed. Cost: the route's contract changes from returning a URL to returning
+   bytes, which `apps/web` consumes.
+2. **Antiphony's audio route takes `filename`.** Cheapest, and wrong: it
+   re-imports a header-injection boundary into a public anonymous route that this
+   migration deliberately removed it from.
+3. **Leave the download on the old service indefinitely.** Then `apps/audio-rendition`
+   never retires, and Vox Pop keeps a Google Cloud dependency its own migration
+   spec § 13 wants gone.
+
+Until one is chosen, the old service stays deployed and 4f cannot start.
+
+  **Its pace is still not entirely ours from 4e on** — the service sits on a live
+  Twilio path, so a change to it is a change to real calls. But the specific
+  blocker this section used to name has cleared; see below. 4a–4d are Antiphony's
+  alone and touch no live caller.
+
+  ⚠️ **4e has a consequence worth deciding before it starts.** The adopted
+  service does not carry `buildContentDisposition` across: it writes to R2 and
+  returns a path, so it serves no browser and has no header to set. Vox Pop's
+  creator-download route currently gets `Content-Disposition: attachment;
+  filename=…` from the old service, so when it repoints it has to set that
+  header itself. That is the right side of the seam — the filename is composed
+  from a prompt title and a replier handle, both Vox Pop's data — and it matches
+  what [`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Open questions (4)
+  guessed. It is still a change nobody has written down as Vox Pop's to make.
+
+  ✅ **The `trim` / `waveform` gap is closed.** Both resolved unavailable on
+  Workers between 3b and 4d — the truthful state, but a capability the Cloud Run
+  deployment had and its replacement did not. They now go over HTTP to the
+  service, so their availability is "is a transcode backend configured" rather
+  than "is a binary present", which is the only answerable form of the question
+  on a runtime that cannot hold the binary.
 
   ✅ **The sequencing caution below is satisfied.** § The ffmpeg problem says to
   let Vox Pop's extraction soak and land its step 5 first, citing `aa6759e5` as
@@ -176,6 +248,13 @@ them again means a runtime with a GCS binding, not a config change.
 1. **Rendition rate-limit key.** `GET /api/v1/audio` is IP-keyed at 60/min and
    Twilio fetches from a small IP pool, so every concurrent call would share a
    handful of buckets. Blocks the telephony cutover, not the migration.
+
+   **4c sharpened this.** The same limit now governs a request that can start an
+   ffmpeg run, not just a storage read. The total work is still bounded by the
+   corpus rather than the request rate — a `(cid, format)` pair transcodes once
+   ever, and the backend refuses any pair with no source blob — so this is a
+   burst-shaping problem rather than an unbounded one. But it is the same limit,
+   doing more, on the route Twilio is about to point at.
 2. **`audio-rendition` region.** It is `us-east4`, next to both Neon (`us-east-1`)
    and wherever Smart Placement parks the Worker. Confirm that is deliberate.
 3. **A migration tool.** `db/schema.sql` is apply-once DDL, not a versioned
@@ -671,6 +750,14 @@ Throughout, `TrimmerPort` and `WaveformPort` are unchanged — the adapters beco
 `fetch` at the rendition service instead of an `execFile`. `capabilitiesOf(providers)`
 and the stage-settling machinery never learn about any of this. It is a
 deployment-topology decision, not an architecture one.
+
+✅ **Landed in 4d, and the prediction held exactly.** Both ports are untouched;
+`adapters/outbound/rendition/stages.ts` is the `fetch`. One thing the prediction
+did not cover: it also removed an install seam. While those adapters reached
+`node:child_process` they had to be injected by the Node entry point to keep
+`ffmpeg-static` out of the Worker bundle — a `fetch` is portable, so the provider
+registry declares them like every other entry, and `ffmpeg-static` left core-api's
+dependencies entirely.
 
 **Memory, separately.** `readBlobBytes` materializes the whole blob, and the port doc
 flags this as portability hazard #1 against a 100 MB lexicon cap. In practice the

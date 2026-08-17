@@ -11,6 +11,8 @@ import {
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
+import { renditionServiceConfig } from '../adapters/outbound/rendition/http.js';
+import { httpTrimmer, httpWaveform } from '../adapters/outbound/rendition/stages.js';
 import {
     TENANT_MODEL_VARS,
     TENANT_PROVIDER_VARS,
@@ -106,59 +108,50 @@ const DENOISERS: ProviderEntry<DenoiserPort>[] = [
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubDenoiser },
 ];
 
-// Trim and waveform are LOCAL compute — no API key, so they are available on
-// their binary alone, and one probe governs both. That coupling is real (one
-// ffmpeg, two stages) and survives the split below: `native-providers.ts`
-// still builds both entries from the SAME `ffmpegAvailable` probe, so the two
-// stages remain independently selectable without being independently probed.
+// Trim and waveform are the two stages that need ffmpeg, and neither can run
+// in-process any more: a Worker cannot spawn a subprocess. Both now go over HTTP
+// to `apps/audio-rendition`, which is why their availability is the same
+// question — "is a transcode backend configured" — rather than the old "is a
+// binary present".
 //
-// The ffmpeg entries are NOT declared here. They reach `node:child_process` and
-// `ffmpeg-static`, neither of which exists on Workers — `nodejs_compat` does
-// not provide `child_process`, and `ffmpeg-static` resolves its binary through
-// `__dirname` at module scope. `src/native.ts` installs them under Node. On a
-// Worker the arrays below are all there is, so trim and waveform resolve
-// unavailable and `resolveInitialProcessing` settles them `skipped` — which is
-// the truthful state until step 4 moves those stages onto the rendition
-// service. See specs/cloudflare-migration.md § The ffmpeg problem.
+// That coupling is real (one service, two stages) and is expressed by sharing
+// `renditionServiceConfig()`, not by sharing a branch, so the two remain
+// independently selectable. Unconfigured, both resolve unavailable and
+// `resolveInitialProcessing` settles them `skipped` — the same honest state the
+// old missing-binary case produced.
+//
+// Note this REPLACED an install seam. While these adapters reached
+// `node:child_process` they had to be injected by the Node entry point, because
+// importing them would have put `ffmpeg-static` in the Worker bundle. A `fetch`
+// is portable, so the entries live here like every other one.
+const stageBackend = () => !!renditionServiceConfig().config;
+
+/** The configured backend, or a throw — guarded by `available()` at every call site. */
+function stageConfig() {
+    const resolved = renditionServiceConfig();
+    if (!resolved.config) {
+        throw new Error('[provider-registry] no transcode backend configured for this stage');
+    }
+    return resolved.config;
+}
+
 const TRIMMERS: ProviderEntry<TrimmerPort>[] = [
+    {
+        name: 'service',
+        available: stageBackend,
+        create: () => httpTrimmer(stageConfig(), logger),
+    },
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubTrimmer },
 ];
 
 const WAVEFORMS: ProviderEntry<WaveformPort>[] = [
+    {
+        name: 'service',
+        available: stageBackend,
+        create: () => httpWaveform(stageConfig(), logger),
+    },
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubWaveform },
 ];
-
-/**
- * The stage adapters that only a Node runtime can run. Installed at import time
- * by `src/native.ts`; absent on Workers.
- */
-export interface NativeProviders {
-    trimmer: ProviderEntry<TrimmerPort>;
-    waveform: ProviderEntry<WaveformPort>;
-}
-
-/**
- * Register a native entry ahead of the stub, or replace an already-registered
- * one of the same name.
- *
- * Order matters — the default scan takes the first available non-`explicitOnly`
- * entry — so a native adapter has to land in FRONT of the list, not appended to
- * it. Replacing by name rather than always prepending keeps a second call
- * idempotent, which matters because a test that re-imports the entry point
- * would otherwise stack duplicate entries and make the scan's result depend on
- * how many times the module was loaded.
- */
-function installEntry<T>(entries: ProviderEntry<T>[], entry: ProviderEntry<T>): void {
-    const existing = entries.findIndex((candidate) => candidate.name === entry.name);
-    if (existing >= 0) entries[existing] = entry;
-    else entries.unshift(entry);
-}
-
-/** Wire the Node-only stage adapters into the registry. See `NativeProviders`. */
-export function installNativeProviders(native: NativeProviders): void {
-    installEntry(TRIMMERS, native.trimmer);
-    installEntry(WAVEFORMS, native.waveform);
-}
 
 /**
  * Resolve one stage's provider.

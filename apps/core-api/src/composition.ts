@@ -10,6 +10,12 @@ import {
     durableObjectRateLimitStore,
     type DurableObjectNamespaceLike,
 } from './adapters/outbound/durable-objects/rate-limiter.js';
+import {
+    httpRenditionService,
+    renditionServiceConfig,
+} from './adapters/outbound/rendition/http.js';
+import type { RenditionServicePort } from './ports/rendition-service.js';
+import { logger } from './lib/logger.js';
 import { neonSqlClient } from './adapters/outbound/postgres/client.js';
 import { postgresAudioPostDependencies } from './adapters/outbound/postgres/audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
@@ -86,6 +92,15 @@ export interface Services {
      * Firestore, which has native TTL and needs no sweep.
      */
     sql?: SqlClient;
+    /**
+     * The transcode backend, when this deployment has one configured.
+     *
+     * `undefined` is a supported state, not a broken one: without it the audio
+     * proxy serves renditions that already exist and 404s the rest, which is
+     * correct for a deployment that pre-warms every rendition it needs (or
+     * wants none). See ports/rendition-service.ts.
+     */
+    renditionService?: RenditionServicePort;
     /** Which backend actually got wired — for `/health` and for log context. */
     backend: 'firebase' | 'postgres';
 }
@@ -247,11 +262,30 @@ export function createServices(env: RuntimeEnv): Services {
         ? durableObjectRateLimitStore(env.rateLimiter)
         : db.rateLimitStore;
 
+    // Read off `process.env` rather than a binding, so it is configured the
+    // same way on both runtimes — the service is reached over HTTPS with a
+    // bearer either way, and there is no binding that would make it otherwise.
+    //
+    // A PARTIAL config is deliberately not a silent opt-out: a URL with no token
+    // produces a service call that 401s on every miss, which looks configured
+    // and never succeeds. Reported once here, at graph-construction time, rather
+    // than per request.
+    const rendition = renditionServiceConfig();
+    if (!rendition.config && rendition.missing.length === 1) {
+        logger.error(
+            { missing: rendition.missing },
+            '[rendition] partially configured — on-demand renditions are OFF; pre-warmed ones still serve',
+        );
+    }
+
     return {
         audioPostService: new AudioPostService(db.audioPostDeps),
         storage,
         ...db,
         rateLimitStore,
+        renditionService: rendition.config
+            ? httpRenditionService(rendition.config, logger)
+            : undefined,
     };
 }
 
