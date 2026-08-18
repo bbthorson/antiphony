@@ -232,25 +232,21 @@
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
 		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
-		// The transcode backend for on-demand renditions (apps/audio-rendition),
-		// deployed 2026-08-18. An mp3 miss now builds the rendition instead of
-		// 404ing.
+		// The transcode backend for on-demand renditions (apps/audio-rendition).
+		// Set 2026-08-18, when that service first deployed successfully — before
+		// then this was deliberately ABSENT, which is a supported state: the audio
+		// proxy serves renditions that already exist and 404s the rest.
 		//
-		// This var was ABSENT rather than placeholder-valued for a day, and the
-		// distinction matters: `renditionServiceConfig()` checks only that the value
-		// is non-empty, so the `…-REPLACE_ME.us-east4.run.app` it used to hold
-		// counted as configured and made every miss fetch a host that does not
-		// resolve. Absent is a supported state — renditions that exist are served,
-		// the rest 404 — and a placeholder is not it. If this service is ever
-		// retired, DELETE this line; do not blank it.
+		// ⚠️ A PLACEHOLDER IS NOT ABSENT, and this is the field that proved it.
+		// `renditionServiceConfig()` checks only that the value is non-empty, so
+		// `…-REPLACE_ME.us-east4.run.app` — which shipped here until 2026-08-17 —
+		// counted as configured: every mp3 miss fetched a host that does not
+		// resolve, waited, logged `[rendition] service unreachable`, and 404ed
+		// anyway. If this URL ever needs to change, change it to a real one or
+		// remove it; never to a marker.
 		//
-		// The hostname is Cloud Run's opaque form, not the `-{project-number}` shape
-		// the old placeholder implied; it comes from
-		// `gcloud run services describe antiphony-audio-rendition --format='value(status.url)'`.
-		//
-		// Reached with SYSTEM_AUTH_TOKEN, so both must be present or neither — a URL
-		// with no token is a rendition path that 401s on every miss. The token is the
-		// same value on both sides because both were set from the one GCP secret.
+		// It and SYSTEM_AUTH_TOKEN go together: a URL with no token is the same
+		// failure wearing a 401. Both are present as of this change.
 		"ANTIPHONY_RENDITION_SERVICE_URL": "https://antiphony-audio-rendition-op5avwkdfa-uk.a.run.app",
 		"NODE_ENV": "production",
 		"LOG_LEVEL": "info"
