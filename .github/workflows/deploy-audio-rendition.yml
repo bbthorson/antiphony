@@ -25,6 +25,24 @@ name: Deploy audio-rendition
 #   r2-secret-access-key      — R2 S3 API secret
 #
 # `R2_ACCOUNT_ID` is a repo variable: an account identifier, not a credential.
+#
+# ── Why the revision runs as antiphony-core-api@ ──────────────────────────────
+# Without `--service-account`, Cloud Run runs revisions as the project's DEFAULT
+# compute SA (`<num>-compute@developer.gserviceaccount.com`), which is not an
+# accessor on any of the three secrets below. The deploy therefore built a good
+# image and then failed at revision creation with `Permission denied on secret`
+# (2026-08-17, twice).
+#
+# Fixed by naming the identity rather than widening the default one:
+# `antiphony-core-api@` already holds `secretAccessor` on `system-auth-token` and
+# is the identity that owns this platform's data, so the alternative — granting
+# the shared default compute SA read on three secrets, two of which are R2
+# write credentials — would have bought the same deploy at a permanently larger
+# blast radius.
+#
+# The two R2 secrets must also EXIST; they did not until they were created by
+# hand from a Cloudflare R2 API token. A missing secret fails the same way a
+# permission gap does, so check both when this step errors.
 
 on:
     push:
@@ -113,6 +131,7 @@ jobs:
                     --image "${{ steps.build.outputs.image }}" \
                     --platform managed \
                     --allow-unauthenticated \
+                    --service-account antiphony-core-api@antiphony-core.iam.gserviceaccount.com \
                     --memory 1Gi \
                     --timeout 120 \
                     --max-instances 4 \
