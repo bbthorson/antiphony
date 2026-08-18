@@ -65,9 +65,15 @@ header does not mention, found by running it: `github-deploy@` must be able to
 act as the Cloud Run runtime service account, or `gcloud run deploy` fails with
 `Permission 'iam.serviceaccounts.actAs' denied`.
 
+**The grant is per-SA, so it names the SA the workflow actually deploys as** —
+`antiphony-core-api@`, passed explicitly via `--service-account`. An earlier
+version of this file granted it on `636106936349-compute@` instead, which is the
+default Cloud Run identity and holds `roles/editor` on the whole project; that
+grant does not carry over and should be revoked if nothing else needs it.
+
 ```bash
 gcloud iam service-accounts add-iam-policy-binding \
-  636106936349-compute@developer.gserviceaccount.com \
+  antiphony-core-api@antiphony-core.iam.gserviceaccount.com \
   --member "serviceAccount:github-deploy@antiphony-core.iam.gserviceaccount.com" \
   --role roles/iam.serviceAccountUser --project antiphony-core
 ```
@@ -239,11 +245,42 @@ the two R2 keys have never been created. See
 
 The R2 key is the **one place in Antiphony a stored R2 credential is
 unavoidable** — everywhere else access is a Worker binding. Scope it to the one
-bucket: `blobs/` read, `renditions/` write.
+bucket, `antiphony-r2-bucket`.
 
-Then point core-api at it by replacing the `REPLACE_ME` in
-`ANTIPHONY_RENDITION_SERVICE_URL` in `apps/core-api/wrangler.jsonc` with the
-deployed Cloud Run URL. That var and `SYSTEM_AUTH_TOKEN` go together — a URL
+**Three IAM facts this deploy needs, all learned by running it:**
+
+1. **`github-deploy@` needs `roles/iam.serviceAccountUser` on the runtime SA it
+   deploys as** — and that grant is per-SA. The first one was made against the
+   default compute SA and did not carry over when the service moved to
+   `antiphony-core-api@`.
+2. **The runtime SA needs `roles/secretmanager.secretAccessor` on each secret.**
+   Cloud Run validates this when the revision starts and refuses it, naming
+   every secret it cannot read — the service then exists in the console while
+   serving nothing, which reads as a broken container rather than a missing
+   grant.
+3. **The workflow passes `--service-account` deliberately.** Without it, Cloud
+   Run runs the revision as the default compute SA, which holds `roles/editor`
+   on the whole project — the widest possible blast radius for the one container
+   in this system that shells out to ffmpeg, and the one place R2 credentials
+   are mounted.
+
+> ✅ **Deployed 2026-08-18**, running as `antiphony-core-api@` and reading R2 with
+> a bucket-scoped S3 key. Verified by asking for a rendition of a CID that does
+> not exist: the service logged `[rendition] no source` at `warn` and answered
+> 404, which is R2 authenticating and reporting a missing object. A bad key would
+> have been `read failed (403)` at `error`. `/health` does NOT touch R2, so a
+> green health check proves nothing about the credentials — that probe is the
+> check that does.
+
+Then point core-api at it by setting `ANTIPHONY_RENDITION_SERVICE_URL` in
+`apps/core-api/wrangler.jsonc` to the deployed Cloud Run URL — which is
+Cloud Run's **opaque** hostname, not the `-{project-number}` shape this file's
+old placeholder implied:
+
+```bash
+gcloud run services describe antiphony-audio-rendition \
+  --project antiphony-core --region us-east4 --format='value(status.url)'
+``` That var and `SYSTEM_AUTH_TOKEN` go together — a URL
 with no token is a rendition path that looks configured and 401s on every miss,
 which core-api logs once at startup rather than per request.
 

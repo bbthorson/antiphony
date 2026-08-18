@@ -367,16 +367,29 @@ is one method, and every binding behind it is untouched either way.
    `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.
 7. ~~**Point `api.antiphony.dev` at the Worker.**~~ **Done 22:05Z** —
    `backend: postgres` on the live domain.
-8. **Deploy `audio-rendition`.** The placeholder URL is deleted as of
-   2026-08-17, so the service is now genuinely skipped rather than apparently
-   configured: `GET /api/v1/audio?format=mp3` serves renditions that already
-   exist and 404s the rest, with no failed fetch per miss. (It had pointed at
-   `…-REPLACE_ME.us-east4.run.app`, and `renditionServiceConfig()` treats any
-   non-empty value as configured.) Deploying the service is still
-   **what vox-pop's step 4f is waiting on**, and it needs an R2 S3 key first:
-   `r2-access-key-id` and `r2-secret-access-key` do not exist in Secret Manager
-   (only `system-auth-token`, `antiphony-app-tokens`, `antiphony-origin-secret`,
-   `elevenlabs-api-key` do).
+8. ~~**Deploy `audio-rendition`.**~~ **Done 2026-08-18**, and core-api is wired
+   to it, so `GET /api/v1/audio?format=mp3` builds a rendition on a miss instead
+   of 404ing. **This unblocks vox-pop step 4f.** Four things had to be true and
+   only the first was known in advance: an R2 S3 key (bucket-scoped, the one
+   stored R2 credential in the system), `github-deploy@` able to act as the
+   runtime SA, that SA able to read all three Secret Manager secrets, and the
+   revision NOT running as the default compute SA — which holds `roles/editor`
+   on the project and was what the workflow silently used until #105.
+
+   Credentials were verified by probing for a CID that does not exist: R2
+   authenticated and reported the object missing (`[rendition] no source`, level
+   40), where a bad key gives `read failed (403)` at level 50. `/health` does not
+   touch R2, so it cannot make that distinction and a green deploy does not imply
+   working keys.
+
+   **The seam itself was verified the same way**, and it is worth reusing: request
+   `GET /api/v1/audio?url=blobs/voxpop/<invented-cid>&format=mp3` from
+   `api.antiphony.dev`, then look for that CID in the RENDITION service's logs. A
+   CID that was never stored anywhere appearing there proves core-api read the
+   URL, reached Cloud Run, and authenticated — a `SYSTEM_AUTH_TOKEN` mismatch
+   would log `service refused the render` instead. Both ends answer 404 either
+   way, so the status code alone cannot tell you any of that.
+
 9. ~~**The IP-keyed rate limit on `GET /api/v1/audio`.**~~ **Done 2026-08-17.**
    The route is keyed on `(objectPath, format)` rather than the client IP, so
    two concurrent Twilio calls playing different clips no longer compete for one
