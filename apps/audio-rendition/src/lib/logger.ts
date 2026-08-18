@@ -34,6 +34,38 @@ function threshold(): number {
     return cachedThreshold;
 }
 
+/**
+ * Replace `Error` values in the caller's context with something JSON keeps.
+ *
+ * `JSON.stringify(new Error('boom'))` is `{}` — Error's own properties are not
+ * enumerable — so `logger.error({ err }, '...')` emitted a record whose only
+ * error-shaped field was the empty object. Every diagnostic this logger existed
+ * to carry was being dropped at the last step, and the log line looked complete
+ * while saying nothing. It was found the hard way: a transcode failed in
+ * production, the record read `"err":{}`, and the R2 status code that would have
+ * named the cause was gone.
+ *
+ * Spreading the error FIRST keeps custom enumerable properties (a `status`, a
+ * `code`) that the three explicit fields would otherwise hide.
+ */
+function withErrors(context: object): object {
+    let mapped: Record<string, unknown> | undefined;
+    for (const [key, value] of Object.entries(context)) {
+        if (value instanceof Error) {
+            mapped ??= { ...(context as Record<string, unknown>) };
+            mapped[key] = {
+                ...value,
+                name: value.name,
+                message: value.message,
+                stack: value.stack,
+            };
+        }
+    }
+    // Untouched when there is no Error to rewrite, so the common path allocates
+    // nothing extra.
+    return mapped ?? context;
+}
+
 function emit(level: LevelName, a: object | string, b?: string): void {
     if (LEVELS[level] < threshold()) return;
     const context = typeof a === 'string' ? undefined : a;
@@ -42,7 +74,7 @@ function emit(level: LevelName, a: object | string, b?: string): void {
     // fields.
     console.log(
         JSON.stringify({
-            ...context,
+            ...(context ? withErrors(context) : undefined),
             level: LEVELS[level],
             time: Date.now(),
             service: 'audio-rendition',
