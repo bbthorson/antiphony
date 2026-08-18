@@ -49,6 +49,19 @@ export const RATE_LIMITS = {
     write: { limit: 10, windowMs: 15 * 60 * 1000 } satisfies RateLimitOptions,
     /** Read/list operations (60 per min). */
     read: { limit: 60, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    /**
+     * Flood backstop for a route keyed by something OTHER than the client IP
+     * (20 per second). Not a per-caller policy — deliberately far above what
+     * any legitimate single address does, because the callers that legitimately
+     * concentrate on one address are exactly the ones a per-IP policy hurts: a
+     * sibling service, or Twilio's fetch pool during a busy period.
+     *
+     * It exists because a key derived from the REQUEST has unbounded
+     * cardinality: an attacker minting distinct well-formed object paths gets a
+     * fresh bucket per request, so the object-keyed limit alone bounds nothing
+     * in aggregate. This is the bound that survives that.
+     */
+    readAggregate: { limit: 1200, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /** Auth-sensitive operations (5 per min). */
     auth: { limit: 5, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /** Uploads, deletes, maintenance tasks (20 per hour). */
@@ -169,6 +182,20 @@ export interface RateLimitBehaviour {
     /** Fixed bucket id, replacing the client IP. */
     customKey?: string;
     /**
+     * Derive the bucket id from the request instead of the client IP.
+     *
+     * Returning null falls back to the IP, which is the required behaviour
+     * rather than a convenience: the derivation runs BEFORE the handler
+     * validates anything, so it must be able to say "this request is not
+     * something I can key" — a malformed or hostile input then shares the
+     * caller's IP bucket instead of minting a bucket of its own.
+     *
+     * **A request-derived key has unbounded cardinality**, so a route using one
+     * needs a second, IP-keyed limit above it (`RATE_LIMITS.readAggregate`) or
+     * it has no aggregate bound at all. Pair them; do not replace.
+     */
+    keyBy?: (c: Parameters<MiddlewareHandler>[0]) => string | null;
+    /**
      * Skip the limit entirely for a caller presenting a valid
      * `ANTIPHONY_APP_TOKENS` bearer.
      *
@@ -193,7 +220,7 @@ export const rateLimit = (
     options: RateLimitOptions,
     behaviour: RateLimitBehaviour = {},
 ): MiddlewareHandler => {
-    const { customKey, exemptServiceCallers } = behaviour;
+    const { customKey, exemptServiceCallers, keyBy } = behaviour;
     return async (c, next) => {
         // Checked before the IP is even extracted: an authenticated peer's
         // address is not a meaningful bucket, so computing one to discard it
@@ -229,7 +256,10 @@ export const rateLimit = (
                 '[rate-limit] client IP unresolvable from a present XFF chain — TRUSTED_PROXY_HOPS may no longer match the platform; all such callers share one bucket',
             );
         }
-        const key = `ratelimit_${customKey || ip}`;
+        // Precedence: a request-derived key, then a fixed one, then the IP.
+        // `keyBy` returning null is the normal path for anything it cannot make
+        // sense of, and lands those requests in the IP bucket.
+        const key = `ratelimit_${keyBy?.(c) || customKey || ip}`;
         const result = await checkRateLimit(
             key,
             options,

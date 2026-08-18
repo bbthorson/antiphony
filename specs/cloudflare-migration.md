@@ -377,15 +377,15 @@ is one method, and every binding behind it is untouched either way.
    `r2-access-key-id` and `r2-secret-access-key` do not exist in Secret Manager
    (only `system-auth-token`, `antiphony-app-tokens`, `antiphony-origin-secret`,
    `elevenlabs-api-key` do).
-9. **The IP-keyed rate limit on `GET /api/v1/audio` is half-fixed.**
-   Authenticated sibling services are exempt as of 2026-08-17
-   (`exemptServiceCallers`), which covers Vox Pop's BFF now that the
-   download-seam decision has it streaming these bytes — its whole traffic
-   shared one IP bucket, so the limit throttled a peer rather than an abuser.
-   **Twilio is not covered and cannot be**: it fetches `<Play>` as a bare `GET`
-   with no headers under our control, so it can never present a token. Concurrent
-   calls still share a handful of Twilio addresses. **A non-IP key is still
-   required before the telephony flag flips** — see § Rate limiting.
+9. ~~**The IP-keyed rate limit on `GET /api/v1/audio`.**~~ **Done 2026-08-17.**
+   The route is keyed on `(objectPath, format)` rather than the client IP, so
+   two concurrent Twilio calls playing different clips no longer compete for one
+   bucket, and repeated demand for ONE rendition — the thing that costs a
+   transcode — is what gets bounded. Authenticated siblings are exempt on top of
+   that. Two properties keep the new key from being a bypass: input it cannot
+   make sense of falls back to the IP rather than minting a bucket, and a loose
+   IP-keyed aggregate sits above it because well-formed keys are still unbounded
+   in number. **This unblocks the telephony flag from Antiphony's side.**
 
 ### What rollback actually looks like now
 
@@ -877,25 +877,38 @@ buckets and a busy period throttles live calls. This is the same failure mode
 ("every caller shares that server's IP, so an IP-keyed limit would collapse ALL
 logins into one bucket").
 
-**The exemption half is done; the Twilio half is not, and the two are not
-substitutes.** `rateLimit(..., { exemptServiceCallers: true })` now skips the
-limit for a caller presenting a valid `ANTIPHONY_APP_TOKENS` bearer, and the
-audio route opts in. That fixes the *sibling-service* instance of this failure —
-Vox Pop's BFF streams these bytes rather than redirecting to them (§ Download
-filenames), so all of its traffic arrived from one address and collapsed into a
-single bucket.
+**Both halves are now done, and they fix different callers.**
 
-It does nothing for Twilio, which is the case that blocks the telephony cutover.
-Twilio fetches `<Play>` URLs as a bare `GET` and sets no headers under our
-control ([`mp3-rendition-stage.md`](./mp3-rendition-stage.md) § Why not content
-negotiation), so it cannot present a token and cannot be exempted by any
-credential-based rule. **That still needs a non-IP key.** The requested object
-path is the obvious candidate: it bounds abuse of one object without collapsing
-unrelated concurrent calls into a shared bucket, and it is available on the
-request without authenticating anyone. The exemption deliberately does not
-pretend to cover this — an exemption that looks like it solved the problem is
-worse than an open question, because the next person reads the code and stops
-looking.
+`rateLimit(..., { exemptServiceCallers: true })` skips the limit for a caller
+presenting a valid `ANTIPHONY_APP_TOKENS` bearer, which covers Vox Pop's BFF —
+it streams these bytes rather than redirecting to them (§ Download filenames),
+so all of its traffic arrived from one address and collapsed into a single
+bucket.
+
+That could never reach Twilio, which fetches `<Play>` as a bare `GET` and sets
+no headers under our control ([`mp3-rendition-stage.md`](./mp3-rendition-stage.md)
+§ Why not content negotiation), so it cannot present a credential of any kind.
+For that caller the fix is the key itself: `audioBucketKey` buckets on
+`(objectPath, format)`, so concurrent calls for different clips stop colliding,
+and what gets bounded is repeated demand for one rendition — which on a miss is
+a repeated ffmpeg transcode, i.e. the cost worth bounding in the first place.
+
+**A request-derived key is a bypass unless two things hold**, and both are
+implemented and tested:
+
+- **Unkeyable input falls back to the IP.** A path outside `blobs/`, a traversal
+  attempt, an absolute URL, an unknown format, or a missing `url` returns null
+  and shares the caller's IP bucket. Otherwise varying one character would mint
+  a fresh bucket — an attacker's limit would reset every request.
+- **An IP-keyed aggregate sits above it** (`RATE_LIMITS.readAggregate`, 1200/min,
+  deliberately loose). Even well-formed keys are unbounded in number, so object
+  keying bounds per-object cost while this bounds total cost. It is set far above
+  what a legitimate single address does precisely because the addresses that
+  legitimately concentrate traffic — a sibling service, Twilio's pool — are the
+  ones a per-IP policy hurts.
+
+Cost: two store round trips per anonymous request instead of one, which is cheap
+against an R2 read and far cheaper than a transcode.
 
 ### Requester-chosen output format
 
