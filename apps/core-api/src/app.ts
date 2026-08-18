@@ -9,6 +9,7 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
 import { servicesFor } from './composition.js';
+import { dataPresence, type R2ListLike } from './lib/data-presence.js';
 
 /**
  * ## No CORS middleware — deliberately
@@ -85,8 +86,10 @@ export function app(): OpenAPIHono {
             requestId: c.get('requestId'),
         }),
     );
-    a.get('/health', (c) =>
-        c.json({
+    a.get('/health', async (c) => {
+        const bindings = c.env as Record<string, unknown> | undefined;
+        const services = servicesFor(bindings);
+        return c.json({
             ok: true,
             sha: process.env.COMMIT_SHA ?? 'dev',
             deployedAt: process.env.BUILD_TIME ?? null,
@@ -94,9 +97,23 @@ export function app(): OpenAPIHono {
             // is a configuration change, so "which store is this revision
             // talking to" stops being answerable from the commit alone — and
             // that is precisely the question during a migration.
-            backend: servicesFor(c.env as Record<string, unknown> | undefined).backend,
-        }),
-    );
+            backend: services.backend,
+            // Whether those bindings HAVE anything, which is a different
+            // question and the one that went unanswered for 20 minutes while
+            // this endpoint reported ok:true over an empty Neon and an empty
+            // R2. See lib/data-presence.ts for the incident; the short version
+            // is that `backend` was correct throughout and useless.
+            //
+            // `ok` deliberately stays true when these are `empty`: an empty
+            // deployment is a legitimate state, and a health check that fails
+            // for it cannot be used by the thing that provisions it. The signal
+            // is the field, not the status code.
+            ...(await dataPresence({
+                sql: services.sql,
+                bucket: bindings?.BLOBS as R2ListLike | undefined,
+            })),
+        });
+    });
 
     // 4. API routes.
     //
