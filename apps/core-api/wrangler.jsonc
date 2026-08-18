@@ -232,24 +232,22 @@
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
 		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
-		// ANTIPHONY_RENDITION_SERVICE_URL is DELIBERATELY ABSENT.
+		// The transcode backend for on-demand renditions (apps/audio-rendition).
+		// Set 2026-08-18, when that service first deployed successfully — before
+		// then this was deliberately ABSENT, which is a supported state: the audio
+		// proxy serves renditions that already exist and 404s the rest.
 		//
-		// It names the transcode backend for on-demand renditions
-		// (apps/audio-rendition), which is not deployed. Absent is a supported
-		// state: the audio proxy serves renditions that already exist and 404s
-		// the rest.
+		// ⚠️ A PLACEHOLDER IS NOT ABSENT, and this is the field that proved it.
+		// `renditionServiceConfig()` checks only that the value is non-empty, so
+		// `…-REPLACE_ME.us-east4.run.app` — which shipped here until 2026-08-17 —
+		// counted as configured: every mp3 miss fetched a host that does not
+		// resolve, waited, logged `[rendition] service unreachable`, and 404ed
+		// anyway. If this URL ever needs to change, change it to a real one or
+		// remove it; never to a marker.
 		//
-		// A PLACEHOLDER IS NOT ABSENT. `renditionServiceConfig()` checks only
-		// that the value is non-empty, so `…-REPLACE_ME.us-east4.run.app` —
-		// which shipped here until 2026-08-17 — counted as configured: every
-		// mp3 miss fetched a host that does not resolve, waited, logged
-		// `[rendition] service unreachable`, and 404ed anyway. That is the
-		// looks-configured-but-never-succeeds state the adapter's own comment
-		// exists to prevent, reached through the one input it does not check.
-		//
-		// Restore it with the real Cloud Run URL when the service deploys. It
-		// and SYSTEM_AUTH_TOKEN go together: a URL with no token is the same
-		// failure wearing a 401.
+		// It and SYSTEM_AUTH_TOKEN go together: a URL with no token is the same
+		// failure wearing a 401. Both are present as of this change.
+		"ANTIPHONY_RENDITION_SERVICE_URL": "https://antiphony-audio-rendition-op5avwkdfa-uk.a.run.app",
 		"NODE_ENV": "production",
 		"LOG_LEVEL": "info"
 	}
