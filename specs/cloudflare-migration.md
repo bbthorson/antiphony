@@ -382,6 +382,14 @@ is one method, and every binding behind it is untouched either way.
    touch R2, so it cannot make that distinction and a green deploy does not imply
    working keys.
 
+   **The seam itself was verified the same way**, and it is worth reusing: request
+   `GET /api/v1/audio?url=blobs/voxpop/<invented-cid>&format=mp3` from
+   `api.antiphony.dev`, then look for that CID in the RENDITION service's logs. A
+   CID that was never stored anywhere appearing there proves core-api read the
+   URL, reached Cloud Run, and authenticated — a `SYSTEM_AUTH_TOKEN` mismatch
+   would log `service refused the render` instead. Both ends answer 404 either
+   way, so the status code alone cannot tell you any of that.
+
 9. ~~**The IP-keyed rate limit on `GET /api/v1/audio`.**~~ **Done 2026-08-17.**
    The route is keyed on `(objectPath, format)` rather than the client IP, so
    two concurrent Twilio calls playing different clips no longer compete for one
