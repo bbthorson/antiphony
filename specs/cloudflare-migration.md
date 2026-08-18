@@ -1461,10 +1461,28 @@ and not a data one.
 Worth writing down, because none of it looked like an outage:
 
 - **`/health` returned `{"ok":true, ..., "backend":"postgres"}` the entire time.**
-  It reports which backend is *wired*, not whether that backend has anything in it,
-  so the status surface read green across an empty database. **This is worth
-  fixing** — a row count, or a `records: present|empty` signal, would have turned a
-  20-minute diagnosis into a glance.
+  It reported which backend was *wired*, not whether that backend had anything in
+  it, so the status surface read green across an empty database.
+
+  **Fixed 2026-08-18, on both surfaces.** `/health` now carries
+  `records: present|empty|unavailable` and `blobs: …` alongside `backend`, so the
+  question the incident could not answer is a glance. `ok` stays `true` when they
+  are `empty` — an empty deployment is a legitimate state, and a health check that
+  fails for it cannot be used by whatever provisions it; the signal is the field,
+  not the status code.
+
+  **And the hourly cron now watches it**, which is the half that mattered: this
+  lesson was written down here and tracked by nothing, which is how it would have
+  recurred. `records: present` with `blobs: empty` logs at `error` as an audio
+  blackout — that exact pair IS the incident, since post views hydrate with embeds
+  whose every URL 404s. Both empty logs at `warn` instead, because a new
+  deployment needs a different response than an outage, and a line that fires for
+  Tuesday trains people to ignore it.
+
+  `unavailable` is a third state on purpose. A missing table, an absent binding,
+  or a probe that exceeded its 800ms budget is "I could not tell", which is not
+  "there is nothing" — collapsing them would announce a blackout every time the
+  database hiccupped.
 - **Every response was a well-formed success.** Post listings returned
   `{"success":true,"data":{"items":[],"nextCursor":null}}`. A *successful query
   returning zero rows* is indistinguishable from "this user has nothing" at every

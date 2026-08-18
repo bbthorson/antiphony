@@ -26,7 +26,9 @@ process.env.LOG_LEVEL = 'silent';
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test.antiphony.dev';
 
 const revalidateAllPins = vi.fn(async () => [] as unknown[]);
-const sqlQuery = vi.fn(async () => [{ swept_table: 'rate_limits', deleted: 3 }]);
+const sqlQuery = vi.fn(async (_text?: string): Promise<Record<string, unknown>[]> => [
+    { swept_table: 'rate_limits', deleted: 3 },
+]);
 const process_ = vi.fn(async () => true);
 const ensureTenantPin = vi.fn(async () => undefined);
 let services: Record<string, unknown> = {};
@@ -149,17 +151,38 @@ describe('worker scheduled — the TTL sweep', () => {
         const worker = await freshWorker();
 
         await worker.scheduled(cron, {}, ctx);
-        expect(sqlQuery).toHaveBeenCalledOnce();
+        // The sweep specifically, not a query count: this handler also runs the
+        // data-presence probe, so counting queries would make this test fail
+        // whenever an unrelated diagnostic is added to the same trigger.
+        expect(sqlQuery).toHaveBeenCalledWith('select * from antiphony_sweep_expired()');
     });
 
     it('survives a failing sweep without throwing at the runtime', async () => {
         // The sweep is pure space reclamation — it may run late, partially, or
         // not at all. A throw here would report a Cloudflare-side error on a
         // service that is fine.
-        sqlQuery.mockRejectedValueOnce(new Error('connection reset'));
+        // Rejects the SWEEP specifically. `mockRejectedValueOnce` would now hit
+        // the data-presence probe instead, since that runs first — the test
+        // would still pass while testing something else entirely.
+        sqlQuery.mockImplementation(async (text?: string) => {
+            if (text?.includes('antiphony_sweep_expired')) throw new Error('connection reset');
+            return [{ present: true }];
+        });
         const worker = await freshWorker();
 
         await expect(worker.scheduled(cron, {}, ctx)).resolves.toBeUndefined();
+    });
+
+    it('probes data presence on the same trigger', async () => {
+        // The incident this exists for: for ~20 minutes every surface read green
+        // over an empty Neon and an empty R2, and nothing was watching. `/health`
+        // can only report it when someone looks; this is the piece that looks.
+        const worker = await freshWorker();
+        await worker.scheduled(cron, {}, ctx);
+
+        expect(sqlQuery).toHaveBeenCalledWith(
+            'select exists(select 1 from posts limit 1) as present',
+        );
     });
 
     it('no-ops when no SQL backend is bound', async () => {

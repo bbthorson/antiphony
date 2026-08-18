@@ -3,6 +3,7 @@ import { app as createApp } from './app.js';
 import { revalidateAllPins, type PinCacheKV } from './lib/app-did.js';
 import { APP_CONFIG, assertRequiredConfig } from './lib/app-config.js';
 import { logger } from './lib/logger.js';
+import { dataPresence, isAudioBlackout, type R2ListLike } from './lib/data-presence.js';
 import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
 import { installDurableDispatcher } from './lib/audio-processing.js';
@@ -146,6 +147,37 @@ export default {
                 { drift },
                 '[app-did] pin drift detected — a tenant DID no longer proves custody',
             );
+        }
+
+        // Mechanism 5: the reading `/health` can only report when someone
+        // looks. The cutover incident lasted ~20 minutes because every surface
+        // read green and nothing was watching — the lesson was written into the
+        // spec and tracked by nothing, which is how it would have recurred.
+        //
+        // Hourly is the right cadence precisely because this state does not
+        // flap: data does not appear and vanish between probes, so a check that
+        // runs while nobody is awake is worth more than a faster one that only
+        // runs when someone is already suspicious.
+        const presence = await dataPresence({
+            sql: servicesFor(bindings).sql,
+            bucket: bindings?.BLOBS as R2ListLike | undefined,
+        });
+        if (isAudioBlackout(presence)) {
+            // The incident, exactly: records resolve, post views carry embeds,
+            // and every embed URL 404s. Downstream reads that as "the audio
+            // failed" rather than as an outage, so this is the line that has to
+            // exist for anyone to know otherwise.
+            logger.error(
+                { ...presence },
+                '[data] audio blackout — records present but no blobs; every embed URL 404s',
+            );
+        } else if (presence.records === 'empty' && presence.blobs === 'empty') {
+            // Both empty is a legitimately new deployment, so this is a warning
+            // rather than an error. It is still logged: "nothing to serve" and
+            // "serving fine" should never look identical in a log.
+            logger.warn({ ...presence }, '[data] both stores are empty — nothing to serve');
+        } else if (presence.records === 'unavailable' || presence.blobs === 'unavailable') {
+            logger.error({ ...presence }, '[data] presence probe could not read a store');
         }
 
         const { sql, backend } = servicesFor(bindings);
