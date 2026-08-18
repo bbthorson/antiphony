@@ -104,6 +104,25 @@ jobs:
             #                       and is the same coordinated change
             #                       core-api's system-auth middleware names as
             #                       its own swap point.
+            # --service-account is NOT optional here, and its absence was a real
+            # defect rather than a default. Without it Cloud Run runs the
+            # revision as the DEFAULT COMPUTE service account, which holds
+            # roles/editor on all of antiphony-core — so a container that exists
+            # to shell out to ffmpeg would carry project-wide write access, and
+            # the R2 keys mounted below would sit inside that blast radius.
+            #
+            # GCP_RUNTIME_SERVICE_ACCOUNT was already defined as a repo variable
+            # and simply never passed. It is narrow (cloudtasks.enqueuer,
+            # datastore.user, storage.objectAdmin), and it was core-api's runtime
+            # identity before core-api moved to Workers, which is what makes it
+            # free to reuse rather than a second thing to maintain.
+            #
+            # Two grants make this work, both at the resource rather than the
+            # project: github-deploy@ needs roles/iam.serviceAccountUser ON this
+            # SA (the earlier grant was on the compute SA and does not carry
+            # over), and this SA needs roles/secretmanager.secretAccessor on each
+            # secret named below — Cloud Run validates that at deploy time and
+            # refuses the revision, naming every secret it cannot read.
             - name: Deploy
               id: deploy
               run: |
@@ -113,6 +132,7 @@ jobs:
                     --image "${{ steps.build.outputs.image }}" \
                     --platform managed \
                     --allow-unauthenticated \
+                    --service-account "${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}" \
                     --memory 1Gi \
                     --timeout 120 \
                     --max-instances 4 \
