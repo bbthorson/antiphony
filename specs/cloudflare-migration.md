@@ -9,10 +9,10 @@ not, and what the two genuine blockers are. Nothing here is committed to.
 
 ## Status — read this first
 
-**Last updated 2026-08-17.** This document is long because it is the reasoning
+**Last updated 2026-08-19.** This document is long because it is the reasoning
 record. This section is the operational state.
 
-> ### 🔴 LIVE on the Worker since 2026-08-17 22:05 UTC — one half still outstanding
+> ### ✅ COMPLETE — both halves migrated, audio serving
 >
 > `api.antiphony.dev` resolves to the Cloudflare Worker. `/health` reports
 > `backend: postgres`.
@@ -20,18 +20,33 @@ record. This section is the operational state.
 > | | State |
 > |---|---|
 > | Records (posts, transcripts) | ✅ migrated — 14 + 11, `cidDrift: 0` |
-> | **Blobs (audio bytes)** | ❌ **NOT migrated — R2 is empty, every blob 404s** |
+> | Blobs (audio bytes) | ✅ migrated — Super Slurper run, R2 serving |
 >
-> **So audio is unavailable platform-wide until Super Slurper runs** (§ Step 2d).
-> Records resolve, post views carry embeds, and those embed URLs 404 when fetched —
-> which downstream apps see as "the audio failed", not as an outage.
+> **Verified end-to-end 2026-08-19:**
+>
+> - `/health` → `{"backend":"postgres","records":"present","blobs":"present"}`
+> - `blobs/voxpop/` holds canonical audio; newest object written `2026-08-19T14:06Z`,
+>   so new uploads are landing, not just backfill
+> - `renditions/voxpop/` populated by the transcode service
+> - `GET /api/v1/audio?url=blobs/voxpop/<cid>` → `200 audio/mpeg`, byte count equal
+>   to the R2 object; `&format=mp3` → `200`; an invented CID → `404`
 >
 > The DNS cutover preceded both data migrations, which cost a ~20-minute total
 > blackout. Read § Step 2d's precondition before repeating any part of this, and
 > § Execution record for what it looked like from outside (short version:
 > `/health` stayed green throughout).
 >
-> Firestore and GCS are untouched. Rollback is repointing the domain at Cloud Run.
+> **This block said the opposite until 2026-08-19, and was wrong for ~2 days.** It
+> claimed R2 was empty and audio was down platform-wide. Super Slurper is a
+> dashboard action with no code, so running it produced no commit and nothing
+> forced this file to change — the failure mode worth remembering is that a
+> status block maintained by hand decays silently in exactly the direction that
+> causes alarm. `/health` now answers this question directly (`records` /
+> `blobs`), and an hourly cron watches it; **prefer that over this paragraph.**
+>
+> Firestore and GCS are untouched but no longer serve production. Rollback is no
+> longer "repoint at Cloud Run" — that is retired; see § What rollback actually
+> looks like now.
 
 ### Landed on master
 
@@ -343,7 +358,7 @@ turn a future binding into silently dead config.
 Note the ports make this a late-binding choice exactly as intended: `SqlClient`
 is one method, and every binding behind it is untouched either way.
 
-### Remaining operational — records and Workers are done; blobs and renditions are not
+### Remaining operational — all done as of 2026-08-19
 
 1. ~~**Create the bindings.**~~ **Done** — `PIN_CACHE` and both queues exist and
    their ids are committed; the R2 bucket already existed. No Hyperdrive, per
@@ -358,10 +373,12 @@ is one method, and every binding behind it is untouched either way.
 4. ~~**Apply the schema.**~~ **Done** — four tables in Neon. The file is one
    `begin`/`commit`, so a failed apply rolls back whole; it is not idempotent, so
    a second apply fails on `relation already exists` and changes nothing.
-5. **Super Slurper** for blobs — GCS → R2, dashboard, needs a service account
-   with `Storage Object Viewer` + `storage.buckets.get`. **Not done.** Object
-   paths are identical on both sides, so this can happen any time without
-   rewriting a record.
+5. ~~**Super Slurper** for blobs — GCS → R2.~~ **Done** — dashboard action,
+   needed a service account with `Storage Object Viewer` + `storage.buckets.get`.
+   Object paths are identical on both sides, so no record had to be rewritten.
+   Confirmed 2026-08-19: `blobs/voxpop/` is populated and the audio proxy returns
+   the bytes (§ Status). Because this is a dashboard action it left no commit —
+   check `/health`'s `blobs` field rather than this list.
 6. ~~**Run the records migration.**~~ **Nothing to migrate** — verified above.
    Re-run with `--allow-empty` if a confirmation is wanted; a dry run needs
    `FIREBASE_PROJECT_ID=antiphony-core` and no `DATABASE_URL`.

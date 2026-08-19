@@ -13,21 +13,48 @@
 	//
 	// ## `name` MUST equal the Worker in the dashboard
 	//
-	// It is `antiphony-docs` there, and this said `antiphony` from the day the
-	// file was added — a Worker by that name has never existed on the account.
-	// Workers Builds checks the two before it builds and FAILS the build when
-	// they disagree, which is what the docs site's builds were dying on:
+	// It is `antiphony-docs` there, and this said `antiphony` from 2026-06-27
+	// until this commit — a Worker by that name has never existed on the account.
+	// Workers Builds checks the two and FAILS the build when they disagree:
 	//
 	//   "the Worker name in the Cloudflare dashboard must match the `name` in
 	//    the Wrangler configuration file in the specified root directory, or
 	//    the build will fail"
 	//   — developers.cloudflare.com/workers/ci-cd/builds/
 	//
-	// Nothing about the build or the assets was wrong, which is why it read as
-	// mysterious: `npm run build -w @antiphony/docs` and `wrangler deploy
-	// --dry-run` both pass locally on a cold clone. Renaming the Worker in the
-	// dashboard instead of this field would work equally well, but this field
-	// is the half that is in version control.
+	// The wrong name was introduced by Cloudflare's OWN autofix, which opens a PR
+	// when it detects this mismatch (branch `update_worker_name_to_antiphony`,
+	// commit 59b402c, "Update wrangler config name to antiphony"). It guessed
+	// wrong and the PR was merged. The dashboard banner now asks for
+	// `antiphony-docs`; that banner quotes the live Worker, so it is the
+	// authority. Renaming the Worker in the dashboard instead would work equally
+	// well, but this field is the half that is in version control.
+	//
+	// ## What this did NOT fix, so nobody re-derives it
+	//
+	// This rename was believed to be why the docs builds were failing. It was
+	// not. The failing build's log ends:
+	//
+	//     Detected the following tools from environment: nodejs@22.23.2, npm@12.0.2
+	//     Installing nodejs 22.23.2
+	//     Failed: error occurred while installing tools or dependencies.
+	//
+	// That is Cloudflare's tool-install step, which runs BEFORE this file is read
+	// — so the name check had not been reached and cannot have been the cause.
+	// The config is sound: the build image preinstalls 22.23.2, and npm 12.0.2's
+	// engines (`^22.22.2 || ^24.15.0 || >=26.0.0`) accept it. Identical config
+	// both passed and failed across 2026-08-16..19, which is the signature of a
+	// transient failure in that step rather than anything in this repo. Retrying
+	// the build is the correct response.
+	//
+	// The rename is still right — it is a real latent bug that would have failed
+	// the DEPLOY step once a build got that far. It is just not the fix for the
+	// tool-install failure, and the two should not be conflated again.
+	//
+	// `.nvmrc` pins an exact patch (22.23.2) rather than a bare major for this
+	// reason: a bare major resolves to whatever is newest, which is periodically
+	// NOT one of the two versions this build image preinstalls, and that forces
+	// the download step that failed above. See deploy/README.md § 8.
 	//
 	// The repo has TWO Workers. This one is the docs site; core-api has its own
 	// config at `apps/core-api/wrangler.jsonc`, because a wrangler config
