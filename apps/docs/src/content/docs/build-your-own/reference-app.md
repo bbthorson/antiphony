@@ -90,7 +90,7 @@ Configuration lives on the **server** side of the BFF, not in the bundle:
 
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_CORE_API_URL` | Where the BFF forwards — the emulator (`http://localhost:8090`) or the live API (`https://api.antiphony.dev`). |
+| `ANTIPHONY_CORE_API_URL` | Where the BFF forwards — a local core-api (`http://localhost:8787`) or the live API (`https://api.antiphony.dev`). |
 | `ANTIPHONY_SERVICE_TOKEN` | The app's credential. Must match an `appId:token` pair in core-api's `ANTIPHONY_APP_TOKENS`. |
 | `ANTIPHONY_ACTING_ACTOR` | Who the BFF says is acting. Stands in for a real session lookup. |
 
@@ -105,18 +105,19 @@ One nice consequence: since the browser never makes a cross-origin request, no C
 ## Running it
 
 ```bash
-# 1. emulators (separate terminal)
-npx firebase emulators:start --only auth,firestore,storage --project demo-antiphony
-
-# 2. core-api on :8090, pointed at the emulators.
+# 1. core-api on :8787, via `wrangler dev`. Its config lives in
+#    apps/core-api/.dev.vars (gitignored) — see the quick start:
+#
+#      DATABASE_URL="postgresql://…"
+#      ANTIPHONY_APP_TOKENS="reference:reference-local-dev-token-0123456789abcdef"
+#      ANTIPHONY_APP_DIDS="reference:did:web:your-domain.example"
+#      ANTIPHONY_PUBLIC_BASE_URL="http://localhost:8787"
+#
 #    The token must match ANTIPHONY_SERVICE_TOKEN in apps/reference/.env.development;
-#    the DID pin needs a domain you control (see the quick start).
-PORT=8090 ANTIPHONY_USE_EMULATOR=true GCLOUD_PROJECT=demo-antiphony \
-  ANTIPHONY_APP_TOKENS=reference:reference-local-dev-token-0123456789abcdef \
-  ANTIPHONY_APP_DIDS=reference:did:web:your-domain.example \
-  npm run dev -w @antiphony/core-api
+#    the DID pin needs a domain you control.
+npm run dev -w @antiphony/core-api
 
-# 3. the reference app (serves the UI and the BFF together)
+# 2. the reference app (serves the UI and the BFF together)
 npm run dev -w @antiphony/reference
 ```
 

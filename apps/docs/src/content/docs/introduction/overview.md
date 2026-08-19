@@ -18,7 +18,7 @@ Antiphony has a single canonical content record: `dev.antiphony.audio.post`. A p
 Replies aren't an open comment thread. Antiphony's call-and-response AppView **gates** them: a reply opens a **participant-only sub-thread** between the prompt's author and the responder, and only those two can continue it. That interaction rule — who may answer whom — is part of what Antiphony *is*, not something each app re-invents. See [reply gating](/api/overview/#reply-gating).
 
 :::note
-The core is backed by **Firebase** (Firestore, Firebase Auth, Cloud Storage) today, reached through swappable adapter interfaces. Generalizing that backend so Firebase isn't a hard dependency is in active progress — see [Architecture](/introduction/architecture/).
+The reference deployment runs on **Cloudflare Workers**, with **Neon Postgres** for records and **R2** for audio, reached through swappable adapter interfaces. None of that is baked in: it replaced a Firestore + Cloud Storage + Cloud Run stack without a line of change to `packages/core` or to any route handler, which is the property the adapter layer exists to provide. See [Architecture](/introduction/architecture/).
 :::
 
 ## What's in the open core
@@ -38,7 +38,7 @@ The protocol has no "organization" primitive, either: grouping people into teams
 
 - **Self-hosters** who want a ready-made audio call-and-response backend instead of building one.
 - **App builders** putting their own surface — mobile app, embed, bot, static site — on top of the public API or the lexicons.
-- **Contributors** who want to extend the API surface, evolve the lexicons, or help generalize the backend beyond Firebase.
+- **Contributors** who want to extend the API surface, evolve the lexicons, or write an adapter set for a backend the core doesn't ship.
 
 ## Where next?
 

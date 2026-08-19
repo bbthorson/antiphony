@@ -6,25 +6,50 @@
 	// just serves the static Astro build.
 	//
 	// Build settings in the Cloudflare dashboard:
+	//   Root directory: /  (this file must sit in it — see the name note below)
 	//   Build command:  npm run build -w @antiphony/docs
+	//   Deploy command: npx wrangler deploy
 	//   (this file's `assets.directory` is what gets uploaded)
 	//
-	// The repo has TWO Workers now. This one is the docs site; core-api has its
-	// own config at `apps/core-api/wrangler.jsonc`, because a wrangler config
+	// ## `name` MUST equal the Worker in the dashboard
+	//
+	// It is `antiphony-docs` there, and this said `antiphony` from the day the
+	// file was added — a Worker by that name has never existed on the account.
+	// Workers Builds checks the two before it builds and FAILS the build when
+	// they disagree, which is what the docs site's builds were dying on:
+	//
+	//   "the Worker name in the Cloudflare dashboard must match the `name` in
+	//    the Wrangler configuration file in the specified root directory, or
+	//    the build will fail"
+	//   — developers.cloudflare.com/workers/ci-cd/builds/
+	//
+	// Nothing about the build or the assets was wrong, which is why it read as
+	// mysterious: `npm run build -w @antiphony/docs` and `wrangler deploy
+	// --dry-run` both pass locally on a cold clone. Renaming the Worker in the
+	// dashboard instead of this field would work equally well, but this field
+	// is the half that is in version control.
+	//
+	// The repo has TWO Workers. This one is the docs site; core-api has its own
+	// config at `apps/core-api/wrangler.jsonc`, because a wrangler config
 	// describes exactly one Worker and the dashboard build for THIS one runs a
 	// bare `npx wrangler deploy` at the repo root — so it must keep finding
 	// this file and nothing else. Deploy the API explicitly:
 	//
 	//     npx wrangler deploy -c apps/core-api/wrangler.jsonc
 	//
-	// Nothing in this file touches core-api, and that stays true. What is no
-	// longer true is the line that used to be here saying core-api ships to
-	// Cloud Run via the root Dockerfile and .github/workflows/deploy.yml: it is
-	// mid-migration to Workers. See specs/cloudflare-migration.md.
+	// Nothing in this file touches core-api. core-api itself is no longer
+	// mid-migration: it has served api.antiphony.dev from Workers + Neon since
+	// 2026-08-17. See specs/cloudflare-migration.md.
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "antiphony",
+	"name": "antiphony-docs",
 	"compatibility_date": "2025-01-01",
 	"assets": {
-		"directory": "./apps/docs/dist"
+		"directory": "./apps/docs/dist",
+
+		// Astro builds a styled 404 page; without this the assets runtime
+		// answers an unmatched path with a bare plain-text 404 and that file is
+		// never served. Starlight's 404 carries the site nav, so a mistyped or
+		// moved docs URL lands somewhere useful instead of a dead end.
+		"not_found_handling": "404-page"
 	}
 }

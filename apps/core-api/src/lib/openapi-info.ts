@@ -17,7 +17,7 @@ export const OPENAPI_INFO = {
         'The **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.',
         '',
         '- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.',
-        '- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths resolved to short-lived signed URLs.',
+        '- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store.',
         '',
         '## Envelope',
         '',

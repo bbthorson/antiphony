@@ -350,6 +350,37 @@ deliberate version of this decision, either way.
 
 ---
 
+## 8. The docs site is a second Worker
+
+`docs.antiphony.dev` is a separate, assets-only Worker named **`antiphony-docs`**,
+built by Workers Builds (dashboard → the Worker → Settings → Builds) rather than
+by anything in `.github/workflows/`. It has no bindings and no `main` script: it
+serves the static Astro build.
+
+| Setting | Value |
+| :--- | :--- |
+| Root directory | `/` |
+| Build command | `npm run build -w @antiphony/docs` |
+| Deploy command | `npx wrangler deploy` |
+| Wrangler config | [`wrangler.jsonc`](../wrangler.jsonc) at the repo root |
+
+⚠️ **`name` in that file must equal the Worker's name in the dashboard, or the
+build fails before it starts.** It said `antiphony` from the day the file was
+added and the Worker has always been `antiphony-docs`, so every build died on
+[the documented name check](https://developers.cloudflare.com/workers/ci-cd/builds/)
+while the build itself was fine — `npm run build -w @antiphony/docs` and
+`wrangler deploy --dry-run` both pass on a cold clone, which is what made it
+look like an infrastructure problem rather than a one-word config problem.
+Fixed 2026-08-19.
+
+Two consequences of the deploy command being a bare `npx wrangler deploy` at the
+repo root are worth keeping in mind: the root config must stay the docs site's
+(core-api's is passed explicitly with `-c`), and a build of this Worker runs a
+full workspace install, so it is affected by anything that breaks `npm ci` at
+the root even though it only publishes `apps/docs/dist`.
+
+---
+
 ## Rollback
 
 **A bad deploy:** roll back to the previous version in the dashboard
