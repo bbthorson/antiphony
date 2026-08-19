@@ -31,6 +31,34 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+
+      # Install the npm this repo is verified against, read from the
+      # `packageManager` field so there is exactly one place to bump it.
+      #
+      # `actions/setup-node` does NOT honour that field — corepack-aware tools
+      # do, and it is not one — so this workflow silently verified on whatever
+      # npm ships with the pinned Node instead: 10.9.8, a MAJOR behind the
+      # 12.0.2 the repo declares and the Cloudflare build resolved. The two are
+      # not interchangeable:
+      #
+      #   - npm 12 honours `allowScripts` and npm 10 ignores it, so the two
+      #     install DIFFERENT trees from the same lockfile. That is the sharp
+      #     end: this workflow is what says the tree is good.
+      #   - npm 10 rewrites package-lock.json on install, dropping the `libc`
+      #     fields npm 12 writes — so a contributor on 10 produces lockfile
+      #     churn that reads as a real change.
+      #
+      # Verifying on one npm and shipping from another is what made "identical
+      # config both passed and failed" something anyone had to reason about.
+      - name: Use the pinned npm
+        run: |
+          set -euo pipefail
+          # Strip any `+sha…` integrity suffix; `npm install -g` wants a plain spec.
+          PM="$(node -p "require('./package.json').packageManager.split('+')[0]")"
+          echo "package.json pins ${PM}; npm is now $(npm --version)"
+          npm install --global "${PM}"
+          npm --version
+
       # `npm ci` at the root installs every workspace; core-api depends on
       # @antiphony/core + @antiphony/shared through npm workspaces.
       #

@@ -57,9 +57,50 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      # Install and verify on the npm that ships with Node 22, the same one
-      # ci.yml uses. The npm upgrade that trusted publishing needs happens LATER,
-      # deliberately — see the step just above the publish.
+
+      # Install the npm this repo is verified against, read from the
+      # `packageManager` field so there is exactly one place to bump it.
+      #
+      # `actions/setup-node` does NOT honour that field — corepack-aware tools
+      # do, and it is not one — so this workflow silently verified on whatever
+      # npm ships with the pinned Node instead: 10.9.8, a MAJOR behind the
+      # 12.0.2 the repo declares and the Cloudflare build resolved. The two are
+      # not interchangeable:
+      #
+      #   - npm 12 honours `allowScripts` and npm 10 ignores it, so the two
+      #     install DIFFERENT trees from the same lockfile. That is the sharp
+      #     end: this workflow is what says the tree is good.
+      #   - npm 10 rewrites package-lock.json on install, dropping the `libc`
+      #     fields npm 12 writes — so a contributor on 10 produces lockfile
+      #     churn that reads as a real change.
+      #
+      # Verifying on one npm and shipping from another is what made "identical
+      # config both passed and failed" something anyone had to reason about.
+      - name: Use the pinned npm
+        run: |
+          set -euo pipefail
+          # Strip any `+sha…` integrity suffix; `npm install -g` wants a plain spec.
+          PM="$(node -p "require('./package.json').packageManager.split('+')[0]")"
+          echo "package.json pins ${PM}; npm is now $(npm --version)"
+          npm install --global "${PM}"
+          npm --version
+
+      # Installs on the pinned npm, and therefore on the same tree ci.yml
+      # verified. This used to install on Node 22's own npm 10 and upgrade to 12
+      # only just before the publish, because npm 12 does not run a dependency's
+      # install script unless `allowScripts` covers it — and upgrading before
+      # `npm ci` silently changed what got installed. The first run of this
+      # workflow did exactly that and failed: ffmpeg-static never fetched its
+      # binary and esbuild's postinstall was blocked, which would have taken out
+      # `npm run build` immediately after.
+      #
+      # That ordering was the right call THEN and is the wrong one now. It was
+      # protecting against an `allowScripts` list that did not yet cover what
+      # this repo depends on. It does: esbuild and sharp are both listed, and
+      # ffmpeg-static left the tree entirely when trim and waveform moved to
+      # apps/audio-rendition. Keeping the split would mean the one workflow that
+      # publishes something immutable is also the one verifying against a tree
+      # no other workflow builds.
       #
       # Also builds @antiphony/shared through its `prepare` script — load-bearing
       # for the typecheck below, same as in ci.yml.
@@ -115,38 +156,20 @@ jobs:
         if: inputs.dry_run
         run: npm pack -w @antiphony/shared --dry-run
 
-      # Node 22 ships npm 10.9.8; trusted publishing needs >= 11.5.1. Without
-      # this the publish fails asking for an OTP, which is the manual gate this
-      # workflow exists to remove.
+      # Trusted publishing needs npm >= 11.5.1; the pinned 12.0.2 installed at
+      # the top of this job satisfies it. There used to be an `npm install -g
+      # npm@12` step HERE instead, deliberately after the whole gate — see the
+      # note on `npm ci` above for why that was right at the time and why it is
+      # not any more.
       #
-      # It runs HERE, after install and after the whole verification gate, and
-      # that ordering is load-bearing. npm 12 does not run a dependency's
-      # install script unless it is covered by `allowScripts`, so upgrading
-      # before `npm ci` silently changes what gets installed. The first run of
-      # this workflow did exactly that and failed: ffmpeg-static never fetched
-      # its binary, so `ffmpegAvailable()` went false and the trim/waveform
-      # capabilities reported unavailable. esbuild's postinstall was blocked in
-      # the same run, which would have taken out `npm run build` immediately
-      # after.
+      # What that step's comment established and this still relies on: npm 11
+      # warns about a package missing from `allowScripts` and still runs its
+      # script, npm 12 blocks it. npm 11 was the runway; npm 12 is the
+      # enforcement. Verified against both majors with a probe package.
       #
-      # Verified against both majors with a probe package: 11.19.0 warns
-      # ("not yet covered by allowScripts") and still runs the script; 12.0.2
-      # blocks it. npm 11 is the runway, npm 12 is the enforcement.
-      #
-      # Nothing is installed past this point, so the new default has nothing to
-      # block — `npm publish` runs this repo's own prepack/prepare, not a
-      # dependency's install script.
-      #
-      # Unconditional rather than gated on the publish, so a dry run exercises
-      # every step a real release takes except the publish itself.
-      #
-      # Pinned to a major rather than `@latest`: `@latest` is what put npm 12
-      # in this job without anyone deciding to, and the step immediately before
-      # an irreversible publish is the worst place to accept an unreviewed major
-      # bump. Patches still arrive. npm 12 requires Node ^22.22.2, which the
-      # .nvmrc 22 line satisfies on the runner.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@12
+      # Nothing is installed past this point regardless, so the blocking default
+      # has nothing to block — `npm publish` runs this repo's own
+      # prepack/prepare, not a dependency's install script.
 
       # No NODE_AUTH_TOKEN, by design. This authenticates via the OIDC token
       # granted by `id-token: write` above, which requires a one-time setup on
