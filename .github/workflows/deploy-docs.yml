@@ -1,0 +1,128 @@
+name: Deploy docs
+
+# Ships the docs site (apps/docs, built by Astro) to the `antiphony-docs`
+# Worker, using the assets-only config at the repo root — see wrangler.jsonc.
+#
+# ── Why this exists: the deploy that never ran ────────────────────────────────
+# This site used to deploy through **Cloudflare Workers Builds** — the
+# dashboard's "Connect to Git" integration, which watches the repo and runs its
+# own build. That path is invisible from here, and on 2026-08-19 it showed why
+# that matters: PR #111 corrected the docs to the Workers/Neon stack, CI passed,
+# the PR merged — and docs.antiphony.dev went on serving the Firebase content
+# for a full day. The newest deployment was still 2026-08-18T11:13Z. Nothing
+# failed loudly, because nothing in this repo was running the deploy at all.
+#
+# That failure is not fixable from inside a dashboard-owned build. It is the
+# same argument the core-api deploy already makes about its smoke test: a step
+# that cannot report failure is worse than no step, because its silence is read
+# as success. So the deploy moves here, where a failure is a red check on a
+# commit, next to the CI that gated it.
+#
+# It also settles the class of bug that made #111 necessary. Workers Builds
+# validates the dashboard's Worker name against `name` in the wrangler config
+# and fails the build when they disagree — a coupling to a value nobody in the
+# repo can see. `wrangler deploy` run from here uses the config as the single
+# source of truth.
+#
+# ── REQUIRED one-time step, or this deploys twice ─────────────────────────────
+# Disconnecting Workers Builds is a DASHBOARD action and cannot be done from a
+# workflow file. Until someone does it, both paths deploy the same Worker and
+# the last writer wins — which is exactly the nondeterminism this removes.
+#
+#   Workers & Pages -> antiphony-docs -> Settings -> Build
+#     -> Disconnect the Git repository
+#
+# ── Credentials ──────────────────────────────────────────────────────────────
+# The same pair the core-api deploy uses: `CLOUDFLARE_API_TOKEN` (repo secret,
+# Workers Scripts:Edit) and `CLOUDFLARE_ACCOUNT_ID` (repo variable — an
+# identifier, not a credential).
+
+on:
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
+        branches: [master]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: deploy-docs
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        name: build · deploy
+        runs-on: ubuntu-latest
+        # A red CI must not ship. `workflow_run` fires on completion whatever
+        # the outcome, so the conclusion is checked rather than assumed —
+        # without this the trigger would be strictly worse than the `push` it
+        # replaced, deploying on exactly the runs that failed.
+        #
+        # `workflow_dispatch` has no `workflow_run` context, so it falls through
+        # this condition on the empty-string comparison.
+        if: >-
+            github.event_name == 'workflow_dispatch' ||
+            github.event.workflow_run.conclusion == 'success'
+        steps:
+            # The commit CI actually ran on. NOT `github.sha`: on a
+            # `workflow_run` event that is the tip of the default branch when
+            # this workflow was queued, which is a different commit the moment
+            # anything merges while CI is in flight. Checking out the wrong one
+            # would publish a tree nothing verified.
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - run: npm ci
+
+            # `copy-openapi.mjs --strict` runs inside this build and fails it if
+            # core-api's spec is missing, which ties the published API reference
+            # to the contract CI just checked for drift.
+            - name: Build the docs site
+              run: npm run build -w @antiphony/docs
+
+            # Reads the ROOT wrangler.jsonc: an assets-only Worker whose
+            # `assets.directory` is ./apps/docs/dist, which the step above just
+            # produced. core-api has its own config and is deployed by its own
+            # workflow; a bare `wrangler deploy` here must keep finding this one
+            # and nothing else.
+            - name: Deploy
+              run: npx wrangler deploy
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+            # Asserts the deploy actually changed what the domain serves.
+            #
+            # A static site has no `/health` to stamp with a commit, so there is
+            # no equivalent of core-api's SHA assertion. What there IS is the
+            # specific failure this workflow was written for: the live site
+            # serving the pre-migration stack. `wrangler dev` and `8787` appear
+            # throughout the current quick start and Firebase appears in it only
+            # in the past tense, so a page still describing emulators on port
+            # 8090 is the stale-deploy signature.
+            #
+            # Deliberately a content check rather than a 200 check: the old page
+            # returned 200 the whole time it was wrong.
+            - name: Verify the published site is the current stack
+              run: |
+                  set -euo pipefail
+                  PAGE="$(curl -fsS --retry 5 --retry-delay 5 --retry-all-errors \
+                    --max-time 20 https://docs.antiphony.dev/self-hosting/quick-start/)"
+
+                  if ! grep -q '8787' <<<"$PAGE"; then
+                    echo "::error::docs.antiphony.dev quick start does not mention port 8787 — the published site is not this build."
+                    exit 1
+                  fi
+                  if grep -q 'firebase emulators:start' <<<"$PAGE"; then
+                    echo "::error::docs.antiphony.dev quick start still documents the Firebase emulator stack — a stale deploy is live."
+                    exit 1
+                  fi
+                  echo "docs.antiphony.dev is serving the Workers/Postgres quick start."
