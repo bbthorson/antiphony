@@ -10,7 +10,9 @@ API for storing and retrieving audio posts, and audio enrichment (transcripts).
 
 - Node.js 22 (see `.nvmrc` / the pinned Volta setting)
 - npm
-- Java on your PATH (for the Firebase emulators)
+- A Postgres database reachable over Neon's HTTP SQL endpoint (a free Neon
+  branch is the easy path). The SQL client POSTs to `https://<host>/sql` rather
+  than opening a TCP connection, so a plain local Postgres will not answer it.
 
 ### Setup
 
@@ -19,23 +21,44 @@ git clone https://github.com/bbthorson/antiphony.git
 cd antiphony
 npm install
 
-# Terminal 1: Firebase emulators (auth, firestore, storage)
-npx firebase emulators:start --project demo-antiphony
+# Apply the schema once, to an empty database.
+psql "$DATABASE_URL" -f apps/core-api/db/schema.sql
+```
 
-# Terminal 2: core-api against the emulators (port 8090)
+core-api runs on the Workers runtime, so its config is not shell environment —
+it goes in `apps/core-api/.dev.vars` (gitignored):
+
+```bash
+DATABASE_URL="postgresql://…@ep-….neon.tech/neondb?sslmode=require"
+ANTIPHONY_APP_TOKENS="local:a-local-dev-token-at-least-32-chars-long"
+ANTIPHONY_APP_DIDS="local:did:web:your-domain.example"
+ANTIPHONY_PUBLIC_BASE_URL="http://localhost:8787"
+```
+
+Then:
+
+```bash
+# Terminal 1: core-api via `wrangler dev` on :8787. R2, KV, the queue and the
+# rate-limit Durable Object are all simulated locally; only the database is real.
 npm run dev
 
-# Optional, terminal 3: the reference client on http://localhost:3002
+# Optional, terminal 2: the reference client on http://localhost:3002
 npm run dev -w @antiphony/reference
 ```
+
+`ANTIPHONY_APP_DIDS` needs a domain you control serving a `did:web` document —
+custody is proven per request and `did:web` resolution is HTTPS-only, so there
+is no localhost shortcut. See the
+[quick start](https://docs.antiphony.dev/self-hosting/quick-start/).
 
 ### Project Structure
 
 ```
-apps/core-api/        — Hono REST API (this app); Firebase-backed adapters
+apps/core-api/        — Hono REST API (this app), on Cloudflare Workers
+apps/audio-rendition/ — ffmpeg container on Cloud Run; the trim/waveform/mp3 backend
 apps/docs/            — Astro/Starlight docs site (docs.antiphony.dev)
 apps/reference/       — Minimal reference client that drives the public contract
-packages/core/        — Portable domain services + ports (no Firebase imports)
+packages/core/        — Portable domain services + ports (no vendor SDK imports)
 packages/shared/      — Published contract: Zod schemas, codecs, NSIDs
 lexicons/dev/antiphony/ — AT Protocol lexicon definitions (source of truth)
 ```
@@ -58,8 +81,12 @@ lexicons/dev/antiphony/ — AT Protocol lexicon definitions (source of truth)
   `{ success: false, error, requestId }` (lint-enforced via `eslint-rules/`)
 - Use the `ServiceError` hierarchy from `@antiphony/shared` (`NotFoundError`,
   `ForbiddenError`, …) — the error-handler middleware maps them to HTTP statuses
-- `packages/core` must stay free of Firebase imports (lint-enforced); backend
+- `packages/core` must stay free of vendor SDK imports (lint-enforced); backend
   bindings live in `apps/core-api/src/adapters/outbound/`
+- Anything reachable from `app.ts` has to run on Workers. `npm run
+  check:worker-bundle -w @antiphony/core-api` bundles the entry and fails on a
+  Node-only dependency; nothing else catches that, and `wrangler deploy` will
+  happily ship a Worker that dies on its first request
 
 ## Reporting Issues
 

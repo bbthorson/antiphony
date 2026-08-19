@@ -30,7 +30,7 @@ If you can build `apps/reference`, you can build your own surface. The [referenc
 
 ## Getting-started path
 
-1. **Run the core locally.** Follow the [quick start](/self-hosting/quick-start/) to get `/api/v1/*` serving against the Firebase emulators.
+1. **Run the core locally.** Follow the [quick start](/self-hosting/quick-start/) to get `/api/v1/*` serving on `localhost:8787`.
 2. **Authenticate.** Your app presents its own **service token** and asserts which of its users is acting. That is the only path — there is no end-user sign-in against Antiphony. See [Authentication](/api/overview/#authentication).
 
    Because the token authenticates the *application*, anyone holding it can act as any user in your tenancy, so it must stay server-side: calls to Antiphony come from your backend, never from a browser. That's the shape [`apps/reference`](/build-your-own/reference-app/) demonstrates.

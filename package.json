@@ -21,11 +21,10 @@
     "test:lexicons": "node scripts/validate-lexicons.mjs",
     "knip": "knip"
   },
-  "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Three of these are load-bearing and one fails SILENTLY without its script: ffmpeg-static downloads the ffmpeg binary, and without it ffmpegAvailable() returns false, so the trim and waveform stages advertise themselves as unavailable and posts settle those stages as `skipped` rather than erroring. esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. @firebase/util, protobufjs, and fsevents (macOS-only) are here because they already run today under npm 10 — this file records the trust that exists rather than making a new decision. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump — and a re-blocked ffmpeg-static is exactly the silent failure above. Add entries with `npm install-scripts approve <pkg>` on npm 12+.",
+  "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Two are load-bearing: esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. @firebase/util, protobufjs, and fsevents (macOS-only) are here because they already run today under npm 10 — this file records the trust that exists rather than making a new decision. ffmpeg-static USED to be the load-bearing third, downloading the ffmpeg binary the trim and waveform stages probed for; it left the tree when those stages moved to apps/audio-rendition, which takes ffmpeg from its container image instead. Nothing depends on it now, so its entry is gone. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump. Add entries with `npm install-scripts approve <pkg>` on npm 12+. Known and deliberate: npm 12 blocks workerd's postinstall, which is harmless — the binary arrives through the platform-specific optional dependency, and `wrangler deploy` was verified working on a clean npm 12 install.",
   "allowScripts": {
     "@firebase/util": true,
     "esbuild": true,
-    "ffmpeg-static": true,
     "fsevents": true,
     "protobufjs": true,
     "sharp": true

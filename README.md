@@ -12,9 +12,10 @@ audio-embed lexicon contribution, and the public REST surface that products
 | Package | Role |
 | :--- | :--- |
 | `packages/shared` (`@antiphony/shared`) | Records, views, codecs, NSIDs — the published contract. Dual ESM/CJS build. |
-| `packages/core` (`@antiphony/core`) | Firebase-free domain services + ports (hexagonal). |
+| `packages/core` (`@antiphony/core`) | Backend-free domain services + ports (hexagonal). No vendor SDK imports, lint-enforced. |
 | `apps/core-api` (`@antiphony/core-api`) | Hono REST + XRPC API on Cloudflare Workers — wires `core` ports to Neon and R2 bindings, serves `/api/v1/*` and `/xrpc/*`. |
-| `apps/docs` (`@antiphony/docs`) | Astro/Starlight docs site, deployed to Cloudflare (see `wrangler.jsonc`). |
+| `apps/docs` (`@antiphony/docs`) | Astro/Starlight docs site, deployed to the `antiphony-docs` Worker (see `wrangler.jsonc`). |
+| `apps/audio-rendition` (`@antiphony/audio-rendition`) | The one service that is not a Worker: an ffmpeg container on Cloud Run that derives renditions into R2 and backs the `trim` / `waveform` stages. |
 | `apps/reference` (`@antiphony/reference`) | Minimal Vite/React reference client that drives the published contract end to end. |
 | `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.post`, `audio.transcript`, `embed.audio`, `embed.recordWithAudio`, `actor.profile`). |
 
@@ -26,7 +27,7 @@ npm run build        # build @antiphony/shared (dual) + bundle core-api + gen Op
 npm run typecheck    # all workspaces
 npm run lint         # all workspaces
 npm run test         # all workspaces
-npm run dev          # core-api on :8090 (emulator mode)
+npm run dev          # core-api on :8787 via `wrangler dev` (needs apps/core-api/.dev.vars)
 npm run knip         # unused files/exports/deps sweep (manual, not a CI gate)
 ```
 

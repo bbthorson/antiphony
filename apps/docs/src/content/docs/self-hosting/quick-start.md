@@ -1,20 +1,23 @@
 ---
 title: Quick start
-description: Run Antiphony's core locally against the Firebase emulators.
+description: Run Antiphony's core locally on the Workers runtime against a Postgres database.
 ---
 
-This guide gets you from a fresh clone to a running `/api/v1/*` service against the Firebase emulators.
+This guide gets you from a fresh clone to a running `/api/v1/*` service on the same runtime the hosted deployment uses.
 
-:::note
-Firebase is the backend the core ships with today, so self-hosting currently means running against Firebase (or its emulators). Generalizing the core to support other backends is in progress; for now these steps assume Firebase.
+:::note[What changed]
+Antiphony used to ship a Firestore-backed composition root and a Firebase-emulator quick start. It no longer does. The core runs on **Cloudflare Workers** against **Postgres** for records and an **R2 bucket** for audio blobs, and `wrangler dev` simulates the Cloudflare bindings on your machine — so there are no emulators to install and no JDK to have on your PATH. The one thing it cannot simulate is the database.
 :::
 
 ## Prerequisites
 
-- **Node.js 22+** (not 25 — it breaks core-api's `tsx` dev runner)
-- **A JDK on your PATH** — the Firebase emulators need it
-- **Firebase CLI** — `npm install -g firebase-tools`
+- **Node.js 22+** (see `.nvmrc`)
+- **A Postgres database reachable over HTTPS.** The SQL client is `@neondatabase/serverless` in HTTP mode, which POSTs to `https://<host>/sql` rather than opening a TCP connection — so a plain `localhost` Postgres will not answer it. A free [Neon](https://neon.tech) branch is the path of least resistance, and using a throwaway branch per developer is the intended shape.
 - **A domain you control**, serving a `did:web` document over HTTPS — see [step 3](#3-pin-your-tenants-app-did). This is the one prerequisite you can't fake locally.
+
+:::tip[Want a different Postgres?]
+`SqlClient` is a one-method port. Pointing it at an ordinary wire-protocol driver (`pg`, `postgres.js`) is a single adapter file and lets any Postgres work, including a local one. See [Architecture § the seam that matters](/introduction/architecture/#the-seam-that-matters).
+:::
 
 ## 1. Clone and install
 
@@ -24,19 +27,23 @@ cd antiphony
 npm install
 ```
 
-## 2. Start the Firebase emulators
+## 2. Create the database
 
-In one terminal:
+Apply the schema to an empty database. It is one `begin`/`commit`, so a failed apply rolls back whole:
 
 ```bash
-npx firebase emulators:start --only auth,firestore,storage --project demo-antiphony
+psql "$DATABASE_URL" -f apps/core-api/db/schema.sql
 ```
 
-The `demo-` project prefix tells the CLI not to require credentials — the emulators run entirely locally.
+Four tables come out of it: `posts`, `audio_transcripts`, `idempotency_keys`, and `rate_limits`. Two properties are worth knowing because they are enforced rather than conventional — the query facets (`author_id`, `kind`, `cid`, …) are **generated columns** off the record JSON, so they cannot drift from it, and the "a reply has a parent and a root author; a prompt has neither" invariant is a **check constraint**, not just a Zod refinement.
+
+:::caution[Apply-once DDL, not a migration chain]
+Running it twice fails on `relation already exists` and changes nothing. There is no versioned migration tool yet.
+:::
 
 ## 3. Pin your tenant's app DID
 
-Antiphony is the repo owner for the records it writes, so every post's `at://` URI is authored under a **tenant app DID** (`at://did:web:<your-domain>/dev.antiphony.audio.post/<rkey>` — see [the lexicons](/lexicons/overview/#how-faithful-is-this-to-at-protocol)). That DID is pinned per tenant via `ANTIPHONY_APP_DIDS`, and the core **proves custody of it at boot** before it will mint a single URI.
+Antiphony is the repo owner for the records it writes, so every post's `at://` URI is authored under a **tenant app DID** (`at://did:web:<your-domain>/dev.antiphony.audio.post/<rkey>` — see [the lexicons](/lexicons/overview/#how-faithful-is-this-to-at-protocol)). That DID is pinned per tenant via `ANTIPHONY_APP_DIDS`, and the core **proves custody of it before any handler runs**.
 
 Serve this at `https://<your-domain>/.well-known/did.json`:
 
@@ -54,45 +61,55 @@ Serve this at `https://<your-domain>/.well-known/did.json`:
 ```
 
 :::caution[This step has no offline shortcut]
-`did:web` resolution is **HTTPS-only** by specification, so `did:web:localhost%3A8090` cannot resolve, and there is no flag to skip the check. A purely local pin isn't possible today.
+`did:web` resolution is **HTTPS-only** by specification, so `did:web:localhost%3A8787` cannot resolve, and there is no flag to skip the check. A purely local pin isn't possible today.
 
-The failure mode is worth knowing, because it's quiet: an **empty** pin set passes the boot gate, so the process starts and looks healthy — then every post read and write fails with `no validated app DID for tenant "<id>"`. A *bad* pin is louder: boot fails closed and the process exits.
+The failure mode is worth knowing, because the two halves fail differently. An **unproven** pin fails the request with **503** — the credential was fine, our ability to serve that tenant safely is what's missing, and it's retryable. An **empty** pin set fails later and quieter: the service starts healthy and every post read and write returns `no validated app DID for tenant "<id>"`.
 :::
 
 Setting `ANTIPHONY_PDS_HOST` (step 4) tightens this further — with it, the core also requires the DID document's `serviceEndpoint` to point back at your deployment, not merely to exist.
 
-## 4. Start `core-api` in emulator mode
+## 4. Configure and start `core-api`
 
-In a second terminal. The Firestore emulator owns `:8080`, so bind core-api to `:8090`:
-
-```bash
-PORT=8090 \
-ANTIPHONY_USE_EMULATOR=true \
-GCLOUD_PROJECT=demo-antiphony \
-ANTIPHONY_APP_TOKENS=local:a-local-dev-token-at-least-32-chars-long \
-ANTIPHONY_APP_DIDS=local:did:web:your-domain.example \
-  npm run dev -w @antiphony/core-api
-```
-
-Smoke test:
+Worker secrets are not environment variables, so local config goes in `apps/core-api/.dev.vars` (gitignored) rather than your shell. Create it:
 
 ```bash
-curl http://localhost:8090/health
-# → {"ok":true,"sha":"dev","deployedAt":null}
+# apps/core-api/.dev.vars
+DATABASE_URL="postgresql://…@ep-….neon.tech/neondb?sslmode=require"
+ANTIPHONY_APP_TOKENS="local:a-local-dev-token-at-least-32-chars-long"
+ANTIPHONY_APP_DIDS="local:did:web:your-domain.example"
+ANTIPHONY_PUBLIC_BASE_URL="http://localhost:8787"
 ```
 
-Those two `local:` entries describe one tenant: `ANTIPHONY_APP_TOKENS` is the credential it authenticates with, `ANTIPHONY_APP_DIDS` is the `at://` authority it writes under. A tenant needs **both** — core-api warns at boot about a tenant configured in only one. Tenancy comes from the credential; there's no deployment-level default.
+Then:
+
+```bash
+npm run dev
+```
+
+That runs `wrangler dev`, which serves on `http://localhost:8787` and simulates the R2 bucket, the KV namespace, the queue, and the rate-limit Durable Object locally. Smoke test:
+
+```bash
+curl http://localhost:8787/health
+# → {"ok":true,"sha":"dev","deployedAt":null,
+#    "backend":"postgres","records":"empty","blobs":"empty"}
+```
+
+Read `backend` and the two presence fields rather than `ok` alone. `ok:true` is true of any process that started; `backend` says which store you are actually talking to, and `records`/`blobs` say whether it has anything in it — which is the question that went unanswered for twenty minutes during the production cutover while `/health` reported a cheerful `ok:true` over an empty database and an empty bucket.
+
+`ANTIPHONY_PUBLIC_BASE_URL` is required, not cosmetic: the audio proxy streams bytes rather than redirecting, so `AudioEmbedView.url` is an absolute URL pointing back at this service. Without it, a post with audio hydrates with no embed at all.
+
+Those two `local:` entries describe one tenant: `ANTIPHONY_APP_TOKENS` is the credential it authenticates with, `ANTIPHONY_APP_DIDS` is the `at://` authority it writes under. A tenant needs **both** — core-api warns about a tenant configured in only one. Tenancy comes from the credential; there's no deployment-level default.
 
 ## 5. Hit a real endpoint
 
-Every data route requires your **service token**. There's no end-user sign-in to do and no Firebase token involved: your app authenticates as itself and asserts which of *its* users is acting (see [Authentication](/api/overview/#authentication)).
+Every data route requires your **service token**. There's no end-user sign-in to do: your app authenticates as itself and asserts which of *its* users is acting (see [Authentication](/api/overview/#authentication)).
 
 ```bash
 TOKEN=a-local-dev-token-at-least-32-chars-long
 
 # 1. Upload audio (returns a content-addressed blob ref to embed).
 #    Max 25 MB, and the MIME type must be one core-api accepts.
-curl -X POST http://localhost:8090/api/v1/audio/upload \
+curl -X POST http://localhost:8787/api/v1/audio/upload \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Antiphony-Acting-Actor: local-user-1" \
   -F "file=@your-clip.wav;type=audio/wav"
@@ -100,7 +117,7 @@ curl -X POST http://localhost:8090/api/v1/audio/upload \
 #                                   "mimeType":"audio/wav","size":8044}}}
 
 # 2. Create the post, with that blob ref as the embed's `audio`
-curl -X POST http://localhost:8090/api/v1/posts \
+curl -X POST http://localhost:8787/api/v1/posts \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Antiphony-Acting-Actor: local-user-1" \
   -H "Content-Type: application/json" \
@@ -109,7 +126,7 @@ curl -X POST http://localhost:8090/api/v1/posts \
 # → {"success":true,"data":{"postId":"3mrj6z52xwsj7"}}
 
 # 3. Read it back, hydrated
-curl "http://localhost:8090/api/v1/posts/3mrj6z52xwsj7" \
+curl "http://localhost:8787/api/v1/posts/3mrj6z52xwsj7" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Antiphony-Acting-Actor: local-user-1"
 ```
@@ -129,8 +146,10 @@ The read returns the post under your pinned authority, with the acting actor sta
 
 Note the acting-actor header on the read as well: it's what populates `viewer`. Drop it and you get the same post with an anonymous, viewer-less projection.
 
-:::note[No `embed` in your local response?]
-Expected against a bare emulator stack. `embed.url` is a **signed** Storage URL, and signing needs real Google credentials the storage emulator doesn't have — core-api logs `failed to sign audio URL` and omits the embed rather than returning an unplayable one. The create → fetch → viewer-state path still validates the contract. Point `GOOGLE_APPLICATION_CREDENTIALS` at a service account if you want working playback locally.
+:::note[Playback works locally now]
+`embed.url` used to be a signed Cloud Storage URL, which meant local playback needed real Google credentials the storage emulator couldn't provide, and the embed was omitted rather than returned unplayable. It is now the **audio proxy** — `GET /api/v1/audio?url=blobs/…`, which streams the bytes out of the bucket — so `wrangler dev`'s simulated R2 serves it like any other object, with no credentials involved.
+
+Two enrichment stages still need something you don't have locally: `trim` and `waveform` run in [`apps/audio-rendition`](https://github.com/bbthorson/antiphony/tree/master/apps/audio-rendition) over HTTP, so without `ANTIPHONY_RENDITION_SERVICE_URL` they resolve unavailable and settle `skipped`. That's the honest state, not a failure — see [Configuration § audio enrichment](/self-hosting/configuration/#audio-enrichment).
 :::
 
 The fastest way to see this loop in a browser is the [reference app](/build-your-own/reference-app/), which ships a small BFF that holds the token for you.

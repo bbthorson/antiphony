@@ -350,6 +350,77 @@ deliberate version of this decision, either way.
 
 ---
 
+## 8. The docs site is a second Worker
+
+`docs.antiphony.dev` is a separate, assets-only Worker named **`antiphony-docs`**,
+built by Workers Builds (dashboard → the Worker → Settings → Builds) rather than
+by anything in `.github/workflows/`. It has no bindings and no `main` script: it
+serves the static Astro build.
+
+| Setting | Value |
+| :--- | :--- |
+| Root directory | `/` |
+| Build command | `npm run build -w @antiphony/docs` |
+| Deploy command | `npx wrangler deploy` |
+| Wrangler config | [`wrangler.jsonc`](../wrangler.jsonc) at the repo root |
+
+⚠️ **`name` in that file must equal the Worker's name in the dashboard, or the
+build fails** — see [the documented name check](https://developers.cloudflare.com/workers/ci-cd/builds/).
+It said `antiphony` from 2026-06-27 while the Worker has always been
+`antiphony-docs`. Fixed 2026-08-19.
+
+The wrong value came from Cloudflare's own autofix, which opens a PR when it
+detects a mismatch (branch `update_worker_name_to_antiphony`, commit 59b402c).
+It guessed wrong and the PR was merged. When the dashboard shows the
+"keep settings consistent" banner it quotes the **live Worker**, so take the
+name from the banner, not from the autofix PR.
+
+**This was NOT why the builds were failing, despite looking like it.** The
+failing build's log ends at Cloudflare's tool-install step, which runs before
+this config is read:
+
+```
+Detected the following tools from environment: nodejs@22.23.2, npm@12.0.2
+Installing nodejs 22.23.2
+Failed: error occurred while installing tools or dependencies.
+```
+
+The name check was never reached. The config is sound — the build image
+preinstalls 22.23.2, and npm 12.0.2's engines (`^22.22.2 || ^24.15.0 || >=26.0.0`)
+accept it — and identical config both passed and failed across 2026-08-16..19,
+which is the signature of a transient failure in that step. **Retry the build
+first**; escalate only if a retry fails the same way. The rename is still
+correct, because it is a real latent bug that would have failed the deploy step
+once a build got that far.
+
+### Why `.nvmrc` pins an exact patch version
+
+It is `22.23.2`, not `22`. Workers Builds resolves a bare major to the newest
+release in that line, and the build image only **preinstalls** two versions
+(currently 22.23.2 and 24.18.0). The day Node ships 22.23.3, a bare `22` starts
+resolving to a version that is not in the image, forcing the download step that
+failed above. An exact pin that matches a preinstalled version skips it.
+
+So when Cloudflare changes what the image preinstalls, this file should follow.
+`.nvmrc` is also the single source of truth for `actions/setup-node` in `ci.yml`,
+`deploy.yml`, and `release.yml`, so a bump moves CI and the production deploy
+together — which is the point, but check all three when you change it.
+
+**Node 22 is the maintenance line** (LTS since 2024-10-29, maintenance since
+2025-10-21, EOL 2027-04-30). Node 24 is the active LTS and is Workers Builds'
+default. The full gate — typecheck, lint, 853 tests, build, docs build,
+`check:worker-bundle` — was verified green on 24.18.0 on 2026-08-19, so that
+move is pre-validated whenever it is wanted. `apps/audio-rendition/Dockerfile`
+pins `node:22-slim` independently and would need the same bump.
+
+Two consequences of the deploy command being a bare `npx wrangler deploy` at the
+repo root are worth keeping in mind: the root config must stay the docs site's
+(core-api's is passed explicitly with `-c`), and a build of this Worker runs a
+full workspace install, so it is affected by anything that breaks `npm ci` at
+the root even though it only publishes `apps/docs/dist`.
+
+---
+
 ## Rollback
 
 **A bad deploy:** roll back to the previous version in the dashboard

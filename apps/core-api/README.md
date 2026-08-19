@@ -1,6 +1,6 @@
 # @antiphony/core-api
 
-> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, threaded replies, and audio upload/playback. Pairs with a Firestore backend and any Firebase-compatible auth provider.
+> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, threaded replies, and audio upload/playback. Runs on Cloudflare Workers against Postgres and an R2 bucket; every backend touch goes through a port, so those are adapter choices rather than requirements.
 >
 > **Apps built on it** (e.g. [Vox Pop](https://voxpop.audio)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
 
@@ -29,10 +29,12 @@ These belong to the consumer app (e.g. Vox Pop) — now a separate repo — not 
 
 ## Architecture
 
-**Ports and adapters (hexagonal).** The Firebase-free domain — ports and services — lives in [`@antiphony/core`](../../packages/core/); this package is the Node host that wires concrete adapters to it.
+**Ports and adapters (hexagonal).** The backend-free domain — ports and services — lives in [`@antiphony/core`](../../packages/core/); this package is the Workers host that wires concrete adapters to it.
 
 - **`src/adapters/inbound/rest/`** — one file per HTTP route. Each validates with Zod, authenticates via the auth middleware, and calls a use case / domain service.
-- **`src/adapters/outbound/`** — the driven side: `firebase/` (Firestore + Storage bindings), `elevenlabs/` (transcribe + denoise), `ffmpeg/` (trim + waveform), `dispatch/` (the processing queue). Swapping a backend means swapping an adapter, not touching `packages/core`.
+- **`src/adapters/outbound/`** — the driven side: `postgres/` (records, transcripts, processing state, idempotency), `r2/` (audio blobs + renditions), `durable-objects/` (rate-limit buckets), `dispatch/` (the processing queue), `elevenlabs/` (transcribe + denoise), and `rendition/` (trim + waveform, over HTTP to `apps/audio-rendition`). Swapping a backend means swapping an adapter, not touching `packages/core`.
+
+  `firebase/` is still here and is **not** on the Worker's path. It is a Node-only fallback installed by `src/native.ts`, kept alive by `scripts/migrate-firestore-to-neon.ts`, which still has to read the old store. Importing it from the shared graph would put `firebase-admin` in the Worker bundle, which is why the composition root takes it by *installation* rather than import — and why `check:worker-bundle` fails CI if it ever comes back.
 - **`src/use-cases/`**, **`src/middleware/`**, **`src/lib/`** — application wiring, the auth/CORS/logging middleware, and the composition helpers (provider + dispatcher resolution). `src/app.ts` mounts the routes.
 
 No React, no Next.js, no framework magic. Just Hono handlers talking to typed ports.
@@ -80,16 +82,16 @@ For detailed instructions on setting up your local environment, running the full
 
 ```bash
 npm run typecheck -w @antiphony/core-api
-npm run build -w @antiphony/core-api     # esbuild
+npm run build -w @antiphony/core-api     # regenerates the OpenAPI documents
 npm run lint -w @antiphony/core-api
 npm run test -w @antiphony/core-api -- --run
 ```
 
 ## Deployment
 
-Cloudflare Workers — the `antiphony-core-api` Worker serves `api.antiphony.dev`, configured by [`wrangler.jsonc`](./wrangler.jsonc) and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/README.md`](../../deploy/README.md) for the one-time setup: the Hyperdrive config, KV namespace, R2 bucket and queues the config names, plus the three Worker secrets.
+Cloudflare Workers — the `antiphony-core-api` Worker serves `api.antiphony.dev`, configured by [`wrangler.jsonc`](./wrangler.jsonc) and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/README.md`](../../deploy/README.md) for the one-time setup: the KV namespace, R2 bucket and queues the config names, plus the four Worker secrets. There is deliberately no Hyperdrive config — the HTTP SQL driver cannot use one; see that file and `wrangler.jsonc`.
 
-Every binding is authorised by being bound — there is no database URL, R2 key, or service-account credential anywhere in the config. Enrichment runs off the `PROCESSING_QUEUE` binding rather than Cloud Tasks; see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
+Every binding is authorised by being bound — there is no R2 key or service-account credential anywhere in the config. `DATABASE_URL` is the one exception and the reason is narrow: the SQL driver speaks HTTP to Neon rather than reaching a binding, so it holds a real credential and is a Worker secret. Enrichment runs off the `PROCESSING_QUEUE` binding rather than Cloud Tasks; see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
 
 ## Why Hono, not Next.js
 
