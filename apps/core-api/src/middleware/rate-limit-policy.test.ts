@@ -12,8 +12,14 @@ import type { RateLimitOutcome, RateLimitStore } from '../ports/rate-limit-store
  * much as the policy. Here the store is three lines and each branch is reached
  * by returning a value.
  *
- * `rate-limit.test.ts` still covers the middleware end to end against the
- * Firestore binding; this is the layer below it, and the two do not overlap.
+ * It used to say the sibling `rate-limit.test.ts` covered the middleware end to
+ * end against the Firestore binding, and that the two did not overlap. That
+ * file went with the binding: once there was no Firestore store, everything it
+ * could still assert was the policy — i.e. this file, reached the long way
+ * round through a fake transaction. So this is now the only home for the
+ * policy, which is why the cooldown case below moved in rather than being
+ * deleted with it. The middleware's own wrapper is covered next door, in
+ * `rate-limit-exemption.test.ts`.
  */
 
 function fakeStore(outcomes: RateLimitOutcome[]): RateLimitStore & { calls: number } {
@@ -74,6 +80,37 @@ describe('rate-limit policy (circuit breaker + fail-open)', () => {
             allowed: true,
         });
         expect(store.calls).toBe(5);
+    });
+
+    it('probes with a SINGLE request once the cooldown elapses', async () => {
+        // The breaker does not reopen the gate wholesale after 30s — it drops
+        // the counter to one below the threshold so exactly one request goes
+        // through to find out whether the store has recovered. Without this the
+        // cooldown branch is never executed: every other case here either stays
+        // inside the window or never opens the circuit.
+        vi.useFakeTimers();
+        try {
+            const store = fakeStore(['unavailable']);
+            for (let n = 0; n < 5; n++) {
+                await checkRateLimit('k', WINDOW, undefined, store);
+            }
+            expect(store.calls).toBe(5);
+
+            // Inside the cooldown: answered by the breaker, store untouched.
+            await checkRateLimit('k', WINDOW, undefined, store);
+            expect(store.calls).toBe(5);
+
+            // Past it: one request is let through, and because this store
+            // answers `over`, it is actually enforced rather than waved past.
+            vi.advanceTimersByTime(30_001);
+            const recovered = fakeStore(['over']);
+            await expect(checkRateLimit('k', WINDOW, undefined, recovered)).resolves.toEqual({
+                allowed: false,
+            });
+            expect(recovered.calls).toBe(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('resets the failure count when the store answers again', async () => {

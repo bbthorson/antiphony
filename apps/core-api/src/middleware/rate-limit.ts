@@ -16,14 +16,15 @@ import type { RateLimitStore } from '../ports/rate-limit-store.js';
  * limit is the store's question, and what to do when the store cannot answer
  * is the deployment's. Only the first varies by backend.
  *
- * **The asymmetry is the load-bearing part** (rate-limit.test.ts is built
- * around it):
+ * **The asymmetry is the load-bearing part** (rate-limit-policy.test.ts is
+ * built around it):
  *
  *   - `unavailable` — the store is systemically unwell. Fail **OPEN** after the
  *     breaker trips: a storage outage must not take the whole API down.
- *   - `over` — refuse. A Firestore binding also reports per-bucket contention
- *     as `over` rather than `unavailable`, so a caller hammering one bucket
- *     cannot trip the breaker and fail-open the limiter for everyone.
+ *   - `over` — refuse. A binding must report per-bucket contention as `over`
+ *     rather than `unavailable` (the Firestore one did, and the port requires
+ *     it of any successor), so a caller hammering one bucket cannot trip the
+ *     breaker and fail-open the limiter for everyone.
  *
  * IP extraction is `extractClientIp` (lib/client-ip.ts), which indexes in from
  * the RIGHT of `X-Forwarded-For` by the trusted hop count — entries further
@@ -34,8 +35,9 @@ import type { RateLimitStore } from '../ports/rate-limit-store.js';
  * middleware wraps. It was also exposed over HTTP at
  * `POST /api/v1/system/rate-limit/check` so a sibling service could share these
  * buckets; that route is gone (the Vox Pop BFF serves its own — Stream 4 F7 G2)
- * and nothing external shares them any more, which is what makes moving them
- * off Firestore a purely internal decision.
+ * and nothing external shares them any more, which is what made moving them off
+ * Firestore a purely internal decision. They are on Postgres now, and on the
+ * Durable Object wherever that binding is attached.
  */
 
 export interface RateLimitOptions {
@@ -75,7 +77,7 @@ export const RATE_LIMITS = {
 } as const;
 
 // Circuit breaker state — module-scoped intentionally so it persists across
-// requests within the same Cloud Run instance.
+// requests within the same isolate.
 let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 const CIRCUIT_FAILURE_THRESHOLD = 5;
@@ -84,15 +86,15 @@ const CIRCUIT_COOLDOWN_MS = 30_000;
 /**
  * Result of a single rate-limit check. Discriminator is `allowed`:
  *
- *   - `allowed: true` — caller may proceed (under limit, or fail-open
- *     because Firestore is throwing systemic errors and the circuit is
- *     open).
- *   - `allowed: false` — caller is blocked. Two sub-cases:
+ *   - `allowed: true` — caller may proceed (under limit, or fail-open because
+ *     the store is reporting systemic failures and the circuit is open).
+ *   - `allowed: false` — caller is blocked. Two sub-cases, and the store does
+ *     not distinguish them because the response is the same:
  *     - The bucket's count met or exceeded `limit` (normal rate-limit hit).
- *     - Per-bucket transaction contention from Firestore (Admin SDK
- *       already retried; getting ABORTED/FAILED_PRECONDITION means many
- *       concurrent writers are hammering the same bucket, which is what
- *       the rate limit is supposed to catch — fail closed).
+ *     - Per-bucket contention, which a binding reports as `over` rather than
+ *       `unavailable`: many concurrent writers on one bucket is what the rate
+ *       limit exists to catch, so it fails closed and does not feed the
+ *       breaker.
  *
  * Discrimination is intentionally opaque to callers: they should respond
  * with 429 for any `allowed: false`. Surfacing the sub-reason would invite
@@ -103,7 +105,7 @@ export interface CheckRateLimitResult {
 }
 
 /**
- * Run a rate-limit check against the `rate_limits/{key}` doc in Firestore.
+ * Run a rate-limit check for one bucket against the composed store.
  *
  * Pure function — no Hono context binding. Used by the `rateLimit(...)`
  * middleware factory below. (It previously also backed
@@ -116,12 +118,14 @@ export interface CheckRateLimitResult {
  * @param requestId — optional, threaded into log lines so the caller's
  *                    requestId correlates with core-api logs.
  * @param store — REQUIRED, and deliberately has no default. It used to default
- *                to `firebaseRateLimitStore`, and the middleware below never
- *                passed anything — so the Postgres binding from #86 could not
- *                be reached in production by any configuration, and the
- *                Firestore import put `firebase-admin` on the module graph of
- *                every rate-limited route. A required parameter is what stops
- *                that from silently coming back.
+ *                to the Firestore store, and the middleware below never passed
+ *                anything — so the Postgres binding from #86 could not be
+ *                reached in production by any configuration, and the import put
+ *                `firebase-admin` on the module graph of every rate-limited
+ *                route. Both problems are gone with that store, but the
+ *                required parameter stays: a default here is what made a
+ *                binding unreachable by configuration, and that trap does not
+ *                depend on which store fills it.
  */
 export async function checkRateLimit(
     key: string,
@@ -264,8 +268,8 @@ export const rateLimit = (
             key,
             options,
             c.get('requestId'),
-            // Resolved per request off the composition root, so the
-            // Firestore → Neon cutover governs these buckets like every other
+            // Resolved per request off the composition root, so these
+            // buckets are governed by the same binding selection as every other
             // table rather than being quietly exempt from it.
             servicesFor(c.env as Record<string, unknown> | undefined).rateLimitStore,
         );

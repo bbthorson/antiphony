@@ -31,13 +31,18 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
  * The composition root — the one place that decides which bindings back the
  * ports, and the only module that knows both halves exist.
  *
- * ## This is the cutover switch, not just Worker preparation
+ * ## One backend, selected from bindings
  *
- * Before this, `core-services-firebase.ts` constructed Firebase singletons at
- * module load, so there was no way to run the Postgres and R2 bindings in
- * production at all — they were tested code with no route to production. The
- * backend is now chosen from configuration, which makes the migration a
- * deploy-time flag flip and, more importantly, makes rolling BACK one too.
+ * Records live in Postgres and blobs in R2; there is no second arm to choose
+ * between any more. What this still decides is whether the bindings a
+ * deployment actually supplied are enough to build a working graph, and it
+ * fails loudly here — at graph construction — rather than per request.
+ *
+ * The Firestore/GCS arm and the `src/native.ts` entry that installed it are
+ * gone. They survived the cutover only to keep the pre-migration data readable;
+ * the records migration turned out to be a no-op (specs/cloudflare-migration.md
+ * § Step 2 — nothing had ever been written through `/api/v1/posts`) and blobs
+ * moved by Super Slurper, so nothing reads Firestore now.
  *
  * ## Why a factory rather than module singletons
  *
@@ -58,24 +63,6 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
  * requests — which is the behaviour the module-scoped version had by accident
  * and this keeps on purpose. A `WeakMap` rather than a plain cache so a
  * short-lived env (tests, one-off scripts) is collectable.
- *
- * ## Why the Firebase half is injected rather than imported
- *
- * Selection logic all lives here — that is what makes this a composition root.
- * What does NOT live here any more is the Firebase adapters themselves, because
- * importing them puts `firebase-admin` in the module graph of every route and
- * therefore in the Worker bundle. It cannot go there: it is CommonJS with
- * native transitive dependencies (grpc, protobufjs), which is why
- * `esbuild.config.mjs` has always kept it `external`. A Worker bundle has no
- * `external` — whatever the graph reaches has to bundle.
- *
- * So the concrete Firebase objects arrive through `installFallbackBackends`,
- * called by `src/native.ts`, which only the Node entry imports. The branch
- * structure below is unchanged; the Worker simply runs with no fallback
- * installed, where a missing binding is an error rather than a fall-through.
- * That is the right behaviour there independently of bundling: a Worker holds
- * no Application Default Credentials and could not reach Firestore if it tried,
- * so falling back would trade one loud failure for a confusing per-request one.
  */
 
 export interface Services {
@@ -86,12 +73,11 @@ export interface Services {
     rateLimitStore: RateLimitStore;
     idempotencyStore: IdempotencyStore;
     /**
-     * The raw SQL handle, when Postgres is the backend. Present for maintenance
-     * work that is not a domain operation and so has no port to reach through —
-     * today only the TTL sweep the Worker's cron drives. `undefined` on
-     * Firestore, which has native TTL and needs no sweep.
+     * The raw SQL handle. Present for maintenance work that is not a domain
+     * operation and so has no port to reach through — today only the TTL sweep
+     * the Worker's cron drives.
      */
-    sql?: SqlClient;
+    sql: SqlClient;
     /**
      * The transcode backend, when this deployment has one configured.
      *
@@ -101,8 +87,15 @@ export interface Services {
      * wants none). See ports/rendition-service.ts.
      */
     renditionService?: RenditionServicePort;
-    /** Which backend actually got wired — for `/health` and for log context. */
-    backend: 'firebase' | 'postgres';
+    /**
+     * Which backend got wired — for `/health` and for log context.
+     *
+     * Only one value is possible now that the Firestore arm is gone. It stays a
+     * field rather than becoming a literal at the call site because `/health`
+     * publishes it, and "which store is this deployment on" is the question the
+     * migration made worth asking out loud.
+     */
+    backend: 'postgres';
 }
 
 /**
@@ -170,102 +163,45 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
     };
 }
 
-/**
- * The Firebase-backed halves, supplied by the Node entry point.
- *
- * `audioProcessingDeps` is a function because that binding closes over the
- * `StorageService`, which is itself the result of a selection made above it —
- * so it cannot be constructed until the blob store is chosen.
- */
-export interface FallbackBackends {
-    blob: BlobStore;
-    audioPostDeps: AudioPostDependencies;
-    audioProcessingDeps: (storage: StorageService) => AudioProcessingDependencies;
-    rateLimitStore: RateLimitStore;
-    idempotencyStore: IdempotencyStore;
-}
-
-let fallbackBackends: FallbackBackends | undefined;
-
-/**
- * Register the Firebase-backed bindings as the fallback for anything this
- * environment has not bound natively. Called once, at import time, by
- * `src/native.ts`. See § Why the Firebase half is injected.
- */
-export function installFallbackBackends(backends: FallbackBackends): void {
-    fallbackBackends = backends;
-    // Anything already built was built without the fallback and may have
-    // resolved differently. Nothing should have been built this early, but if
-    // it was, a stale graph is the kind of bug that surfaces as one route
-    // talking to the wrong store.
-    resetServices();
-}
-
-/** What a deployment is missing when it has neither a binding nor a fallback. */
+/** What a deployment is missing when it has not bound a required resource. */
 function missingBinding(what: string, binding: string): Error {
     return new Error(
-        `[composition] no ${what} available: bind ${binding}, or run under Node with the Firebase fallback installed (src/native.ts). See specs/cloudflare-migration.md § Secrets.`,
+        `[composition] no ${what} available: bind ${binding}. See specs/cloudflare-migration.md § Secrets.`,
     );
 }
 
 /**
  * Build the service graph for one environment.
  *
- * Storage and the database are selected INDEPENDENTLY. That is deliberate: the
- * migration moves them in separate steps (records in 2d, blobs via Super
- * Slurper), and coupling the choice would force a single big-bang cutover where
- * the design specifically allows two smaller ones. A deployment running Neon
- * with blobs still on GCS is a valid, expected intermediate state.
+ * Storage and the database are still read independently — they are separate
+ * bindings and a deployment can get one wrong without the other — but both are
+ * now required. The migration-era state where blobs were still on GCS while
+ * records had moved is over, so there is nothing to fall back to and a missing
+ * binding is an error.
  */
 export function createServices(env: RuntimeEnv): Services {
-    const fallback = fallbackBackends;
-
-    const r2 =
+    const blob: BlobStore =
         env.r2Bucket && env.r2BucketName
             ? r2BlobStore({ bucket: env.r2Bucket, bucketName: env.r2BucketName })
-            : undefined;
-    const blob: BlobStore = r2 ?? fallback?.blob ?? raise(missingBinding('blob store', 'BLOBS'));
+            : raise(missingBinding('blob store', 'BLOBS'));
 
     const storage = makeStorageService(blob);
 
-    const sql: SqlClient | undefined = env.databaseUrl
+    const sql: SqlClient = env.databaseUrl
         ? neonSqlClient(env.databaseUrl)
-        : undefined;
-
-    // Grouped rather than four parallel ternaries so the two halves cannot
-    // drift into a mixed graph — `backend` is reported on `/health` and has to
-    // describe every one of these, not just the first.
-    const db = sql
-        ? {
-              audioPostDeps: postgresAudioPostDependencies(sql),
-              audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),
-              rateLimitStore: postgresRateLimitStore(sql),
-              idempotencyStore: postgresIdempotencyStore(sql),
-              sql,
-              backend: 'postgres' as const,
-          }
-        : fallback
-          ? {
-                audioPostDeps: fallback.audioPostDeps,
-                audioProcessingDeps: fallback.audioProcessingDeps(storage),
-                rateLimitStore: fallback.rateLimitStore,
-                idempotencyStore: fallback.idempotencyStore,
-                backend: 'firebase' as const,
-            }
-          : raise(missingBinding('database', 'DATABASE_URL (or HYPERDRIVE)'));
+        : raise(missingBinding('database', 'DATABASE_URL (or HYPERDRIVE)'));
 
     // Rate limiting is selected on its OWN axis, ahead of the database.
     //
-    // The other four stores move together because they are one record store
-    // seen from four angles. This one is not: it is a counter on the read path,
-    // the table in `db/schema.sql` is explicitly a bridge rather than a
-    // destination, and the Durable Object is where it is going. So a deployment
-    // on Postgres WITH the binding attached should already be using the binding
-    // — otherwise the last step of the migration would need its own cutover
-    // instead of just attaching the thing.
+    // The other four stores are one record store seen from four angles. This one
+    // is not: it is a counter on the read path, the table in `db/schema.sql` is
+    // explicitly a bridge rather than a destination, and the Durable Object is
+    // where it is going. So a deployment WITH the binding attached should
+    // already be using the binding — otherwise the last step of the migration
+    // would need its own cutover instead of just attaching the thing.
     const rateLimitStore = env.rateLimiter
         ? durableObjectRateLimitStore(env.rateLimiter)
-        : db.rateLimitStore;
+        : postgresRateLimitStore(sql);
 
     // Read off `process.env` rather than a binding, so it is configured the
     // same way on both runtimes — the service is reached over HTTPS with a
@@ -283,10 +219,16 @@ export function createServices(env: RuntimeEnv): Services {
         );
     }
 
+    const audioPostDeps = postgresAudioPostDependencies(sql);
+
     return {
-        audioPostService: new AudioPostService(db.audioPostDeps),
+        audioPostService: new AudioPostService(audioPostDeps),
         storage,
-        ...db,
+        audioPostDeps,
+        audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),
+        idempotencyStore: postgresIdempotencyStore(sql),
+        sql,
+        backend: 'postgres',
         rateLimitStore,
         renditionService: rendition.config
             ? httpRenditionService(rendition.config, logger)
@@ -294,13 +236,13 @@ export function createServices(env: RuntimeEnv): Services {
     };
 }
 
-/** Throw from an expression position, so the `??` chain above stays a chain. */
+/** Throw from an expression position, so the selections above stay expressions. */
 function raise(err: Error): never {
     throw err;
 }
 
-let cache = new WeakMap<object, Services>();
-/** Fallback slot for Node, where there is no env object to key on. */
+const cache = new WeakMap<object, Services>();
+/** Slot for Node, where there is no env object to key the WeakMap on. */
 let nodeServices: Services | undefined;
 
 /**
@@ -321,13 +263,3 @@ export function servicesFor(env?: Record<string, unknown>): Services {
     return built;
 }
 
-/**
- * Drop the memoised graphs so the next `servicesFor` rebuilds. Called when the
- * fallback lands: anything built before it resolved against a different set of
- * options, and a stale graph shows up as one route talking to the wrong store.
- */
-function resetServices(): void {
-    nodeServices = undefined;
-    // Reassigned rather than cleared: a WeakMap has no `clear()`.
-    cache = new WeakMap<object, Services>();
-}

@@ -36,13 +36,6 @@ vi.mock('../../../lib/idempotency.js', () => ({
     IdempotencyInProgressError: class extends Error {},
 }));
 
-vi.mock('../../../lib/firebase-admin.js', () => ({
-    getAdminDb: () => ({ collection: () => ({ doc: () => ({}) }) }),
-    getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
-    getAdminStorage: () => ({}),
-    isUsingEmulator: () => false,
-}));
-
 // The caller authenticates as an application via a service token; the app id
 // `test-app` matches ANTIPHONY_ORIGIN_APP_ID so credential + default tenancy
 // agree. The acting end user arrives via the X-Antiphony-Acting-Actor header.

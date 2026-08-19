@@ -17,8 +17,10 @@ import type {
 } from './lib/workers-runtime.js';
 
 /**
- * The producing half of the queue seam, installed at module load the way
- * `native.ts` installs the Cloud Tasks one under Node.
+ * The producing half of the queue seam, installed at module load.
+ *
+ * This is the only dispatcher now. `native.ts` installed a Cloud Tasks one for
+ * the Node/Cloud Run runtime; both went when that runtime did.
  *
  * The resolver reads `PROCESSING_QUEUE` off the per-invocation `env` rather
  * than closing over a binding, because bindings do not exist at
@@ -52,16 +54,16 @@ export { RateLimiter } from './adapters/outbound/durable-objects/rate-limiter.js
 /**
  * Antiphony core-api — Cloudflare Workers entry point.
  *
- * The counterpart to `src/index.ts`, which is the Node/Cloud Run one. Route
- * wiring, middleware order, and the OpenAPI document all live in `app.ts` and
- * are shared verbatim; this file is only the runtime seam.
+ * The only entry point. Route wiring, middleware order, and the OpenAPI
+ * document all live in `app.ts`; this file is the runtime seam.
  *
- * Note what it deliberately does NOT import: `./native.js`. That module carries
- * `firebase-admin` and `google-auth-library`, neither of which can run here. See
- * `native.ts` for the whole argument, and `composition.ts`
- * for what a Worker gets instead — bindings that are mandatory rather than
- * optional, so a misconfigured deployment fails loudly at its first request
- * instead of quietly talking to the wrong store.
+ * It had a counterpart, `src/index.ts`, for the Node/Cloud Run runtime, plus a
+ * `native.ts` that installed the two dependencies a Worker cannot carry —
+ * `firebase-admin` and `google-auth-library`. All three are gone, and with them
+ * the reason this file had to be careful about what it imported. What survives
+ * is the property that made the split work: bindings are mandatory in
+ * `composition.ts`, so a misconfigured deployment fails loudly at its first
+ * request instead of quietly talking to the wrong store.
  *
  * ## Three handlers
  *

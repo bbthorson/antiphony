@@ -1,151 +1,46 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// Real SDK, not the mocked `firebase-admin.js` wrapper — needed only to
-// recognise the `FieldValue.delete()` sentinel in the in-memory store below.
-import admin from 'firebase-admin';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { createTestDatabase, type TestDatabase } from '../../outbound/postgres/testing/pglite.js';
+import { createFakeBucket } from '../../outbound/r2/testing/fake-bucket.js';
 
 /**
  * End-to-end integration test for B5 audio processing: drives the REAL
  * create → dispatch (inline stub) → hydrate pipeline through the actual
- * services and Firebase adapters, backed by an in-memory Firestore + Storage.
- * No service-layer mock — this proves the wiring the unit tests can't:
+ * services and the Postgres + R2 bindings. No service-layer mock — this proves
+ * the wiring the unit tests cannot:
  *   - create stamps the initial processing state on the record,
  *   - inline dispatch runs the stub providers,
  *   - the transcript enrichment is written under the post's StrongRef,
  *   - hydration surfaces per-stage status and swaps playback to the denoised
  *     variant.
+ *
+ * ## It used to run against a hand-written in-memory Firestore
+ *
+ * ~130 lines of it: a `Map` of documents, dotted-path `set` semantics, and a
+ * `FieldValue.delete()` sentinel check that imported the real `firebase-admin`
+ * purely to recognise the sentinel. That fake WAS the risk — it encoded one
+ * reading of Firestore's update semantics, and the pipeline was only ever as
+ * correct as that reading.
+ *
+ * It now runs on PGlite (real PostgreSQL 18, in-process) applying the shipped
+ * `db/schema.sql`, and the in-memory `R2BucketLike` the R2 binding suites
+ * already use. Nothing here is a stand-in for the store any more: the SQL runs
+ * against a real planner, and the only fakes left are the two things this test
+ * is not about — the processing providers (stubs, by env flag, exactly as in
+ * production dev) and the app-DID document.
  */
 
-// --- In-memory Firestore ---------------------------------------------------
-const docs = new Map<string, Record<string, unknown>>();
-let autoId = 0;
-
-function setNested(target: Record<string, unknown>, path: string, value: unknown) {
-    const parts = path.split('.');
-    let obj = target;
-    for (let i = 0; i < parts.length - 1; i++) {
-        obj[parts[i]] = { ...((obj[parts[i]] as Record<string, unknown>) ?? {}) };
-        obj = obj[parts[i]] as Record<string, unknown>;
-    }
-    obj[parts[parts.length - 1]] = value;
-}
+/** The database and bucket for the current test; bound into the request env. */
+let db: TestDatabase;
+let bucket: ReturnType<typeof createFakeBucket>;
 
 /**
- * Recognise `admin.firestore.FieldValue.delete()`. Uses the sentinel's own
- * `isEqual` (the documented comparison) rather than a name or shape check, so
- * it keeps working if the SDK changes the class behind it.
+ * The composition root builds its SQL client from `DATABASE_URL` via
+ * `neonSqlClient`. Point that at PGlite instead: everything above it — the
+ * Postgres bindings, the service graph, the routes — stays real, which is the
+ * whole point of composing through the root rather than mocking it.
  */
-function isDeleteSentinel(v: unknown): boolean {
-    const candidate = v as { isEqual?: (o: unknown) => boolean } | null;
-    return (
-        typeof candidate?.isEqual === 'function' &&
-        candidate.isEqual(admin.firestore.FieldValue.delete())
-    );
-}
-
-function deleteNested(target: Record<string, unknown>, path: string) {
-    const parts = path.split('.');
-    let obj = target;
-    for (let i = 0; i < parts.length - 1; i++) {
-        const next = obj[parts[i]] as Record<string, unknown> | undefined;
-        if (!next) return;
-        obj = obj[parts[i]] = { ...next };
-    }
-    delete obj[parts[parts.length - 1]];
-}
-
-function getNested(data: Record<string, unknown> | undefined, path: string): unknown {
-    return path.split('.').reduce<unknown>((acc, p) => (acc as Record<string, unknown>)?.[p], data);
-}
-
-function makeDocRef(name: string, id: string) {
-    const key = `${name}/${id}`;
-    return {
-        id,
-        get: async () => ({ exists: docs.has(key), id, data: () => docs.get(key) }),
-        set: async (data: Record<string, unknown>, opts?: { merge?: boolean }) => {
-            const existing = opts?.merge ? docs.get(key) ?? {} : {};
-            docs.set(key, { ...existing, ...data });
-        },
-        update: async (data: Record<string, unknown>) => {
-            const cur = { ...(docs.get(key) ?? {}) };
-            for (const [k, v] of Object.entries(data)) {
-                // `FieldValue.delete()` REMOVES the field in real Firestore.
-                // Storing the sentinel as a value instead leaves a field whose
-                // shape matches no schema — which is how the lease release
-                // first showed up here: a `leaseUntil` holding the sentinel
-                // failed the timestamp parse and 404'd the whole post.
-                if (isDeleteSentinel(v)) deleteNested(cur, k);
-                else if (k.includes('.')) setNested(cur, k, v);
-                else cur[k] = v;
-            }
-            docs.set(key, cur);
-        },
-        collection: (sub: string) => makeCollection(`${name}/${id}/${sub}`),
-    };
-}
-
-function makeCollection(name: string) {
-    return {
-        doc: (id?: string) => makeDocRef(name, id ?? `auto-${++autoId}`),
-        where: (field: string, op: string, value: unknown) => ({
-            limit: () => ({ get: async () => queryDocs(name, field, op, value) }),
-            get: async () => queryDocs(name, field, op, value),
-        }),
-    };
-}
-
-function queryDocs(name: string, field: string, op: string, value: unknown) {
-    const out: Array<{ id: string; data: () => unknown }> = [];
-    for (const [key, data] of docs.entries()) {
-        if (!key.startsWith(`${name}/`) || key.slice(name.length + 1).includes('/')) continue;
-        const val = getNested(data, field);
-        const match = op === 'in' ? Array.isArray(value) && value.includes(val) : val === value;
-        if (match) out.push({ id: key.slice(name.length + 1), data: () => data });
-    }
-    return { docs: out, empty: out.length === 0 };
-}
-
-const db = {
-    collection: (name: string) => makeCollection(name),
-    getAll: async (...refs: Array<{ get: () => Promise<unknown> }>) =>
-        Promise.all(refs.map((r) => r.get())),
-    // Transactional reads/writes delegate to the same in-memory docs the
-    // non-transactional ones use. The previous stub answered every `get` with
-    // `exists: false`, which was harmless while idempotency (mocked out here)
-    // was the only caller — but the processing lease reads the POST through
-    // this path, and a post that reads as absent is a lease that is never
-    // granted, so inline processing would silently do nothing.
-    runTransaction: async (fn: (t: unknown) => Promise<unknown>) =>
-        fn({
-            get: async (ref: { get: () => Promise<unknown> }) => ref.get(),
-            // `opts` must be forwarded: callers pass `{ merge: true }`, and
-            // dropping it turns a merge into a full replace that silently
-            // discards every field not in the patch.
-            set: (
-                ref: { set: (d: Record<string, unknown>, o?: { merge?: boolean }) => void },
-                d: Record<string, unknown>,
-                opts?: { merge?: boolean },
-            ) => ref.set(d, opts),
-            update: (ref: { update: (d: Record<string, unknown>) => void }, d: Record<string, unknown>) => ref.update(d),
-        }),
-};
-
-// --- In-memory Storage -----------------------------------------------------
-const BLOB_BYTES = Buffer.from([1, 2, 3, 4]);
-
-vi.mock('../../../lib/firebase-admin.js', () => ({
-    getAdminDb: () => db,
-    getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
-    getAdminStorage: () => ({
-        bucket: () => ({
-            name: 'test-bucket',
-            file: (_path: string) => ({
-                download: async () => [BLOB_BYTES],
-                save: async () => undefined,
-            }),
-        }),
-    }),
-    isUsingEmulator: () => false,
+vi.mock('../../outbound/postgres/client.js', () => ({
+    neonSqlClient: () => db,
 }));
 
 vi.mock('../../../lib/idempotency.js', () => ({
@@ -172,13 +67,19 @@ process.env.ANTIPHONY_PROCESSING_INLINE = 'true';
 // returns null and the whole embed is omitted.
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test';
 
+const BUCKET_NAME = 'antiphony-r2-bucket';
+
+/** The bindings a Worker would receive, assembled per request. */
+const bindings = () => ({
+    DATABASE_URL: 'postgresql://pglite/antiphony',
+    BLOBS: bucket,
+    ANTIPHONY_R2_BUCKET: BUCKET_NAME,
+});
+
 /** The proxy URL a hydrated embed should carry for a blob under this tenant. */
 const proxyUrl = (cid: string) =>
     `https://api.test/api/v1/audio?url=${encodeURIComponent(`blobs/test-app/${cid}`)}`;
 
-// Installs the Firebase fallback. This suite asserts on posts composed against
-// the Firestore bindings, which is a Node-runtime concern.
-await import('../../../native.js');
 const { app } = await import('../../../app.js');
 const { cidForBytes } = await import('../../../lib/cid.js');
 
@@ -200,6 +101,9 @@ await validateAllPins({
     })) as unknown as typeof fetch,
 });
 
+/** The original audio, seeded into the bucket and read by the denoise stage. */
+const BLOB_BYTES = new Uint8Array([1, 2, 3, 4]);
+
 const ORIGINAL_LINK = 'bafkreioriginalaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const EMBED = {
     $type: 'dev.antiphony.embed.audio',
@@ -212,18 +116,24 @@ const AUTH = {
     'Content-Type': 'application/json',
 };
 
+// The bindings go in as the request env, the way a Worker delivers them —
+// `app()` is the same factory production uses and holds no store of its own.
 async function createPost(body: Record<string, unknown>): Promise<string> {
-    const res = await app().request('/api/v1/posts', {
-        method: 'POST',
-        headers: AUTH,
-        body: JSON.stringify(body),
-    });
+    const res = await app().request(
+        '/api/v1/posts',
+        { method: 'POST', headers: AUTH, body: JSON.stringify(body) },
+        bindings(),
+    );
     expect(res.status).toBe(200);
     return ((await res.json()) as { data: { postId: string } }).data.postId;
 }
 
 async function getPost(postId: string) {
-    const res = await app().request(`/api/v1/posts/${postId}`, { headers: AUTH });
+    const res = await app().request(
+        `/api/v1/posts/${postId}`,
+        { headers: AUTH },
+        bindings(),
+    );
     expect(res.status).toBe(200);
     return ((await res.json()) as { data: { embed?: Record<string, unknown> } }).data;
 }
@@ -236,9 +146,23 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
     const providerEnv = ['ANTIPHONY_PROCESSING_STUB', 'ELEVENLABS_API_KEY'] as const;
     const savedEnv: Record<string, string | undefined> = {};
 
-    beforeEach(() => {
-        docs.clear();
-        autoId = 0;
+    beforeAll(async () => {
+        db = await createTestDatabase();
+    });
+    afterAll(async () => {
+        await db.close();
+    });
+
+    beforeEach(async () => {
+        await db.truncate();
+        // A fresh bucket per test, seeded with the original audio at the
+        // tenancy-scoped path the embed's blob ref resolves to
+        // (`blobs/{originAppId}/{cid}` — lib/blob-path.ts). The denoise stage
+        // reads these bytes and writes its variant back alongside them.
+        bucket = createFakeBucket();
+        await bucket.put(`blobs/test-app/${ORIGINAL_LINK}`, BLOB_BYTES, {
+            httpMetadata: { contentType: 'audio/webm' },
+        });
         for (const key of providerEnv) {
             savedEnv[key] = process.env[key];
             delete process.env[key];
@@ -264,7 +188,7 @@ describe('POST /api/v1/posts — audio processing (B5)', () => {
         // The stub transcript was lifted onto the embed.
         expect((data.embed?.transcript as { text?: string })?.text).toBe('[stub transcript]');
         // Playback resolves to the DENOISED variant's content-addressed blob.
-        const denoisedCid = await cidForBytes(new Uint8Array(BLOB_BYTES));
+        const denoisedCid = await cidForBytes(BLOB_BYTES);
         expect(data.embed?.url).toBe(proxyUrl(denoisedCid));
     });
 

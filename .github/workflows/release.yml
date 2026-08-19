@@ -2,7 +2,7 @@ name: Release
 
 # Publishes @antiphony/shared to npm. It is the only publishable package in the
 # workspace — every other workspace is `private` or deployed elsewhere (core-api
-# to Firebase App Hosting, docs to Cloudflare).
+# and docs both to Cloudflare Workers).
 #
 # Why this exists: publishing used to be manual, and so it didn't happen. 0.5.0
 # was bumped in the tree in fe7596b and then sat unpublished while the registry
