@@ -7,7 +7,7 @@ import {
     stubDenoiser,
     stubTrimmer,
     stubWaveform,
-} from '../adapters/outbound/firebase/processing-providers.js';
+} from '../adapters/outbound/processing/providers.js';
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';

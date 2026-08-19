@@ -15,8 +15,6 @@
     "gen:openapi": "tsx scripts/generate-openapi.ts",
     "//validate:pins": "Deploy-time gate: proves every ANTIPHONY_APP_DIDS pin against its did:web document before anything ships. Mechanism 1 of the boot-gate replacement — see the script.",
     "validate:pins": "tsx scripts/validate-pins.ts",
-    "migrate:processed-blob-cid": "tsx scripts/migrate-processed-blob-cid.ts",
-    "migrate:firestore-to-neon": "tsx scripts/migrate-firestore-to-neon.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
@@ -28,8 +26,6 @@
     "@hono/zod-openapi": "^0.19.10",
     "@ipld/dag-cbor": "^10.0.1",
     "@neondatabase/serverless": "^1.1.0",
-    "firebase-admin": "^13.6.0",
-    "google-auth-library": "^10.9.0",
     "hono": "^4.12.22",
     "multiformats": "^14.0.3",
     "zod": "^3.24.1"

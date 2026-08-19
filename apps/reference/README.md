@@ -47,25 +47,37 @@ shared `packages/capture-kit` once a second consumer needs them (the
 Stream 1.5 → capture-kit split). For now they live here to keep this PR
 self-contained.
 
-## Run it (local emulator stack)
+## Run it (local stack)
 
-Three terminals from the repo root. Requires Node 22 and a JDK on PATH
-(emulators).
+Two terminals from the repo root. Requires Node 22 and a Postgres database
+reachable over HTTPS — the SQL client is `@neondatabase/serverless` in HTTP
+mode, so a plain `localhost` Postgres will not answer it. A throwaway
+[Neon](https://neon.tech) branch is the intended shape. There are no emulators
+to install and no JDK to have on your PATH; `wrangler dev` simulates the R2
+bucket, the KV namespace, the queue, and the rate-limit Durable Object.
+
+See [the quick start](../docs/src/content/docs/self-hosting/quick-start.md) for
+the full walkthrough, including applying `apps/core-api/db/schema.sql`.
+
+Worker secrets are not environment variables, so core-api's local config goes
+in `apps/core-api/.dev.vars` (gitignored) rather than your shell:
 
 ```bash
-# 1. Firebase emulators (auth + firestore + storage), offline (demo- project)
-npx firebase emulators:start --only auth,firestore,storage --project demo-antiphony
+# apps/core-api/.dev.vars
+DATABASE_URL="postgresql://…@ep-….neon.tech/neondb?sslmode=require"
+ANTIPHONY_APP_TOKENS="reference:reference-local-dev-token-0123456789abcdef"
+ANTIPHONY_APP_DIDS="reference:did:web:your-domain.example"
+ANTIPHONY_PUBLIC_BASE_URL="http://localhost:8787"
+SYSTEM_AUTH_TOKEN="local-dev-system-secret-12345678"
+```
 
-# 2. core-api on :8090, pointed at the emulators
-PORT=8090 \
-ANTIPHONY_USE_EMULATOR=true \
-GCLOUD_PROJECT=demo-antiphony \
-ANTIPHONY_APP_TOKENS=reference:reference-local-dev-token-0123456789abcdef \
-ANTIPHONY_APP_DIDS=reference:did:web:your-domain.example \
-SYSTEM_AUTH_TOKEN=local-dev-system-secret-12345678 \
-  npm run dev -w @antiphony/core-api
+Then:
 
-# 3. the reference app on :3002
+```bash
+# 1. core-api on :8787 (wrangler dev)
+npm run dev -w @antiphony/core-api
+
+# 2. the reference app on :3002
 npm run dev -w @antiphony/reference
 ```
 
@@ -73,7 +85,7 @@ Open <http://localhost:3002>, record, and watch it round-trip
 create → fetch → render. No sign-in step: the BFF asserts
 `ANTIPHONY_ACTING_ACTOR` (default `reference-user`) as the author.
 
-The token in step 2 must match `ANTIPHONY_SERVICE_TOKEN` in
+The token in `.dev.vars` must match `ANTIPHONY_SERVICE_TOKEN` in
 `.env.development` — that pair is what lets the BFF authenticate. Both are
 throwaway local values; a real deployment keeps the token in a secret store.
 
@@ -81,16 +93,16 @@ throwaway local values; a real deployment keeps the token in a secret store.
 > the tenant's `at://` authority, and core-api validates the pin by fetching
 > `https://<domain>/.well-known/did.json` and requiring an `#atproto_pds`
 > service entry. There is no offline substitute today — the resolve is
-> HTTPS-only, so `did:web:localhost%3A8090` cannot work. Use a domain you
+> HTTPS-only, so `did:web:localhost%3A8787` cannot work. Use a domain you
 > control that serves a valid document (see
 > [`specs/atproto-authority-model.md`](../../specs/atproto-authority-model.md)).
-> Without the pin, boot *succeeds* and every post read/write then fails with
-> `no validated app DID for tenant "reference"`.
+> Without the pin, the service starts *healthy* and every post read/write then
+> fails with `no validated app DID for tenant "reference"`.
 
 ## Run it (against the LIVE API)
 
-Point the BFF at the deployed core-api instead of a local one — no emulator
-stack needed:
+Point the BFF at the deployed core-api instead of a local one — no local
+database or `wrangler dev` needed:
 
 ```bash
 # .env.production supplies the live URL; the token must come from your shell,
@@ -125,13 +137,15 @@ middleware at all, since every caller is a backend holding a service token.
 - **Transcript**: the embed view shows "No transcript yet" — transcript is
   async platform enrichment (`dev.antiphony.audio.transcript`), not produced
   by this flow. The view *lifts* it when it exists.
-- **Signed audio URL**: playback uses the short-lived signed URL on
-  `embed.url`. Signing needs real Google credentials, which the storage
-  emulator has none of, so against a bare emulator stack the hydrator logs
-  `failed to sign audio URL` and the view comes back with **no `embed` at
-  all** — not merely an unplayable one. Create → fetch → viewer-state still
-  validates; set `GOOGLE_APPLICATION_CREDENTIALS` to a service account if you
-  need working playback locally.
+- **Audio URL**: `embed.url` is core-api's own **audio proxy**
+  (`GET /api/v1/audio?url=blobs/…`), which streams the bytes out of the
+  bucket. It used to be a short-lived signed Cloud Storage URL, and signing
+  needed real Google credentials the storage emulator could not provide — so
+  the hydrator logged `failed to sign audio URL` and the view came back with
+  no `embed` at all. That whole failure mode is gone: `wrangler dev`'s
+  simulated R2 serves the proxy like any other object, with no credentials
+  involved. What the URL still needs is `ANTIPHONY_PUBLIC_BASE_URL` on
+  core-api — it is absolute, and without that variable the embed is omitted.
 - **After editing `@antiphony/shared`**: rebuild it
   (`npm run build -w @antiphony/shared`) — the app imports the built package,
   not the source.

@@ -63,8 +63,10 @@ jobs:
 
       # Bundles the Workers entry and fails if a Node-only dependency is in it.
       # Nothing above catches that: `tsc` is happy, the tests are happy, and
-      # `wrangler deploy` bundles firebase-admin without complaint and ships a
-      # Worker that dies on its first request. Needs no Cloudflare credentials —
+      # `wrangler deploy` bundles a CommonJS SDK with native transitive deps
+      # without complaint, then ships a Worker that dies on its first request.
+      # That is not hypothetical — it is what firebase-admin did here, and the
+      # denylist in the script still names it. Needs no Cloudflare credentials —
       # it is `--dry-run` — which is what makes it safe to run on a PR.
       - run: npm run check:worker-bundle -w @antiphony/core-api
 

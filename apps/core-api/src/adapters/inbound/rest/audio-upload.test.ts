@@ -20,23 +20,6 @@ vi.mock('../../../composition.js', () => ({
     }),
 }));
 
-vi.mock('../../../lib/firebase-admin.js', () => ({
-    getAdminDb: () => ({
-        collection: () => ({ doc: () => ({}) }),
-        runTransaction: async (fn: (t: unknown) => Promise<boolean>) =>
-            fn({
-                get: async () => ({ exists: false, data: () => undefined }),
-                set: () => undefined,
-                update: () => undefined,
-            }),
-    }),
-    getAdmin: () => ({
-        firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
-    }),
-    getAdminStorage: () => ({}),
-    isUsingEmulator: () => false,
-}));
-
 // The uploader authenticates as the application `antiphony` (the default
 // tenancy — these tests assert the `blobs/antiphony/...` storage path) via a
 // service token, asserting an acting actor with X-Antiphony-Acting-Actor.

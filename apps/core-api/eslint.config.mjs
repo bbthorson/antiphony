@@ -7,10 +7,10 @@ import antiphonyRules from "../../eslint-rules/index.mjs";
  * ESLint config for `@antiphony/core-api`.
  *
  * The central rule is the **dependency arrow invariant**: core-api imports
- * from `@antiphony/core` and `@antiphony/shared` only. Firebase Admin is
- * allowed — core-api is the Firebase-wired deployment of core, and the
- * no-Firebase rule lives on `packages/core/` itself, not on the deployments
- * that wire bindings.
+ * from `@antiphony/core` and `@antiphony/shared` only. There used to be a
+ * carve-out here for Firebase Admin, on the grounds that core-api was the
+ * Firebase-wired deployment of core; it is not wired to Firebase any more, and
+ * the dependency is gone from the tree, so the exception went with it.
  *
  * `antiphony/no-success-envelope-extras` enforces the envelope contract —
  * only `data` is allowed alongside `success: true` in `c.json` object

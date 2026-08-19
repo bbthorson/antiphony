@@ -17,7 +17,7 @@ import {
     stubDenoiser,
     stubTrimmer,
     stubWaveform,
-} from '../adapters/outbound/firebase/processing-providers.js';
+} from '../adapters/outbound/processing/providers.js';
 import {
     selectTranscriber,
     selectDenoiser,

@@ -14,12 +14,12 @@ import { constantTimeEqual } from '../lib/constant-time.js';
  * Secret Manager in production, .env locally). On mismatch / missing
  * header: 401.
  *
- * Who actually presents it today: the Cloud Tasks queue calling back into
- * `/api/v1/system/process-audio` with each enrichment job (the enqueuing
- * adapter bakes this token into every task's headers), and a tenant's BFF
- * calling the `/api/v1/system/*` endpoints — rate-limit checks, AT Protocol
- * session and sign-in helpers — that exist so it doesn't need
- * `firebase-admin` of its own.
+ * Who actually presents it today: a tenant's BFF calling the
+ * `/api/v1/system/*` endpoints. It was also the Cloud Tasks queue calling back
+ * into `/api/v1/system/process-audio` with each enrichment job, which baked
+ * this token into every task's headers; that dispatcher is gone, and the
+ * Cloudflare Queues consumer that replaced it runs in-process on the same
+ * Worker and so presents nothing.
  *
  * Why not `requireAuth()`, the service-token middleware every data route uses:
  *

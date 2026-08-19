@@ -39,7 +39,12 @@ import { mkdtempSync } from 'node:fs';
 /**
  * Packages that must never reach the Worker bundle, with the reason — printed
  * on failure, because "firebase-admin is in the bundle" is not actionable on
- * its own and the fix is always "find the import, install it via native.ts".
+ * its own.
+ *
+ * The first two are no longer dependencies of anything in this repo, so today
+ * they can only arrive by someone installing them afresh. They stay listed for
+ * exactly that reason: this list is the record of WHY each is unshippable, and
+ * that reasoning does not expire with the removal.
  */
 const FORBIDDEN = [
     ['firebase-admin', 'CommonJS with native transitive deps (grpc, protobufjs)'],
@@ -67,7 +72,7 @@ try {
             '[worker-bundle] Node-only dependencies reached the Worker bundle:\n' +
                 leaked.map(([name, why]) => `  - ${name} — ${why}`).join('\n') +
                 '\n\nFind the import chain that reaches it and move the concrete adapter ' +
-                'behind an install seam in src/native.ts. See that file for the pattern.',
+                'from the Worker path, or replaced with a portable equivalent — a `fetch` against a service, or a Cloudflare binding.',
         );
         process.exit(1);
     }

@@ -1,50 +1,49 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// Firestore stubs, without which this file reaches the real thing.
-//
-// The CORS/CORP assertions below request `/api/v1/audio`, and that route carries
-// `rateLimit(RATE_LIMITS.read)` — middleware that runs BEFORE the handler and
-// calls `getAdminDb().runTransaction(...)`. Unmocked, the request therefore
-// waits on a live Firestore connection, and it never gets one in CI: with no
-// credentials present, firebase-admin sits in Application Default Credentials
-// resolution (metadata server, then retries) until vitest gives up at 5s.
-// That is what "Test timed out in 5000ms" on `answers a cross-origin request
-// without any CORS headers` was — a credential lookup, not anything about CORS.
-//
-// It is worse on a developer machine, where it does NOT fail: gcloud ADC is
-// usually present, so the test quietly authenticates and transacts against a
-// real `rate_limits` collection. Passing locally and hanging in CI is the same
-// bug wearing two faces.
-//
-// Mirrors the stubs in adapters/inbound/rest/audio.test.ts, which hit this first
-// and documented it there. The route's own behaviour is untouched: `url=nope`
-// still fails `extractObjectPath` and returns 400, which is all these header
-// assertions need.
-vi.mock('./lib/firebase-admin.js', () => ({
-    getAdminDb: () => ({
-        collection: () => ({ doc: () => ({}) }),
-        runTransaction: async (fn: (t: unknown) => Promise<boolean>) =>
-            fn({
-                get: async () => ({ exists: false, data: () => undefined }),
-                set: () => undefined,
-                update: () => undefined,
-            }),
+/**
+ * The composition root, stubbed — which is what these suites want and what they
+ * were reaching for all along.
+ *
+ * This file used to mock `lib/firebase-admin.js` instead, and the reason is
+ * worth keeping because it describes a trap that outlived Firestore. The
+ * CORS/CORP assertions below request `/api/v1/audio`, and that route carries
+ * `rateLimit(RATE_LIMITS.read)` — middleware that runs BEFORE the handler and
+ * asks the rate-limit store. Unmocked, the request therefore waited on a live
+ * store, and in CI it never got one: firebase-admin sat in Application Default
+ * Credentials resolution until vitest gave up at 5s. That is what "Test timed
+ * out in 5000ms" on `answers a cross-origin request without any CORS headers`
+ * was — a credential lookup, not anything about CORS.
+ *
+ * It was worse on a developer machine, where it did NOT fail: gcloud ADC is
+ * usually present, so the test quietly authenticated and transacted against a
+ * real `rate_limits` collection. Passing locally and hanging in CI is the same
+ * bug wearing two faces.
+ *
+ * The store is Postgres now, so the failure mode would be an HTTPS call to a
+ * hostname that does not resolve rather than a credential hunt — different
+ * dependency, same hang. Mocking the composition root cuts it off at the seam
+ * both bindings come through, which is also how `adapters/inbound/rest/
+ * audio.test.ts` does it. These suites assert the HTTP surface — headers, the
+ * OpenAPI document, the shape of `/health` — and none of that needs a store.
+ */
+vi.mock('./composition.js', () => ({
+    servicesFor: () => ({
+        backend: 'postgres' as const,
+        // `/health` hands this to `dataPresence`. Answering `empty` keeps the
+        // probe in-process; the assertions below are about the envelope, and
+        // lib/data-presence.test.ts owns what the readings mean.
+        sql: { query: async () => [{ present: false }] },
+        storage: { extractObjectPath: () => null },
+        // Under limit on every hit: this is route surface, not rate-limit
+        // policy (that is middleware/rate-limit.test.ts).
+        rateLimitStore: { hit: async () => 'under' as const },
     }),
-    getAdmin: () => ({
-        firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
-    }),
-    getAdminStorage: () => ({}),
-    isUsingEmulator: () => false,
 }));
 
 process.env.LOG_LEVEL = 'silent';
 
-// Dynamic, so the mock above is registered before app.ts pulls in the adapters
-// that import firebase-admin at module scope. `native.js` first, for the same
-// reason `index.ts` imports it first: `/health` reports the composed backend,
-// and without the Firebase fallback installed an unbound deployment throws
-// rather than reporting `firebase`.
-await import('./native.js');
+// Dynamic, so the mock above is registered before app.ts pulls the composition
+// root in at module scope.
 const { app } = await import('./app.js');
 
 // The `parseAllowedOrigins` suite that stood here went with the CORS

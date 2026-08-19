@@ -1,6 +1,0 @@
-{
-  "projects": {
-    "default": "demo-antiphony",
-    "prod": "antiphony-core"
-  }
-}

@@ -8,7 +8,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  */
 
 // StorageService.extractObjectPath + openStream are what the route touches.
-// Mock them via the core-services-firebase module so the route sees our stubs.
+// Stubbed at the composition root, which is the seam every binding arrives
+// through, so the route sees these and reaches no store.
 const extractObjectPath = vi.fn();
 const openStream = vi.fn();
 
@@ -25,10 +26,9 @@ vi.mock('../../../composition.js', () => ({
             extractObjectPath: (url: string) => extractObjectPath(url),
             openStream: (path: string, range?: unknown) => openStream(path, range),
         },
-    // The rate-limit middleware resolves its store from here now, rather
-    // than defaulting to the Firestore binding. Under limit on every hit:
-    // these suites assert route behaviour, not rate-limit policy (that is
-    // middleware/rate-limit.test.ts).
+    // The rate-limit middleware resolves its store from here. Under limit on
+    // every hit: these suites assert route behaviour, not rate-limit policy
+    // (that is middleware/rate-limit-policy.test.ts).
     rateLimitStore: { hit: async () => 'under' as const },
     renditionService,
     }),
@@ -49,24 +49,6 @@ function read(bytes: number[], over: Record<string, unknown> = {}) {
         ...over,
     };
 }
-
-vi.mock('../../../lib/firebase-admin.js', () => ({
-    getAdminDb: () => ({
-        // Rate-limit middleware touches Firestore; give it inert stubs.
-        collection: () => ({ doc: () => ({}) }),
-        runTransaction: async (fn: (t: unknown) => Promise<boolean>) =>
-            fn({
-                get: async () => ({ exists: false, data: () => undefined }),
-                set: () => undefined,
-                update: () => undefined,
-            }),
-    }),
-    getAdmin: () => ({
-        firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } },
-    }),
-    getAdminStorage: () => ({}),
-    isUsingEmulator: () => false,
-}));
 
 process.env.LOG_LEVEL = 'silent';
 

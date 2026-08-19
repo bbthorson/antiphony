@@ -28,7 +28,7 @@ const outputPath = resolve(projectRoot, 'openapi.json');
 
 // 1. Bundle a runner module that imports the app + emits the spec. Both
 //    the entry and the output live INSIDE apps/core-api so Node resolves
-//    externals (pino, firebase-admin, etc.) via the project's
+//    externals (pino, etc.) via the project's
 //    node_modules. Project-internal temp file; cleaned up on exit.
 const runnerEntry = resolve(projectRoot, 'src/__gen-openapi-runner.ts');
 const runnerOutDir = resolve(projectRoot, '.openapi-runner');
@@ -61,7 +61,7 @@ try {
         // not exist and the runner dies on import — before emitting any spec.
         // Left external it loads as real CJS via the banner's `createRequire`,
         // same as the other binary-shipping deps here.
-        external: ['firebase-admin', 'pino', 'pino-pretty', 'rss-parser', 'ffmpeg-static'],
+        external: ['pino', 'pino-pretty', 'rss-parser', 'ffmpeg-static'],
         tsconfig: resolve(projectRoot, 'tsconfig.json'),
         absWorkingDir: projectRoot,
         logLevel: 'silent',

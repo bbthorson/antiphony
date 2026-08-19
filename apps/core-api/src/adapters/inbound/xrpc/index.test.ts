@@ -34,13 +34,6 @@ vi.mock('../../../composition.js', () => ({
     }),
 }));
 
-vi.mock('../../../lib/firebase-admin.js', () => ({
-    getAdminDb: () => ({ collection: () => ({ doc: () => ({}) }) }),
-    getAdmin: () => ({ firestore: { Timestamp: { fromMillis: (ms: number) => ({ _ms: ms }) } } }),
-    getAdminStorage: () => ({}),
-    isUsingEmulator: () => false,
-}));
-
 // `getAppDid` reads the boot-time validated-pin snapshot and throws without it.
 // The uri it feeds is a fixed string here; `app-did.test.ts` covers resolution.
 vi.mock('../../../lib/app-did.js', () => ({

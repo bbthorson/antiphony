@@ -2,6 +2,7 @@ name: Deploy core-api
 
 # Ships apps/core-api to Cloudflare Workers. This replaced the Cloud Run
 # deployment, which had itself replaced a Firebase App Hosting git trigger.
+# Both are history: nothing in this repo talks to Google Cloud or Firebase now.
 #
 # ── Why this is so much shorter than the Cloud Run version ────────────────────
 # That workflow built a container, deployed it with NO traffic, smoke-tested it
@@ -127,8 +128,9 @@ jobs:
                   #
                   # `/health` reports `sha` from the COMMIT_SHA var set above, so
                   # matching it against GITHUB_SHA proves THIS deploy is the one
-                  # serving. It also still prints `backend`, which answers the
-                  # other migration question — postgres or firebase — in the log.
+                  # serving. It also still prints `backend` and the data-presence
+                  # fields, which is what the log is worth reading for now that
+                  # `backend` has only one possible value.
                   for attempt in 1 2 3 4 5; do
                     if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
                       echo "$BODY"
