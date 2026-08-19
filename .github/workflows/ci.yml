@@ -89,10 +89,15 @@ jobs:
       - name: Build the audio-rendition image
         run: docker build -f apps/audio-rendition/Dockerfile .
 
-      # The docs site is deployed separately (Cloudflare, see wrangler.jsonc) so
-      # nothing else would catch a break here. `copy-openapi.mjs --strict` also
-      # fails the build if core-api's spec is missing, tying the published docs
-      # to the contract built above.
+      # The docs site ships from `deploy-docs.yml`, which now CHAINS off this
+      # workflow rather than running in Cloudflare's dashboard — so this step is
+      # the gate on it, not merely an early warning. `copy-openapi.mjs --strict`
+      # also fails the build if core-api's spec is missing, tying the published
+      # docs to the contract built above.
+      #
+      # All three deploy workflows are downstream of this one. A failure here
+      # stops every one of them, which is the property the `workflow_run`
+      # trigger buys and `push` did not.
       #
       # There used to be a step after this one asserting no diff on
       # apps/docs/public/openapi.json. It could never fail: that path is

@@ -37,20 +37,30 @@ name: Deploy core-api
 # `CLOUDFLARE_API_TOKEN` is a repo secret with Workers Scripts:Edit, and
 # `CLOUDFLARE_ACCOUNT_ID` a repo variable (an identifier, not a credential).
 
+# ── Why `workflow_run` and not `push` ─────────────────────────────────────────
+# This used to run on `push` to master, which put it in a RACE with CI rather
+# than after it. Both start on the same commit, and nothing connects them — so a
+# commit whose tests fail still deploys, and usually wins, because this workflow
+# is much shorter than CI. The gate that was supposed to protect production ran
+# beside it instead of in front of it.
+#
+# Chaining off CI's completion is what makes "a red CI cannot ship" true. The
+# `if:` on the job below is the other half: `workflow_run` fires on completion
+# whatever the outcome, so the conclusion has to be checked, not assumed.
+#
+# ── The path filter is gone, deliberately ────────────────────────────────────
+# `workflow_run` has no `paths`, and the filter is not worth reconstructing. Its
+# own comment already named the failure it caused as the worse one: a change to
+# something load-bearing but unlisted would NOT deploy, and the tree would
+# silently diverge from the running Worker. Deploying on every green master
+# commit removes that class entirely, and costs a redundant deploy of an
+# identical bundle after a docs-only change — which is not free of value either,
+# since the smoke test below asserts `/health` reports the commit master is on.
 on:
-    push:
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
         branches: [master]
-        # Path filter so a docs-only or spec-only commit does not roll
-        # production. The risk is the inverse: a change to something
-        # load-bearing that is NOT listed here will not deploy, and the tree
-        # will silently diverge from the running Worker. Add paths when you add
-        # build inputs; when in doubt, run this workflow by hand.
-        paths:
-            - 'apps/core-api/**'
-            - 'packages/**'
-            - 'package.json'
-            - 'package-lock.json'
-            - '.github/workflows/deploy.yml'
     workflow_dispatch:
 
 permissions:
@@ -64,8 +74,26 @@ jobs:
     deploy:
         name: prove pins · deploy
         runs-on: ubuntu-latest
+        # `workflow_dispatch` carries no `workflow_run` context, so it falls
+        # through on the empty-string comparison.
+        if: >-
+            github.event_name == 'workflow_dispatch' ||
+            github.event.workflow_run.conclusion == 'success'
+        env:
+            # The commit CI actually ran on, used for the checkout, the
+            # COMMIT_SHA var, and the smoke-test assertion — so all three name
+            # the same thing.
+            #
+            # NOT `github.sha`. On a `workflow_run` event that is the tip of the
+            # default branch when THIS run was queued, which is a different
+            # commit as soon as anything merges while CI is in flight. Deploying
+            # `github.sha` would ship a tree CI never saw, and the smoke test
+            # would then assert the wrong SHA and fail a deploy that worked.
+            DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         steps:
             - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
             - uses: actions/setup-node@v4
               with:
@@ -107,7 +135,7 @@ jobs:
               # makes hard to answer from the tree alone.
               run: |
                   npm run deploy -w @antiphony/core-api -- \
-                    --var "COMMIT_SHA:${GITHUB_SHA}" \
+                    --var "COMMIT_SHA:${DEPLOY_SHA}" \
                     --var "BUILD_TIME:$(date -u +%Y-%m-%dT%H:%M:%SZ)"
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -127,18 +155,18 @@ jobs:
                   # job is to say "live is not what you merged" never ran.
                   #
                   # `/health` reports `sha` from the COMMIT_SHA var set above, so
-                  # matching it against GITHUB_SHA proves THIS deploy is the one
+                  # matching it against DEPLOY_SHA proves THIS deploy is the one
                   # serving. It also still prints `backend` and the data-presence
                   # fields, which is what the log is worth reading for now that
                   # `backend` has only one possible value.
                   for attempt in 1 2 3 4 5; do
                     if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
                       echo "$BODY"
-                      echo "$BODY" | grep -q "\"sha\":\"${GITHUB_SHA}\"" && exit 0
+                      echo "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\"" && exit 0
                     fi
                     echo "attempt ${attempt} failed; retrying"
                     sleep 5
                   done
-                  echo "::error::/health at api.antiphony.dev is not serving ${GITHUB_SHA}."
+                  echo "::error::/health at api.antiphony.dev is not serving ${DEPLOY_SHA}."
                   echo "::error::If the domain route is not attached to the antiphony-core-api Worker yet, this failure is CORRECT and expected — the deploy succeeded, the hostname just still points elsewhere. Attach it (Workers & Pages -> antiphony-core-api -> Settings -> Domains & Routes), then re-run this workflow."
                   exit 1

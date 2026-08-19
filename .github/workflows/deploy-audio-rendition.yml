@@ -44,14 +44,24 @@ name: Deploy audio-rendition
 # hand from a Cloudflare R2 API token. A missing secret fails the same way a
 # permission gap does, so check both when this step errors.
 
+# ── Why `workflow_run` and not `push` ─────────────────────────────────────────
+# Same reason as .github/workflows/deploy.yml, and the same fix: on `push` this
+# raced CI rather than following it, so a commit whose tests fail still shipped.
+# CI builds this exact Dockerfile (`docker build -f apps/audio-rendition/
+# Dockerfile .`), which is the check that matters here — the image is where this
+# service's real preconditions live, including the `ffmpeg -version` assert.
+# Racing it meant the one gate that could catch a broken image did not have to
+# finish first.
+#
+# The path filter goes with the trigger; `workflow_run` has none. Deploying on
+# every green master commit costs a rebuild of an identical image and removes
+# the failure the filter could cause — a load-bearing but unlisted input
+# changing, and this never running.
 on:
-    push:
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
         branches: [master]
-        paths:
-            - 'apps/audio-rendition/**'
-            - 'package.json'
-            - 'package-lock.json'
-            - '.github/workflows/deploy-audio-rendition.yml'
     workflow_dispatch:
 
 permissions:
@@ -67,13 +77,30 @@ env:
     REGION: us-east4
     REPOSITORY: antiphony
     SERVICE: antiphony-audio-rendition
+    # The commit CI ran on. Everything that names a commit — the image tag, the
+    # COMMIT_SHA env var, the smoke-test assertion — uses this rather than
+    # GITHUB_SHA, which on a `workflow_run` event is the tip of the default
+    # branch at queue time. Tagging an image with a SHA whose tree it was not
+    # built from is the kind of wrong that only shows up when someone tries to
+    # trace a running revision back to a commit.
+    DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
     deploy:
         name: build · deploy · smoke
         runs-on: ubuntu-latest
+        # A red CI must not ship: `workflow_run` fires on completion whatever
+        # the outcome. `workflow_dispatch` carries no `workflow_run` context and
+        # falls through on the empty-string comparison.
+        if: >-
+            github.event_name == 'workflow_dispatch' ||
+            github.event.workflow_run.conclusion == 'success'
         steps:
+            # The commit CI ran on — NOT `github.sha`, which on a `workflow_run`
+            # event is the tip of the default branch when this run was queued.
             - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
             - id: auth
               uses: google-github-actions/auth@v2
@@ -99,10 +126,10 @@ jobs:
                   IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/audio-rendition"
                   docker build \
                     -f apps/audio-rendition/Dockerfile \
-                    --tag "${IMAGE}:${GITHUB_SHA}" \
+                    --tag "${IMAGE}:${DEPLOY_SHA}" \
                     .
-                  docker push "${IMAGE}:${GITHUB_SHA}"
-                  echo "image=${IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+                  docker push "${IMAGE}:${DEPLOY_SHA}"
+                  echo "image=${IMAGE}:${DEPLOY_SHA}" >> "$GITHUB_OUTPUT"
 
             # Sizing notes, all deliberate:
             #   --memory 1Gi        one blob in, one mp3 out, both in memory, and
@@ -135,7 +162,7 @@ jobs:
                     --memory 1Gi \
                     --timeout 120 \
                     --max-instances 4 \
-                    --set-env-vars "NODE_ENV=production,LOG_LEVEL=info,ANTIPHONY_R2_BUCKET=antiphony-r2-bucket,R2_ACCOUNT_ID=${{ vars.R2_ACCOUNT_ID }},COMMIT_SHA=${GITHUB_SHA},BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                    --set-env-vars "NODE_ENV=production,LOG_LEVEL=info,ANTIPHONY_R2_BUCKET=antiphony-r2-bucket,R2_ACCOUNT_ID=${{ vars.R2_ACCOUNT_ID }},COMMIT_SHA=${DEPLOY_SHA},BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                     --set-secrets "SYSTEM_AUTH_TOKEN=system-auth-token:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest" \
                     --quiet
                   URL="$(gcloud run services describe "${SERVICE}" \
@@ -155,11 +182,11 @@ jobs:
                   for attempt in 1 2 3 4 5; do
                     if BODY="$(curl -fsS --max-time 10 "${{ steps.deploy.outputs.url }}/health")"; then
                       echo "$BODY"
-                      echo "$BODY" | grep -q "${GITHUB_SHA}" && exit 0
+                      echo "$BODY" | grep -q "${DEPLOY_SHA}" && exit 0
                       echo "::warning::/health answered but reported a different sha"
                     fi
                     echo "attempt ${attempt} failed; retrying"
                     sleep 5
                   done
-                  echo "::error::/health did not report ${GITHUB_SHA}"
+                  echo "::error::/health did not report ${DEPLOY_SHA}"
                   exit 1
