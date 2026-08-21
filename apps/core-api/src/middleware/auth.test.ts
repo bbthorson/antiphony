@@ -25,7 +25,16 @@ process.env.LOG_LEVEL = 'silent';
  * the right order, and refuses correctly.
  */
 const ensureTenantPin = vi.fn(async () => undefined);
-vi.mock('../lib/app-did.js', () => ({ ensureTenantPin }));
+// `parseAppDids` / `getValidatedPin` are stubbed empty rather than omitted:
+// the middleware now also reaches app-did through the signed-service-auth
+// observer, and a mock missing them would leave that path throwing into its own
+// catch — passing these tests for the wrong reason. Empty is the honest stub
+// here, since no test in this file sends a signed token.
+// `signed-service-auth-observation.test.ts` is where that path is exercised,
+// against the real module.
+const parseAppDids = vi.fn(() => new Map<string, string>());
+const getValidatedPin = vi.fn(() => null);
+vi.mock('../lib/app-did.js', () => ({ ensureTenantPin, parseAppDids, getValidatedPin }));
 
 const { requireServiceToken, requireAuth, ACTING_ACTOR_HEADER, ACTING_ACTOR_DID_HEADER } =
     await import('./auth.js');
