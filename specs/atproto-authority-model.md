@@ -129,6 +129,118 @@ hosted `did:web` only for explicitly throwaway tenants (staging, integration tes
 onboarding prerequisite** — it belongs on the coupled BFF work list next to the B3 cross-repo
 items in [`core-bff-boundary.md`](./core-bff-boundary.md).
 
+## Update 2026-08-21 — not a PDS, and where atproto spaces fits
+
+Two decisions, both prompted by [#115](https://github.com/bbthorson/antiphony/issues/115)
+and by atproto's permissioned-data work ("spaces") reaching alpha on 2026-08.
+Model B itself is unchanged; what changes is what the DID document is allowed to
+say, and what the destination is if the data plane ever moves onto the protocol.
+
+### Decision 1 — Antiphony is not an AT Protocol PDS, and is not becoming one
+
+`AtprotoPersonalDataServer` promises `com.atproto.repo.*` and
+`com.atproto.sync.*` over signed MST commits plus a firehose. Probed against the
+live service on 2026-08-20 and again on 2026-08-21, while it was up and serving
+its own namespace (`dev.antiphony.audio.getPost` → 401):
+`describeServer` 404, `describeRepo` 404, `getLatestCommit` 404, `listRepos` 404.
+Consistent with the unsigned-repo gap below — there are no signed commits to
+serve, so the sync surface could not be honoured even if the routes existed.
+
+**The claim is false, and the deploy gate required tenants to make it.** That is
+the defect: `validate-pins.ts` demanded an `#atproto_pds` entry naming us, so a
+tenant could not correct its own document without failing our deploy. The wrong
+claim was load-bearing for reasons that had nothing to do with whether it was
+accurate.
+
+Becoming a real PDS is not work worth doing to make one sentence true. So:
+**not a PDS.** The custody check now accepts `#atproto_space_host` —
+atproto's own entry for the host serving a space authority's repos, which
+describes what this service is — with `#atproto_pds` still accepted so no tenant
+breaks in transit, and `validate-pins.ts` naming the tenants still on it so
+"once tenants have migrated" is a condition someone can actually evaluate.
+
+This also settles an objection raised against inventing a bespoke type
+(`#antiphony_host`): a vendor-specific entry would be repointable at nothing,
+narrowing the exit hatch from "any atproto PDS" to "any host implementing
+Antiphony's interface" — a set with one member — and quietly gutting the
+exit-sovereignty argument in "App DID method" above. A **standard** entry does
+not have that problem. The sovereignty argument survives intact, with
+`#atproto_space_host` substituted for `#atproto_pds` as the thing a departing
+tenant repoints.
+
+### Decision 2 — spaces is not adopted now; it is the destination if the data plane moves
+
+atproto spaces are per-space permissioned repos with access control at a space
+boundary — a space authority DID, a space host, and repo hosts, explicitly not
+required to be collocated. **Not adopted**, for two reasons that are about
+timing rather than fit:
+
+- **Alpha.** Bluesky's own framing: not for production, breaking changes
+  expected, database schemas changing without clean migrations.
+- **No product need pulls it yet.** The thing spaces uniquely solve is *gated
+  non-public audio* — subscriber-only posts, or shared reply playback. Antiphony
+  records carry no visibility dimension at all today, and nothing has asked them
+  to.
+
+**It is nonetheless the leading candidate**, because the shape already matches.
+A space record is addressed as:
+
+```
+at://{spaceDid}/space/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}
+```
+
+The space DID is the **authority**; the author DID is a **path segment**. That
+is precisely this document's decision — custody in the authority position,
+authorship demoted out of it — arrived at independently by the protocol six
+weeks later. It also answers the question deferred below as *both*: per-author
+repos, aggregated into an app-scoped space.
+
+Two notes for whoever picks this up:
+
+- **Orgs are not spaces, and if they ever were, they would be `skey`.** A space
+  is `(authority, type, skey)`, so a per-org space needs no per-org DID — which
+  is what would otherwise sink it, given the hosted-`did:web` permanence
+  argument above. The relevant policy is `managing-app`, which defers
+  authorization to the application's own state via `checkUserAccess`; adopting
+  spaces would **not** require giving up an existing role model.
+- **The tenant's DID is already the space authority.** `did:web:did.voxpop.audio`
+  would be the space DID. Migration inserts a path segment; it does not change
+  who the authority is.
+
+### What this does to the URIs written between now and then
+
+Adopting spaces later changes the URI shape, and reply StrongRefs seal the
+authority string into every reply's immutable CID at **write** time — the same
+mechanism that made Model A's URIs unrepairable and decided this document.
+
+So: **every `at://` URI minted before a spaces migration is provisional exactly
+as long as the corpus is still wipeable.** That is the same gate already named
+below as the revisit deadline ("the first Vox Pop post we commit to keeping"),
+and it is the real deadline for Decision 2 — not a date, and not a beta
+milestone. Onboarding beta testers does not close it; *promising to keep their
+data* does. If the beta's terms state that the corpus may be wiped, the option
+stays open for as long as that remains true.
+
+### The gap that would have to close first
+
+Spaces assumes user-to-host alignment: each author controls their own repo on
+their own host, and the URI requires an `{authorDid}`. Vox Pop's users are split:
+
+- **Inbox owners** authenticate with an AT Protocol identity — real DID, own
+  PDS. Alignment already satisfied; their repos would not live here at all, and
+  Antiphony's role would narrow to audio processing and blob custody.
+- **Repliers** are SMS-authenticated with no DID, and the phone↔actor table is
+  the BFF's (see the Actors-surface reversal noted under "The model" — the
+  actor↔DID vertical was removed from Antiphony on 2026-07-05, so this service
+  cannot close the gap on its own).
+
+Mixed identity does not block a space: the **app DID can be the space author**
+for records whose human author has no identity, which is Model B preserved
+inside a space, alongside real-DID authors who bring their own repos. The
+alternative — minting DIDs for SMS repliers — creates a permanent public
+identity for someone whose only act was replying to a text, and is a consent
+question before it is an architectural one.
+
 ## Honest tradeoffs / where B hurts (ranked)
 
 1. **Escape hatch oversold.** B sells *"the app can leave Antiphony,"* **not** *"the user can

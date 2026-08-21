@@ -7,7 +7,7 @@ import {
     resetValidatedPinsForTest,
     checkTenantRegistryDrift,
     didWebToUrl,
-    atprotoPdsEndpoint,
+    custodyService,
     validateAppDid,
     ensureTenantPin,
     revalidateAllPins,
@@ -59,7 +59,7 @@ describe('validateAllPins + getAppDid', () => {
             expectedPdsHost: 'api.antiphony.dev',
             fetchImpl: fetchByHost({ 'did.voxpop.audio': doc('did:web:did.voxpop.audio') }),
         });
-        expect(snap.get('vox-pop')?.pdsEndpoint).toBe('https://api.antiphony.dev');
+        expect(snap.get('vox-pop')?.custody).toEqual({ endpoint: 'https://api.antiphony.dev', kind: 'pds' });
         expect(getAppDid('vox-pop')).toBe('did:web:did.voxpop.audio');
         expect(getValidatedPin('vox-pop')?.did).toBe('did:web:did.voxpop.audio');
     });
@@ -169,39 +169,66 @@ describe('didWebToUrl', () => {
     });
 });
 
-describe('atprotoPdsEndpoint', () => {
-    it('finds the endpoint by #atproto_pds id suffix', () => {
-        expect(
-            atprotoPdsEndpoint({
-                service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' }],
-            }),
-        ).toBe('https://pds.example');
+describe('custodyService', () => {
+    const pds = (endpoint: string) => ({
+        id: '#atproto_pds',
+        type: 'AtprotoPersonalDataServer',
+        serviceEndpoint: endpoint,
+    });
+    const spaceHost = (endpoint: string) => ({
+        id: 'did:web:x.example#atproto_space_host',
+        serviceEndpoint: endpoint,
     });
 
-    it('finds the endpoint by type', () => {
+    it('finds the legacy endpoint by #atproto_pds id suffix', () => {
+        expect(custodyService({ service: [pds('https://pds.example')] })).toEqual({
+            endpoint: 'https://pds.example',
+            kind: 'pds',
+        });
+    });
+
+    it('finds the legacy endpoint by type', () => {
         expect(
-            atprotoPdsEndpoint({
+            custodyService({
                 service: [{ id: 'whatever', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds2.example' }],
             }),
-        ).toBe('https://pds2.example');
+        ).toEqual({ endpoint: 'https://pds2.example', kind: 'pds' });
+    });
+
+    it('accepts #atproto_space_host — the entry that lets a tenant stop calling us a PDS', () => {
+        expect(custodyService({ service: [spaceHost('https://api.antiphony.dev')] })).toEqual({
+            endpoint: 'https://api.antiphony.dev',
+            kind: 'space-host',
+        });
+    });
+
+    it('prefers the space host when a migrating document carries both', () => {
+        // Order-independent: the protocol falls back to #atproto_pds only when
+        // the space host is ABSENT, so first-match would be the wrong rule.
+        const expected = { endpoint: 'https://new.example', kind: 'space-host' };
+        expect(custodyService({ service: [pds('https://old.example'), spaceHost('https://new.example')] })).toEqual(expected);
+        expect(custodyService({ service: [spaceHost('https://new.example'), pds('https://old.example')] })).toEqual(expected);
+    });
+
+    it('falls back to #atproto_pds when no space host is published', () => {
+        expect(custodyService({ service: [pds('https://pds.example')] })?.kind).toBe('pds');
     });
 
     it('returns null when absent or malformed', () => {
-        expect(atprotoPdsEndpoint({ service: [] })).toBeNull();
-        expect(atprotoPdsEndpoint({})).toBeNull();
-        expect(atprotoPdsEndpoint(null)).toBeNull();
+        expect(custodyService({ service: [] })).toBeNull();
+        expect(custodyService({})).toBeNull();
+        expect(custodyService(null)).toBeNull();
+    });
+
+    it('ignores an entry whose serviceEndpoint is not a string', () => {
+        expect(custodyService({ service: [{ id: '#atproto_space_host', serviceEndpoint: { uri: 'x' } }] })).toBeNull();
     });
 
     it('skips null / non-object service entries without crashing', () => {
-        expect(
-            atprotoPdsEndpoint({
-                service: [
-                    null,
-                    'nope',
-                    { id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example' },
-                ],
-            }),
-        ).toBe('https://pds.example');
+        expect(custodyService({ service: [null, 'nope', pds('https://pds.example')] })).toEqual({
+            endpoint: 'https://pds.example',
+            kind: 'pds',
+        });
     });
 });
 
@@ -220,7 +247,7 @@ describe('validateAppDid', () => {
             expectedPdsHost: 'api.antiphony.dev',
         });
         expect(r.ok).toBe(true);
-        if (r.ok) expect(r.pdsEndpoint).toBe('https://api.antiphony.dev');
+        if (r.ok) expect(r.custody.endpoint).toBe('https://api.antiphony.dev');
     });
 
     it('rejects a non-did:web DID before fetching', async () => {
@@ -240,18 +267,18 @@ describe('validateAppDid', () => {
         expect(r).toMatchObject({ ok: false, reason: 'did-doc-id-mismatch' });
     });
 
-    it('rejects a doc with no #atproto_pds endpoint', async () => {
+    it('rejects a doc with no custody service endpoint', async () => {
         const r = await validateAppDid('did:web:did.voxpop.audio', { fetchImpl: fetchOk(doc({ service: [] })) });
-        expect(r).toMatchObject({ ok: false, reason: 'no-atproto-pds-endpoint' });
+        expect(r).toMatchObject({ ok: false, reason: 'no-custody-service-endpoint' });
     });
 
-    it('rejects a PDS endpoint that does not point at Antiphony', async () => {
+    it('rejects a custody endpoint that does not point at Antiphony', async () => {
         const r = await validateAppDid('did:web:did.voxpop.audio', {
             fetchImpl: fetchOk(doc()),
             expectedPdsHost: 'other.host',
         });
         expect(r.ok).toBe(false);
-        if (!r.ok) expect(r.reason).toMatch(/pds-endpoint-host-mismatch/);
+        if (!r.ok) expect(r.reason).toMatch(/custody-endpoint-host-mismatch/);
     });
 
     it('fails closed when the fetch itself throws (timeout / network error)', async () => {
@@ -387,7 +414,7 @@ describe('ensureTenantPin — disproof vs unreachable', () => {
                 expectedPdsHost: 'api.antiphony.dev',
                 now: () => clock,
             }),
-        ).rejects.toThrow(/pds-endpoint-host-mismatch/);
+        ).rejects.toThrow(/custody-endpoint-host-mismatch/);
 
         // Eviction is the part that matters. A cached "yes" is now known to be
         // a cached WRONG answer, so leaving it would keep serving a custody
