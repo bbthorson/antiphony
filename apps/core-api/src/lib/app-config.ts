@@ -87,6 +87,46 @@ export function publicBaseUrl(): string | undefined {
 }
 
 /**
+ * Antiphony's own DID — the only `aud` accepted on a signed service-auth token
+ * (`specs/service-auth.md`, issue #116).
+ *
+ * ## Why an identity and not the origin URL
+ *
+ * An audience naming an address binds the token to wherever traffic happens to
+ * point, which is the exact substitution the claim exists to prevent. So the
+ * value is a DID even though nothing resolves it.
+ *
+ * ## Why it is derived, with an override
+ *
+ * Vox Pop derives their copy of this string from their `ANTIPHONY_API_BASE_URL`
+ * host. Deriving ours the same way, from `ANTIPHONY_PUBLIC_BASE_URL`, means the
+ * two sides cannot drift apart by editing one config — a hardcoded literal here
+ * would agree with them only for as long as someone remembered it existed.
+ * `ANTIPHONY_SERVICE_DID` overrides, for the day this service's DID is
+ * genuinely not `did:web` of its own hostname.
+ *
+ * ## Caveat, deliberately not hidden
+ *
+ * `https://api.antiphony.dev/.well-known/did.json` is a 404 — we publish no DID
+ * document. This identifier does not resolve, and both sides agree on it purely
+ * by configuration. That is tolerable for a private agreement between two
+ * services we operate, and it is the same species of unresolvable claim issue
+ * #115 objects to when tenants have to make it. Whichever way #115 lands should
+ * also settle whether this document gets published.
+ */
+export function serviceDid(): string | undefined {
+    const explicit = process.env.ANTIPHONY_SERVICE_DID?.trim();
+    if (explicit) return explicit;
+    const base = publicBaseUrl();
+    if (!base) return undefined;
+    try {
+        return `did:web:${new URL(base).host}`;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
  * R2 bucket holding audio blobs and their derived renditions.
  *
  * One bucket, two prefixes — `blobs/{originAppId}/{cid}` for canonical audio and

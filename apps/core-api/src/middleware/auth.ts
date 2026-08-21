@@ -2,7 +2,12 @@ import type { MiddlewareHandler } from 'hono';
 import { ServiceError } from 'shared/errors';
 import { matchServiceToken } from './service-auth.js';
 import { ensureTenantPin, type PinCacheKV } from '../lib/app-did.js';
-import { APP_CONFIG } from '../lib/app-config.js';
+import {
+    SERVICE_AUTH_HEADER,
+    requestOperation,
+    verifySignedServiceAuth,
+} from '../lib/signed-service-auth.js';
+import { APP_CONFIG, serviceDid } from '../lib/app-config.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -194,6 +199,92 @@ async function tenantPinGate(c: Parameters<MiddlewareHandler>[0]): Promise<void>
 }
 
 /**
+ * Verify `X-Antiphony-Service-Auth` and log what we would have decided —
+ * **observation only, no request-path behaviour change**.
+ *
+ * ## Why log-only is the whole point of this stage
+ *
+ * The bearer token in `Authorization` is still the credential; this header
+ * rides alongside it and an Antiphony that ignored it entirely would be
+ * correct. Enforcing on day one would mean the first evidence that the `kid`
+ * selection, the multibase decode, and the pin snapshot all work against real
+ * traffic would be a 401 storm during someone's deploy. This buys that evidence
+ * for the price of a log line.
+ *
+ * ## What "agreement" means
+ *
+ * The bearer token has already resolved `originAppId` by the time this runs, so
+ * the signature is checked against a tenancy we independently established. The
+ * interesting signal is not `ok` on its own — it is whether the JWT names the
+ * SAME tenant the shared secret did. A verified token attributing the request
+ * to a different tenant is the one outcome that should stop the rollout.
+ *
+ * ## Failure is a log line, never an exception
+ *
+ * Wrapped end to end. A bug in the verifier must not be able to take down a
+ * path that does not yet depend on it — the entire safety argument for shipping
+ * this early is that it cannot affect the response.
+ */
+async function observeSignedServiceAuth(c: Parameters<MiddlewareHandler>[0]): Promise<void> {
+    try {
+        const originAppId = c.get('originAppId');
+        if (!originAppId) return;
+
+        const token = c.req.header(SERVICE_AUTH_HEADER);
+        if (!token) {
+            // Debug, not info: most tenants send no such header and never will
+            // until they implement a signer. Worth being able to turn on to
+            // measure coverage, not worth doubling log volume by default.
+            logger.debug(
+                { originAppId, requestId: c.get('requestId') },
+                '[signed-service-auth] no signed token on this request',
+            );
+            return;
+        }
+
+        const audience = serviceDid();
+        if (!audience) {
+            logger.warn(
+                { requestId: c.get('requestId') },
+                '[signed-service-auth] cannot verify: no service DID configured (set ANTIPHONY_SERVICE_DID or ANTIPHONY_PUBLIC_BASE_URL)',
+            );
+            return;
+        }
+
+        const result = await verifySignedServiceAuth(token, {
+            expectedAudience: audience,
+            operation: requestOperation(c.req.method, c.req.path),
+        });
+
+        const base = { originAppId, requestId: c.get('requestId'), enforced: false };
+        if (!result.ok) {
+            logger.warn(
+                { ...base, reason: result.reason, detail: result.detail },
+                '[signed-service-auth] token did NOT verify (observation only — the bearer token authorized this request)',
+            );
+            return;
+        }
+        if (result.originAppId !== originAppId) {
+            // The one result that must never be waved through at enforcement.
+            logger.error(
+                { ...base, tokenOriginAppId: result.originAppId, kid: result.kid },
+                '[signed-service-auth] DISAGREEMENT: signed token attributes this request to a different tenant than the bearer token',
+            );
+            return;
+        }
+        logger.info(
+            { ...base, kid: result.kid },
+            '[signed-service-auth] token verified and agrees with the bearer credential',
+        );
+    } catch (err) {
+        logger.error(
+            { err, requestId: c.get('requestId') },
+            '[signed-service-auth] verifier threw; ignoring (observation only)',
+        );
+    }
+}
+
+/**
  * Require a valid service token, but NOT an acting actor. Use on tenancy-scoped
  * reads that have a public (viewer-less) projection: the app must authenticate
  * so the credential establishes *which tenant* is being read, but it may omit
@@ -209,6 +300,7 @@ export const requireServiceToken = (): MiddlewareHandler => {
     return async (c, next) => {
         serviceTokenGate(c);
         await tenantPinGate(c);
+        await observeSignedServiceAuth(c);
         return next();
     };
 };
@@ -232,6 +324,7 @@ export const requireAuth = (): MiddlewareHandler => {
             );
         }
         await tenantPinGate(c);
+        await observeSignedServiceAuth(c);
         return next();
     };
 };
