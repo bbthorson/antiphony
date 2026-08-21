@@ -39,10 +39,46 @@
  * collapses to 'unknown' despite an XFF header being present. That is exactly
  * what fired after the cutover. Falls back to 2 when unset or non-numeric.
  */
-const TRUSTED_PROXY_HOPS = (() => {
+function trustedProxyHops(): number {
     const raw = Number(process.env.TRUSTED_PROXY_HOPS);
     return Number.isInteger(raw) && raw >= 0 ? raw : 2;
-})();
+}
+
+/**
+ * Which header carries the client address on this deployment.
+ *
+ * `'cf'` reads `CF-Connecting-IP`; anything else keeps the XFF path, so an unset
+ * or typo'd value fails to the stricter behavior rather than the looser one.
+ *
+ * ── Why this exists: the THIRD silent collapse ───────────────────────────────
+ * The `TRUSTED_PROXY_HOPS` note above says the hop count "has now been wrong
+ * twice, both times silently, and both times the symptom was one shared
+ * rate-limit bucket rather than an error." This is the third, and it is not a
+ * hop count at all: this service became a **Cloudflare Worker**, and the
+ * Cloudflare edge does not send `X-Forwarded-For` to a Worker. There is no
+ * chain, so no offset can be right.
+ *
+ * `extractClientIp` returned 'unknown' for every request on the service, and
+ * 'unknown' is a real bucket, so `write` (10 per 15 min) applied to the whole
+ * platform at once. Diagnosed 2026-08-21 from the consuming side: prompts
+ * published through the Vox Pop BFF started failing with a relayed 429 on the
+ * first attempt of a session, because a handful of ordinary reads had already
+ * spent the shared bucket.
+ *
+ * Note what did NOT fire: the `warn` in `rate-limit.ts` that the block above
+ * nominates as "the detector" is guarded on `ip === 'unknown' && xff`, i.e. on
+ * a chain that is present but unresolvable. With XFF absent entirely the alarm
+ * built for exactly this failure could not ring. That guard is dropped in this
+ * change.
+ *
+ * Read per-request, not at module scope: on workerd a Worker's `vars` reach
+ * `process.env` through a polyfill tied to request context, and whether a
+ * top-level read sees them depends on when the module first evaluates. Same
+ * reason `trustedProxyHops` stopped being a module-scope constant.
+ */
+function clientIpSource(): 'cf' | 'xff' {
+    return process.env.CLIENT_IP_SOURCE === 'cf' ? 'cf' : 'xff';
+}
 
 /**
  * Normalize an XFF entry: lowercase, and unwrap an IPv4-mapped IPv6 address
@@ -82,16 +118,39 @@ function isNonRoutable(ip: string): boolean {
 }
 
 /**
- * Extract the client IP from the `X-Forwarded-For` header.
+ * Validate one candidate address down to this module's contract: an IPv4/IPv6
+ * literal, or `'unknown'`. Shared by both header paths so they cannot drift
+ * apart about what counts as an address.
+ */
+function sanitizeIp(raw: string | null | undefined): string {
+    if (!raw) return 'unknown';
+    const ip = normalizeIp(raw.trim());
+    return isNonRoutable(ip) ? 'unknown' : ip;
+}
+
+/**
+ * Extract the client IP from the request.
  *
- * Takes the entry `TRUSTED_PROXY_HOPS` positions in from the right — the IP the
- * trusted Google edge recorded for the connecting client. Entries further left
- * are client-supplied and therefore spoofable; the rightmost is the GFE itself.
+ * On Cloudflare (`CLIENT_IP_SOURCE=cf`) this is `CF-Connecting-IP`. Otherwise it
+ * is the entry `TRUSTED_PROXY_HOPS` positions in from the right of
+ * `X-Forwarded-For` — the IP the trusted edge recorded for the connecting
+ * client. Entries further left are client-supplied and therefore spoofable; the
+ * rightmost is the edge itself.
+ *
+ * Takes the whole `Request` rather than one header string, so the source
+ * decision lives here rather than being made for it at each call site.
  *
  * Single source of truth — used by the rate-limit middleware and the
  * pending-uploads route.
  */
-export function extractClientIp(xff: string | undefined): string {
+export function extractClientIp(req: Request): string {
+    if (clientIpSource() === 'cf') {
+        // A single address the edge sets and overwrites — no chain, no offset,
+        // and nothing a client can prepend to.
+        return sanitizeIp(req.headers.get('cf-connecting-ip'));
+    }
+
+    const xff = req.headers.get('x-forwarded-for');
     if (!xff) return 'unknown';
     const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -99,8 +158,6 @@ export function extractClientIp(xff: string | undefined): string {
     // A shorter chain means the request didn't traverse the expected edge
     // (local/dev, or a misrouted request) — fail safe to 'unknown' rather than
     // trust a potentially client-spoofed single value.
-    const idx = parts.length - 1 - TRUSTED_PROXY_HOPS;
-    const ip = idx >= 0 ? normalizeIp(parts[idx]) : 'unknown';
-
-    return isNonRoutable(ip) ? 'unknown' : ip;
+    const idx = parts.length - 1 - trustedProxyHops();
+    return idx >= 0 ? sanitizeIp(parts[idx]) : 'unknown';
 }

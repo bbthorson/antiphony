@@ -44,13 +44,18 @@ export interface RateLimitOptions {
     limit: number;
     windowMs: number;
     message?: string;
+    /**
+     * Bucket name, which is a segment of the store key. Every preset sets one;
+     * see `bucketFor`.
+     */
+    bucket?: string;
 }
 
 export const RATE_LIMITS = {
     /** Create/update operations (10 per 15 min). */
-    write: { limit: 10, windowMs: 15 * 60 * 1000 } satisfies RateLimitOptions,
+    write: { bucket: 'write', limit: 10, windowMs: 15 * 60 * 1000 } satisfies RateLimitOptions,
     /** Read/list operations (60 per min). */
-    read: { limit: 60, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    read: { bucket: 'read', limit: 60, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /**
      * Flood backstop for a route keyed by something OTHER than the client IP
      * (20 per second). Not a per-caller policy — deliberately far above what
@@ -63,18 +68,54 @@ export const RATE_LIMITS = {
      * fresh bucket per request, so the object-keyed limit alone bounds nothing
      * in aggregate. This is the bound that survives that.
      */
-    readAggregate: { limit: 1200, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    readAggregate: { bucket: 'readAggregate', limit: 1200, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    /**
+     * The same backstop for a WRITE route keyed by something other than the
+     * client IP (600 per min). Pairs with `write` on the post routes, whose real
+     * policy is per acting actor.
+     *
+     * An actor-keyed bucket has the unbounded cardinality `readAggregate`
+     * describes: the actor id is app-asserted, so a caller holding a service
+     * token can mint a fresh bucket per request. This is the bound that survives
+     * that. Deliberately far above real demand — ten writes a second across the
+     * entire platform is orders of magnitude past anything observed — because an
+     * aggregate that binds in normal operation is throttling a peer rather than
+     * an abuser, which is the mistake the per-IP limit was already making.
+     */
+    writeAggregate: { bucket: 'writeAggregate', limit: 600, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /** Auth-sensitive operations (5 per min). */
-    auth: { limit: 5, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    auth: { bucket: 'auth', limit: 5, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /** Uploads, deletes, maintenance tasks (20 per hour). */
-    hourly: { limit: 20, windowMs: 60 * 60 * 1000 } satisfies RateLimitOptions,
+    hourly: { bucket: 'hourly', limit: 20, windowMs: 60 * 60 * 1000 } satisfies RateLimitOptions,
     /** High-impact operations: org creation, AI generation (5 per hour). */
-    sensitive: { limit: 5, windowMs: 60 * 60 * 1000 } satisfies RateLimitOptions,
+    sensitive: { bucket: 'sensitive', limit: 5, windowMs: 60 * 60 * 1000 } satisfies RateLimitOptions,
     /** Frequent writes: session management, autosave (20 per min). */
-    burst: { limit: 20, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    burst: { bucket: 'burst', limit: 20, windowMs: 60 * 1000 } satisfies RateLimitOptions,
     /** Moderate operations: RSS imports (10 per min). */
-    standard: { limit: 10, windowMs: 60 * 1000 } satisfies RateLimitOptions,
+    standard: { bucket: 'standard', limit: 10, windowMs: 60 * 1000 } satisfies RateLimitOptions,
 } as const;
+
+/**
+ * Bucket segment of the store key.
+ *
+ * Without this, every preset shared one `ratelimit_<caller>` record: the 60/min
+ * `read` checks a caller makes while browsing incremented the same counter that
+ * `write` (10 per 15 min) then tested, so ordinary reads exhausted the write
+ * allowance and creates 429'd. Presets must count independently.
+ *
+ * The `limit`x`windowMs` fallback separates inline options (no preset) that
+ * differ in configuration — but two inline call sites sharing a limit and window
+ * still share a bucket, since nothing distinguishes them. Only an explicit
+ * `bucket` guarantees separation, which is why every preset sets one.
+ *
+ * Ported from the Vox Pop BFF's `middleware/rate-limit.ts`, which grew this for
+ * the same reason and whose comment describes the same symptom. The two are
+ * independent limiters over independent stores, so they need not stay in step —
+ * but the bug is worth recognising in either.
+ */
+function bucketFor(options: RateLimitOptions): string {
+    return options.bucket ?? `${options.limit}x${options.windowMs}`;
+}
 
 // Circuit breaker state — module-scoped intentionally so it persists across
 // requests within the same isolate.
@@ -240,30 +281,46 @@ export const rateLimit = (
         if (exemptServiceCallers && serviceCallerFrom(c.req.header('authorization'))) {
             return next();
         }
-        const xff = c.req.header('x-forwarded-for');
-        const ip = extractClientIp(xff);
-        // The June 2026 H5 investigation confirmed the TRUSTED_PROXY_HOPS offset
-        // in client-ip.ts, so the per-request diagnostic that verified it is
-        // gone — it logged the full XFF chain and the extracted client IP at
-        // `info` on EVERY rate-limited request, which is a lot of addresses to
-        // keep in Cloud Logging for a question already answered.
+        const ip = extractClientIp(c.req.raw);
+        // The detector for "the edge in front of this service changed and the
+        // limiter silently went global".
         //
-        // What it was also serving as — the detector for the platform changing
-        // its hop count — survives in this narrower form. If the topology moves,
-        // the entry we index lands outside the chain and extraction collapses to
-        // 'unknown', which also means every such caller shares one rate-limit
-        // bucket. That is the symptom worth paging on, it fires only when
-        // something is actually wrong, and it needs no client address to say so.
-        if (ip === 'unknown' && xff) {
+        // It used to be guarded on `ip === 'unknown' && xff` — an XFF chain that
+        // is present but unresolvable, which is what a wrong TRUSTED_PROXY_HOPS
+        // looks like. That guard is why it stayed silent through the failure it
+        // was written for: moving to a Cloudflare Worker removed the XFF header
+        // altogether, so there was no chain to be unresolvable, and every
+        // request on the service shared one bucket for a day without a single
+        // log line. The condition that matters is the SYMPTOM (no address, so
+        // one bucket), never the mechanism that caused it.
+        //
+        // Unconditional, and at `warn`. In steady state this is silent: a
+        // correctly-configured deployment resolves an address for essentially
+        // every request. If it starts firing on every request, the limiter is
+        // no longer per-caller — that is the page.
+        if (ip === 'unknown') {
             logger.warn(
-                { requestId: c.get('requestId'), xffEntries: xff.split(',').length },
-                '[rate-limit] client IP unresolvable from a present XFF chain — TRUSTED_PROXY_HOPS may no longer match the platform; all such callers share one bucket',
+                {
+                    requestId: c.get('requestId'),
+                    source: process.env.CLIENT_IP_SOURCE ?? 'xff',
+                    hasXff: Boolean(c.req.header('x-forwarded-for')),
+                    hasCfConnectingIp: Boolean(c.req.header('cf-connecting-ip')),
+                },
+                '[rate-limit] client IP unresolvable — this caller shares ONE bucket with every other unresolvable caller',
             );
         }
         // Precedence: a request-derived key, then a fixed one, then the IP.
         // `keyBy` returning null is the normal path for anything it cannot make
         // sense of, and lands those requests in the IP bucket.
-        const key = `ratelimit_${keyBy?.(c) || customKey || ip}`;
+        //
+        // The bucket name is part of the key. Without it every preset on a given
+        // caller shared ONE counter, so a route's `read` traffic (60/min) spent
+        // the same budget its `write` traffic (10 per 15 min) was measured
+        // against — loading a page could exhaust the ability to post. That was
+        // invisible while the IP segment was also collapsing to 'unknown',
+        // because at that point there was only one counter in the system
+        // anyway.
+        const key = `ratelimit_${bucketFor(options)}_${keyBy?.(c) || customKey || ip}`;
         const result = await checkRateLimit(
             key,
             options,

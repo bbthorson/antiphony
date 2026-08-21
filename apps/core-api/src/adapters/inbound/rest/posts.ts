@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import type { MiddlewareHandler } from 'hono';
 import { AudioPostViewSchema } from 'shared/types/audio';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
@@ -255,6 +256,40 @@ app.openapi(repliesRoute, async (c) => {
 // POST / — create
 // ---------------------------------------------------------------------------
 
+/**
+ * Rate-limit key for a write brokered by a connecting app: the tenant plus the
+ * acting user, e.g. `voxpop:user-abc`.
+ *
+ * **The client IP is the wrong bucket for these routes, and was actively
+ * harmful.** Every write from a given app arrives from that app's servers, so
+ * an IP-keyed limit measures the *app* rather than the person using it: Vox
+ * Pop's entire user base shared one allowance of 10 writes per 15 minutes.
+ * Combined with the address collapsing to 'unknown' on Cloudflare (see
+ * `lib/client-ip.ts`) the bucket was not merely per-app but global, and a
+ * creator publishing their first prompt of the day got a 429 spent by somebody
+ * else's reads. Diagnosed 2026-08-21.
+ *
+ * `originAppId` is included so two tenants asserting the same actor id cannot
+ * collide — the id is app-scoped, and Antiphony hosts more than one app.
+ *
+ * Returns null — falling back to the IP bucket — when either half is missing.
+ * On these routes `requireAuth()` has already run and guarantees both, so null
+ * is unreachable in practice; it is the contract `keyBy` requires rather than a
+ * live branch. A request that somehow arrives without them is exactly the one
+ * that should not be handed a bucket of its own.
+ *
+ * NOT `exemptServiceCallers`. That knob skips the limit outright, and its own
+ * doc comment warns it "would silently delete the write limit (10 per 15 min)
+ * rather than adjust it" — it is for anonymous-by-design routes that are also
+ * called service-to-service. These routes want the limit kept and pointed at
+ * the right subject.
+ */
+function actingActorKey(c: Parameters<MiddlewareHandler>[0]): string | null {
+    const appId = c.get('originAppId');
+    const actor = c.get('viewerUid');
+    return appId && actor ? `${appId}:${actor}` : null;
+}
+
 const createRouteDef = createRoute({
     method: 'post',
     path: '/',
@@ -264,7 +299,18 @@ const createRouteDef = createRoute({
         'Creates a `dev.antiphony.audio.post` authored by the viewer. `reply` presence makes it a reply ' +
         '(no title); absence makes it a prompt. The audio is uploaded first (signed-URL flow) and referenced ' +
         'as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`.',
-    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    middleware: [
+        // TWO limits, and they are not redundant — same shape as the audio
+        // proxy route. The aggregate is IP-keyed and deliberately loose; it
+        // exists only because the actor-keyed limit below has unbounded
+        // cardinality and therefore no aggregate bound of its own. The tight one
+        // is the real policy: 10 writes per 15 minutes PER ACTING USER, not per
+        // connecting app. Aggregate first, so a flood is refused before it costs
+        // a second store round trip.
+        requireAuth(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
+    ] as const,
     request: {
         headers: z.object({
             'idempotency-key': z.string().optional().openapi({ description: 'Optional idempotency key — repeated requests with the same key return the cached response.' }),
@@ -364,7 +410,18 @@ const patchRoute = createRoute({
         '**only** a `processing` opt-in — no lexicon fields are editable, because those feed the record ' +
         'CID (its content identity); processing state is storage-layer, so this changes no CID. ' +
         'Author-only: the acting viewer must be the post author. Returns the re-hydrated `AudioPostView`.',
-    middleware: [requireAuth(), rateLimit(RATE_LIMITS.write)] as const,
+    middleware: [
+        // TWO limits, and they are not redundant — same shape as the audio
+        // proxy route. The aggregate is IP-keyed and deliberately loose; it
+        // exists only because the actor-keyed limit below has unbounded
+        // cardinality and therefore no aggregate bound of its own. The tight one
+        // is the real policy: 10 writes per 15 minutes PER ACTING USER, not per
+        // connecting app. Aggregate first, so a flood is refused before it costs
+        // a second store round trip.
+        requireAuth(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
+    ] as const,
     request: {
         params: z.object({
             postId: z.string().openapi({ description: 'The post id' }),

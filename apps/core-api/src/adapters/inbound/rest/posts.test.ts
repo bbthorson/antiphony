@@ -10,6 +10,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Routes resolve services through the composition root now, rather than
 // importing a module-scoped singleton — a Worker gets its bindings on `env`, so
 // module-load construction is not available there.
+const rateLimitKeys: string[] = [];
+
 const audioPostService = {
     createPost: vi.fn(),
     getPostView: vi.fn(),
@@ -26,7 +28,20 @@ vi.mock('../../../composition.js', () => ({
     // than defaulting to the Firestore binding. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
     // middleware/rate-limit.test.ts).
-    rateLimitStore: { hit: async () => 'under' as const },
+    //
+    // The keys ARE recorded, though. Which bucket a write lands in is route
+    // wiring — a `keyBy` this file's routes either pass or do not — and the
+    // 2026-08-21 incident was entirely a wrong key with a 200-shaped cause:
+    // every user of a connecting app sharing one write allowance because the
+    // limit was keyed by the app's address. `middleware/rate-limit-keying.test.ts`
+    // pins what the middleware does with a key; this pins that these routes ask
+    // for the right one.
+    rateLimitStore: {
+        hit: async (key: string) => {
+            rateLimitKeys.push(key);
+            return 'under' as const;
+        },
+    },
     }),
 }));
 
@@ -285,5 +300,64 @@ describe('/api/v1/posts', () => {
             expect(res.status).toBe(400);
             expect(audioPostService.setProcessing).not.toHaveBeenCalled();
         });
+    });
+});
+
+/**
+ * Which rate-limit bucket a write lands in.
+ *
+ * The regression, in one sentence: `POST /posts` was IP-keyed, every write from
+ * a connecting app arrives from that app's servers, so one allowance of 10 per
+ * 15 minutes covered its entire user base — and on Cloudflare, where the address
+ * did not resolve at all, it covered the entire platform. A creator's first
+ * prompt of the day returned 429 on a budget spent by other people's reads.
+ */
+describe('/api/v1/posts — rate-limit bucketing', () => {
+    beforeEach(() => {
+        rateLimitKeys.length = 0;
+        audioPostService.createPost.mockResolvedValue({ postId: 'p1' });
+        vi.mocked(checkIdempotency).mockResolvedValue(null);
+    });
+
+    const body = {
+        text: 'hi',
+        title: 'Q',
+        embed: { $type: 'dev.antiphony.embed.audio', audio: { $type: 'blob', ref: { $link: 'b1' }, mimeType: 'audio/webm', size: 1 } },
+    };
+
+    async function createAs(uid: string) {
+        authAs(uid);
+        return app().request('/api/v1/posts', {
+            method: 'POST',
+            headers: { ...authHeaders(), 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+    }
+
+    it('keys the write by acting actor, not by the calling app address', async () => {
+        await createAs('alice');
+        await createAs('bob');
+
+        const writeKeys = rateLimitKeys.filter((k) => k.startsWith('ratelimit_write_'));
+        expect(writeKeys).toEqual([
+            'ratelimit_write_test-app:alice',
+            'ratelimit_write_test-app:bob',
+        ]);
+    });
+
+    it('still applies an aggregate bound above the actor-keyed limit', async () => {
+        await createAs('alice');
+
+        // Actor ids are app-asserted, so the actor-keyed bucket has unbounded
+        // cardinality and bounds nothing in aggregate on its own.
+        expect(rateLimitKeys.some((k) => k.startsWith('ratelimit_writeAggregate_'))).toBe(true);
+    });
+
+    it('does not put a read and a write in the same bucket', async () => {
+        await createAs('alice');
+        rateLimitKeys.length = 0;
+        await app().request('/api/v1/posts/p1', READ_AUTH);
+
+        expect(rateLimitKeys.every((k) => !k.startsWith('ratelimit_write_'))).toBe(true);
     });
 });

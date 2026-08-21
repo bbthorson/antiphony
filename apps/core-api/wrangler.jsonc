@@ -249,6 +249,24 @@
 		// failure wearing a 401. Both are present as of this change.
 		"ANTIPHONY_RENDITION_SERVICE_URL": "https://antiphony-audio-rendition-op5avwkdfa-uk.a.run.app",
 		"NODE_ENV": "production",
-		"LOG_LEVEL": "info"
+		"LOG_LEVEL": "info",
+
+		// ⚠️ REQUIRED. Without it every request on this service shares ONE
+		// rate-limit bucket.
+		//
+		// This service is a Worker, and the Cloudflare edge does not send
+		// `X-Forwarded-For` to a Worker — it sends `CF-Connecting-IP`.
+		// `extractClientIp` fails safe to 'unknown' when it cannot resolve an
+		// address, and 'unknown' is a real bucket rather than a bypass, so from the
+		// Worker cutover until 2026-08-21 every caller shared it: `write` (10 per
+		// 15 min) was a single platform-wide allowance. It surfaced downstream, as
+		// a Vox Pop creator unable to publish a first prompt because ordinary reads
+		// had already spent the budget.
+		//
+		// `TRUSTED_PROXY_HOPS` is deliberately absent: no hop count is correct when
+		// there is no chain. It remains supported for a self-hoster who fronts this
+		// API with something that does send XFF — see lib/client-ip.ts, where the
+		// history of getting that number wrong is recorded twice over.
+		"CLIENT_IP_SOURCE": "cf"
 	}
 }
