@@ -9,7 +9,7 @@ import { parseAppTokens } from '../src/middleware/service-auth.js';
  *
  * The property the old boot gate served well is **deploy-time correctness**:
  * the pins we are about to ship are valid. A typo in `ANTIPHONY_APP_DIDS`, a
- * DID with no `#atproto_pds`, a host mismatch — these are high-probability
+ * DID with no custody service endpoint, a host mismatch — these are high-probability
  * failures and every one of them is knowable before a single request.
  *
  * Running that check here is strictly better than running it at boot, which is
@@ -119,15 +119,28 @@ if (!raw) {
 
 if (!pdsHost) {
     console.warn(
-        '[validate-pins] ANTIPHONY_PDS_HOST unset — checking only that each DID document exists and names an #atproto_pds endpoint, NOT that it points at us. That is the weaker half of the custody claim.',
+        '[validate-pins] ANTIPHONY_PDS_HOST unset — checking only that each DID document exists and names a custody endpoint (#atproto_space_host, or legacy #atproto_pds), NOT that it points at us. That is the weaker half of the custody claim.',
     );
 }
 
 try {
     const snapshot = await validateAllPins({ expectedPdsHost: pdsHost, raw });
-    console.log(
-        `[validate-pins] proved custody for ${snapshot.size} tenant(s): ${[...snapshot.keys()].join(', ')}`,
-    );
+    const proved = [...snapshot.values()].map((p) => `${p.originAppId} (via ${p.custody.kind})`);
+    console.log(`[validate-pins] proved custody for ${snapshot.size} tenant(s): ${proved.join(', ')}`);
+
+    // Name the tenants still on the legacy claim. `#atproto_pds` asserts we are
+    // an AT Protocol PDS, which we are not (#115) — it stays accepted only so
+    // nobody breaks in transit, and this line is how anyone knows whether the
+    // migration has finished and the legacy branch can be deleted. Without it
+    // "once tenants have migrated" is a condition no one can evaluate.
+    const legacy = [...snapshot.values()].filter((p) => p.custody.kind === 'pds');
+    if (legacy.length) {
+        console.warn(
+            `[validate-pins] ${legacy.length} tenant(s) still prove custody via the legacy #atproto_pds entry, which claims Antiphony is a PDS: ${legacy
+                .map((p) => p.originAppId)
+                .join(', ')}. They can publish #atproto_space_host instead — see specs/tenant-onboarding.md.`,
+        );
+    }
 
     // Reported, not fatal — the same call the runtime makes, and the same
     // judgement: a tenant in one registry and not the other is a

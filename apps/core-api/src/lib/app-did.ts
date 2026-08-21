@@ -12,8 +12,9 @@ import { logger } from './logger.js';
  *    into an opaque `originAppId → did` map. The DID is stored and returned
  *    verbatim — nothing downstream re-derives it from a domain.
  *  - **Validation (async, off the hot path):** resolve a `did:web` document,
- *    require an `#atproto_pds` service endpoint (pointing at Antiphony), and
- *    snapshot it. Run at boot / onboarding, never per request.
+ *    require a custody service endpoint pointing at Antiphony —
+ *    `#atproto_space_host`, or legacy `#atproto_pds` — and snapshot it. Run at
+ *    boot / onboarding, never per request.
  *
  * The connective tissue is `validateAllPins()`: at boot it validates every
  * configured pin, **fails the process closed** on any failure, and caches the
@@ -114,23 +115,71 @@ interface DidService {
     serviceEndpoint?: unknown;
 }
 
+/** Which kind of service entry proved custody. */
+export type CustodyServiceKind = 'space-host' | 'pds';
+
+/** The endpoint a tenant names as the host of its data, and which entry said so. */
+export interface CustodyService {
+    endpoint: string;
+    kind: CustodyServiceKind;
+}
+
 /**
- * Pull the AT Protocol PDS `serviceEndpoint` URL out of a DID document — the
- * entry whose `type` is `AtprotoPersonalDataServer` (or whose `id` ends with
- * `#atproto_pds`). Returns `null` when absent.
+ * Pull the service endpoint a tenant's DID document names as the host of its
+ * data — the "custody claim is true" check from the pinning contract.
+ *
+ * ## Two accepted entries, and why
+ *
+ * `AtprotoPersonalDataServer` is a promise to serve `com.atproto.repo.*` and
+ * `com.atproto.sync.*` over signed MST commits and emit to the firehose.
+ * Antiphony does none of that — probed against the live service, every one of
+ * those routes 404s — so a tenant naming us as their PDS publishes something
+ * false, in the one document the rest of the network is invited to resolve.
+ * And they could not stop, because this gate required the claim in order to
+ * deploy. That is the defect issue #115 reported: the gate trapped tenants into
+ * a false statement that had nothing to do with whether it was accurate.
+ *
+ * `#atproto_space_host` — from atproto's permissioned-data work — names the
+ * host serving a space authority's repos. That describes what Antiphony
+ * actually is (custody and processing, no public sync surface), so a tenant can
+ * now say something true and still pass.
+ *
+ * ## Precedence is the protocol's own
+ *
+ * atproto resolves a space host by reading `#atproto_space_host` and **falling
+ * back to `#atproto_pds` when it is absent**. This mirrors that, rather than
+ * taking whichever entry appears first: a document carrying both is migrating,
+ * and the space-host entry is the one that states the intent.
+ *
+ * `#atproto_pds` stays accepted so no tenant breaks in transit. It should leave
+ * this set once tenants have migrated.
+ *
+ * Matching on `id` fragment for the space host: the proposal specifies the
+ * entry by id, and does not pin a `type` string the way `AtprotoPersonalDataServer`
+ * is pinned — so there is nothing reliable to match a type against yet.
  */
-export function atprotoPdsEndpoint(doc: unknown): string | null {
+export function custodyService(doc: unknown): CustodyService | null {
     const services = (doc as { service?: DidService[] })?.service;
     if (!Array.isArray(services)) return null;
-    for (const svc of services) {
-        // A malformed doc may carry null / non-object entries — skip, don't crash.
-        if (!svc || typeof svc !== 'object') continue;
-        const isPds =
+
+    const find = (pred: (svc: DidService) => boolean): string | null => {
+        for (const svc of services) {
+            // A malformed doc may carry null / non-object entries — skip, don't crash.
+            if (!svc || typeof svc !== 'object') continue;
+            if (pred(svc) && typeof svc.serviceEndpoint === 'string') return svc.serviceEndpoint;
+        }
+        return null;
+    };
+
+    const spaceHost = find((svc) => typeof svc.id === 'string' && svc.id.endsWith('#atproto_space_host'));
+    if (spaceHost) return { endpoint: spaceHost, kind: 'space-host' };
+
+    const pds = find(
+        (svc) =>
             svc.type === 'AtprotoPersonalDataServer' ||
-            (typeof svc.id === 'string' && svc.id.endsWith('#atproto_pds'));
-        if (isPds && typeof svc.serviceEndpoint === 'string') return svc.serviceEndpoint;
-    }
-    return null;
+            (typeof svc.id === 'string' && svc.id.endsWith('#atproto_pds')),
+    );
+    return pds ? { endpoint: pds, kind: 'pds' } : null;
 }
 
 /**
@@ -152,7 +201,7 @@ export function atprotoPdsEndpoint(doc: unknown): string | null {
 export type AppDidFailureKind = 'disproof' | 'unreachable';
 
 export type AppDidValidation =
-    | { ok: true; did: string; pdsEndpoint: string; document: unknown }
+    | { ok: true; did: string; custody: CustodyService; document: unknown }
     | { ok: false; did: string; reason: string; kind: AppDidFailureKind };
 
 /**
@@ -216,27 +265,27 @@ export async function validateAppDid(
     if ((doc as { id?: string })?.id !== did) {
         return { ok: false, did, reason: 'did-doc-id-mismatch', kind: 'disproof' };
     }
-    const pdsEndpoint = atprotoPdsEndpoint(doc);
-    if (!pdsEndpoint) {
-        return { ok: false, did, reason: 'no-atproto-pds-endpoint', kind: 'disproof' };
+    const custody = custodyService(doc);
+    if (!custody) {
+        return { ok: false, did, reason: 'no-custody-service-endpoint', kind: 'disproof' };
     }
     if (opts.expectedPdsHost) {
         let host: string;
         try {
-            host = new URL(pdsEndpoint).host;
+            host = new URL(custody.endpoint).host;
         } catch {
-            return { ok: false, did, reason: 'pds-endpoint-unparseable', kind: 'disproof' };
+            return { ok: false, did, reason: 'custody-endpoint-unparseable', kind: 'disproof' };
         }
         if (host !== opts.expectedPdsHost) {
             return {
                 ok: false,
                 did,
-                reason: `pds-endpoint-host-mismatch: ${host} != ${opts.expectedPdsHost}`,
+                reason: `custody-endpoint-host-mismatch: ${host} != ${opts.expectedPdsHost} (via ${custody.kind})`,
                 kind: 'disproof',
             };
         }
     }
-    return { ok: true, did, pdsEndpoint, document: doc };
+    return { ok: true, did, custody, document: doc };
 }
 
 // --- Boot snapshot (the connective tissue) ----------------------------------
@@ -245,7 +294,7 @@ export async function validateAppDid(
 export interface ValidatedPin {
     originAppId: string;
     did: string;
-    pdsEndpoint: string;
+    custody: CustodyService;
     document: unknown;
     /**
      * When the custody proof was last actually obtained, in epoch millis.
@@ -428,7 +477,7 @@ export async function ensureTenantPin(
         const pin: ValidatedPin = {
             originAppId,
             did: result.did,
-            pdsEndpoint: result.pdsEndpoint,
+            custody: result.custody,
             document: result.document,
             validatedAt: now,
         };
@@ -504,7 +553,7 @@ export async function revalidateAllPins(
             const pin: ValidatedPin = {
                 originAppId,
                 did: result.did,
-                pdsEndpoint: result.pdsEndpoint,
+                custody: result.custody,
                 document: result.document,
                 validatedAt: opts.now?.() ?? Date.now(),
             };
@@ -550,7 +599,7 @@ export async function validateAllPins(
         snapshot.set(originAppId, {
             originAppId,
             did: result.did,
-            pdsEndpoint: result.pdsEndpoint,
+            custody: result.custody,
             document: result.document,
             validatedAt: Date.now(),
         });

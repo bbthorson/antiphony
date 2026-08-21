@@ -25,11 +25,26 @@ surfaces either gap as a warning — see [Drift](#drift--re-keying).
 
 ### 1. Provision the app DID
 
-The app DID must be one whose resolved document carries an `#atproto_pds`
-service endpoint pointing at **this Antiphony deploy** (`api.antiphony.dev`) —
-that "custody claim is true" check is the point of Model B, and boot rejects any
-pin that fails it. A Bluesky account's `did:plc` does **not** qualify: its PDS
-endpoint points at Bluesky, not Antiphony.
+The app DID must be one whose resolved document carries a **custody service
+endpoint** pointing at **this Antiphony deploy** (`api.antiphony.dev`) — that
+"custody claim is true" check is the point of Model B, and the deploy gate
+rejects any pin that fails it. A Bluesky account's `did:plc` does **not**
+qualify: its endpoint points at Bluesky, not Antiphony.
+
+Two entries are accepted, and **new tenants should publish the first**:
+
+| entry | status |
+| :--- | :--- |
+| `#atproto_space_host` | **preferred.** atproto's entry for the host serving a space authority's repos. Describes what Antiphony is. |
+| `#atproto_pds` | legacy, still accepted. Asserts Antiphony is an AT Protocol PDS, which it is not — see the 2026-08-21 update in [`atproto-authority-model.md`](./atproto-authority-model.md). |
+
+A document carrying both resolves to the space host, mirroring atproto's own
+rule that `#atproto_pds` is the *fallback* when no space host is published. So a
+tenant can add the new entry, deploy, and remove the old one afterwards without
+a coordinated cutover.
+
+`validate-pins.ts` names any tenant still proving custody via `#atproto_pds`, so
+the legacy branch can be removed once that line stops appearing.
 
 Three ways to get a qualifying DID (pick per tenant — the method is a per-tenant
 choice by construction):
@@ -55,18 +70,20 @@ At `https://{domain}/.well-known/did.json` (bare host) or
   "id": "did:web:{domain}",
   "service": [
     {
-      "id": "#atproto_pds",
-      "type": "AtprotoPersonalDataServer",
+      "id": "#atproto_space_host",
       "serviceEndpoint": "https://api.antiphony.dev"
     }
   ]
 }
 ```
 
-The validator requires `id` to equal the pinned DID and an `#atproto_pds`
-endpoint whose host matches `ANTIPHONY_PDS_HOST`. A signing `verificationMethod`
-(for repo-level attestation) is **not** required yet — the unsigned-repo gap is
-deferred in `atproto-authority-model.md`.
+The validator requires `id` to equal the pinned DID and a custody endpoint whose
+host matches `ANTIPHONY_PDS_HOST`. A signing `verificationMethod` is **not**
+required for the pin to validate — the unsigned-repo gap is deferred in
+`atproto-authority-model.md` — but publishing one is what enables signed service
+auth (`specs/service-auth.md`), and a tenant that does should expect the added
+entry to be absorbed silently: document drift is not currently detected
+([#117](https://github.com/bbthorson/antiphony/issues/117)).
 
 ### 3. Generate a service token
 
@@ -83,8 +100,9 @@ ANTIPHONY_APP_TOKENS=bardcast:{token-a},voxpop:{token-b}
 ```
 
 `ANTIPHONY_PDS_HOST` is what turns the custody host-match check on — while it is
-unset, boot logs a warning and only checks that *an* `#atproto_pds` endpoint
-exists, not that it points at us.
+unset, the gate logs a warning and only checks that *a* custody endpoint exists,
+not that it points at us. The var name is narrower than what it now gates; it is
+kept because renaming it is a coordinated config change for no behavioural gain.
 
 ### 5. Boot and verify
 
