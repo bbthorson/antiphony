@@ -316,6 +316,44 @@ function parseClaims(raw: unknown): SignedServiceAuthClaims | null {
     };
 }
 
+/**
+ * Render an operation string for a log line with query-parameter VALUES elided.
+ *
+ * ## Why this is not just "drop the query"
+ *
+ * The first mismatch this verifier ever reported in production was exactly a
+ * query-string disagreement — the signer includes it in `op`, the verifier
+ * derives its expectation from the path alone. Stripping the query here would
+ * have rendered that as `token=GET /api/v1/posts request=GET /api/v1/posts`:
+ * two identical strings and a mismatch, which is worse than no detail at all.
+ * So parameter NAMES stay (they are route shape, and they are the diagnostic)
+ * and only values are elided.
+ *
+ * ## Why values must go
+ *
+ * They carry end-user identifiers. A real captured line read
+ * `?rootAuthor=<firebase uid>&limit=20`, and Cloudflare had already redacted
+ * that same value out of the `url` field it records — so logging it here
+ * defeated a protection that was already in place. An auth log is the last
+ * place a user id should be introduced.
+ */
+export function redactOperationForLog(op: string | undefined): string {
+    if (!op) return '<none>';
+    const q = op.indexOf('?');
+    if (q === -1) return op;
+    const head = op.slice(0, q);
+    const params = op
+        .slice(q + 1)
+        .split('&')
+        .filter(Boolean)
+        .map((pair) => {
+            const eq = pair.indexOf('=');
+            // A valueless flag has nothing to elide; keep it as-is.
+            return eq === -1 ? pair : `${pair.slice(0, eq)}=<redacted>`;
+        });
+    return params.length ? `${head}?${params.join('&')}` : head;
+}
+
 export interface VerifySignedServiceAuthOptions {
     /** Antiphony's own DID — the only accepted `aud`. */
     expectedAudience: string;
@@ -433,7 +471,7 @@ export async function verifySignedServiceAuth(
         return {
             ok: false,
             reason: 'operation-mismatch',
-            detail: `token=${claims.lxm ?? claims.op} request=${expected.kind === 'xrpc' ? expected.lxm : expected.op}`,
+            detail: `token=${redactOperationForLog(claims.lxm ?? claims.op)} request=${redactOperationForLog(expected.kind === 'xrpc' ? expected.lxm : expected.op)}`,
         };
     }
 

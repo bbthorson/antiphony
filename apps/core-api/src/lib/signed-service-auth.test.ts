@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { base58btc } from 'multiformats/bases/base58';
 import { validateAllPins, resetValidatedPinsForTest } from './app-did.js';
 import {
+    redactOperationForLog,
     verifySignedServiceAuth,
     verificationMethodByKid,
     importMultikeyP256,
@@ -207,6 +208,36 @@ describe('requestOperation', () => {
     });
 });
 
+describe('redactOperationForLog — the mismatch detail must not leak user ids', () => {
+    it('keeps parameter names and elides every value', () => {
+        // The real line that prompted this: a Firebase uid in an auth log,
+        // which Cloudflare had already redacted out of the url it records.
+        expect(redactOperationForLog('GET /api/v1/posts?rootAuthor=sLhaGagvW5NEw6Vc4BMtdyuBlTb2&limit=20')).toBe(
+            'GET /api/v1/posts?rootAuthor=<redacted>&limit=<redacted>',
+        );
+    });
+
+    it('still distinguishes the two sides of a query-string mismatch', () => {
+        // The property that rules out "just strip the query": these must not
+        // render identically, or the diagnostic is destroyed.
+        const token = redactOperationForLog('GET /api/v1/posts?kind=prompt&limit=20');
+        const request = redactOperationForLog('GET /api/v1/posts');
+        expect(token).not.toBe(request);
+        expect(token).toContain('kind=<redacted>');
+    });
+
+    it('passes through operations with no query at all', () => {
+        expect(redactOperationForLog('POST /api/v1/posts')).toBe('POST /api/v1/posts');
+        expect(redactOperationForLog('dev.antiphony.audio.getPost')).toBe('dev.antiphony.audio.getPost');
+    });
+
+    it('handles valueless flags and an empty query without inventing values', () => {
+        expect(redactOperationForLog('GET /api/v1/posts?flag')).toBe('GET /api/v1/posts?flag');
+        expect(redactOperationForLog('GET /api/v1/posts?')).toBe('GET /api/v1/posts');
+        expect(redactOperationForLog(undefined)).toBe('<none>');
+    });
+});
+
 describe('verifySignedServiceAuth — accepts a well-formed token', () => {
     it('verifies a REST token and resolves the tenant from the pin registry', async () => {
         const r = await verify(await mint(keyPair.privateKey));
@@ -307,6 +338,19 @@ describe('verifySignedServiceAuth — refuses', () => {
     it('a token carrying neither', async () => {
         const token = await mint(keyPair.privateKey, { op: undefined });
         expect(await verify(token)).toMatchObject({ ok: false, reason: 'no-operation-claim' });
+    });
+
+    it('reports a query-string mismatch WITHOUT the parameter values', async () => {
+        // The production case: their signer puts the query in `op`, this
+        // verifier derives its expectation from the path. Both halves matter —
+        // the reason must be reported, and the uid must not be.
+        const token = await mint(keyPair.privateKey, {
+            op: 'GET /api/v1/posts?rootAuthor=sLhaGagvW5NEw6Vc4BMtdyuBlTb2&limit=20',
+        });
+        const r = await verify(token, { operation: requestOperation('GET', '/api/v1/posts') });
+        expect(r).toMatchObject({ ok: false, reason: 'operation-mismatch' });
+        expect(r.ok === false && r.detail).toContain('rootAuthor=<redacted>');
+        expect(r.ok === false && r.detail).not.toContain('sLhaGagvW5NEw6Vc4BMtdyuBlTb2');
     });
 
     it('a token bound to a different endpoint', async () => {
