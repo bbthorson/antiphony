@@ -106,7 +106,7 @@ export default {
      * mint an `at://` uri carries `requireAuth()` or `requireServiceToken()`;
      * the one anonymous route, the audio proxy, takes a blob path and mints
      * nothing. See `middleware/auth.ts` § Why the pin check lives here, and
-     * specs/cloudflare-migration.md § The boot gate.
+     * specs/archive/cloudflare-migration.md § The boot gate.
      */
     async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
         // Hono's `fetch` types `env` as an object; the handler signature keeps
@@ -135,7 +135,7 @@ export default {
         // when a process happens to restart. It also matters precisely because
         // this service is low-traffic: lazy validation alone might not
         // re-check a quiet tenant for a long time, and revocation is what you
-        // want to notice quickly. See specs/cloudflare-migration.md § The boot
+        // want to notice quickly. See specs/archive/cloudflare-migration.md § The boot
         // gate.
         //
         // Reports rather than throws, and runs BEFORE the sweep so a drift

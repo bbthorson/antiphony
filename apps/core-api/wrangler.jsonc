@@ -11,7 +11,7 @@
 	//
 	//     npx wrangler deploy -c apps/core-api/wrangler.jsonc
 	//
-	// See specs/cloudflare-migration.md § Sequencing, step 3.
+	// See specs/archive/cloudflare-migration.md § Sequencing, step 3.
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "antiphony-core-api",
 	"main": "src/worker.ts",
@@ -40,7 +40,7 @@
 	// makes several round trips to one origin, which is exactly this workload's
 	// shape. It is on from the start because the regression it prevents is
 	// INVISIBLE when testing from the US east coast — the one place the two
-	// topologies look identical. See specs/cloudflare-migration.md § Geography.
+	// topologies look identical. See specs/archive/cloudflare-migration.md § Geography.
 	"placement": { "mode": "smart" },
 
 	"observability": { "enabled": true },
@@ -175,7 +175,7 @@
 	//
 	// Binding-based authorisation is why there is no R2 credential anywhere in
 	// this config — and why dropping `getSignedUrl` made the blob store simpler
-	// rather than harder. See specs/cloudflare-migration.md § Secrets.
+	// rather than harder. See specs/archive/cloudflare-migration.md § Secrets.
 	"r2_buckets": [
 		{
 			"binding": "BLOBS",
@@ -186,7 +186,7 @@
 	// ## A DATABASE_URL secret, not Hyperdrive
 	//
 	// There is deliberately no `hyperdrive` block here, and its absence is the
-	// decision recorded in specs/cloudflare-migration.md § Verified deploy
+	// decision recorded in specs/archive/cloudflare-migration.md § Verified deploy
 	// blockers as option A. `adapters/outbound/postgres/client.ts` runs
 	// `@neondatabase/serverless` in HTTP mode, which derives an HTTPS endpoint
 	// from the connection string's HOSTNAME — and a Hyperdrive string points

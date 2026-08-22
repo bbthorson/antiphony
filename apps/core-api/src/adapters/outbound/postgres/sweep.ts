@@ -26,7 +26,7 @@ import type { Logger } from '@antiphony/core/ports/logger';
  * It is worth noting what this closes. Until the Worker's cron existed, this
  * function shipped with the schema and **nothing called it** — harmless at beta
  * volume, and the reason no interim Cloud Scheduler job was built, but a thing
- * that silently did not happen. See specs/cloudflare-migration.md § Replacing
+ * that silently did not happen. See specs/archive/cloudflare-migration.md § Replacing
  * Firestore's native TTL.
  */
 

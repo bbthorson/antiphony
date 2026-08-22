@@ -107,7 +107,7 @@ against its own JWKS.
 They were 100% of core's remaining **Firebase Auth** usage (`createCustomToken`,
 `createUser`, `deleteUser`, `createSessionCookie`) and the sole owners of the `users`,
 `handles`, and `atproto_oauth_states` collections — which is why deleting them was the
-first step of [`cloudflare-migration.md`](./cloudflare-migration.md) rather than a
+first step of [`cloudflare-migration.md`](./archive/cloudflare-migration.md) rather than a
 tidy-up. Gone with them: `UserService`, the `UserDependencies` port, its Firebase
 binding, and `getAdminAuth()`. **Antiphony now holds no user record at all** —
 authorship is the opaque `authorId` facet on a post and nothing more, which is exactly

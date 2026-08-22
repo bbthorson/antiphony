@@ -20,8 +20,7 @@ What does NOT belong here:
   Don't create a use case just to wrap one service call.
 - **Pure domain logic** — that lives in `packages/core/services/`. Use
   cases call into those services; they don't reimplement them.
-- **Adapter wiring** — composition root logic stays in
-  `src/adapters/outbound/firebase/core-services-firebase.ts`.
+- **Adapter wiring** — composition root logic stays in `src/composition.ts`.
 
 The layer is currently empty — every route today is a thin pass-through to
 one service, so nothing has needed cross-resource orchestration yet. New use

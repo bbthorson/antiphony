@@ -1,10 +1,14 @@
 # Enrichment webhooks — push stage results to the tenant BFF
 
-**Status:** proposed 2026-07-19. Extends the durable-dispatch model in
-[`enrichment-pipeline.md`](./enrichment-pipeline.md) (step 8) with an **outbound**
-notification each time an enrichment stage settles. Companion to
-[`service-auth.md`](./service-auth.md) — that is the BFF→core auth; this is the
-core→BFF direction.
+**Status:** ✅ implemented 2026-08-01 (proposed 2026-07-19). Extends the
+durable-dispatch model in [`enrichment-pipeline.md`](./enrichment-pipeline.md)
+with an **outbound** notification each time an enrichment stage settles.
+Companion to [`service-auth.md`](./service-auth.md) — that is the BFF→core auth;
+this is the core→BFF direction.
+
+Landed in `packages/core/ports/processing-notifier.ts`, wired into
+`AudioProcessingService`, with the outbound HTTP HMAC adapter in
+`apps/core-api/src/adapters/outbound/webhook/notifier.ts`.
 
 ## The problem
 
@@ -39,7 +43,7 @@ GET at all; a `transcribe: ready` invites one, on the BFF's terms.
 ### The webhook is an accelerator, not a source of truth
 
 The authoritative record of enrichment state is the post's `processing` map in
-Firestore, readable via the view. The webhook is a **latency optimization** over that
+Postgres/storage, readable via the view. The webhook is a **latency optimization** over that
 pull state — never a second source of truth. This is what justifies best-effort
 delivery (below): a dropped webhook is a *latency regression* (the BFF learns later, via
 its next GET or the sweep), never a correctness bug. The BFF must therefore still be
@@ -113,7 +117,7 @@ signature gets no webhooks, and the pull paths continue to carry the result.
 
 Chosen: **best-effort with the sweep as the durability backstop** (not a durable/queued
 delivery). Justified by the accelerator framing above — the authoritative state is already
-committed to Firestore before any webhook fires, so a drop costs latency, not truth.
+committed to storage before any webhook fires, so a drop costs latency, not truth.
 
 Mechanics:
 
@@ -123,7 +127,7 @@ Mechanics:
 - **Bounded and non-blocking to correctness.** A short timeout (~3s) and a couple of quick
   retries on transient failure. A webhook that times out or errors is **logged and
   swallowed** — it never fails the stage, never throws out of `process()`, and never holds
-  the lease. The pass's success is defined by the Firestore writes, not by delivery.
+  the lease. The pass's success is defined by the storage writes, not by delivery.
 - **At-least-once, and the receiver must dedupe.** Two hazards make a stage's webhook fire
   more than once, and one makes "already saw this" the wrong dedupe:
   - A worker **redelivery** (the queue is at-least-once) re-runs only `pending` stages, so

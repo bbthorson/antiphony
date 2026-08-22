@@ -47,7 +47,7 @@ import { trim, waveform } from './stages.js';
  * writing a canonical blob and computing its CID — moving `dag-cbor` and the
  * content-addressing rules into a transcoder, and making a second thing
  * responsible for the invariant the whole blob scheme rests on. The ports stay
- * as they are; the adapters became a `fetch`. specs/cloudflare-migration.md
+ * as they are; the adapters became a `fetch`. specs/archive/cloudflare-migration.md
  * § The ffmpeg problem says exactly this: "`TrimmerPort` and `WaveformPort` are
  * unchanged — the adapters become a `fetch` at the rendition service instead of
  * an `execFile`."

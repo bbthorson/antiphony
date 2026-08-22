@@ -4,7 +4,7 @@ import { elevenLabsDenoiser } from './denoiser.js';
 /**
  * Unit tests for the Voice Isolator adapter, with `fetch` mocked — the live
  * behavior these encode was verified against the real API first (see
- * `specs/enrichment-pipeline-plan.md` step 3).
+ * `specs/archive/enrichment-pipeline-plan.md` step 3).
  *
  * The property under test is almost entirely about the RESULT MIME TYPE. The
  * endpoint transcodes to MP3 whatever it is given, so echoing the input type

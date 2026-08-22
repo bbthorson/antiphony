@@ -13,7 +13,7 @@ which carries the reasoning for each binding. This file is the runbook.
 > smoke-test → promote sequence, a `Host` header rewrite, and an origin lock — is
 > gone with the runtime. Most of it existed to contain a fail-closed boot gate
 > that no longer exists either; see
-> [`specs/cloudflare-migration.md`](../specs/cloudflare-migration.md) § The boot
+> [`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md) § The boot
 > gate. If you need the old procedure, it is in this file's git history.
 
 ---
@@ -37,7 +37,7 @@ the first request that needs it.
 > `apps/core-api/wrangler.jsonc` and the database is a Worker secret instead
 > (§ 2). Neon's pooled (`-pooler`) host is correct for that. Getting Hyperdrive
 > later is option B — a driver replacement, not a binding. See § Verified deploy
-> blockers in [`specs/cloudflare-migration.md`](../specs/cloudflare-migration.md).
+> blockers in [`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md).
 
 ```bash
 # The shared layer of the app-DID custody cache.

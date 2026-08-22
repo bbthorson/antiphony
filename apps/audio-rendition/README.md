@@ -23,7 +23,7 @@ the derived CID goes into a record and is therefore Antiphony's to compute.
 
 It shells out to `ffmpeg`, and a Workers runtime cannot spawn a subprocess.
 That is the one requirement Cloudflare's serverless runtime cannot satisfy at
-any amount of effort, which is why `specs/cloudflare-migration.md` § The ffmpeg
+any amount of effort, which is why `specs/archive/cloudflare-migration.md` § The ffmpeg
 problem chose "one small container" over Cloudflare Containers (a new runtime
 and deploy system) and over `ffmpeg.wasm` (well past the Worker bundle limit
 before you reach its thread requirements).
@@ -100,7 +100,7 @@ the cheap half either way: only the request carries audio.
 in Antiphony, R2 access is a Worker binding and needs no key at all — which is
 why the blob store has no signing code. This service runs outside the Workers
 runtime and cannot hold a binding, so it gets S3 API credentials. See
-`specs/cloudflare-migration.md` § Secrets, which names this as the exception.
+`specs/archive/cloudflare-migration.md` § Secrets, which names this as the exception.
 
 Scope the key to the one bucket. It needs `blobs/` read and `renditions/` write;
 it has no reason to read `renditions/` back beyond the existence check, and no

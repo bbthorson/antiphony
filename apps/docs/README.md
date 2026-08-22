@@ -1,6 +1,6 @@
 # Antiphony Documentation
 
-This directory (`@antiphony/docs`) contains the source for the [Antiphony](https://docs.antiphony.dev) documentation site, built with [Astro Starlight](https://starlight.astro.build/). It deploys to **Cloudflare Pages** at `docs.antiphony.dev`.
+This directory (`@antiphony/docs`) contains the source for the [Antiphony](https://docs.antiphony.dev) documentation site, built with [Astro Starlight](https://starlight.astro.build/). It deploys to the **`antiphony-docs` Cloudflare Worker** (static assets) at `docs.antiphony.dev`.
 
 ## Local development
 
@@ -40,6 +40,5 @@ page is a generated lookup aid.
 
 ## Deploy
 
-Cloudflare Pages builds `npm run build -w @antiphony/docs` and serves
-`apps/docs/dist/`. The Scalar bundle is pinned in `reference.astro`; bumping it
-is a deliberate review act.
+Deployed as a Cloudflare Workers static-assets site using root `wrangler.jsonc` (`antiphony-docs` Worker). Deploys are automated via `.github/workflows/deploy-docs.yml`, gated on CI completion. The Scalar bundle is pinned in `reference.astro`; bumping it is a deliberate review act.
+

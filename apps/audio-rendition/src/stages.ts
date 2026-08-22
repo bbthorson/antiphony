@@ -14,7 +14,7 @@ import { runFfmpeg } from './lib/ffmpeg.js';
  * ## Two jobs, one binary
  *
  * This service now serves both halves of the ffmpeg consolidation
- * (specs/cloudflare-migration.md § The service already exists):
+ * (specs/archive/cloudflare-migration.md § The service already exists):
  *
  *   - **Delivery / rendition** (`rendition.ts`) — on-demand, read-path, cached
  *     by derived path, output format chosen by the requester.

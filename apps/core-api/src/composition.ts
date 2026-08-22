@@ -40,7 +40,7 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
  *
  * The Firestore/GCS arm and the `src/native.ts` entry that installed it are
  * gone. They survived the cutover only to keep the pre-migration data readable;
- * the records migration turned out to be a no-op (specs/cloudflare-migration.md
+ * the records migration turned out to be a no-op (specs/archive/cloudflare-migration.md
  * § Step 2 — nothing had ever been written through `/api/v1/posts`) and blobs
  * moved by Super Slurper, so nothing reads Firestore now.
  *
@@ -133,7 +133,7 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
     // credential — and is preferred here for that reason. Nothing binds it
     // today: an HTTPS-derived-from-hostname driver cannot talk to a string that
     // points into Cloudflare's network, so the deployed Worker takes
-    // `DATABASE_URL` as a secret instead. See specs/cloudflare-migration.md
+    // `DATABASE_URL` as a secret instead. See specs/archive/cloudflare-migration.md
     // § Verified deploy blockers. This preference stays because it is the
     // correct order the moment the driver can use it (option B), and because
     // inverting it would make a future Hyperdrive binding silently dead config.
@@ -166,7 +166,7 @@ export function readRuntimeEnv(env?: Record<string, unknown>): RuntimeEnv {
 /** What a deployment is missing when it has not bound a required resource. */
 function missingBinding(what: string, binding: string): Error {
     return new Error(
-        `[composition] no ${what} available: bind ${binding}. See specs/cloudflare-migration.md § Secrets.`,
+        `[composition] no ${what} available: bind ${binding}. See specs/archive/cloudflare-migration.md § Secrets.`,
     );
 }
 

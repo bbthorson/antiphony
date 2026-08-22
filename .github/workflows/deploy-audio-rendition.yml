@@ -4,7 +4,7 @@ name: Deploy audio-rendition
 #
 # ── Why this one is a container and core-api is not ───────────────────────────
 # It spawns `ffmpeg`, and no Workers runtime can spawn a subprocess. See
-# specs/cloudflare-migration.md § The ffmpeg problem for why one small container
+# specs/archive/cloudflare-migration.md § The ffmpeg problem for why one small container
 # beat both Cloudflare Containers and ffmpeg.wasm.
 #
 # ── The flag that is a security control ───────────────────────────────────────
