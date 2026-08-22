@@ -64,7 +64,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 
 ### Next: the enrichment pipeline
 
-[`enrichment-pipeline-plan.md`](./enrichment-pipeline-plan.md) pre-registers the
+[`enrichment-pipeline-plan.md`](./archive/enrichment-pipeline-plan.md) pre-registers the
 version impact of each step, so the classification is decided before the code
 is written rather than argued at PR time. The summary, applying the rules above:
 

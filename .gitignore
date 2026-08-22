@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 # Worker-local secrets for `wrangler dev`. NOT matched by `.env*`, and since
-# the driver decision made DATABASE_URL a secret (specs/cloudflare-migration.md
+# the driver decision made DATABASE_URL a secret (specs/archive/cloudflare-migration.md
 # § Verified deploy blockers), this file is where a real Neon credential lands
 # on a developer's machine.
 .dev.vars

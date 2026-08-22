@@ -1,6 +1,6 @@
 -- Antiphony on Neon — schema
 --
--- Companion to specs/cloudflare-migration.md. Moved here from specs/ once the
+-- Companion to specs/archive/cloudflare-migration.md. Moved here from specs/ once the
 -- Postgres bindings began depending on it: adapters/outbound/postgres/*.test.ts
 -- applies THIS FILE to an in-process Postgres 18 (PGlite) and runs the real
 -- bindings against it, so a drift between the schema and the code that reads it
@@ -430,7 +430,7 @@ commit;
 -- is derivable from the request alone. Existence is an R2 HEAD, so the cache
 -- needs no rows, no lookup, and no row to fall out of sync with the object.
 -- This is the reason renditions are addressed by derivation rather than
--- content — see specs/cloudflare-migration.md § Where renditions live.
+-- content — see specs/archive/cloudflare-migration.md § Where renditions live.
 
 -- ---------------------------------------------------------------------------
 -- § Open

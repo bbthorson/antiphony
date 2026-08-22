@@ -2,7 +2,7 @@
 #
 # The one Antiphony deployable that is a container rather than a Worker, because
 # it spawns `ffmpeg` and no Workers runtime can spawn a subprocess. See
-# specs/cloudflare-migration.md § The ffmpeg problem.
+# specs/archive/cloudflare-migration.md § The ffmpeg problem.
 #
 # Build from the REPO ROOT so the workspace install resolves:
 #

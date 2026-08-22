@@ -37,7 +37,7 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * driver (`postgres.js` or `pg`) over Hyperdrive's TCP socket, against Neon's
  * DIRECT host — Hyperdrive pools itself, so stacking it on PgBouncer is
  * discouraged. `SqlClient` is one method, so that swap stays behind the port.
- * See specs/cloudflare-migration.md § Verified deploy blockers, option B.
+ * See specs/archive/cloudflare-migration.md § Verified deploy blockers, option B.
  */
 export function neonSqlClient(connectionString: string): SqlClient {
     const sql = neon(connectionString);

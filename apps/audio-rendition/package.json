@@ -2,7 +2,7 @@
   "name": "@antiphony/audio-rendition",
   "version": "0.1.0",
   "private": true,
-  "description": "Derives renditions of Antiphony audio blobs (mp3 today) and writes them to R2. The one Antiphony service that is not a Worker: it shells out to ffmpeg, which a Workers runtime cannot do. See specs/cloudflare-migration.md § The ffmpeg problem.",
+  "description": "Derives renditions of Antiphony audio blobs (mp3 today) and writes them to R2. The one Antiphony service that is not a Worker: it shells out to ffmpeg, which a Workers runtime cannot do. See specs/archive/cloudflare-migration.md § The ffmpeg problem.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

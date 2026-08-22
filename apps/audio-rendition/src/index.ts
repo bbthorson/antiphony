@@ -9,7 +9,7 @@ import { ffmpegAvailable } from './rendition.js';
  *
  * **This is the one Antiphony service that is deliberately not a Worker.** It
  * shells out to ffmpeg, and no Workers runtime can spawn a subprocess — see
- * `specs/cloudflare-migration.md` § The ffmpeg problem for why that is a
+ * `specs/archive/cloudflare-migration.md` § The ffmpeg problem for why that is a
  * decision rather than a gap, and why one small container beat both Cloudflare
  * Containers and `ffmpeg.wasm`.
  */

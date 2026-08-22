@@ -1,7 +1,7 @@
 # Enrichment pipeline (B5)
 
 **Status:** ✅ implemented and deployed 2026-07-19 (proposed 2026-07-18). See
-[`enrichment-pipeline-plan.md`](./enrichment-pipeline-plan.md) for the execution
+[`enrichment-pipeline-plan.md`](./archive/enrichment-pipeline-plan.md) for the execution
 record and per-step deviations. Extended the B5 processing scaffold already in
 the tree (`packages/core/services/audio-processing.ts`, `packages/shared/types/processing.ts`,
 the `processing` opt-in on `POST /api/v1/posts` + `PATCH /api/v1/posts/{postId}`) from two

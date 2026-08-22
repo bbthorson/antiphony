@@ -32,10 +32,9 @@ These belong to the consumer app (e.g. Vox Pop) — now a separate repo — not 
 **Ports and adapters (hexagonal).** The backend-free domain — ports and services — lives in [`@antiphony/core`](../../packages/core/); this package is the Workers host that wires concrete adapters to it.
 
 - **`src/adapters/inbound/rest/`** — one file per HTTP route. Each validates with Zod, authenticates via the auth middleware, and calls a use case / domain service.
-- **`src/adapters/outbound/`** — the driven side: `postgres/` (records, transcripts, processing state, idempotency), `r2/` (audio blobs + renditions), `durable-objects/` (rate-limit buckets), `dispatch/` (the processing queue), `elevenlabs/` (transcribe + denoise), and `rendition/` (trim + waveform, over HTTP to `apps/audio-rendition`). Swapping a backend means swapping an adapter, not touching `packages/core`.
-
-  `firebase/` is still here and is **not** on the Worker's path. It is a Node-only fallback installed by `src/native.ts`, kept alive by `scripts/migrate-firestore-to-neon.ts`, which still has to read the old store. Importing it from the shared graph would put `firebase-admin` in the Worker bundle, which is why the composition root takes it by *installation* rather than import — and why `check:worker-bundle` fails CI if it ever comes back.
-- **`src/use-cases/`**, **`src/middleware/`**, **`src/lib/`** — application wiring, the auth/CORS/logging middleware, and the composition helpers (provider + dispatcher resolution). `src/app.ts` mounts the routes.
+- **`src/adapters/inbound/xrpc/`** — AT Protocol XRPC inbound adapter for native Lexicon RPC queries.
+- **`src/adapters/outbound/`** — the driven side: `postgres/` (records, transcripts, processing state, idempotency), `r2/` (audio blobs + renditions), `durable-objects/` (rate-limit buckets), `dispatch/` (the processing queue), `elevenlabs/` (transcribe + denoise), `rendition/` (trim + waveform, over HTTP to `apps/audio-rendition`), and `webhook/` (stage completion notifications to tenant BFFs). Swapping a backend means swapping an adapter, not touching `packages/core`.
+- **`src/use-cases/`**, **`src/middleware/`**, **`src/lib/`** — application wiring, auth/logging/rate-limit middleware, and the composition helpers (`src/composition.ts`). `src/app.ts` mounts the routes.
 
 No React, no Next.js, no framework magic. Just Hono handlers talking to typed ports.
 
@@ -99,6 +98,6 @@ Next.js's runtime adds ~100MB+ of footprint for zero benefit on a JSON-only API 
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](../../LICENSE).
 
 Copyright © 2025-2026 Brad Thorson.

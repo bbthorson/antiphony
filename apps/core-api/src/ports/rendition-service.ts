@@ -8,7 +8,7 @@ import type { RenditionFormat } from '../lib/rendition-path.js';
  * ffmpeg needs a subprocess and a Worker cannot spawn one. That is the single
  * requirement Cloudflare's runtime cannot satisfy at any amount of effort, so
  * the transcode lives in `apps/audio-rendition` — a container — and this is the
- * seam across which it is asked. See specs/cloudflare-migration.md § The ffmpeg
+ * seam across which it is asked. See specs/archive/cloudflare-migration.md § The ffmpeg
  * problem.
  *
  * Note `specs/mp3-rendition-stage.md` § Sequencing specifies

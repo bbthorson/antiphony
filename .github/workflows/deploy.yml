@@ -17,7 +17,7 @@ name: Deploy core-api
 # `validate:pins` step below, which proves the same thing BEFORE anything ships
 # rather than after. So the sequence collapses to: prove the pins, deploy.
 #
-# See specs/cloudflare-migration.md § The boot gate.
+# See specs/archive/cloudflare-migration.md § The boot gate.
 #
 # ── One-time setup ────────────────────────────────────────────────────────────
 # Resources named in apps/core-api/wrangler.jsonc must exist first, and their

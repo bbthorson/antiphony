@@ -8,7 +8,7 @@ import { AwsClient } from 'aws4fetch';
  * which is why `adapters/outbound/r2/blob-store.ts` in core-api has no signing
  * code at all and why dropping `getSignedUrl` made that adapter simpler rather
  * than harder. This service runs outside the Workers runtime and cannot hold a
- * binding, so it gets S3 API keys. `specs/cloudflare-migration.md` § Secrets
+ * binding, so it gets S3 API keys. `specs/archive/cloudflare-migration.md` § Secrets
  * names it as the exception.
  *
  * ## Why `aws4fetch` and not the AWS SDK

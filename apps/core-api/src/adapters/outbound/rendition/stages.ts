@@ -18,7 +18,7 @@ import type { RenditionServiceConfig } from './http.js';
  * `fetch`.
  *
  * **The ports are unchanged.** That is the whole point of the exercise, and it
- * is what specs/cloudflare-migration.md § The ffmpeg problem predicted:
+ * is what specs/archive/cloudflare-migration.md § The ffmpeg problem predicted:
  * "`TrimmerPort` and `WaveformPort` are unchanged — the adapters become a
  * `fetch` at the rendition service instead of an `execFile`."
  * `AudioProcessingService`, `capabilitiesOf`, the stage-settling machinery, and

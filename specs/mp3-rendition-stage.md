@@ -1,14 +1,11 @@
 # The `mp3` rendition stage — adopting Vox Pop's transcoder
 
-**Status:** Proposed 2026-08-16, not implemented. **Amended 2026-08-16** — the
-serving side below was written against a signed-URL blob route that no longer
-exists; see § "Amendment: signing is gone". The stage design, the
-`RENDITION_STAGES` axis, and the eager/lazy call are unaffected. Adds a fifth B5 processing
-stage that produces an mp3 encoding of a post's final audio variant, so
-consumers that cannot decode opus stop needing a request-time transcoder.
-Originates from `specs/future/cloudflare-migration.md` § 9 in `bbthorson/vox-pop`,
-which defers the decision here. **It diverges from the Vox Pop-side proposal in
-one place** — the serving mechanism, see § "The serving side".
+**Status:** ✅ **Implemented 2026-08-17** (proposed 2026-08-16).
+Adopted into Antiphony as `apps/audio-rendition` (ffmpeg container on Cloud Run)
+talking directly to R2, wired to `apps/core-api` outbound rendition adapters
+(`src/adapters/outbound/rendition/`) and served on demand via
+`GET /api/v1/audio?url=blobs/...&format=mp3`. Also backs `trim` and `waveform` stages.
+Originates from `specs/future/cloudflare-migration.md` § 9 in `bbthorson/vox-pop`.
 
 ## Why this exists
 
@@ -142,7 +139,7 @@ Two sentences below are therefore stale, and one argument changes:
   unchanged (it reuses content addressing rather than inventing a resolution
   rule), so the ordering below stands.
 
-`specs/cloudflare-migration.md` independently sketched the `?format=` route
+`specs/archive/cloudflare-migration.md` independently sketched the `?format=` route
 while working out the R2 move. **This spec is the decision of record for the
 `mp3` stage**; that one has been narrowed to defer here.
 
@@ -246,7 +243,7 @@ Actions "never reaches zero" *because* of this service. After this, it can.
    Vox Pop's BFF therefore streams the bytes and sets the header itself, which
    changes `GET /replies/{id}/download` from returning a URL to returning bytes.
    Recorded with its costs in
-   [`cloudflare-migration.md`](./cloudflare-migration.md) § Download filenames.
+   [`cloudflare-migration.md`](./archive/cloudflare-migration.md) § Download filenames.
 
    Note the addressing half of this spec did NOT survive: renditions resolve at
    `renditions/{app}/{cid}.{format}` via `?format=`, not as a content-addressed
