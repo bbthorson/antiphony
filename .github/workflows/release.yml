@@ -1,8 +1,9 @@
 name: Release
 
-# Publishes @antiphony/shared to npm. It is the only publishable package in the
-# workspace — every other workspace is `private` or deployed elsewhere (core-api
-# and docs both to Cloudflare Workers).
+# Publishes this workspace's public packages to npm: @antiphony/shared (the
+# contract) and @antiphony/capture-kit (headless browser audio primitives).
+# Every other workspace is `private` or deployed elsewhere (core-api and docs
+# both to Cloudflare Workers).
 #
 # Why this exists: publishing used to be manual, and so it didn't happen. 0.5.0
 # was bumped in the tree in fe7596b and then sat unpublished while the registry
@@ -10,21 +11,36 @@ name: Release
 # a step in someone's head.
 #
 # To cut a release:
-#   1. bump `version` in packages/shared/package.json, land it on master
-#   2. git tag shared-v0.6.0 && git push origin shared-v0.6.0
+#   1. bump `version` in the package's package.json, land it on master
+#   2. git tag shared-v0.6.0        && git push origin shared-v0.6.0
+#      git tag capture-kit-v0.1.0   && git push origin capture-kit-v0.1.0
 #
-# The tag is the trigger AND the assertion — step "Assert the tag matches the
-# package version" fails the run if they disagree, so a mistyped tag can't
-# publish the wrong version.
+# The tag is the trigger AND the assertion. The tag PREFIX selects which package
+# is published (see "Resolve the target package"), and the version suffix must
+# match that package's own `version` — so neither a mistyped package nor a
+# mistyped version can publish the wrong thing.
+#
+# ## Adding a third publishable package
+#
+# Add its tag glob under `on.push.tags`, an option to the `package` input, and a
+# case to the resolve step. Nothing else here names a package.
 
 on:
   push:
     tags:
-      # Namespaced by package so a second publishable workspace can get its own
-      # tag prefix later without this workflow firing on it.
+      # Namespaced by package so each publishable workspace gets its own prefix
+      # and a tag for one never publishes the other.
       - 'shared-v*'
+      - 'capture-kit-v*'
   workflow_dispatch:
     inputs:
+      package:
+        description: 'Which package to validate'
+        type: choice
+        options:
+          - shared
+          - capture-kit
+        default: shared
       dry_run:
         description: 'Run every check and pack the tarball, but do not publish'
         type: boolean
@@ -46,7 +62,7 @@ concurrency:
 
 jobs:
   publish:
-    name: publish @antiphony/shared
+    name: publish to npm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,14 +134,47 @@ jobs:
       # purpose: they gate core-api's committed contract, which has no bearing
       # on the contents of this tarball (`files: ["dist"]`).
 
+      # Which package this run is about. On a tag push the PREFIX decides; on a
+      # manual run the `package` input does. Everything downstream reads these
+      # outputs, so no later step names a package — that is what keeps adding a
+      # third one to a single case statement.
+      #
+      # The longest-prefix order matters if a future package name ever ends in
+      # another's (e.g. `kit-v*` and `capture-kit-v*`): case matches top-down.
+      - name: Resolve the target package
+        id: pkg
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            case "$GITHUB_REF_NAME" in
+              capture-kit-v*) SLUG=capture-kit ;;
+              shared-v*)      SLUG=shared ;;
+              *)
+                echo "::error::Tag ${GITHUB_REF_NAME} matches no known package prefix."
+                exit 1 ;;
+            esac
+          else
+            SLUG="${{ inputs.package }}"
+          fi
+          DIR="packages/${SLUG}"
+          NAME="$(node -p "require('./${DIR}/package.json').name")"
+          VERSION="$(node -p "require('./${DIR}/package.json').version")"
+          {
+            echo "slug=${SLUG}"
+            echo "dir=${DIR}"
+            echo "name=${NAME}"
+            echo "version=${VERSION}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Target: ${NAME}@${VERSION} (${DIR})"
+
       - name: Assert the tag matches the package version
         if: github.event_name == 'push'
         run: |
-          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
-          TAG_VERSION="${GITHUB_REF_NAME#shared-v}"
+          PKG_VERSION="${{ steps.pkg.outputs.version }}"
+          TAG_VERSION="${GITHUB_REF_NAME#${{ steps.pkg.outputs.slug }}-v}"
           if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} implies ${TAG_VERSION}, but packages/shared/package.json says ${PKG_VERSION}."
-            echo "Bump the package version and move the tag, or tag shared-v${PKG_VERSION} instead."
+            echo "::error::Tag ${GITHUB_REF_NAME} implies ${TAG_VERSION}, but ${{ steps.pkg.outputs.dir }}/package.json says ${PKG_VERSION}."
+            echo "Bump the package version and move the tag, or tag ${{ steps.pkg.outputs.slug }}-v${PKG_VERSION} instead."
             exit 1
           fi
           echo "Tag and package agree on ${PKG_VERSION}."
@@ -140,21 +189,21 @@ jobs:
       # green run without cutting a real release.
       - name: Assert this version is not already published
         run: |
-          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
-          if npm view "@antiphony/shared@${PKG_VERSION}" version >/dev/null 2>&1; then
+          PKG="${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}"
+          if npm view "${PKG}" version >/dev/null 2>&1; then
             if [ "${{ inputs.dry_run }}" = "true" ]; then
-              echo "::warning::@antiphony/shared@${PKG_VERSION} is already on the registry. A real release would stop here."
+              echo "::warning::${PKG} is already on the registry. A real release would stop here."
             else
-              echo "::error::@antiphony/shared@${PKG_VERSION} is already on the registry. npm versions are immutable — bump the version."
+              echo "::error::${PKG} is already on the registry. npm versions are immutable — bump the version."
               exit 1
             fi
           else
-            echo "@antiphony/shared@${PKG_VERSION} is unclaimed."
+            echo "${PKG} is unclaimed."
           fi
 
       - name: Pack (dry run)
         if: inputs.dry_run
-        run: npm pack -w @antiphony/shared --dry-run
+        run: npm pack -w ${{ steps.pkg.outputs.name }} --dry-run
 
       # Trusted publishing needs npm >= 11.5.1; the pinned 12.0.2 installed at
       # the top of this job satisfies it. There used to be an `npm install -g
@@ -193,20 +242,22 @@ jobs:
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
         run: |
-          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          PKG_NAME="${{ steps.pkg.outputs.name }}"
+          PKG_VERSION="${{ steps.pkg.outputs.version }}"
           case "$PKG_VERSION" in
             *-*) DIST_TAG=next ;;
             *)   DIST_TAG=latest ;;
           esac
-          echo "Publishing ${PKG_VERSION} under dist-tag ${DIST_TAG}."
-          npm publish -w @antiphony/shared --tag "$DIST_TAG"
+          echo "Publishing ${PKG_NAME}@${PKG_VERSION} under dist-tag ${DIST_TAG}."
+          npm publish -w "$PKG_NAME" --tag "$DIST_TAG"
 
       - name: Summary
         run: |
-          PKG_VERSION="$(node -p "require('./packages/shared/package.json').version")"
+          PKG_NAME="${{ steps.pkg.outputs.name }}"
+          PKG_VERSION="${{ steps.pkg.outputs.version }}"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "### Dry run: @antiphony/shared@${PKG_VERSION} validated, not published" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Dry run: ${PKG_NAME}@${PKG_VERSION} validated, not published" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### Published @antiphony/shared@${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-            echo "https://www.npmjs.com/package/@antiphony/shared/v/${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Published ${PKG_NAME}@${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+            echo "https://www.npmjs.com/package/${PKG_NAME}/v/${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           fi

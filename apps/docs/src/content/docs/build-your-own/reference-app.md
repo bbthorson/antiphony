@@ -100,7 +100,13 @@ One nice consequence: since the browser never makes a cross-origin request, no C
 
 ## The capture kit
 
-`apps/reference/src/capture/` holds the neutral audio primitives — `use-audio-recorder.ts`, `waveform.ts`, `AudioPlayer.tsx`. They carry no product styling, and they're the candidates to lift into a shared `packages/capture-kit` once a second consumer needs them. For now they live in the reference app to keep it self-contained.
+This app's audio primitives used to live in `src/capture/`, marked as candidates to lift into a shared package "once a second consumer needs them". Vox Pop became that second consumer, so they now ship as **[`@antiphony/capture-kit`](/build-your-own/capture-kit/)** and this app imports them like anyone else would:
+
+```tsx
+import { useAudioRecorder, computeWaveform, AudioPlayer } from '@antiphony/capture-kit';
+```
+
+That is deliberate: the reference app consuming the published package on the same terms as an external client is what keeps the package honest. If the kit ever stops being sufficient to build a real client, this app breaks first.
 
 ## Running it
 

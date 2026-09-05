@@ -7,7 +7,10 @@
  * capture time so the embed carries a cheap, instantly-renderable
  * visualization without waiting on server processing.
  *
- * Part of the capture-kit seed alongside `use-audio-recorder.ts`.
+ * **The one React-free module in this package**, and deliberately so: it is
+ * published at the `@antiphony/capture-kit/waveform` subpath so a consumer
+ * that only needs peaks — a Svelte client, a Node script backfilling old
+ * posts — can import it without pulling React into the graph.
  */
 export async function computeWaveform(blob: Blob, buckets = 64): Promise<number[]> {
     const AudioCtx: typeof AudioContext =

@@ -52,6 +52,10 @@ export default defineConfig({
 						// The neutral reference app (apps/reference) is the worked
 						// example: record → upload → create post → hydrate → render.
 						{ label: 'Example: the reference app', slug: 'build-your-own/reference-app' },
+						// @antiphony/capture-kit — the headless browser audio
+						// primitives (recorder, player, waveform) split out of the
+						// reference app once Vox Pop became a second consumer.
+						{ label: 'The capture kit', slug: 'build-your-own/capture-kit' },
 					],
 				},
 				{

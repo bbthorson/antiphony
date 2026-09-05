@@ -39,13 +39,18 @@ Server-side env deliberately carries **no `VITE_` prefix**, because Vite only
 inlines `VITE_`-prefixed vars into the client bundle — the token stays out of
 it by construction rather than by discipline.
 
-## Capture-kit seed
+## The capture kit
 
-`src/capture/` holds the neutral audio primitives — `use-audio-recorder.ts`,
-`waveform.ts`, `AudioPlayer.tsx`. These are the candidates to lift into a
-shared `packages/capture-kit` once a second consumer needs them (the
-Stream 1.5 → capture-kit split). For now they live here to keep this PR
-self-contained.
+`src/capture/` is gone: the audio primitives it held were always marked for
+extraction "once a second consumer needs them", and Vox Pop became that second
+consumer. They now ship as `@antiphony/capture-kit`
+(`packages/capture-kit`), and this app imports them by package specifier like
+any external client would.
+
+Keeping this app on the published package rather than on a local copy is the
+point — it is the acceptance harness for the kit as well as for the contract.
+If the kit ever stops being enough to build a real client from, this app is
+what fails.
 
 ## Run it (local stack)
 
