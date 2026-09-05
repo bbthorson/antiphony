@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AntiphonyClient } from '../lib/api';
-import { AudioPlayer } from '../capture/AudioPlayer';
+import { AudioPlayer } from '@antiphony/capture-kit';
 import type { AudioPostView } from '@antiphony/shared/types/audio';
 
 /**

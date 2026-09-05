@@ -1,0 +1,82 @@
+{
+  "name": "@antiphony/capture-kit",
+  "version": "0.1.0",
+  "description": "Headless browser audio primitives for Antiphony clients \u2014 a microphone recorder, a playback hook, and client-side waveform peaks. Renders nothing, styles nothing, uploads nothing.",
+  "license": "MIT",
+  "homepage": "https://docs.antiphony.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbthorson/antiphony.git",
+    "directory": "packages/capture-kit"
+  },
+  "bugs": "https://github.com/bbthorson/antiphony/issues",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    },
+    "./waveform": {
+      "import": {
+        "types": "./dist/esm/waveform.d.ts",
+        "default": "./dist/esm/waveform.js"
+      },
+      "require": {
+        "types": "./dist/cjs/waveform.d.cts",
+        "default": "./dist/cjs/waveform.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "audio",
+    "recorder",
+    "mediarecorder",
+    "waveform",
+    "headless",
+    "react",
+    "antiphony"
+  ],
+  "scripts": {
+    "build": "node ./scripts/clean.mjs && tsup",
+    "//prepare": "Same reason as @antiphony/shared: every export resolves into dist/, so a cold `git clone && npm ci && npm run typecheck` has nothing to typecheck against until this has run. npm runs prepare for workspace packages on install.",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run"
+  },
+  "//peerDependencies": "React is a peer, not a dependency, so a consumer's own React is the one the hooks run on. Two React copies in one tree means two dispatchers and 'invalid hook call' at runtime \u2014 the standard failure mode for a hooks library that gets this wrong. The range matches what apps/reference and the Vox Pop clients are on.",
+  "peerDependencies": {
+    "react": "^18 || ^19"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.7",
+    "eslint": "^9.16.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

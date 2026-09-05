@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAudioRecorder, type Recording } from '../capture/use-audio-recorder';
+import { useAudioRecorder, type Recording } from '@antiphony/capture-kit';
 
 /**
  * Record / stop / preview control. Surfaces the captured `Recording` to the

@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { Recording } from '../capture/use-audio-recorder';
-import { computeWaveform } from '../capture/waveform';
+import { computeWaveform, type Recording } from '@antiphony/capture-kit';
 import { Recorder } from './Recorder';
 import { AntiphonyClient } from '../lib/api';
 import type { CreateAudioPostRequest } from '@antiphony/shared/api-codecs';

@@ -2,26 +2,26 @@
   "name": "antiphony",
   "version": "0.1.0",
   "private": true,
-  "description": "Antiphony — standalone call-and-response audio infrastructure (open core extracted from Vox Pop).",
+  "description": "Antiphony \u2014 standalone call-and-response audio infrastructure (open core extracted from Vox Pop).",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/core-api && npm run build -w @antiphony/audio-rendition",
-    "//dev": "Runs core-api on the Workers runtime against local bindings. Put DATABASE_URL in apps/core-api/.dev.vars (gitignored) first — the database is a Worker secret, not a Hyperdrive binding.",
+    "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/capture-kit && npm run build -w @antiphony/core-api && npm run build -w @antiphony/audio-rendition",
+    "//dev": "Runs core-api on the Workers runtime against local bindings. Put DATABASE_URL in apps/core-api/.dev.vars (gitignored) first \u2014 the database is a Worker secret, not a Hyperdrive binding.",
     "dev": "npm run dev -w @antiphony/core-api",
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present && npm run test:eslint-rules && npm run test:lexicons",
-    "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them — they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
+    "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them \u2014 they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
     "test:eslint-rules": "node --test \"eslint-rules/*.test.mjs\"",
-    "//test:lexicons": "Validates lexicons/ against upstream's own encoding of the Lexicon spec (@atproto/lex-document), so a spec change upstream lands as a CI failure rather than a federation-time surprise. Lives at the root, not in a workspace, because lexicons/ is repo-level and belongs to no package. Refs into app.bsky.*/com.atproto.* are reported but NOT resolved — resolving them means vendoring ~20 third-party documents and putting a network fetch or CID-pinned manifest in the CI path (see specs/xrpc-and-atproto-lex-strategy.md §7). The Zod-vs-lexicon parity oracle is separate, in @antiphony/shared's vitest suite.",
+    "//test:lexicons": "Validates lexicons/ against upstream's own encoding of the Lexicon spec (@atproto/lex-document), so a spec change upstream lands as a CI failure rather than a federation-time surprise. Lives at the root, not in a workspace, because lexicons/ is repo-level and belongs to no package. Refs into app.bsky.*/com.atproto.* are reported but NOT resolved \u2014 resolving them means vendoring ~20 third-party documents and putting a network fetch or CID-pinned manifest in the CI path (see specs/xrpc-and-atproto-lex-strategy.md \u00a77). The Zod-vs-lexicon parity oracle is separate, in @antiphony/shared's vitest suite.",
     "test:lexicons": "node scripts/validate-lexicons.mjs",
     "knip": "knip"
   },
-  "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Two are load-bearing: esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. fsevents (macOS-only) is here because it already ran under npm 10 — this file records the trust that exists rather than making a new decision. Two entries have left with the dependency that pulled them: ffmpeg-static, when the trim and waveform stages moved to apps/audio-rendition and took ffmpeg from its container image instead; and @firebase/util + protobufjs, when firebase-admin and google-auth-library were removed. Neither package is in the lockfile any more, so listing them granted trust to nothing. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump. Add entries with `npm install-scripts approve <pkg>` on npm 12+. Known and deliberate: npm 12 blocks workerd's postinstall, which is harmless — the binary arrives through the platform-specific optional dependency, and `wrangler deploy` was verified working on a clean npm 12 install.",
+  "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Two are load-bearing: esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. fsevents (macOS-only) is here because it already ran under npm 10 \u2014 this file records the trust that exists rather than making a new decision. Two entries have left with the dependency that pulled them: ffmpeg-static, when the trim and waveform stages moved to apps/audio-rendition and took ffmpeg from its container image instead; and @firebase/util + protobufjs, when firebase-admin and google-auth-library were removed. Neither package is in the lockfile any more, so listing them granted trust to nothing. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump. Add entries with `npm install-scripts approve <pkg>` on npm 12+. Known and deliberate: npm 12 blocks workerd's postinstall, which is harmless \u2014 the binary arrives through the platform-specific optional dependency, and `wrangler deploy` was verified working on a clean npm 12 install.",
   "allowScripts": {
     "esbuild": true,
     "fsevents": true,
@@ -33,7 +33,7 @@
     "knip": "^5.66.1",
     "typescript": "^5.7.2"
   },
-  "//packageManager": "Declares the npm this repo is verified against, and is now the single source for it: every workflow reads this field and installs it explicitly, because actions/setup-node does NOT switch npm on it (corepack-aware tools do; it is not one). Bump it here and CI, all three deploys, and the release follow. Until they did, they all ran npm 10.9.8 while this said 12.0.2 -- a major apart, and the two install different trees from the same lockfile because npm 12 honours `allowScripts` and npm 10 ignores it. The Dockerfile does not rely on resolution at all — it installs this exact npm explicitly, which is the point: production once built on a buildpack's own npm (Firebase App Hosting, long since replaced), and an unreviewed bump to it broke prod. It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
+  "//packageManager": "Declares the npm this repo is verified against, and is now the single source for it: every workflow reads this field and installs it explicitly, because actions/setup-node does NOT switch npm on it (corepack-aware tools do; it is not one). Bump it here and CI, all three deploys, and the release follow. Until they did, they all ran npm 10.9.8 while this said 12.0.2 -- a major apart, and the two install different trees from the same lockfile because npm 12 honours `allowScripts` and npm 10 ignores it. The Dockerfile does not rely on resolution at all \u2014 it installs this exact npm explicitly, which is the point: production once built on a buildpack's own npm (Firebase App Hosting, long since replaced), and an unreviewed bump to it broke prod. It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
   "packageManager": "npm@12.0.2",
   "engines": {
     "node": ">=22"
