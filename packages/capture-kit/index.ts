@@ -22,7 +22,12 @@
  * connects to it owns what any of it means to a user.
  */
 export { useAudioRecorder, pickMimeType } from './use-audio-recorder';
-export type { Recording, RecorderStatus, UseAudioRecorderOptions } from './use-audio-recorder';
+export type {
+    Recording,
+    RecorderStatus,
+    RecorderErrorKind,
+    UseAudioRecorderOptions,
+} from './use-audio-recorder';
 
 export { useAudioPlayer } from './use-audio-player';
 export type { PlayerStatus, UseAudioPlayerOptions } from './use-audio-player';

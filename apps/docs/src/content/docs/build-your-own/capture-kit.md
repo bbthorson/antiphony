@@ -62,11 +62,43 @@ function Recorder({ onDone }: { onDone: (blob: Blob) => void }) {
 | `recording` | `{ blob, mimeType, durationMs, previewUrl }` once stopped, else `null` |
 | `elapsedMs` | Live counter during the take. Renders your timer without a second clock. |
 | `error` | A denied microphone arrives here as a string, not a thrown exception. |
+| `errorKind` | `'permission-denied' \| 'no-device' \| 'unsupported' \| 'unknown'` |
+| `analyser` | A live `AnalyserNode`, when opted in. See below. |
 | `start` / `stop` / `reset` | `reset` revokes the preview object URL for you. |
 
 `maxDurationMs` stops the take automatically — every consumer has an upload ceiling, and without it each one writes the same timer. The hook also releases the microphone if your component unmounts mid-take, so the browser's recording indicator never outlives the UI.
 
 `mimeType` is the *clean* type (`audio/webm`, not `audio/webm;codecs=opus`), which is what the upload allowlist matches on.
+
+### Errors: the kit classifies, you write the copy
+
+`errorKind` is a discriminant so you can branch without matching substrings of `error` — which is browser- and locale-specific, and will betray you.
+
+```tsx
+switch (errorKind) {
+  case 'permission-denied': return 'Allow microphone access to reply.';
+  case 'no-device':         return 'No microphone found.';
+  case 'unsupported':       return 'Recording needs a secure (https) connection.';
+  default:                  return 'Could not start recording.';
+}
+```
+
+That "permission was denied" is a fact about the browser; *how you say it* is a product judgement — and it reads differently in a dashboard than in an iframe on someone else's site. An iframe missing `allow="microphone"` raises `SecurityError`, which is classified as `permission-denied` too: from the caller's side it is the same situation as a user saying no.
+
+### Live visualization
+
+```tsx
+const { analyser } = useAudioRecorder({ analyser: true, fftSize: 256 });
+
+// in a rAF loop:
+const bins = new Uint8Array(analyser.frequencyBinCount);
+analyser.getByteFrequencyData(bins);
+// …draw whatever you like
+```
+
+**Opt-in, because it is not free**: it opens an `AudioContext` for the duration of the take, browsers cap how many a page may hold, and a consumer that only wants the blob should not pay for one. The kit gives you the node and stops there — what you draw with the frequency data is entirely yours.
+
+The context is closed and `analyser` returns to `null` when the take ends, including if your component unmounts mid-recording.
 
 ## `useAudioPlayer`
 
