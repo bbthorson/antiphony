@@ -36,6 +36,16 @@
         "default": "./dist/cjs/waveform.cjs"
       }
     },
+    "./mime": {
+      "import": {
+        "types": "./dist/esm/mime.d.ts",
+        "default": "./dist/esm/mime.js"
+      },
+      "require": {
+        "types": "./dist/cjs/mime.d.cts",
+        "default": "./dist/cjs/mime.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [

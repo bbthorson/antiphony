@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { pickMimeType } from './mime';
+
 /**
  * Headless browser audio-recorder hook: MediaRecorder wrapped in a small React
  * state machine that yields a `Recording` (blob + clean MIME + duration) ready
@@ -93,21 +95,6 @@ export interface UseAudioRecorderOptions {
      * cost of a larger transform.
      */
     fftSize?: number;
-}
-
-/**
- * Pick the first MediaRecorder MIME the browser supports from our allowlist.
- *
- * Exported because it is the answer to "what will this browser actually give
- * me?", which a caller may need *before* recording — to warn on an
- * unsupported browser, or to check the result against a server-side allowlist.
- */
-export function pickMimeType(): string {
-    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg', 'audio/mp4'];
-    for (const c of candidates) {
-        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c;
-    }
-    return 'audio/webm';
 }
 
 export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {

@@ -21,7 +21,7 @@
  * owns the bytes and the services that derive facts about them; the app that
  * connects to it owns what any of it means to a user.
  */
-export { useAudioRecorder, pickMimeType } from './use-audio-recorder';
+export { useAudioRecorder } from './use-audio-recorder';
 export type {
     Recording,
     RecorderStatus,
@@ -35,3 +35,5 @@ export type { PlayerStatus, UseAudioPlayerOptions } from './use-audio-player';
 export { AudioPlayer } from './AudioPlayer';
 
 export { computeWaveform } from './waveform';
+
+export { pickMimeType, normalizeAudioMimeType } from './mime';

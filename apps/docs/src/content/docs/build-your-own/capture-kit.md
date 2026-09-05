@@ -146,6 +146,30 @@ It is published at its own **`/waveform` subpath and imports no React**, so a Sv
 
 Silence returns all zeros rather than `NaN`, which matters: the naive normalization divides by a zero maximum, and every peak would serialize as `null` and fail lexicon validation.
 
+## MIME negotiation
+
+```ts
+import { normalizeAudioMimeType } from '@antiphony/capture-kit/mime';
+
+const type = normalizeAudioMimeType(blob.type, 'reply.webm'); // → 'audio/webm'
+```
+
+Antiphony's upload route matches an exact allowlist, and browsers produce two
+things that allowlist rejects: a **codec-suffixed** type
+(`audio/webm;codecs=opus`, what MediaRecorder reports) and **no type at all**
+(`application/octet-stream` or `''` — most often a `File` off an
+`<input type="file">` where the OS never populated one). This normalizes both,
+using the filename as evidence in the second case.
+
+A recording that came from `useAudioRecorder` needs no normalization — the hook
+builds its `Blob` with a clean type already. This is for the blobs the kit did
+*not* produce. Running it unconditionally before an upload is still right: it is
+a no-op on a clean blob, and the case it catches is invisible until a user on
+the wrong browser gets a 400.
+
+`pickMimeType` lives here too, and the `/mime` subpath imports no React — an
+uploader is often the one piece of a client running outside the component tree.
+
 ## `AudioPlayer`
 
 The package also exports a small `AudioPlayer` component — play/pause, a seekable waveform, a time readout — built entirely from `useAudioPlayer`.

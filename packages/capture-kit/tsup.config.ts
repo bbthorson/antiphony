@@ -12,7 +12,7 @@ import { defineConfig, type Options } from 'tsup';
  * consumer, and two React instances in one tree is the "invalid hook call"
  * error — the exact failure the peer range exists to prevent.
  */
-const entry = ['index.ts', 'waveform.ts'];
+const entry = ['index.ts', 'waveform.ts', 'mime.ts'];
 
 const common: Options = {
     entry,

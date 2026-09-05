@@ -29,6 +29,7 @@ That boundary is the same one the platform draws everywhere else. Antiphony owns
 | `computeWaveform(blob, buckets?)` | 0–100 integer peaks, lexicon-shaped. Also at `@antiphony/capture-kit/waveform`, which imports **no React**. |
 | `AudioPlayer` | A minimal transport UI built from `useAudioPlayer`. A demonstration, not a design system. |
 | `pickMimeType()` | What MediaRecorder will actually give this browser, if you need to know before recording. |
+| `normalizeAudioMimeType(type, filename, fallback?)` | Any audio blob's type → a bare, uploadable MIME. Strips codec parameters; falls back to the filename when the blob claims none. Both also at `@antiphony/capture-kit/mime`, which imports **no React**. |
 
 Full walkthrough: **<https://docs.antiphony.dev/build-your-own/capture-kit/>**
 
