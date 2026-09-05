@@ -20,10 +20,36 @@ name: Release
 # match that package's own `version` — so neither a mistyped package nor a
 # mistyped version can publish the wrong thing.
 #
-# ## Adding a third publishable package
+# ## Adding another publishable package
 #
 # Add its tag glob under `on.push.tags`, an option to the `package` input, and a
 # case to the resolve step. Nothing else here names a package.
+#
+# ⚠️ **A NEW package name cannot be published by this workflow the first time.**
+# Trusted publishing authenticates against a per-package trust policy in npm's
+# package settings, and there is no package to attach a policy to until one
+# exists. `capture-kit-v0.1.0` hit exactly this and failed at the publish step
+# with every gate before it green:
+#
+#     npm error 404 Not Found - PUT .../@antiphony%2fcapture-kit
+#     npm error 404  ...could not be found or you do not have permission
+#
+# The tarball was fine; the credential could not create the name. So the first
+# release of any new package is a ONE-TIME manual step:
+#
+#   1. `npm publish -w @antiphony/<pkg> --access public` from a logged-in shell.
+#   2. npmjs.com -> the new package -> Settings -> Trusted Publisher ->
+#      GitHub Actions -> this repo, workflow file `release.yml`.
+#   3. Every release after that goes through this workflow.
+#
+# Do NOT re-run the failed tag run after step 1 — "Assert this version is not
+# already published" will fail it, correctly. The tag has done its job; the next
+# version is the next tag.
+#
+# The alternative — adding `NODE_AUTH_TOKEN` as a fallback — is deliberately not
+# taken. See the note on the publish step: a stored token is a long-lived
+# credential that can publish from anywhere, and trading that for one manual
+# step per new package (which is roughly never) is the wrong way round.
 
 on:
   push:
