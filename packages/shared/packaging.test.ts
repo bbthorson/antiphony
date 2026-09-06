@@ -1,10 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const read = (p: string) => readFileSync(resolve(here, p), 'utf8');
+/**
+ * Locate this package by walking up from the cwd, rather than from
+ * `import.meta.url`.
+ *
+ * Deliberate: this package typechecks under `module: commonjs` (see
+ * `tsconfig.json`), where `import.meta` is a hard compile error — even though
+ * vitest runs this file as ESM and would be perfectly happy with it. The
+ * walk works under both, and also survives being run from the repo root or
+ * from the package directory, which `npm test` and `npm run test --workspaces`
+ * disagree about.
+ */
+const PKG_ROOT = (() => {
+    let dir = process.cwd();
+    for (;;) {
+        if (existsSync(resolve(dir, 'packages/shared/tsup.config.ts'))) return resolve(dir, 'packages/shared');
+        if (existsSync(resolve(dir, 'tsup.config.ts')) && existsSync(resolve(dir, 'index.ts'))) return dir;
+        const parent = dirname(dir);
+        if (parent === dir) throw new Error('could not locate packages/shared from ' + process.cwd());
+        dir = parent;
+    }
+})();
+
+const read = (p: string) => readFileSync(resolve(PKG_ROOT, p), 'utf8');
 
 /**
  * Packaging invariants for `@antiphony/shared`.
