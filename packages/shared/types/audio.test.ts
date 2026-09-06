@@ -58,6 +58,35 @@ describe('AudioEmbed (record) + AudioEmbedView (hydrated)', () => {
         expect(parsed.url).toContain('signed');
         expect(parsed.transcript?.segments[0].text).toBe('Hi');
     });
+
+    // `url` is what a client hands to `<audio src>`, so a scheme other than
+    // http(s) reaching a consumer is stored XSS. The field-level rule and its
+    // full case table live in `url.test.ts`; these assert that the SCHEMA
+    // actually applies it, which is the part a refactor can silently drop.
+    describe('the hydrated view restricts `url` to http(s)', () => {
+        const view = (url: string) => ({ $type: 'dev.antiphony.embed.audio#view' as const, url });
+
+        it.each([
+            'javascript:alert(1)',
+            'data:text/html,<script>alert(1)</script>',
+            'file:///etc/passwd',
+        ])('rejects %s', (url) => {
+            expect(AudioEmbedViewSchema.safeParse(view(url)).success).toBe(false);
+        });
+
+        it('accepts the https URL the API actually serves', () => {
+            const url = 'https://api.antiphony.dev/api/v1/audio?url=blobs%2Fapp%2Fbafyaudio';
+            expect(AudioEmbedViewSchema.parse(view(url)).url).toBe(url);
+        });
+
+        it('accepts a plain-http self-hosted base', () => {
+            // `ANTIPHONY_PUBLIC_BASE_URL` is http://localhost in development and
+            // `audioPlaybackUrl()` builds this value straight off it, so an
+            // https-only rule would make the contract unparseable in dev.
+            const url = 'http://localhost:8787/api/v1/audio?url=x';
+            expect(AudioEmbedViewSchema.parse(view(url)).url).toBe(url);
+        });
+    });
 });
 
 describe('TimedTranscript', () => {
@@ -150,6 +179,24 @@ describe('ActorProfileRecord', () => {
     it('round-trips an all-optional profile', () => {
         expect(ActorProfileRecordSchema.parse({ handle: 'brad', usageIntent: 'Podcaster' }).handle).toBe('brad');
         expect(ActorProfileRecordSchema.parse({})).toEqual({});
+    });
+
+    // `rssFeed` is user-authored and gets rendered as a link, so it carries the
+    // same rule as the playback URL — a feed is a fetchable web document, and
+    // nothing legitimate loses anything to the restriction.
+    it.each([
+        'javascript:alert(1)',
+        'data:text/html,<script>alert(1)</script>',
+        'file:///etc/passwd',
+    ])('rejects an rssFeed with a %s scheme', (rssFeed) => {
+        expect(ActorProfileRecordSchema.safeParse({ rssFeed }).success).toBe(false);
+    });
+
+    it('accepts an http(s) feed and trims it', () => {
+        expect(ActorProfileRecordSchema.parse({ rssFeed: 'https://example.com/feed.xml' }).rssFeed)
+            .toBe('https://example.com/feed.xml');
+        expect(ActorProfileRecordSchema.parse({ rssFeed: '  http://example.com/feed.xml  ' }).rssFeed)
+            .toBe('http://example.com/feed.xml');
     });
 });
 

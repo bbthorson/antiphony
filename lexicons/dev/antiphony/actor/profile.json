@@ -23,7 +23,7 @@
                     "rssFeed": {
                         "type": "string",
                         "format": "uri",
-                        "description": "External podcast feed URL associated with this actor."
+                        "description": "External podcast feed URL associated with this actor. MUST use the `http` or `https` scheme \u2014 a feed is a fetchable web document, and apps render this value as a link, where an unconstrained `format: uri` would admit `javascript:`."
                     }
                 }
             }

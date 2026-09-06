@@ -8,6 +8,69 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] — 2026-09-06
+
+URL fields in the contract are restricted to the `http` and `https` schemes.
+**Minor, not patch**: this TIGHTENS validation, so a value a consumer's parse
+previously accepted can now fail. Under the pre-1.0 rules in
+[`specs/api-versioning.md`](./specs/api-versioning.md), tightening a type is a
+breaking change.
+
+### Changed — BREAKING
+
+- **`dev.antiphony.embed.audio#view.url` and `dev.antiphony.actor.profile.rssFeed`
+  must be absolute `http:`/`https:` URLs.** Both were `z.string().url()`, which
+  is `new URL()` underneath and therefore accepts every scheme. All of these
+  parsed clean before this release:
+
+      javascript:alert(1)
+      data:text/html,<script>alert(1)</script>
+      file:///etc/passwd
+      vbscript:msgbox(1)
+
+  That is not a cosmetic gap. `url` is the field a client hands to `<audio src>`
+  and `rssFeed` is the field an app renders as `<a href>`, so a URL reaching
+  either unchecked is a stored-XSS shape — validated once, fired for every
+  viewer afterwards. One consumer already declined to trust the published
+  contract here and re-narrowed the field on its own side; the point of this
+  release is that nobody else has to.
+
+  The rule lives in one place, `httpsUrl()`, newly exported from
+  `@antiphony/shared` and `@antiphony/shared/types/url`. It is `.trim()` +
+  `.url()` + an `^https?://` anchor checked against the RAW string — the anchor
+  rather than a parsed `protocol` because HTML strips tabs and newlines out of
+  URL attributes before dereferencing them, so a scheme split by a tab is a live
+  `javascript:` URL that `new URL()` parses happily.
+
+  Because the check is a string check rather than a `.refine()`, the schema
+  stays a `ZodString`: it still composes with `.extend()`, and the constraint
+  now surfaces in `openapi.json` as `"pattern": "^https?:\\/\\/"` instead of
+  being invisible to consumers in other languages.
+
+  **`http:` is allowed, deliberately.** `AudioEmbedView.url` is built by
+  concatenating `ANTIPHONY_PUBLIC_BASE_URL`, which is `http://localhost:8787` in
+  development and for self-hosted deployments. What this closes is scheme
+  confusion, not transport confidentiality.
+
+  **Migration:** a deployment already serving `https://…` needs no change. A
+  caller storing a non-http(s) URL in `rssFeed` — no legitimate feed does — now
+  gets a parse error naming the scheme.
+
+### Added
+
+- **`httpsUrl()`** on `@antiphony/shared` (root export and
+  `@antiphony/shared/types/url`), so a consumer that validates its own URL
+  fields can reuse the contract's rule instead of restating it.
+- **`assertRequiredConfig()` now rejects a non-http(s) `ANTIPHONY_PUBLIC_BASE_URL`**
+  at startup. With `url` restricted, a base URL missing its scheme turns every
+  post view carrying audio into a hydration failure — the same quiet read-path
+  outage the presence check already existed for, so it fails the same way:
+  at boot, not per request.
+- **`antiphony/no-bare-zod-url`** ESLint rule, on in `packages/shared` and
+  `apps/core-api`, banning `z.string().url()`. `types/url.ts` is the single
+  audited exception and opts out inline. Two fields shipped to npm with this
+  hole; a rule is what stops the third.
+
 ## [0.5.1] — 2026-08-16
 
 `GET /api/v1/audio` takes an optional `format`. **Patch, not minor**: the

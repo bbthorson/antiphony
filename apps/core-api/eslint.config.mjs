@@ -15,6 +15,10 @@ import antiphonyRules from "../../eslint-rules/index.mjs";
  * `antiphony/no-success-envelope-extras` enforces the envelope contract —
  * only `data` is allowed alongside `success: true` in `c.json` object
  * literals. See `eslint-rules/no-success-envelope-extras.mjs`.
+ *
+ * `antiphony/no-bare-zod-url` bans `z.string().url()` in schemas. Route-local
+ * codecs live here as well as in `packages/shared`, so the rule is on in both
+ * — a scheme-unchecked URL is no safer for being declared next to its route.
  */
 export default [
     {
@@ -47,6 +51,7 @@ export default [
                 ],
             }],
             "antiphony/no-success-envelope-extras": "error",
+            "antiphony/no-bare-zod-url": "error",
             "@typescript-eslint/no-explicit-any": "warn",
             "@typescript-eslint/no-unused-vars": [
                 "warn",

@@ -41,7 +41,7 @@
                 "url": {
                     "type": "string",
                     "format": "uri",
-                    "description": "Resolved, playable audio URL (signed Storage URL in the centralized deployment; a blob/CDN URL under federation)."
+                    "description": "Resolved, playable audio URL (signed Storage URL in the centralized deployment; a blob/CDN URL under federation). MUST use the `http` or `https` scheme. Lexicon `format: uri` does not constrain the scheme, and clients put this value in an audio element's `src` \u2014 so a `javascript:`/`data:`/`file:` URL here is an XSS vector, not merely an unplayable one. Plain `http` is admitted for self-hosted and local deployments."
                 },
                 "durationMs": {
                     "type": "integer",

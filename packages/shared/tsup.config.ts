@@ -42,6 +42,7 @@ const entry = [
   // at four stage names. Every module `index.ts` re-exports belongs here.
   'types/processing.ts',
   'types/records.ts',
+  'types/url.ts',
 ];
 
 const common: Options = {
