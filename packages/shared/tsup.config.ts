@@ -33,6 +33,14 @@ const entry = [
   'observability/report-error.ts',
   'types/audio.ts',
   'types/blob.ts',
+  // `types/processing.ts` is an entry for the same reason the others are: the
+  // package `exports` map advertises a `./types/*` wildcard, so
+  // `@antiphony/shared/types/processing` is a subpath consumers can write — and
+  // until this line existed it resolved to nothing, because tsup only emits
+  // dist files for entries. The module was reachable only by importing the root
+  // `index`, which pulls in api-codecs, errors, utils and observability to get
+  // at four stage names. Every module `index.ts` re-exports belongs here.
+  'types/processing.ts',
   'types/records.ts',
 ];
 
