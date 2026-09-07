@@ -42,6 +42,27 @@ describe('assertRequiredConfig', () => {
             }),
         ).not.toThrow();
     });
+
+    // Present is not usable: this value is concatenated into
+    // `AudioEmbedView.url`, and the contract restricts that field to http(s).
+    // A base URL that cannot produce a parseable playback URL is the same quiet
+    // read-path outage as an absent one, so it fails at the same place.
+    it.each([
+        'api.antiphony.dev',
+        '/api',
+        'javascript:alert(1)',
+        'file:///srv',
+    ])('refuses a base URL that is not absolute http(s): %s', (ANTIPHONY_PUBLIC_BASE_URL) => {
+        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL })).toThrow(
+            /ANTIPHONY_PUBLIC_BASE_URL is not an absolute http\(s\) URL/,
+        );
+    });
+
+    it('accepts a plain-http base, for self-hosted and local deployments', () => {
+        expect(() =>
+            assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: 'http://localhost:8787' }),
+        ).not.toThrow();
+    });
 });
 
 describe('publicBaseUrl', () => {

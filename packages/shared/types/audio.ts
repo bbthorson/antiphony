@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BlobRefSchema } from './blob';
 import { FirestoreTimestampSchema } from './records';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
+import { httpsUrl } from './url';
 
 /**
  * Antiphony canonical audio-post contract (`dev.antiphony.*`).
@@ -103,8 +104,13 @@ export const AudioEmbedViewSchema = z.object({
      * it to change (trim removes leading/trailing silence), and should render
      * these three as a set rather than caching them independently. The record's
      * originals are immutable and unaffected; this is a read-time resolution.
+     *
+     * Restricted to `http:`/`https:` (`httpsUrl()`), not any URL `new URL()`
+     * will parse. This is the value clients hand to `<audio src>`, so a
+     * `javascript:` or `data:` URL reaching one is stored XSS — and a bare
+     * `.url()` accepts both. See `types/url.ts`.
      */
-    url: z.string().url(),
+    url: httpsUrl(),
     durationMs: z.number().int().min(0).optional(),
     // `alt` is copied from the stored embed; keep the same bounds so a view can
     // never carry a larger payload than the record allows.
@@ -247,7 +253,13 @@ export type TranscriptEnrichmentRecord = z.infer<typeof TranscriptEnrichmentReco
 export const ActorProfileRecordSchema = z.object({
     handle: z.string().min(3).max(20).optional(),
     usageIntent: z.string().max(100).optional(),
-    rssFeed: z.string().url().optional(),
+    /**
+     * Feed URL, restricted to `http:`/`https:` for the same reason
+     * `AudioEmbedView.url` is: an app renders this as an `<a href>`, and a bare
+     * `.url()` would let a `javascript:` URL through. A feed is a fetchable web
+     * document, so no legitimate value loses anything to the restriction.
+     */
+    rssFeed: httpsUrl().optional(),
 });
 export type ActorProfileRecord = z.infer<typeof ActorProfileRecordSchema>;
 

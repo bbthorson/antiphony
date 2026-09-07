@@ -18,6 +18,7 @@
 
 import noSuccessEnvelopeExtras from "./no-success-envelope-extras.mjs";
 import requireSuccessEnvelope from "./require-success-envelope.mjs";
+import noBareZodUrl from "./no-bare-zod-url.mjs";
 
 /** @type {import("eslint").ESLint.Plugin} */
 const plugin = {
@@ -25,6 +26,7 @@ const plugin = {
     rules: {
         "no-success-envelope-extras": noSuccessEnvelopeExtras,
         "require-success-envelope": requireSuccessEnvelope,
+        "no-bare-zod-url": noBareZodUrl,
     },
 };
 

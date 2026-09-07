@@ -61,6 +61,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.4.0` | Post-view `durationMs`/`waveform` resolve to the processed variant — a meaning-only change, which is why it is minor. |
 | `0.5.0` | `GET /api/v1/audio` streams bytes instead of 302-ing to a signed URL. |
 | `0.5.1` | `GET /api/v1/audio` takes an optional `format` for derived renditions. Additive, so patch. |
+| `0.6.0` | URL fields (`embed.audio#view.url`, `actor.profile.rssFeed`) restricted to the `http`/`https` schemes. A tightening, so minor. |
 
 ### Next: the enrichment pipeline
 

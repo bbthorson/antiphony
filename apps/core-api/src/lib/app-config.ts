@@ -1,3 +1,5 @@
+import { httpsUrl } from '@antiphony/shared/types/url';
+
 /**
  * App-level config for core-api.
  *
@@ -63,25 +65,43 @@ const REQUIRED_VARS = ['ANTIPHONY_PUBLIC_BASE_URL'] as const;
  */
 export function assertRequiredConfig(env: NodeJS.ProcessEnv = process.env): void {
     const missing = REQUIRED_VARS.filter((name) => !env[name]?.trim());
-    if (missing.length === 0) return;
+    if (missing.length > 0) {
+        throw new Error(
+            `[app-config] missing required configuration: ${missing.join(', ')}. ` +
+                'Set it under "vars" in apps/core-api/wrangler.jsonc and redeploy. ' +
+                'If it IS set there and this still fires, suspect process.env population ' +
+                'rather than the value — see the compatibility_date note in that file.',
+        );
+    }
 
-    throw new Error(
-        `[app-config] missing required configuration: ${missing.join(', ')}. ` +
-            'Set it under "vars" in apps/core-api/wrangler.jsonc and redeploy. ' +
-            'If it IS set there and this still fires, suspect process.env population ' +
-            'rather than the value — see the compatibility_date note in that file.',
-    );
+    // Present is not the same as usable. `audioPlaybackUrl()` concatenates this
+    // value into `AudioEmbedView.url`, which the contract now restricts to
+    // http(s) — so a base URL with no scheme, or a stray `javascript:`, turns
+    // every post view carrying audio into a hydration failure. That is the same
+    // class of outage the presence check above exists for (quiet, read-path,
+    // one-config-edit away), so it is caught the same way: at startup, by
+    // refusing to start, rather than per request.
+    const baseUrl = env.ANTIPHONY_PUBLIC_BASE_URL?.trim();
+    if (baseUrl && !httpsUrl().safeParse(baseUrl).success) {
+        throw new Error(
+            `[app-config] ANTIPHONY_PUBLIC_BASE_URL is not an absolute http(s) URL: ${JSON.stringify(baseUrl)}. ` +
+                'It is concatenated into the playback URL on every post view, and the ' +
+                'contract restricts that field to the http/https schemes.',
+        );
+    }
 }
 
 /**
  * Absolute base URL this deployment is reachable at (e.g. `https://api.antiphony.dev`),
  * with no trailing slash.
  *
- * **Required for post views.** `AudioEmbedView.url` is `z.string().url()` — an
- * absolute URL — and since the audio proxy streams bytes rather than redirecting
- * to a signed one, that value is now a URL pointing back at THIS service. There
- * is no longer an external signed URL to fall back on, so a deployment without
- * this cannot hydrate a post that has audio.
+ * **Required for post views.** `AudioEmbedView.url` is `httpsUrl()` — an
+ * absolute http(s) URL — and since the audio proxy streams bytes rather than
+ * redirecting to a signed one, that value is now a URL pointing back at THIS
+ * service. There is no longer an external signed URL to fall back on, so a
+ * deployment without this cannot hydrate a post that has audio, and one whose
+ * value is not http(s) fails the contract's own parse. `assertRequiredConfig()`
+ * checks both at startup.
  *
  * Read lazily rather than captured at module load so tests and per-env config
  * take effect without a module reset — same reasoning as `service-auth.ts`.

@@ -26,7 +26,7 @@
                         "url": {
                             "type": "string",
                             "format": "uri",
-                            "description": "Playable audio URL, scoped to the caller's tenancy."
+                            "description": "Playable audio URL, scoped to the caller's tenancy. MUST use the `http` or `https` scheme, for the same reason as `dev.antiphony.embed.audio#view.url`: `format: uri` does not constrain the scheme, and this value is dereferenced by clients."
                         }
                     }
                 }

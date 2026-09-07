@@ -3,6 +3,7 @@ export * from './types/records';
 export * from './types/audio';
 export * from './types/processing';
 export * from './types/blob';
+export * from './types/url';
 export * from './nsid';
 export * from './errors';
 export * from './utils';
