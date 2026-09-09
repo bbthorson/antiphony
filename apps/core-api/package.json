@@ -23,7 +23,7 @@
     "@antiphony/core": "*",
     "@antiphony/shared": "*",
     "@atproto/syntax": "^0.6.4",
-    "@hono/zod-openapi": "^0.19.10",
+    "@hono/zod-openapi": "^1.6.3",
     "@ipld/dag-cbor": "^10.0.1",
     "@neondatabase/serverless": "^1.1.0",
     "hono": "^4.12.22",
