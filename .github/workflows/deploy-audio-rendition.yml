@@ -77,18 +77,100 @@ env:
     REGION: us-east4
     REPOSITORY: antiphony
     SERVICE: antiphony-audio-rendition
-    # The commit CI ran on. Everything that names a commit — the image tag, the
-    # COMMIT_SHA env var, the smoke-test assertion — uses this rather than
-    # GITHUB_SHA, which on a `workflow_run` event is the tip of the default
-    # branch at queue time. Tagging an image with a SHA whose tree it was not
-    # built from is the kind of wrong that only shows up when someone tries to
-    # trace a running revision back to a commit.
-    DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    # NOTE: DEPLOY_SHA is deliberately NOT here. It now reads the `changes`
+    # job's output, and the `needs` context is NOT available in a
+    # workflow-level `env:` — it would render as an empty string, tag the image
+    # `…/audio-rendition:` and fail somewhere far from the cause. It is declared
+    # on the `deploy` job instead, where `needs` resolves.
 
 jobs:
+    # Does this commit change anything audio-rendition is built from?
+    #
+    # `workflow_run` has no `paths`, so the filter has to be a job. Plain git
+    # rather than a third-party paths-filter action, to keep the dependency
+    # surface of a DEPLOY workflow as small as possible.
+    #
+    # ⚠️ THE PATTERN IS EXACTLY WHAT THE DOCKERFILE COPIES, AND NOTHING MORE.
+    # Verified against it rather than guessed: the build stage copies
+    # `package.json package-lock.json`, `apps/audio-rendition/package.json`,
+    # and then `apps/audio-rendition` whole. It copies NO `packages/**` and no
+    # other app, so this service genuinely cannot be affected by a change
+    # outside those paths — which is what makes filtering safe here rather than
+    # a guess about coupling.
+    #
+    # This is the workflow the review named: it rebuilt and pushed a container
+    # to Artifact Registry on EVERY green master commit, docs-only merges
+    # included — minutes of build plus a registry write to produce a
+    # byte-identical image nobody asked for.
+    #
+    # The cost of skipping is that `/health` keeps reporting an older commit.
+    # That is CORRECT here, not drift: the service was not rebuilt because
+    # nothing it is built from changed. `deploy.yml` reasons the other way for
+    # core-api and is right to — see the note there.
+    changes:
+        # Only deploy a GREEN master. `workflow_run` fires on completion
+        # regardless of outcome, so the conclusion is checked rather than
+        # assumed. `workflow_dispatch` carries no `workflow_run` context and
+        # falls through the empty-string comparison.
+        if: >-
+            github.event_name == 'workflow_dispatch' ||
+            github.event.workflow_run.conclusion == 'success'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        outputs:
+            sha: ${{ steps.filter.outputs.sha }}
+            build: ${{ steps.filter.outputs.build }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+                  # 2, not 0: the diff needs one parent and nothing more.
+                  fetch-depth: 2
+
+            - id: filter
+              run: |
+                  SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+                  echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+                  # Diff against the first parent — for the merge commits that
+                  # land on master, that is master-before-the-merge, so the diff
+                  # is the whole change that just landed.
+                  #
+                  # A manual dispatch, or a commit whose parent we cannot reach,
+                  # BUILDS: a redundant build is recoverable, a skipped one ships
+                  # nothing while reporting success.
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+                     || ! git rev-parse -q --verify "$SHA^" >/dev/null; then
+                      echo "No usable diff base — building."
+                      echo "build=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  CHANGED=$(git diff --name-only "$SHA^" "$SHA")
+                  echo "Changed files:"
+                  echo "$CHANGED"
+
+                  if echo "$CHANGED" | grep -qE '^(apps/audio-rendition/|package(-lock)?\\.json$|\\.github/workflows/deploy-audio-rendition\\.yml$)'; then
+                      echo "build=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "build=false" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Nothing audio-rendition is built from changed — skipping."
+                  fi
+
     deploy:
+        needs: [changes]
+        if: needs.changes.outputs.build == 'true'
         name: build · deploy · smoke
         runs-on: ubuntu-latest
+        env:
+            # The commit CI ran on, resolved once by the `changes` job so the
+            # filter, the checkout, the image tag, the COMMIT_SHA env var and the
+            # smoke-test assertion all name one thing. NOT `github.sha`, which on
+            # a `workflow_run` event is the tip of the default branch at queue
+            # time — tagging an image with a SHA whose tree it was not built from
+            # is the kind of wrong that only surfaces when someone tries to trace
+            # a running revision back to a commit.
+            DEPLOY_SHA: ${{ needs.changes.outputs.sha }}
         # Recorded as a deployment against the `production` environment, so
         # "what is live and since when" is answerable from the repo rather than from
         # a provider console. Deliberately carries NO protection rules: a required
@@ -97,18 +179,19 @@ jobs:
         # environment-level secrets.
         environment:
             name: production
-        # A red CI must not ship: `workflow_run` fires on completion whatever
-        # the outcome. `workflow_dispatch` carries no `workflow_run` context and
-        # falls through on the empty-string comparison.
-        if: >-
-            github.event_name == 'workflow_dispatch' ||
-            github.event.workflow_run.conclusion == 'success'
+        # The "a red CI must not ship" check moved to the `changes` job this
+        # job now needs. Not weakened by moving: a skipped `changes` skips this
+        # job too, so a failed CI still cannot reach a deploy — and keeping the
+        # condition in both places would mean two copies of one rule, which is
+        # how they drift.
         steps:
             # The commit CI ran on — NOT `github.sha`, which on a `workflow_run`
             # event is the tip of the default branch when this run was queued.
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
               with:
-                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+                  # The commit the `changes` job resolved, not a second
+                  # derivation of it.
+                  ref: ${{ needs.changes.outputs.sha }}
 
             - id: auth
               uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13

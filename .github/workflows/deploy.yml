@@ -66,7 +66,30 @@ name: Deploy core-api
 # `if:` on the job below is the other half: `workflow_run` fires on completion
 # whatever the outcome, so the conclusion has to be checked, not assumed.
 #
-# ── The path filter is gone, deliberately ────────────────────────────────────
+# ── The path filter is gone, deliberately — and core-api is now the ONLY ─────
+# ── deploy here without one, which is also deliberate ────────────────────────
+#
+# `deploy-docs.yml` and `deploy-audio-rendition.yml` both gained a `changes`
+# job. This one did not, and the asymmetry is an argument rather than an
+# oversight:
+#
+#   - audio-rendition BUILDS AND PUSHES A CONTAINER. Minutes of work plus a
+#     registry write to produce a byte-identical image after a docs-only merge.
+#     Its inputs are checkable rather than assumed: the Dockerfile copies the
+#     root manifests and `apps/audio-rendition` and nothing else, so the filter
+#     is provably complete.
+#   - docs builds an Astro site, and its inputs are also findable — the build
+#     script names the one file it reads from another app.
+#   - core-api is a bundle-and-upload: the cheapest deploy in the repo. And what
+#     a redundant run buys here is real, because the smoke test re-asserts that
+#     `/health` reports the commit master is actually on.
+#
+# So the trade differs by workflow, and the original reasoning still stands for
+# this one: a change to something load-bearing but unlisted would NOT deploy,
+# and the tree would silently diverge from the running Worker. Where the cost of
+# that class is one redundant upload, pay it.
+#
+# ── The original note ────────────────────────────────────────────────────────
 # `workflow_run` has no `paths`, and the filter is not worth reconstructing. Its
 # own comment already named the failure it caused as the worse one: a change to
 # something load-bearing but unlisted would NOT deploy, and the tree would
