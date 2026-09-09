@@ -121,7 +121,7 @@ jobs:
             sha: ${{ steps.filter.outputs.sha }}
             build: ${{ steps.filter.outputs.build }}
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   ref: ${{ github.event.workflow_run.head_sha || github.sha }}
                   # 2, not 0: the diff needs one parent and nothing more.
@@ -187,19 +187,19 @@ jobs:
         steps:
             # The commit CI ran on — NOT `github.sha`, which on a `workflow_run`
             # event is the tip of the default branch when this run was queued.
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   # The commit the `changes` job resolved, not a second
                   # derivation of it.
                   ref: ${{ needs.changes.outputs.sha }}
 
             - id: auth
-              uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+              uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
               with:
                   workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
                   service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
-            - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+            - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
             - name: Configure Docker for Artifact Registry
               run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
