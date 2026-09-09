@@ -18,8 +18,26 @@ version: 2
 
 updates:
     # ── GitHub Actions ───────────────────────────────────────────────────────
+    #
+    # ⚠️ TWO DIRECTORIES, AND THE SECOND ONE IS NOT OPTIONAL.
+    #
+    # `directory: /` makes Dependabot scan `.github/workflows` and NOTHING
+    # else. That was sufficient when every workflow pinned its own actions, and
+    # stopped being sufficient the moment `.github/actions/setup-node` became a
+    # composite action, because the `actions/setup-node` pin moved inside it and
+    # out of Dependabot's view.
+    #
+    # The consequence was visible before this was fixed: the first actions-group
+    # PR (#133) bumped `actions/checkout` and both `google-github-actions/*`
+    # actions and left `setup-node` on v4.4.0, because it could not see it. A pin
+    # nothing updates is worse than a floating tag — it looks deliberate.
+    #
+    # Composite actions need their own directory entry. If another one is added
+    # under `.github/actions/`, add it here too, or its pins freeze the same way.
     - package-ecosystem: github-actions
-      directory: /
+      directories:
+          - /
+          - /.github/actions/setup-node
       schedule:
           interval: weekly
           day: monday

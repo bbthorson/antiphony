@@ -45,11 +45,25 @@ inputs:
 runs:
     using: composite
     steps:
-        - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
           with:
               # Single source of truth for the version — matches `engines.node`
               # (>=22) and the Volta pin in the root package.json.
               node-version-file: .nvmrc
+              # ⚠️ `cache: npm` IS LOAD-BEARING AS AN EXPLICIT VALUE.
+              #
+              # setup-node v5's breaking change was to enable caching
+              # AUTOMATICALLY whenever `package.json` carries a valid
+              # `packageManager` field (v6 narrowed that to npm). This repo has
+              # carried `packageManager: npm@12.0.2` since long before the v7
+              # bump, so on v4 the caching here was entirely ours and on v7
+              # there is also a default trying to do it. Stating it explicitly
+              # is what makes the two agree instead of leaving the behaviour to
+              # a default that changed underneath us.
+              #
+              # If you ever want NO caching, dropping this line is not enough —
+              # the automatic behaviour takes over. Pass
+              # `package-manager-cache: false` as well.
               cache: npm
               registry-url: ${{ inputs.registry-url }}
 
