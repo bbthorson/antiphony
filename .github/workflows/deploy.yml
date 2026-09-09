@@ -92,6 +92,15 @@ jobs:
     deploy:
         name: prove pins · deploy
         runs-on: ubuntu-latest
+        # Recorded as a deployment against the `production` environment, so
+        # "what is live and since when" is answerable from the repo rather than from
+        # a provider console. Deliberately carries NO protection rules: a required
+        # reviewer here would pause a deploy waiting on the only person who could
+        # approve it. It exists for the history, and as the scope that holds
+        # environment-level secrets.
+        environment:
+            name: production
+            url: https://api.antiphony.dev
         # `workflow_dispatch` carries no `workflow_run` context, so it falls
         # through on the empty-string comparison.
         if: >-

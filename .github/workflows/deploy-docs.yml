@@ -55,6 +55,15 @@ jobs:
     deploy:
         name: build · deploy
         runs-on: ubuntu-latest
+        # Recorded as a deployment against the `production` environment, so
+        # "what is live and since when" is answerable from the repo rather than from
+        # a provider console. Deliberately carries NO protection rules: a required
+        # reviewer here would pause a deploy waiting on the only person who could
+        # approve it. It exists for the history, and as the scope that holds
+        # environment-level secrets.
+        environment:
+            name: production
+            url: https://docs.antiphony.dev
         # A red CI must not ship. `workflow_run` fires on completion whatever
         # the outcome, so the conclusion is checked rather than assumed —
         # without this the trigger would be strictly worse than the `push` it

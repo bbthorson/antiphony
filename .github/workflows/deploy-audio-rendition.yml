@@ -89,6 +89,14 @@ jobs:
     deploy:
         name: build · deploy · smoke
         runs-on: ubuntu-latest
+        # Recorded as a deployment against the `production` environment, so
+        # "what is live and since when" is answerable from the repo rather than from
+        # a provider console. Deliberately carries NO protection rules: a required
+        # reviewer here would pause a deploy waiting on the only person who could
+        # approve it. It exists for the history, and as the scope that holds
+        # environment-level secrets.
+        environment:
+            name: production
         # A red CI must not ship: `workflow_run` fires on completion whatever
         # the outcome. `workflow_dispatch` carries no `workflow_run` context and
         # falls through on the empty-string comparison.
