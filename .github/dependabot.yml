@@ -95,3 +95,40 @@ updates:
           prefix-development: 'deps(dev)'
       labels:
           - dependencies
+      ignore:
+          # ⚠️ `@hono/zod-openapi` 1.x IS A ZOD 4 MIGRATION, NOT A BUMP.
+          #
+          # Its peer range moved from `zod: >=3.0.0` to `zod: ^4.0.0` at 1.0.0,
+          # and this repo is on `zod ^3.24.1`. So the PR Dependabot opens for it
+          # (#137) cannot pass CI and cannot be merged — it is a request to
+          # migrate, wearing the costume of a dependency update. Left
+          # unattended it reappears every week and trains whoever reads the
+          # queue to skip it.
+          #
+          # Three things make the migration a scheduled piece of work rather
+          # than an afternoon:
+          #
+          #   1. `packages/shared` is PUBLISHED as `@antiphony/shared`, and it
+          #      declares `zod` as a DEPENDENCY, not a peer. Moving it to zod 4
+          #      is a breaking change to the contract other people build on, so
+          #      it needs a major of its own — and because zod is a hard
+          #      dependency, a consumer can end up with zod 3 and zod 4 in one
+          #      tree, where schemas from different majors do not interoperate.
+          #   2. The Vox Pop repo re-exports those schemas and pins
+          #      `@antiphony/shared` EXACTLY at 0.5.0 for precisely this reason.
+          #      It is insulated today; raising that pin after a zod 4 release
+          #      hands it the same migration across its own tree.
+          #   3. `types/url.ts` is a SECURITY control built on
+          #      `z.string().url()`'s exact behaviour — it wraps the one audited
+          #      bare `.url()` in the repo to reject `javascript:`, `data:` and
+          #      `file:` schemes reaching `<audio src>` and `<a href>`, with the
+          #      `antiphony/no-bare-zod-url` rule enforcing it. Zod 4 reworked
+          #      URL validation, so the migration means re-deriving a
+          #      stored-XSS control against changed primitives. There are 18
+          #      `.url()` sites and 8 `.refine()` sites across 12 files.
+          #
+          # Only MAJORS are ignored, so 0.19.x patches still arrive. Remove this
+          # entry as the first step of the zod 4 work, not before.
+          - dependency-name: '@hono/zod-openapi'
+            update-types:
+                - version-update:semver-major
