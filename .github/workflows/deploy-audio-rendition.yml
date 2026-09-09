@@ -89,6 +89,14 @@ jobs:
     deploy:
         name: build · deploy · smoke
         runs-on: ubuntu-latest
+        # Recorded as a deployment against the `production` environment, so
+        # "what is live and since when" is answerable from the repo rather than from
+        # a provider console. Deliberately carries NO protection rules: a required
+        # reviewer here would pause a deploy waiting on the only person who could
+        # approve it. It exists for the history, and as the scope that holds
+        # environment-level secrets.
+        environment:
+            name: production
         # A red CI must not ship: `workflow_run` fires on completion whatever
         # the outcome. `workflow_dispatch` carries no `workflow_run` context and
         # falls through on the empty-string comparison.
@@ -98,17 +106,17 @@ jobs:
         steps:
             # The commit CI ran on — NOT `github.sha`, which on a `workflow_run`
             # event is the tip of the default branch when this run was queued.
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
               with:
                   ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
             - id: auth
-              uses: google-github-actions/auth@v2
+              uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
               with:
                   workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
                   service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
-            - uses: google-github-actions/setup-gcloud@v2
+            - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
 
             - name: Configure Docker for Artifact Registry
               run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet

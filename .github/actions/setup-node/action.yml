@@ -1,0 +1,65 @@
+name: Set up Node and the pinned npm
+description: >-
+    Node from .nvmrc, the npm cache, and the npm version package.json pins.
+    The one place this repo's toolchain versions are decided.
+
+# ── Why a composite action ────────────────────────────────────────────────────
+# Four workflows (ci, deploy, deploy-docs, release) each set Node up and then
+# each carried a VERBATIM COPY of the "Use the pinned npm" step — the same six
+# lines of shell under the same twenty lines of comment, four times over. That
+# is the worst shape for a step whose whole purpose is to make one version
+# authoritative: the comment explaining why npm 10 and npm 12 are not
+# interchangeable existed in four places, so a correction to it could land in
+# one and be wrong in three.
+#
+# ── What the pinned-npm step is actually for (kept, because it is the point) ───
+# `actions/setup-node` does NOT honour `packageManager`. Corepack-aware tools
+# do, and it is not one — so every workflow here silently built on whatever npm
+# ships with the pinned Node (10.9.8) instead of the 12.0.2 the repo declares
+# and the Cloudflare build resolved. The two are not interchangeable:
+#
+#   - npm 12 honours `allowScripts` and npm 10 ignores it, so the two install
+#     DIFFERENT trees from the same lockfile. That is the sharp end: CI is what
+#     says the tree is good.
+#   - npm 10 rewrites package-lock.json on install, dropping the `libc` fields
+#     npm 12 writes — so a contributor on 10 produces lockfile churn that reads
+#     as a real change.
+#
+# Verifying on one npm and shipping from another is what made "identical config
+# both passed and failed" something anyone had to reason about here.
+#
+# ⚠️ Requires `actions/checkout` to have run first: composite actions are read
+# from the checked-out tree, and so are `.nvmrc` and `package.json` below.
+
+inputs:
+    registry-url:
+        description: >-
+            Registry to write into .npmrc. Set ONLY by release.yml, which needs
+            it for `npm publish` — setup-node writes the NODE_AUTH_TOKEN
+            plumbing that trusted publishing relies on. Left empty everywhere
+            else, because a workflow that cannot publish should not be
+            configured as though it could.
+        required: false
+        default: ''
+
+runs:
+    using: composite
+    steps:
+        - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          with:
+              # Single source of truth for the version — matches `engines.node`
+              # (>=22) and the Volta pin in the root package.json.
+              node-version-file: .nvmrc
+              cache: npm
+              registry-url: ${{ inputs.registry-url }}
+
+        - name: Use the pinned npm
+          shell: bash
+          run: |
+              set -euo pipefail
+              # Strip any `+sha…` integrity suffix; `npm install -g` wants a
+              # plain spec.
+              PM="$(node -p "require('./package.json').packageManager.split('+')[0]")"
+              echo "package.json pins ${PM}; npm is now $(npm --version)"
+              npm install --global "${PM}"
+              npm --version
