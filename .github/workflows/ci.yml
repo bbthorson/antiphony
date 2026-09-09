@@ -4,41 +4,37 @@ name: CI
 # them mandatory. Until now nothing gated a merge, so `typecheck`, `lint`,
 # `test`, and the generated-OpenAPI drift check were all opt-in.
 
-# ⚠️ THE IGNORE LIST IS NARROW ON PURPOSE — DO NOT WIDEN IT TO `**/*.md`.
+# ⚠️ NO `paths-ignore` HERE, AND IT WAS REMOVED ON PURPOSE — READ THIS BEFORE
+# ⚠️ ADDING ONE BACK.
 #
-# `apps/docs/src/content/docs/**` is ELEVEN markdown/mdx files that ARE the
-# documentation site's content, and `deploy-docs.yml` is triggered by
-# `workflow_run` off THIS workflow. A blanket `**/*.md` ignore would therefore
-# mean: edit a docs page, CI is skipped, no `workflow_run` fires, and the docs
-# site never deploys — a prose change that silently fails to publish, which is
-# strictly worse than paying two minutes of CI for it.
+# There was one, narrowly scoped to `specs/**` and the two root documents. It
+# has been removed to make this workflow's check REQUIRABLE on master, and the
+# trade was one-sided:
 #
-# So only the locations that are prose AND are read by nothing are listed:
-# `specs/**` (16 files, all design records), and the two root documents.
-# Verified before writing this: nothing under apps/ or packages/ reads either
-# path at build, test, or release time, and `release.yml` derives the version
-# from `packages/shared/package.json` rather than from CHANGELOG.md.
+#   - What it saved: over the last 25 first-parent merges here, exactly ONE was
+#     prose-only. At a ~2-minute run that is roughly two minutes per twenty-five
+#     merges.
+#   - What it cost: a required status check that never reports. GitHub blocks a
+#     pull request whose required check has not reported, and a skipped workflow
+#     produces no check at all — so a specs-only PR would have been permanently
+#     unmergeable, with nothing red to explain why.
 #
-# The payoff is deliberately modest. Over the last 25 first-parent merges here
-# exactly ONE was markdown-only, so this saves roughly 4% of merge runs — not
-# the ~24% the same filter saves in the Vox Pop repo, where every deployed app's
-# content is TypeScript and the blunt `**/*.md` form is safe. Copying that
-# filter across without checking would have broken the docs deploy.
+# The Vox Pop repo resolved the same conflict the other way, and correctly: its
+# filter saves ~24% of merge runs at ~12 minutes each, which is worth
+# preserving, so there the decision moved INTO the jobs as a step-level guard
+# that always reports. Here it would be ~20 lines of config to save two minutes
+# a month. Not worth it; delete the filter instead.
 #
-# `paths-ignore` skips a run only when EVERY changed file matches, so a commit
-# touching code and specs together still runs the full suite.
+# ⚠️ AND NOTE WHAT A BLANKET `**/*.md` FILTER WOULD HAVE BROKEN, if anyone is
+# tempted: `apps/docs/src/content/docs/**` is eleven markdown/mdx files that ARE
+# the documentation site's content, and `deploy-docs.yml` triggers on
+# `workflow_run` off THIS workflow. Ignoring markdown would mean editing a docs
+# page skips CI, fires no `workflow_run`, and never deploys the site — a prose
+# change that silently fails to publish.
 on:
   pull_request:
-    paths-ignore:
-      - 'specs/**'
-      - 'README.md'
-      - 'CHANGELOG.md'
   push:
     branches: [master]
-    paths-ignore:
-      - 'specs/**'
-      - 'README.md'
-      - 'CHANGELOG.md'
 
 # A new push to the same branch supersedes the run in flight.
 concurrency:
