@@ -77,8 +77,11 @@ async function deliver(
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Antiphony-Signature': signature,
+                    'X-Antiphony-Event-Id': `${event.postId}:${event.stage}:${event.status}`,
+                    'X-Antiphony-Timestamp': event.occurredAt,
                 },
                 body,
+                redirect: 'manual',
                 signal: AbortSignal.timeout(TIMEOUT_MS),
             });
             if (res.ok) return;

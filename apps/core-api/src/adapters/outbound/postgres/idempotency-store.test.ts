@@ -93,4 +93,29 @@ describe('postgresIdempotencyStore', () => {
         });
         await expect(broken.settle('k1', { ok: true }, TTL)).resolves.toBeUndefined();
     });
+
+    it('releases an in-progress claim so it can be claimed again', async () => {
+        await store.claim('k1', TTL);
+        await store.release('k1');
+        await expect(store.claim('k1', TTL)).resolves.toBe('claimed');
+    });
+
+    it('does not release a completed claim', async () => {
+        await store.claim('k1', TTL);
+        await store.settle('k1', { id: 'post-1' }, TTL);
+        await store.release('k1');
+        await expect(store.claim('k1', TTL)).resolves.toEqual({
+            replay: { id: 'post-1' },
+        });
+    });
+
+    it('does not throw when release fails', async () => {
+        const broken = postgresIdempotencyStore({
+            async query() {
+                throw new Error('connection terminated');
+            },
+        });
+        await expect(broken.release('k1')).resolves.toBeUndefined();
+    });
 });
+

@@ -1,6 +1,6 @@
 {
 	// Cloudflare Worker config for the core-api service — the `/api/v1/*` and
-	// `/xrpc/*` surface that runs on Cloud Run today.
+	// `/xrpc/*` surface.
 	//
 	// The repo now has TWO Workers, which is why this file exists rather than
 	// the root one growing a second entry: a wrangler config describes exactly
@@ -107,6 +107,11 @@
 				"max_batch_timeout": 5,
 				"max_retries": 3,
 				"dead_letter_queue": "antiphony-processing-dlq"
+			},
+			{
+				"queue": "antiphony-processing-dlq",
+				"max_batch_size": 10,
+				"max_batch_timeout": 10
 			}
 		]
 	},

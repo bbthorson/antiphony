@@ -156,5 +156,9 @@ describe('GET /health', () => {
         expect(typeof body.sha).toBe('string');
         // deployedAt is null in dev (esbuild define not applied by tsx)
         expect('deployedAt' in body).toBe(true);
+        expect(body.toggles).toEqual({
+            stubProcessing: false,
+            inlineProcessing: false,
+        });
     });
 });

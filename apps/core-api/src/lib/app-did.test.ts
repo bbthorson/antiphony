@@ -469,6 +469,30 @@ describe('ensureTenantPin — disproof vs unreachable', () => {
         ).rejects.toThrow(/cannot prove custody/);
     });
 
+    it('tolerates a transient 404 within the 5-minute grace period before evicting', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const { kv } = fakeKv();
+        let clock = 1_000_000;
+
+        await ensureTenantPin('vox-pop', { fetchImpl: okFetch(), kv, now: () => clock });
+        expect(getAppDid('vox-pop')).toBe(DID);
+
+        // Advance past freshness (1 hour) + 2 minutes (within 5-min grace) and fetch returns 404
+        clock += (60 + 2) * 60 * 1000;
+        const notFoundFetch = () => vi.fn(async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: notFoundFetch(), kv, now: () => clock }),
+        ).resolves.toBeUndefined();
+        expect(getAppDid('vox-pop')).toBe(DID);
+
+        // Advance past 5-min grace window: now 404 causes eviction
+        clock += 4 * 60 * 1000; // total 6 min past freshness
+        await expect(
+            ensureTenantPin('vox-pop', { fetchImpl: notFoundFetch(), kv, now: () => clock }),
+        ).rejects.toThrow(/did-doc-http-404/);
+        expect(() => getAppDid('vox-pop')).toThrow();
+    });
+
     it('backs off rather than paying the fetch timeout on every request', async () => {
         // Without this, an unreachable did:web host makes every request wait
         // out the 5s resolve before being served from the snapshot — "their DID

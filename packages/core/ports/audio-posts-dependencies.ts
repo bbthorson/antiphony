@@ -1,4 +1,5 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type { ProcessingState } from 'shared/types/processing';
 
 /**
  * AudioPostDependencies is the portable interface the `AudioPostService`
@@ -48,6 +49,16 @@ export interface AudioPostDependencies {
 
     /** Persist a canonical post record (upsert). */
     savePost(record: AudioPostRecord): Promise<void>;
+
+    /**
+     * Atomically patch a post's processing state without rewriting the whole record.
+     * Prevents clobbering concurrent background worker updates.
+     */
+    patchProcessingState?(
+        originAppId: string,
+        postId: string,
+        patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
+    ): Promise<void>;
 
     /**
      * Fetch a single post by id, scoped to `originAppId`. Returns null when the

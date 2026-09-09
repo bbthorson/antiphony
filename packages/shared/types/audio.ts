@@ -24,8 +24,8 @@ import { httpsUrl } from './url';
  * record (`com.atproto.repo.strongRef`). Replaces the legacy flat `promptId`.
  */
 export const StrongRefSchema = z.object({
-    uri: z.string().regex(/^at:\/\/.+/, 'Must be an at:// URI'),
-    cid: z.string(),
+    uri: z.string().regex(/^at:\/\/.+/, 'Must be an at:// URI').max(512),
+    cid: z.string().max(128),
 });
 export type StrongRef = z.infer<typeof StrongRefSchema>;
 

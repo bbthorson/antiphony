@@ -110,4 +110,27 @@ describe('elevenLabsDenoiser', () => {
         expect(url).toContain('/audio-isolation');
         expect((init.body as FormData).has('audio')).toBe(true);
     });
+
+    it('rejects audio exceeding the 5-minute isolation duration limit', async () => {
+        await expect(
+            elevenLabsDenoiser.denoise({
+                bytes: MP3_BYTES,
+                mimeType: 'audio/mp3',
+                durationMs: 301_000,
+            }),
+        ).rejects.toThrow(/exceeds Voice Isolation limit/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects audio exceeding the 20MB isolation byte size limit', async () => {
+        const largeBytes = new Uint8Array(21 * 1024 * 1024);
+        await expect(
+            elevenLabsDenoiser.denoise({
+                bytes: largeBytes,
+                mimeType: 'audio/mp3',
+            }),
+        ).rejects.toThrow(/exceeds Voice Isolation limit/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
 });
+

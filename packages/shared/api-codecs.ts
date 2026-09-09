@@ -18,9 +18,9 @@ export const CreateAudioPostRequestSchema = z.object({
   /** Present ⇒ this is a reply (StrongRef root + parent). */
   reply: ReplyRefSchema.optional(),
   /** BCP-47 language tags. */
-  langs: z.array(z.string()).max(3).optional(),
+  langs: z.array(z.string().max(35)).max(3).optional(),
   /** Author self-label values (content warnings). */
-  selfLabels: z.array(z.string()).optional(),
+  selfLabels: z.array(z.string().max(128)).max(10).optional(),
   /**
    * Opt-in audio processing for this post's audio (denoise / trim /
    * transcribe / waveform). All default off. Stages the deployment can't

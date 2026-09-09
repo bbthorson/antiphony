@@ -40,11 +40,13 @@ export const errorHandler: ErrorHandler = (error, c) => {
 
     // 1. Typed service errors — the preferred pattern.
     if (error instanceof ServiceError) {
+        const isDev = process.env.NODE_ENV === 'development';
         logger.warn({ ...meta, status: error.status, code: error.code, message: error.message }, 'service error');
+        const includeDetails = error.status < 500 || isDev;
         return c.json(
             errorEnvelope(c, error.message, {
                 ...(error.code !== undefined ? { code: error.code } : {}),
-                ...(error.details !== undefined ? { details: error.details } : {}),
+                ...(error.details !== undefined && includeDetails ? { details: error.details } : {}),
             }),
             // Hono's ContentfulStatusCode is the full set of status codes
             // valid for a JSON response body — covers 400/401/403/404/409/

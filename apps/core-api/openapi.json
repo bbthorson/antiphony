@@ -131,10 +131,12 @@
                                         "properties": {
                                           "uri": {
                                             "type": "string",
+                                            "maxLength": 512,
                                             "pattern": "^at:\\/\\/.+"
                                           },
                                           "cid": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "maxLength": 128
                                           }
                                         },
                                         "required": [
@@ -147,10 +149,12 @@
                                         "properties": {
                                           "uri": {
                                             "type": "string",
+                                            "maxLength": 512,
                                             "pattern": "^at:\\/\\/.+"
                                           },
                                           "cid": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "maxLength": 128
                                           }
                                         },
                                         "required": [
@@ -562,10 +566,12 @@
                         "properties": {
                           "uri": {
                             "type": "string",
+                            "maxLength": 512,
                             "pattern": "^at:\\/\\/.+"
                           },
                           "cid": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 128
                           }
                         },
                         "required": [
@@ -578,10 +584,12 @@
                         "properties": {
                           "uri": {
                             "type": "string",
+                            "maxLength": 512,
                             "pattern": "^at:\\/\\/.+"
                           },
                           "cid": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 128
                           }
                         },
                         "required": [
@@ -598,15 +606,18 @@
                   "langs": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "maxLength": 35
                     },
                     "maxItems": 3
                   },
                   "selfLabels": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "maxItems": 10
                   },
                   "processing": {
                     "type": "object",
@@ -881,10 +892,12 @@
                                   "properties": {
                                     "uri": {
                                       "type": "string",
+                                      "maxLength": 512,
                                       "pattern": "^at:\\/\\/.+"
                                     },
                                     "cid": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "maxLength": 128
                                     }
                                   },
                                   "required": [
@@ -897,10 +910,12 @@
                                   "properties": {
                                     "uri": {
                                       "type": "string",
+                                      "maxLength": 512,
                                       "pattern": "^at:\\/\\/.+"
                                     },
                                     "cid": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "maxLength": 128
                                     }
                                   },
                                   "required": [
@@ -1253,10 +1268,12 @@
                                   "properties": {
                                     "uri": {
                                       "type": "string",
+                                      "maxLength": 512,
                                       "pattern": "^at:\\/\\/.+"
                                     },
                                     "cid": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "maxLength": 128
                                     }
                                   },
                                   "required": [
@@ -1269,10 +1286,12 @@
                                   "properties": {
                                     "uri": {
                                       "type": "string",
+                                      "maxLength": 512,
                                       "pattern": "^at:\\/\\/.+"
                                     },
                                     "cid": {
-                                      "type": "string"
+                                      "type": "string",
+                                      "maxLength": 128
                                     }
                                   },
                                   "required": [
@@ -1756,10 +1775,12 @@
                                         "properties": {
                                           "uri": {
                                             "type": "string",
+                                            "maxLength": 512,
                                             "pattern": "^at:\\/\\/.+"
                                           },
                                           "cid": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "maxLength": 128
                                           }
                                         },
                                         "required": [
@@ -1772,10 +1793,12 @@
                                         "properties": {
                                           "uri": {
                                             "type": "string",
+                                            "maxLength": 512,
                                             "pattern": "^at:\\/\\/.+"
                                           },
                                           "cid": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "maxLength": 128
                                           }
                                         },
                                         "required": [

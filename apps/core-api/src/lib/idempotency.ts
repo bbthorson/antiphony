@@ -52,18 +52,29 @@ function readKey(c: Context): string | null {
 }
 
 /**
- * Build a per-user doc ID from the raw client key.
+ * Build a per-tenant, per-user doc ID from the raw client key.
  *
  * The key is client-supplied, so it can contain anything. Firestore made that
  * acutely dangerous — `/` was a path separator and `.`/`..` were reserved doc
  * ids — and Postgres has no such rule, but the id is still a primary key built
  * from hostile input. Hashing to fixed-length hex keeps it bounded and flat
- * regardless of what arrives, and SHA-256 keeps it collision-resistant. The
- * `uid` prefix namespaces it per-caller (so the same raw key from two users
- * never collides), and is kept readable for debuggability.
+ * regardless of what arrives, and SHA-256 keeps it collision-resistant.
+ *
+ * The `originAppId` and `uid` prefixes namespace it per-tenant and per-caller
+ * (so the same raw key from two users or two tenants never collides), and are
+ * kept readable for debuggability.
  */
-function docId(uid: string, key: string): string {
-    return `${uid}_${createHash('sha256').update(key).digest('hex')}`;
+function docId(originAppId: string, uid: string, key: string): string {
+    return `${originAppId}_${uid}_${createHash('sha256').update(key).digest('hex')}`;
+}
+
+function resolveOriginAppId(c: Context): string {
+    try {
+        const id = c.get('originAppId') as string | undefined;
+        return id?.trim() || 'default';
+    } catch {
+        return 'default';
+    }
 }
 
 /** This request's store: the composed one, unless a caller names another. */
@@ -79,7 +90,7 @@ export async function checkIdempotency(
     const key = readKey(c);
     if (!key) return null;
 
-    const claim = await resolveStore(c, store).claim(docId(uid, key), TTL_MS);
+    const claim = await resolveStore(c, store).claim(docId(resolveOriginAppId(c), uid, key), TTL_MS);
     if (claim === 'in-progress') throw new IdempotencyInProgressError();
     if (claim === 'claimed') return null;
     return { cached: claim.replay };
@@ -93,5 +104,16 @@ export async function saveIdempotencyResult(
 ): Promise<void> {
     const key = readKey(c);
     if (!key) return;
-    await resolveStore(c, store).settle(docId(uid, key), body, TTL_MS);
+    await resolveStore(c, store).settle(docId(resolveOriginAppId(c), uid, key), body, TTL_MS);
 }
+
+export async function releaseIdempotencyClaim(
+    c: Context,
+    uid: string,
+    store?: IdempotencyStore,
+): Promise<void> {
+    const key = readKey(c);
+    if (!key) return;
+    await resolveStore(c, store).release(docId(resolveOriginAppId(c), uid, key));
+}
+

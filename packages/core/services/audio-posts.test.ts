@@ -513,6 +513,25 @@ describe('setProcessing', () => {
         expect(deps.savePost).toHaveBeenCalledWith(updated);
     });
 
+    it('prefers patchProcessingState over savePost when available', async () => {
+        const existing = { ...post, processing: { transcribe: 'ready', updatedAt: new Date('2026-06-01T00:00:00Z') } } as AudioPostRecord;
+        const patchFn = vi.fn(async () => {});
+        const reloaded = { ...existing, processing: { transcribe: 'ready', denoise: 'pending', updatedAt: new Date('2026-06-26T00:00:00Z') } } as AudioPostRecord;
+        const deps = makeDeps({
+            getPostById: vi.fn()
+                .mockResolvedValueOnce(existing)
+                .mockResolvedValueOnce(reloaded),
+            patchProcessingState: patchFn,
+        });
+        const svc = new AudioPostService(deps);
+
+        const updated = await svc.setProcessing('vox-pop', 'p1', 'u1', { denoise: 'pending' });
+
+        expect(patchFn).toHaveBeenCalledWith('vox-pop', 'p1', { denoise: 'pending' });
+        expect(deps.savePost).not.toHaveBeenCalled();
+        expect(updated).toEqual(reloaded);
+    });
+
     it('404s when the post is missing (or cross-tenant)', async () => {
         const svc = new AudioPostService(depsWith(null));
         await expect(svc.setProcessing('vox-pop', 'nope', 'u1', { transcribe: 'pending' }))

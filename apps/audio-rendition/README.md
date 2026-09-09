@@ -88,7 +88,8 @@ the cheap half either way: only the request carries audio.
 | Var | Default | Notes |
 |---|---|---|
 | `PORT` | `8080` | Injected by Cloud Run |
-| `SYSTEM_AUTH_TOKEN` | — | **Required.** The same shared secret core-api's `/system/*` routes take. Without it the service refuses every request rather than serving unauthenticated |
+| `RENDITION_SERVICE_TOKEN` | — | **Preferred bearer secret.** When set, the service accepts this token for authentication, separating this Cloud Run service from the platform's internal `SYSTEM_AUTH_TOKEN`. |
+| `SYSTEM_AUTH_TOKEN` | — | Fallback shared secret if `RENDITION_SERVICE_TOKEN` is unset. Without at least one configured, the service refuses every request (503). |
 | `ANTIPHONY_R2_BUCKET` | `antiphony-r2-bucket` | Holds both `blobs/` and `renditions/` |
 | `R2_ACCOUNT_ID` | — | **Required.** Cloudflare account id, for the S3 endpoint |
 | `R2_ACCESS_KEY_ID` | — | **Required.** R2 S3 API key |

@@ -34,8 +34,25 @@ const FALLBACK_MIME = 'audio/mpeg';
  */
 const ISOLATION_MODEL = 'elevenlabs/audio-isolation';
 
+/** Maximum audio duration for voice isolation (5 minutes = 300,000 ms). */
+export const MAX_DENOISE_DURATION_MS = 5 * 60 * 1000;
+
+/** Maximum audio file size for voice isolation to avoid OOM in Workers isolate (20 MB). */
+export const MAX_DENOISE_BYTES = 20 * 1024 * 1024;
+
 export const elevenLabsDenoiser: DenoiserPort = {
     async denoise(input: DenoiseInput): Promise<DenoiseResult> {
+        if (input.durationMs !== undefined && input.durationMs > MAX_DENOISE_DURATION_MS) {
+            throw new Error(
+                `Audio duration (${Math.round(input.durationMs / 1000)}s) exceeds Voice Isolation limit (${MAX_DENOISE_DURATION_MS / 1000}s)`,
+            );
+        }
+        if (input.bytes.length > MAX_DENOISE_BYTES) {
+            throw new Error(
+                `Audio size (${input.bytes.length} bytes) exceeds Voice Isolation limit (${MAX_DENOISE_BYTES} bytes)`,
+            );
+        }
+
         const form = new FormData();
         // Note the field name: `audio` here, vs `file` for speech-to-text.
         form.append('audio', audioFile(input.bytes, input.mimeType));

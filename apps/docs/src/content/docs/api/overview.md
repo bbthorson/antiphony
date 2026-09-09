@@ -50,7 +50,13 @@ X-Antiphony-Acting-Actor-Did: <their-at-protocol-did>   # optional
 
 Your app's tenancy (`originAppId`) is derived from the token — Antiphony never sees your end users' credentials, and you never see Antiphony's. Antiphony verifies no end-user identity tokens. Full contract: [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
 
-The acting-actor header is the optional axis: required on writes and viewer-scoped reads, omitted for an anonymous, tenancy-scoped read. A request with no service token gets a `401` on every data route — "public" means "no viewer," not "no tenant." The sole anonymous exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted content-addressed `blobs/` paths resolved to short-lived signed URLs.
+The acting-actor header is the optional axis: required on writes and viewer-scoped reads, omitted for an anonymous, tenancy-scoped read. A request with no service token gets a `401` on every data route — "public" means "no viewer," not "no tenant."
+
+The sole anonymous exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted content-addressed `blobs/` paths resolved to audio bytes or derived renditions (e.g. mp3).
+
+:::note[Audio visibility is public by design]
+All audio blobs stored in Antiphony are content-addressed and public by CID across tenants, including blobs uploaded before being attached to a post. Anonymous callers can trigger on-demand transcodes through the audio proxy. Byte range requests adhere to RFC 7233: requesting an offset beyond the total file size returns `416 Range Not Satisfiable` with a `Content-Range: bytes */<totalSize>` header.
+:::
 
 ## Envelope
 
@@ -75,7 +81,13 @@ The `requestId` correlation ID appears in every error response and as the `X-Req
 
 ## Limits
 
-Three limits are worth designing around before you write a client.
+Four categories of limits are worth designing around before you write a client.
+
+**Request body and string bounds.** JSON endpoints (`POST /api/v1/posts`, `PATCH /api/v1/posts/:postId`) enforce a **256 KB** maximum request body limit (`413 Content Too Large`). Key string fields are bounded to guard against resource exhaustion:
+- `langs`: maximum 3 entries, each up to 35 characters.
+- `selfLabels`: maximum 10 entries, each up to 128 characters.
+- `StrongRef.uri`: maximum 512 characters.
+- `StrongRef.cid`: maximum 128 characters.
 
 **Upload size and type.** `POST /api/v1/audio/upload` accepts a `multipart/form-data` body with a single `file` field, up to **25 MB**, and only these MIME types:
 
@@ -87,17 +99,17 @@ The match is exact, so strip any codec parameter first — `MediaRecorder` produ
 The `dev.antiphony.embed.audio` lexicon permits `audio/*` up to 100 MB. That's the **record's** ceiling — what a portable record may legally describe. This endpoint is deliberately tighter; size your client to the numbers above, not to the lexicon.
 :::
 
-**Rate limits.** Every route carries one, keyed on the caller. Exceeding it returns `429`:
+**Rate limits.** Every route carries rate limits. Crucially, limits are **keyed on the actor** (`X-Antiphony-Acting-Actor`), or the tenant (`originAppId`) for viewer-less reads, rather than bare client IP. This ensures multiple users behind a shared NAT or corporate proxy do not share or deplete each other's limits. High-capacity aggregate IP limiters run alongside actor limits to protect against distributed abusive bursts. Exceeding a limit returns `429`:
 
-| Operation | Limit |
-|---|---|
-| Writes (`POST`/`PATCH /posts`) | 10 per 15 min |
-| Reads (`GET /posts`, `/posts/{id}`, `/posts/{id}/replies`, `/audio`) | 60 per min |
-| Uploads (`POST /audio/upload`) | 20 per hour |
+| Operation | Actor Limit | Aggregate IP Limit |
+|---|---|---|
+| Writes (`POST`/`PATCH /posts`) | 10 per 15 min | 120 per 15 min |
+| Reads (`GET /posts`, `/posts/{id}`, `/posts/{id}/replies`, `/audio`) | 60 per min | 600 per min |
+| Uploads (`POST /audio/upload`) | 20 per hour | 120 per 15 min |
 
 The write limit is tight enough to hit while developing — back off rather than retrying immediately.
 
-**Idempotency.** `POST /api/v1/posts` honours an `Idempotency-Key` header. Send a unique key per logical create and a retry after a timeout returns the original result instead of creating a second post. Recommended for any client that retries writes, since a network timeout can't tell you whether the post landed.
+**Idempotency.** `POST /api/v1/posts` honours an `Idempotency-Key` header. Keys are scoped per tenant (`originAppId`) and per actor. If a create request fails validation or an internal service error occurs, the idempotency claim is **immediately released**, allowing your client to correct and retry without waiting for key expiration. A successful response caches the result for replay upon identical retries.
 
 ## Source of truth
 

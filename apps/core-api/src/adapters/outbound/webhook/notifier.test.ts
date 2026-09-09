@@ -55,6 +55,7 @@ describe('webhookNotifier', () => {
         const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
         expect(url).toBe(URL);
         expect(init.method).toBe('POST');
+        expect(init.redirect).toBe('manual');
 
         const body = init.body as string;
         const headers = init.headers as Record<string, string>;
@@ -62,6 +63,8 @@ describe('webhookNotifier', () => {
         // wire must equal the one we sent.
         const expected = `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
         expect(headers['X-Antiphony-Signature']).toBe(expected);
+        expect(headers['X-Antiphony-Event-Id']).toBe('p1:transcribe:ready');
+        expect(headers['X-Antiphony-Timestamp']).toBe(EVENT.occurredAt);
         expect(headers['Content-Type']).toBe('application/json');
         expect(JSON.parse(body)).toEqual({
             postId: 'p1',

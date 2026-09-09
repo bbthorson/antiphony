@@ -64,7 +64,7 @@ import { trim, waveform } from './stages.js';
 
 /** Fail-closed: no configured token means the service answers nothing. */
 function expectedToken(): string | null {
-    const token = process.env.SYSTEM_AUTH_TOKEN?.trim();
+    const token = (process.env.RENDITION_SERVICE_TOKEN || process.env.SYSTEM_AUTH_TOKEN)?.trim();
     return token && token.length > 0 ? token : null;
 }
 
@@ -105,7 +105,7 @@ function authorise(c: Context): Response | null {
     if (!expected) {
         // 503, not 500: the service is not misbehaving, it is not configured.
         // Fail-closed — never silently downgrade to serving unauthenticated.
-        logger.error('[audio-rendition] SYSTEM_AUTH_TOKEN unset — refusing every request');
+        logger.error('[audio-rendition] RENDITION_SERVICE_TOKEN/SYSTEM_AUTH_TOKEN unset — refusing every request');
         return c.json({ error: 'Service not configured' }, 503);
     }
     const presented = bearer(c.req.header('authorization'));

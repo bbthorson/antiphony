@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { XRPC_NSID } from 'shared/nsid';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
 import { buildPostUri } from '@antiphony/core/services/audio-posts';
-import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
+import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
@@ -120,7 +120,8 @@ export function xrpcRoute(): Hono {
     app.get(
         `/${XRPC_NSID.GetPost}`,
         requireServiceToken(),
-        rateLimit(RATE_LIMITS.read),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
             const parsed = parseQuery(c, GetPostQuerySchema, { id: c.req.query('id') });
             if (!parsed.ok) return parsed.response;
@@ -143,7 +144,8 @@ export function xrpcRoute(): Hono {
     app.get(
         `/${XRPC_NSID.GetThread}`,
         requireServiceToken(),
-        rateLimit(RATE_LIMITS.read),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
             const parsed = parseQuery(c, GetThreadQuerySchema, {
                 id: c.req.query('id'),
@@ -187,7 +189,8 @@ export function xrpcRoute(): Hono {
     app.get(
         `/${XRPC_NSID.GetPlaybackUrl}`,
         requireServiceToken(),
-        rateLimit(RATE_LIMITS.read),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
             const parsed = parseQuery(c, GetPlaybackUrlQuerySchema, { cid: c.req.query('cid') });
             if (!parsed.ok) return parsed.response;
@@ -212,7 +215,8 @@ export function xrpcRoute(): Hono {
     app.post(
         `/${XRPC_NSID.CreatePost}`,
         requireAuth(),
-        rateLimit(RATE_LIMITS.write),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
         async (c) => {
             const uid = c.get('viewerUid')!;
 
@@ -265,7 +269,8 @@ export function xrpcRoute(): Hono {
     app.post(
         `/${XRPC_NSID.ReprocessPost}`,
         requireAuth(),
-        rateLimit(RATE_LIMITS.write),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
         async (c) => {
             const uid = c.get('viewerUid')!;
 

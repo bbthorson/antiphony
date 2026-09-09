@@ -72,12 +72,18 @@ export function resolveProviders(originAppId?: string): ProcessingProviders {
     // `stub` names in the registry are for mixing one stub into an otherwise
     // real deployment, not for expressing this.
     if (process.env.ANTIPHONY_PROCESSING_STUB === 'true') {
-        return {
-            transcriber: stubTranscriber,
-            denoiser: stubDenoiser,
-            trimmer: stubTrimmer,
-            waveform: stubWaveform,
-        };
+        if (process.env.NODE_ENV === 'production') {
+            logger.warn(
+                '[audio-processing] ANTIPHONY_PROCESSING_STUB=true is not permitted in production; ignoring',
+            );
+        } else {
+            return {
+                transcriber: stubTranscriber,
+                denoiser: stubDenoiser,
+                trimmer: stubTrimmer,
+                waveform: stubWaveform,
+            };
+        }
     }
 
     // Each stage selects independently — tenant pin, then deployment default,
@@ -211,12 +217,18 @@ function resolveDispatcher(
     // accidentally enqueue against a real queue from a local run — the same
     // precedence, and the same reasoning, as `_STUB` over real providers.
     if (process.env.ANTIPHONY_PROCESSING_INLINE === 'true') {
-        return inlineDispatcher(
-            servicesFor(env).audioProcessingDeps,
-            resolveProviders(originAppId),
-            logger,
-            resolveNotifier(),
-        );
+        if (process.env.NODE_ENV === 'production') {
+            logger.warn(
+                '[audio-processing] ANTIPHONY_PROCESSING_INLINE=true is not permitted in production; ignoring',
+            );
+        } else {
+            return inlineDispatcher(
+                servicesFor(env).audioProcessingDeps,
+                resolveProviders(originAppId),
+                logger,
+                resolveNotifier(),
+            );
+        }
     }
 
     return resolveDurableDispatcher?.(env) ?? noopDispatcher(logger);

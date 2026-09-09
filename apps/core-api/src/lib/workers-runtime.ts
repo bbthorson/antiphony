@@ -42,13 +42,17 @@ export interface ScheduledController {
  * lets one poisoned payload be dropped without dragging its batch-mates back
  * through the queue with it.
  */
+export interface MessageRetryOptions {
+    delaySeconds?: number;
+}
+
 export interface Message<T> {
     id: string;
     body: T;
     /** Settle this message as done. Not redelivered. */
     ack(): void;
     /** Hand this message back for redelivery, subject to `max_retries`. */
-    retry(): void;
+    retry(options?: MessageRetryOptions): void;
 }
 
 export interface MessageBatch<T> {

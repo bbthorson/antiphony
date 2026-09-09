@@ -1,13 +1,14 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import type { MiddlewareHandler } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { AudioPostViewSchema } from 'shared/types/audio';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
-import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
+import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import {
     checkIdempotency,
     saveIdempotencyResult,
+    releaseIdempotencyClaim,
     IdempotencyInProgressError,
 } from '../../../lib/idempotency.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
@@ -80,7 +81,11 @@ const listRoute = createRoute({
         'by the viewer (optionally filtered by `kind`). With `rootAuthor` set, instead returns the replies ' +
         'whose thread root was authored by that id — "replies addressed to author X", the raw feed a ' +
         'connector composes into an inbox. Cursor-paginated by post id.',
-    middleware: [requireAuth(), rateLimit(RATE_LIMITS.read)] as const,
+    middleware: [
+        requireAuth(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+    ] as const,
     request: {
         query: z.object({
             limit: z.coerce.number().int().min(1).max(100).optional().openapi({ description: '1–100 (default 20)' }),
@@ -154,7 +159,11 @@ const getByIdRoute = createRoute({
         'Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). ' +
         'Scoped to the origin app — a post from another origin app reads as 404. ' +
         'Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
-    middleware: [requireServiceToken(), rateLimit(RATE_LIMITS.read)] as const,
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+    ] as const,
     request: {
         params: z.object({
             postId: z.string().openapi({ description: 'The post id' }),
@@ -191,7 +200,11 @@ const repliesRoute = createRoute({
         'Returns the post\'s direct replies (posts whose `reply.parent` is this post), in thread order ' +
         '(oldest first). Cursor-paginated. Scoped to the origin app. Requires a service token; omit ' +
         '`X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
-    middleware: [requireServiceToken(), rateLimit(RATE_LIMITS.read)] as const,
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+    ] as const,
     request: {
         params: z.object({
             postId: z.string().openapi({ description: 'The parent post id' }),
@@ -284,12 +297,6 @@ app.openapi(repliesRoute, async (c) => {
  * called service-to-service. These routes want the limit kept and pointed at
  * the right subject.
  */
-function actingActorKey(c: Parameters<MiddlewareHandler>[0]): string | null {
-    const appId = c.get('originAppId');
-    const actor = c.get('viewerUid');
-    return appId && actor ? `${appId}:${actor}` : null;
-}
-
 const createRouteDef = createRoute({
     method: 'post',
     path: '/',
@@ -310,6 +317,10 @@ const createRouteDef = createRoute({
         requireAuth(),
         rateLimit(RATE_LIMITS.writeAggregate),
         rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
+        bodyLimit({
+            maxSize: 256 * 1024,
+            onError: (c) => c.json(errorEnvelope(c, 'Request body too large'), 413),
+        }),
     ] as const,
     request: {
         headers: z.object({
@@ -348,11 +359,13 @@ app.openapi(createRouteDef, async (c) => {
     try {
         rawData = await c.req.json();
     } catch {
+        await releaseIdempotencyClaim(c, uid);
         return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
     }
 
     const validation = CreateAudioPostRequestSchema.safeParse(rawData);
     if (!validation.success) {
+        await releaseIdempotencyClaim(c, uid);
         return c.json(
             errorEnvelope(c, 'Validation failed', { issues: validation.error.issues }),
             400,
@@ -368,26 +381,32 @@ app.openapi(createRouteDef, async (c) => {
     // the view.
     const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
-    const created = await servicesFor(c.env).audioPostService.createPost({
-        originAppId,
-        authorId: uid,
-        // App-asserted AT Protocol DID (service path only) — trusted within
-        // the app's tenancy; see specs/service-auth.md.
-        authorDid: c.get('actingActorDid') ?? undefined,
-        text,
-        title,
-        embed,
-        reply,
-        langs,
-        selfLabels,
-        processing: initialProcessing,
-    });
+    let created: { id: string };
+    try {
+        created = await servicesFor(c.env).audioPostService.createPost({
+            originAppId,
+            authorId: uid,
+            // App-asserted AT Protocol DID (service path only) — trusted within
+            // the app's tenancy; see specs/service-auth.md.
+            authorDid: c.get('actingActorDid') ?? undefined,
+            text,
+            title,
+            embed,
+            reply,
+            langs,
+            selfLabels,
+            processing: initialProcessing,
+        });
 
-    // Kick off processing for any stage that's actually pending. Which
-    // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
-    // inline awaits the work, a queue adapter awaits only the enqueue.
-    if (hasPendingStage(initialProcessing)) {
-        await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
+        // Kick off processing for any stage that's actually pending. Which
+        // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
+        // inline awaits the work, a queue adapter awaits only the enqueue.
+        if (hasPendingStage(initialProcessing)) {
+            await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
+        }
+    } catch (err) {
+        await releaseIdempotencyClaim(c, uid);
+        throw err;
     }
 
     const responseBody = { success: true as const, data: { postId: created.id } };
@@ -421,6 +440,10 @@ const patchRoute = createRoute({
         requireAuth(),
         rateLimit(RATE_LIMITS.writeAggregate),
         rateLimit(RATE_LIMITS.write, { keyBy: actingActorKey }),
+        bodyLimit({
+            maxSize: 256 * 1024,
+            onError: (c) => c.json(errorEnvelope(c, 'Request body too large'), 413),
+        }),
     ] as const,
     request: {
         params: z.object({

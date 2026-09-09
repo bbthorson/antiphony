@@ -3,6 +3,7 @@ import {
     type AudioPostRecord,
     type TranscriptEnrichmentRecord,
 } from 'shared/types/audio';
+import type { ProcessingState } from 'shared/types/processing';
 import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
@@ -57,7 +58,7 @@ function paginated(where: string, direction: 'asc' | 'desc'): string {
     const cmp = direction === 'desc' ? '<' : '>';
     return `
         with cursor as (
-            select created_at, id from posts where id = $CURSOR
+            select created_at, id from posts where id = $CURSOR and origin_app_id = $1
         )
         select ${SELECT_COLS}
           from posts
@@ -107,6 +108,7 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
                         created_at   = excluded.created_at,
                         processing   = coalesce(excluded.processing, posts.processing),
                         lease_until  = coalesce(excluded.lease_until, posts.lease_until)
+                    where posts.origin_app_id = excluded.origin_app_id
                 `,
                 [
                     record.id,
@@ -117,6 +119,35 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
                     split.createdAt,
                 ],
             );
+        },
+
+        async patchProcessingState(
+            originAppId: string,
+            postId: string,
+            patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
+        ): Promise<void> {
+            const { leaseUntil, ...rest } = patch as Record<string, unknown>;
+            const merge: Record<string, unknown> = { updatedAt: new Date() };
+            for (const [key, value] of Object.entries(rest)) {
+                if (value !== undefined) merge[key] = value;
+            }
+
+            const rows = await sql.query<{ id: string }>(
+                `
+                update posts
+                   set processing  = coalesce(processing, '{}'::jsonb) || $3::jsonb,
+                       lease_until = coalesce($4, lease_until)
+                 where id = $1 and origin_app_id = $2
+                returning id
+                `,
+                [postId, originAppId, JSON.stringify(merge), leaseUntil ?? null],
+            );
+
+            if (rows.length === 0) {
+                throw new Error(
+                    `failed to patch processing state: post "${postId}" not found in origin "${originAppId}"`,
+                );
+            }
         },
 
         async getPostById(originAppId: string, id: string): Promise<AudioPostRecord | null> {
@@ -160,11 +191,10 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
         ): Promise<AudioPostRecord[]> {
             if (!originAppId?.trim() || !rootAuthorId?.trim()) return [];
             const { limit = 20, cursorId } = options ?? {};
-            // `root_author_id` is stamped on replies only, so this is
-            // inherently reply-scoped — no `kind` predicate, same as Firestore.
-            // The partial index carries the `kind = 'reply'` restriction.
+            // Explicitly filter `kind = 'reply'` so the Postgres query planner
+            // matches the partial index `posts_root_author_created_idx` (where kind = 'reply').
             const rows = await sql.query<PostRow>(
-                bind(paginated('origin_app_id = $1 and root_author_id = $2', 'desc'), 3),
+                bind(paginated("origin_app_id = $1 and root_author_id = $2 and kind = 'reply'", 'desc'), 3),
                 [originAppId, rootAuthorId, cursorId ?? null, limit],
             );
             return hydrateRows(rows);
@@ -178,8 +208,10 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
             if (!originAppId?.trim() || !parentUri?.trim()) return [];
             const { limit = 50, cursorId } = options ?? {};
             // Ascending — thread reading order.
+            // Explicitly filter `kind = 'reply'` so the Postgres query planner
+            // matches the partial index `posts_reply_parent_created_idx` (where kind = 'reply').
             const rows = await sql.query<PostRow>(
-                bind(paginated('origin_app_id = $1 and reply_parent_uri = $2', 'asc'), 3),
+                bind(paginated("origin_app_id = $1 and reply_parent_uri = $2 and kind = 'reply'", 'asc'), 3),
                 [originAppId, parentUri, cursorId ?? null, limit],
             );
             return hydrateRows(rows);

@@ -403,6 +403,7 @@ export class AudioProcessingService {
                     const cleaned = await denoiser.denoise({
                         bytes: working.bytes,
                         mimeType: working.mimeType,
+                        durationMs: post.embed?.durationMs,
                     });
                     const processedBlobCid = await this.deps.writeDerivedBlob(
                         originAppId,

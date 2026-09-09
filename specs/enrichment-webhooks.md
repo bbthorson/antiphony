@@ -78,18 +78,18 @@ artifact is worth fetching; the view is where it fetches it. (If a future consum
 the cheap scalars inlined — e.g. `processedDurationMs` on `trim: ready` — that is an
 additive change to revisit then, not a v1 commitment.)
 
-## Auth — HMAC over the raw body
+## Auth — HMAC over timestamp and raw body
 
-Each request carries `X-Antiphony-Signature: sha256=<hex>`, an HMAC-SHA256 of the **raw
-request body** keyed by the tenant's webhook secret. The receiver recomputes and
-constant-time-compares. This lets the BFF trust the payload **without a callback** — which
-is the whole point; a webhook that had to be verified by GETting core would reintroduce
-the round-trip we are removing. Include `occurredAt` in the signed body and reject
-skewed/old timestamps to blunt replay.
+Each request carries:
+- `X-Antiphony-Signature: sha256=<hex>` — an HMAC-SHA256 of `${timestamp}.${body}` keyed by the tenant's webhook secret.
+- `X-Antiphony-Timestamp: <unix_seconds>` — Unix timestamp of dispatch.
+- `X-Antiphony-Event-Id: <uuid>` — unique event ID for deduplication.
 
-No bearer token: unlike the inbound `/system/*` routes (which core authenticates), here
-core is the *client*, and a shared bearer sent outbound would be a static secret on the
-wire with no per-message integrity. HMAC binds the secret to the exact bytes.
+The receiver recomputes the HMAC over `${timestamp}.${rawBody}` and constant-time-compares. Receivers should reject deliveries with timestamps older than 5 minutes (or skewed into the future) and deduplicate on `X-Antiphony-Event-Id` to prevent replay attacks.
+
+Outbound delivery uses `redirect: 'manual'` so signed payloads are never reposted across redirects.
+
+No bearer token: unlike the inbound `/system/*` routes (which core authenticates), here core is the *client*, and a shared bearer sent outbound would be a static secret on the wire with no per-message integrity. HMAC binds the secret to the exact bytes and dispatch timestamp.
 
 ## Config — per tenant
 

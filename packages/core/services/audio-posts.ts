@@ -261,6 +261,21 @@ export class AudioPostService {
             throw new ValidationError('Post has no audio to process');
         }
 
+        if (this.deps.patchProcessingState) {
+            await this.deps.patchProcessingState(originAppId, id, resolved);
+            const fresh = await this.deps.getPostById(originAppId, id);
+            return (
+                fresh ?? {
+                    ...record,
+                    processing: {
+                        ...record.processing,
+                        ...resolved,
+                        updatedAt: this.deps.now(),
+                    },
+                }
+            );
+        }
+
         const updated: AudioPostRecord = {
             ...record,
             processing: {

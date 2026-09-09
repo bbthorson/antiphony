@@ -9,7 +9,7 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
 import { servicesFor } from './composition.js';
-import { dataPresence, type R2ListLike } from './lib/data-presence.js';
+import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
 
 /**
  * ## No CORS middleware — deliberately
@@ -108,10 +108,14 @@ export function app(): OpenAPIHono {
             // deployment is a legitimate state, and a health check that fails
             // for it cannot be used by the thing that provisions it. The signal
             // is the field, not the status code.
-            ...(await dataPresence({
+            ...(await cachedDataPresence({
                 sql: services.sql,
                 bucket: bindings?.BLOBS as R2ListLike | undefined,
             })),
+            toggles: {
+                stubProcessing: process.env.ANTIPHONY_PROCESSING_STUB === 'true',
+                inlineProcessing: process.env.ANTIPHONY_PROCESSING_INLINE === 'true',
+            },
         });
     });
 

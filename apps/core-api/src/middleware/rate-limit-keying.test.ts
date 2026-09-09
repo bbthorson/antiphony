@@ -151,6 +151,76 @@ describe('rate-limit keying — per acting actor on writes', () => {
     });
 });
 
+async function readApp() {
+    const { rateLimit, RATE_LIMITS, actingActorKey } = await import('./rate-limit.js');
+    const { ACTING_ACTOR_HEADER } = await import('./auth.js');
+    const { matchServiceToken } = await import('./service-auth.js');
+    const a = new Hono();
+    a.get(
+        '/posts',
+        async (c, next) => {
+            const token = (c.req.header('authorization') ?? '').replace(/^Bearer /, '');
+            c.set('originAppId', matchServiceToken(token));
+            c.set('viewerUid', c.req.header(ACTING_ACTOR_HEADER)?.trim() || null);
+            await next();
+        },
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        (c) => c.json({ ok: true }),
+    );
+    return a;
+}
+
+describe('rate-limit keying — per acting actor on reads', () => {
+    it('gives two users of the same app separate read buckets', async () => {
+        const a = await readApp();
+        await a.request('/posts', {
+            headers: {
+                authorization: `Bearer ${VALID_TOKEN}`,
+                'x-antiphony-acting-actor': 'user-alice',
+                'cf-connecting-ip': '203.0.113.7',
+            },
+        });
+        await a.request('/posts', {
+            headers: {
+                authorization: `Bearer ${VALID_TOKEN}`,
+                'x-antiphony-acting-actor': 'user-bob',
+                'cf-connecting-ip': '203.0.113.7',
+            },
+        });
+
+        const readKeys = keys.filter((k) => k.startsWith('ratelimit_read_'));
+        expect(readKeys).toEqual(['ratelimit_read_voxpop:user-alice', 'ratelimit_read_voxpop:user-bob']);
+    });
+
+    it('keys viewer-less reads on originAppId rather than caller IP', async () => {
+        const a = await readApp();
+        await a.request('/posts', {
+            headers: {
+                authorization: `Bearer ${VALID_TOKEN}`,
+                // No x-antiphony-acting-actor
+                'cf-connecting-ip': '203.0.113.7',
+            },
+        });
+
+        const readKeys = keys.filter((k) => k.startsWith('ratelimit_read_'));
+        expect(readKeys).toEqual(['ratelimit_read_voxpop']);
+    });
+
+    it('still applies an IP-keyed aggregate above the actor-keyed read limit', async () => {
+        const a = await readApp();
+        await a.request('/posts', {
+            headers: {
+                authorization: `Bearer ${VALID_TOKEN}`,
+                'x-antiphony-acting-actor': 'user-alice',
+                'cf-connecting-ip': '203.0.113.7',
+            },
+        });
+
+        expect(keys).toContain('ratelimit_readAggregate_203.0.113.7');
+    });
+});
+
 describe('rate-limit keying — presets count independently', () => {
     it('does not let read traffic spend the write allowance', async () => {
         const { rateLimit, RATE_LIMITS } = await import('./rate-limit.js');

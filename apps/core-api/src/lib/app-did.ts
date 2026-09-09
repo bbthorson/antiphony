@@ -356,6 +356,12 @@ const PIN_STALE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 const PIN_RETRY_BACKOFF_MS = 60 * 1000;
 
 /**
+ * How long a last-known-good pin may be served if a 404 is encountered,
+ * absorbing transient web server restarts/deployments before evicting.
+ */
+const PIN_404_GRACE_MS = 5 * 60 * 1000;
+
+/**
  * The slice of a Cloudflare KV namespace this module uses.
  *
  * Declared structurally rather than by importing `@cloudflare/workers-types`,
@@ -487,6 +493,27 @@ export async function ensureTenantPin(
     }
 
     if (result.kind === 'disproof') {
+        const is404 = result.reason === 'did-doc-http-404';
+        const lastGood = local ?? (opts.kv ? await readKvPin(opts.kv, originAppId) : null);
+        if (
+            is404 &&
+            lastGood &&
+            lastGood.did === did &&
+            now - lastGood.validatedAt < PIN_FRESH_MS + PIN_404_GRACE_MS
+        ) {
+            logger.warn(
+                {
+                    originAppId,
+                    did,
+                    reason: result.reason,
+                    graceRemainingMs: PIN_FRESH_MS + PIN_404_GRACE_MS - (now - lastGood.validatedAt),
+                },
+                '[app-did] transient 404 on did:web — serving existing custody snapshot within grace period',
+            );
+            remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
+            return;
+        }
+
         // The custody claim is known false. Evict everywhere — a cached "yes"
         // is now a cached wrong answer — and refuse.
         validatedPins?.delete(originAppId);

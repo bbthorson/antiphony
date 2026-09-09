@@ -301,4 +301,47 @@ describe('postgresAudioPostDependencies', () => {
             expect(Number.isInteger(read?.embed?.audio.size)).toBe(true);
         });
     });
+
+    describe('cross-tenant protection & processing patch', () => {
+        it('does not overwrite a post from another tenant on ID collision', async () => {
+            const original = post({ id: 'shared-id', originAppId: 'tenant-a', text: 'tenant A post' });
+            await deps.savePost(original);
+
+            const collision = post({ id: 'shared-id', originAppId: 'tenant-b', text: 'tenant B overwrite attempt' });
+            await deps.savePost(collision);
+
+            const readA = await deps.getPostById('tenant-a', 'shared-id');
+            expect(readA?.text).toBe('tenant A post');
+
+            const readB = await deps.getPostById('tenant-b', 'shared-id');
+            expect(readB).toBeNull();
+        });
+
+        it('ignores a cursor from another tenant when paginating', async () => {
+            const foreign = post({ id: 'foreign-cursor', originAppId: 'other-app', createdAt: new Date('2026-08-05T00:00:00.000Z') });
+            await deps.savePost(foreign);
+
+            const p1 = post({ id: 'p1', originAppId: 'vox-pop', createdAt: new Date('2026-08-01T00:00:00.000Z') });
+            const p2 = post({ id: 'p2', originAppId: 'vox-pop', createdAt: new Date('2026-08-02T00:00:00.000Z') });
+            await deps.savePost(p1);
+            await deps.savePost(p2);
+
+            // Passing a foreign cursor should be treated as non-existent (acts as no cursor)
+            const results = await deps.queryByAuthor('vox-pop', 'user-1', { cursorId: 'foreign-cursor', limit: 10 });
+            expect(results.map((r) => r.id)).toEqual(['p2', 'p1']);
+        });
+
+        it('patches processing state atomically without full record overwrite', async () => {
+            const record = post({ id: 'p-patch', originAppId: 'vox-pop', text: 'keep text' });
+            await deps.savePost(record);
+
+            await deps.patchProcessingState!('vox-pop', 'p-patch', { denoise: 'pending' });
+
+            const read = await deps.getPostById('vox-pop', 'p-patch');
+            expect(read?.text).toBe('keep text');
+            expect(read?.processing?.denoise).toBe('pending');
+            expect(read?.processing?.updatedAt).toBeDefined();
+        });
+    });
 });
+
