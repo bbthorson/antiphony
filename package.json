@@ -35,8 +35,9 @@
   },
   "//packageManager": "Declares the npm this repo is verified against, and is now the single source for it: every workflow reads this field and installs it explicitly, because actions/setup-node does NOT switch npm on it (corepack-aware tools do; it is not one). Bump it here and CI, all three deploys, and the release follow. Until they did, they all ran npm 10.9.8 while this said 12.0.2 -- a major apart, and the two install different trees from the same lockfile because npm 12 honours `allowScripts` and npm 10 ignores it. The Dockerfile does not rely on resolution at all \u2014 it installs this exact npm explicitly, which is the point: production once built on a buildpack's own npm (Firebase App Hosting, long since replaced), and an unreviewed bump to it broke prod. It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
   "packageManager": "npm@12.0.2",
+  "//engines": "NOT `>=22`, which is what this said until jsdom 30 arrived. That bump (#138) declares `node: ^22.22.2 || ^24.15.0 || >=26.0.0`, so `>=22` had become a claim the tree could not honour: it permits Node 22.0.0, on which a dependency refuses to install. `.nvmrc` (22.23.2) and CI were always fine — the DECLARATION was the stale part, and npm only warns about `engines` unless `engine-strict` is set, so the gap surfaces as a confusing install on someone else's machine rather than as an error here. Keep this at or above the highest floor any dependency asks for; `npm ls` warnings after a bump are where the next one shows up.",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.2"
   },
   "volta": {
     "node": "22"
