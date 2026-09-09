@@ -15,14 +15,14 @@
   "dependencies": {
     "@antiphony/capture-kit": "*",
     "@antiphony/shared": "*",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^5.0.0",
     "eslint": "^9.16.0",
     "globals": "^17.12.0",
