@@ -191,7 +191,11 @@ jobs:
                   for attempt in 1 2 3 4 5; do
                     if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
                       echo "$BODY"
-                      echo "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\"" && exit 0
+                      if echo "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\""; then
+                        echo "$BODY" | grep -q '"stubProcessing":false' || { echo "::error::stubProcessing is true in production"; exit 1; }
+                        echo "$BODY" | grep -q '"inlineProcessing":false' || { echo "::error::inlineProcessing is true in production"; exit 1; }
+                        exit 0
+                      fi
                     fi
                     echo "attempt ${attempt} failed; retrying"
                     sleep 5

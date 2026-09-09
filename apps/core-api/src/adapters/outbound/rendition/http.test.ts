@@ -20,6 +20,7 @@ const REQ = { originAppId: 'vox-pop', cid: 'bafkreiabc', format: 'mp3' as const 
 afterEach(() => {
     delete process.env.ANTIPHONY_RENDITION_SERVICE_URL;
     delete process.env.SYSTEM_AUTH_TOKEN;
+    delete process.env.RENDITION_SERVICE_TOKEN;
 });
 
 describe('renditionServiceConfig', () => {
@@ -31,6 +32,18 @@ describe('renditionServiceConfig', () => {
         expect(resolved.config).toEqual({
             baseUrl: 'https://rendition.test',
             systemAuthToken: 'sys-tok-abc',
+        });
+    });
+
+    it('prefers RENDITION_SERVICE_TOKEN over SYSTEM_AUTH_TOKEN', () => {
+        process.env.ANTIPHONY_RENDITION_SERVICE_URL = 'https://rendition.test';
+        process.env.SYSTEM_AUTH_TOKEN = 'sys-tok-fallback';
+        process.env.RENDITION_SERVICE_TOKEN = 'rendition-tok-primary';
+
+        const resolved = renditionServiceConfig();
+        expect(resolved.config).toEqual({
+            baseUrl: 'https://rendition.test',
+            systemAuthToken: 'rendition-tok-primary',
         });
     });
 

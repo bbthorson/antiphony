@@ -56,7 +56,9 @@ export function renditionServiceConfig():
     | { config: RenditionServiceConfig; missing?: undefined }
     | { config?: undefined; missing: string[] } {
     const baseUrl = process.env.ANTIPHONY_RENDITION_SERVICE_URL?.trim().replace(/\/+$/, '');
-    const systemAuthToken = process.env.SYSTEM_AUTH_TOKEN?.trim();
+    const systemAuthToken =
+        process.env.RENDITION_SERVICE_TOKEN?.trim() ||
+        process.env.SYSTEM_AUTH_TOKEN?.trim();
 
     const missing: string[] = [];
     if (!baseUrl) missing.push('ANTIPHONY_RENDITION_SERVICE_URL');

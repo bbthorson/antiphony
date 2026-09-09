@@ -70,6 +70,10 @@ import type {
 export interface DurableObjectStorageLike {
     get<T>(key: string): Promise<T | undefined>;
     put<T>(key: string, value: T): Promise<void>;
+    delete?(key: string): Promise<boolean>;
+    setAlarm?(scheduledTime: number | Date): Promise<void>;
+    getAlarm?(): Promise<number | null>;
+    deleteAlarm?(): Promise<void>;
 }
 
 export interface DurableObjectStateLike {
@@ -127,11 +131,30 @@ export class RateLimiter {
         this.bucket = bucket;
         await this.state.storage.put(BUCKET_KEY, bucket);
 
+        if (this.state.storage.setAlarm) {
+            try {
+                await this.state.storage.setAlarm(bucket.resetAt);
+            } catch {
+                // Alarms are best-effort
+            }
+        }
+
         // `>` on a post-increment count: the request that takes the bucket TO
         // the limit is the last one allowed, and the next is refused. Same
         // comparison as the Postgres binding, for the same reason — `>=` here
         // would refuse at limit-1.
         return Response.json({ over: bucket.count > window.limit, count: bucket.count });
+    }
+
+    /**
+     * Clean up expired bucket storage when the window elapses so dormant
+     * rate limiter instances do not consume persistent SQLite storage indefinitely.
+     */
+    async alarm(): Promise<void> {
+        this.bucket = undefined;
+        if (this.state.storage.delete) {
+            await this.state.storage.delete(BUCKET_KEY);
+        }
     }
 }
 

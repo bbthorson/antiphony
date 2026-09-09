@@ -28,13 +28,19 @@ process.env.LOG_LEVEL = 'silent';
 const WINDOW = { limit: 3, windowMs: 60_000 };
 
 /** An in-memory stand-in for the object's own storage. */
-function fakeState(): DurableObjectStateLike & { store: Map<string, unknown> } {
+function fakeState(): DurableObjectStateLike & { store: Map<string, unknown>; alarms: (number | Date)[] } {
     const store = new Map<string, unknown>();
+    const alarms: (number | Date)[] = [];
     return {
         store,
+        alarms,
         storage: {
             get: async <T>(key: string) => store.get(key) as T | undefined,
             put: async <T>(key: string, value: T) => void store.set(key, value),
+            delete: async (key: string) => store.delete(key),
+            setAlarm: async (scheduledTime: number | Date) => {
+                alarms.push(scheduledTime);
+            },
         },
         blockConcurrencyWhile: async <T>(cb: () => Promise<T>) => cb(),
     };
@@ -102,6 +108,20 @@ describe('RateLimiter — counting', () => {
 
         const [next] = await counts(new RateLimiter(state), 1);
         expect(next).toEqual({ over: true, count: 4 });
+    });
+
+    it('schedules an alarm on resetAt and deletes storage when the alarm fires', async () => {
+        const state = fakeState();
+        const limiter = new RateLimiter(state);
+        await counts(limiter, 1);
+
+        expect(state.alarms).toHaveLength(1);
+        const resetAt = (state.store.get('bucket') as { resetAt: number }).resetAt;
+        expect(state.alarms[0]).toBe(resetAt);
+
+        // When alarm fires, it cleans up bucket storage
+        await limiter.alarm();
+        expect(state.store.has('bucket')).toBe(false);
     });
 });
 

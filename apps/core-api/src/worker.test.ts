@@ -204,16 +204,16 @@ describe('worker queue — the audio-processing consumer', () => {
         expect(m.settled).toEqual(['ack']);
     });
 
-    it('acks a declined lease — a retry would only spin against the holder', async () => {
-        // `process()` returns false when another runner holds the post, or when
-        // there was nothing to do. Both are normal on an at-least-once queue,
-        // and the delivery decision is the same for all of them.
+    it('retries a declined lease with backoff rather than acking immediately', async () => {
+        // When another runner holds the post (or a dead runner's lease hasn't expired yet),
+        // acking immediately would lose the job if the previous runner crashed without completing.
+        // Retrying with delay gives the lease time to expire or finish.
         process_.mockResolvedValueOnce(false);
         const worker = await freshWorker();
         const m = message(JOB);
         await worker.queue(batch([m.msg]).value, {}, ctx);
 
-        expect(m.settled).toEqual(['ack']);
+        expect(m.settled).toEqual(['retry']);
     });
 
     it('acks a malformed payload rather than replaying it until the queue gives up', async () => {
@@ -225,10 +225,10 @@ describe('worker queue — the audio-processing consumer', () => {
         expect(m.settled).toEqual(['ack']);
     });
 
-    it('retries ONLY when the pass threw', async () => {
-        // The one retryable outcome: an error escaping `process()` came from
-        // outside a stage's try/catch, so it is infrastructure rather than this
-        // post. Nothing was recorded and the lease was already released.
+    it('retries when the pass threw', async () => {
+        // An error escaping `process()` came from outside a stage's try/catch,
+        // so it is infrastructure rather than this post. Nothing was recorded
+        // and the lease was already released.
         process_.mockRejectedValueOnce(new Error('database unreachable'));
         const worker = await freshWorker();
         const m = message(JOB);

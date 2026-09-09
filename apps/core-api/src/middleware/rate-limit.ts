@@ -257,6 +257,28 @@ export interface RateLimitBehaviour {
 }
 
 /**
+ * Request-derived rate limit key for service-token / authenticated routes.
+ *
+ * Scopes traffic by actor within tenant (`${originAppId}:${viewerUid}`) when
+ * an acting actor is asserted (via `requireAuth()` or `X-Antiphony-Acting-Actor`
+ * on `requireServiceToken()`).
+ *
+ * For viewer-less reads with a service token, keys on `originAppId` so the
+ * tenant's traffic is separated from other tenants and from unauthenticated
+ * public requests, without falling back to a shared IP bucket across the tenant's
+ * entire userbase.
+ *
+ * Returns null — falling back to client IP — when no tenant is known.
+ */
+export function actingActorKey(c: Parameters<MiddlewareHandler>[0]): string | null {
+    const appId = c.get('originAppId');
+    const actor = c.get('viewerUid');
+    if (appId && actor) return `${appId}:${actor}`;
+    if (appId) return `${appId}`;
+    return null;
+}
+
+/**
  * Build a rate-limit middleware with the given options. Call per-route:
  *
  *   app.get('/api/v1/handles', rateLimit(RATE_LIMITS.read), async (c) => { ... })

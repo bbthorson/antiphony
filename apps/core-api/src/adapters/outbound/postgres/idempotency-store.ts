@@ -68,6 +68,8 @@ const SETTLE = `
             expires_at   = excluded.expires_at
 `;
 
+const RELEASE = `delete from idempotency_keys where id = $1 and status = 'processing'`;
+
 function ms(value: number): string {
     return `${Math.max(0, Math.round(value))} milliseconds`;
 }
@@ -111,6 +113,14 @@ export function postgresIdempotencyStore(sql: SqlClient): IdempotencyStore {
                 await sql.query(SETTLE, [id, JSON.stringify(response ?? null), ms(ttlMs)]);
             } catch (error) {
                 logger.error({ error, id }, '[idempotency] failed to record result; replay unavailable');
+            }
+        },
+
+        async release(id: string): Promise<void> {
+            try {
+                await sql.query(RELEASE, [id]);
+            } catch (error) {
+                logger.error({ error, id }, '[idempotency] failed to release in-progress claim');
             }
         },
     };

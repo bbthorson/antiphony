@@ -94,13 +94,16 @@ npx wrangler secret put SYSTEM_AUTH_TOKEN
 npx wrangler secret put ANTIPHONY_APP_TOKENS
 npx wrangler secret put ELEVENLABS_API_KEY
 npx wrangler secret put DATABASE_URL
+npx wrangler secret put RENDITION_SERVICE_TOKEN  # optional: dedicated bearer for audio-rendition
 ```
 
-`DATABASE_URL` is the fourth because option A won the driver decision (§ 1) —
+`DATABASE_URL` is the fourth required secret because option A won the driver decision (§ 1) —
 Neon's **pooled** (`-pooler`) connection string, the one real database
 credential this Worker holds. Under Hyperdrive it would not exist here at all,
 which is the trade that decision made: a secret to hold, in exchange for a
-driver that works today.
+driver that works today. `RENDITION_SERVICE_TOKEN` is optional: when provided,
+it separates the Cloud Run audio-rendition service token from the platform's
+internal `SYSTEM_AUTH_TOKEN`.
 
 **Not** R2 (binding-based authorisation needs no credential).
 `ANTIPHONY_APP_DIDS` is deliberately a `var` rather than a secret: DIDs are

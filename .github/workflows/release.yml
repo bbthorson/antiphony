@@ -265,6 +265,14 @@ jobs:
       # unless told otherwise, so tagging shared-v0.6.0-rc.1 would hand every
       # `npm install @antiphony/shared` a release candidate. A version carrying
       # a prerelease identifier goes to `next` instead.
+      - name: Assert publish is from a tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::Publishing is only permitted from a git tag, not a branch or commit. Current ref_type is '${{ github.ref_type }}'."
+            exit 1
+          fi
+
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
         run: |

@@ -66,4 +66,14 @@ export interface IdempotencyStore {
      * bindings should not throw for transient backend trouble.
      */
     settle(id: string, response: unknown, ttlMs: number): Promise<void>;
+
+    /**
+     * Release an in-progress claim on `id` following a validation or pre-flight failure.
+     *
+     * Deletes the claim record if it is still in `processing` status, allowing the
+     * caller to immediately retry with a corrected payload rather than waiting out
+     * the 24h TTL with spurious 409 Conflict responses.
+     */
+    release(id: string): Promise<void>;
 }
+

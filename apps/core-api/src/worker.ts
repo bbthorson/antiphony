@@ -227,6 +227,17 @@ export default {
         env: unknown,
         _ctx: ExecutionContext,
     ): Promise<void> {
+        if (batch.queue === 'antiphony-processing-dlq') {
+            for (const message of batch.messages) {
+                logger.error(
+                    { queue: batch.queue, messageId: message.id, body: message.body },
+                    '[audio-processing] DLQ message received; processing permanently failed',
+                );
+                message.ack();
+            }
+            return;
+        }
+
         for (const message of batch.messages) {
             const result = await runProcessingJob(
                 message.body,
@@ -235,8 +246,16 @@ export default {
             );
             // The ack/retry decision is `lib/process-audio-job.ts`'s, shared
             // with the HTTP re-drive route so the two consumers cannot drift.
-            if (shouldRetry(result)) message.retry();
-            else message.ack();
+            if (shouldRetry(result)) {
+                message.retry();
+            } else if (result.outcome === 'ran' && !result.ran) {
+                // Lease was declined because another runner currently holds it.
+                // Hand back with a backoff delay so that if the other runner crashes,
+                // this message is redelivered rather than permanently lost.
+                message.retry({ delaySeconds: 60 });
+            } else {
+                message.ack();
+            }
         }
     },
 } satisfies ExportedHandler;

@@ -124,11 +124,10 @@ export async function postForm(
  * it from the MIME type rather than sending a bare blob.
  */
 export function audioFile(bytes: Uint8Array, mimeType: string, name = 'audio'): File {
-    // The copy is load-bearing, not defensive: `Uint8Array` is generic over
-    // `ArrayBufferLike`, and `BlobPart` wants `ArrayBuffer` specifically, so a
-    // possibly-SharedArrayBuffer-backed view does not typecheck. Re-wrapping
-    // narrows it, and incidentally decouples us from the caller's buffer.
-    const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
+    // Avoid cloning the entire buffer into memory when it is already backed by an ArrayBuffer.
+    // In a 128MB Workers isolate, duplicating large multi-megabyte audio arrays triggers OOM.
+    const part = (bytes.buffer instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)) as unknown as BlobPart;
+    const blob = new Blob([part], { type: mimeType });
     return new File([blob], `${name}.${extensionForMime(mimeType)}`, { type: mimeType });
 }
 

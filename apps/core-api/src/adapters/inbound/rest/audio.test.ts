@@ -181,6 +181,19 @@ describe('GET /api/v1/audio', () => {
         });
     });
 
+    it('returns 416 Range Not Satisfiable when range offset >= totalSize', async () => {
+        extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        openStream.mockResolvedValue(read([], { size: 0, totalSize: 5 }));
+
+        const res = await app().request(
+            '/api/v1/audio?url=' + encodeURIComponent('blobs/app-1/bafyreicid'),
+            { headers: { range: 'bytes=10-20' } },
+        );
+
+        expect(res.status).toBe(416);
+        expect(res.headers.get('content-range')).toBe('bytes */5');
+    });
+
     it('ignores an unparseable Range header and serves the whole object', async () => {
         // RFC 9110 permits ignoring a Range we do not understand, and that is
         // the safe failure: a misparsed range serves the wrong bytes under a

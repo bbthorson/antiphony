@@ -118,6 +118,29 @@ export async function dataPresence(input: {
     return { records, blobs };
 }
 
+let cachedPresence: { data: DataPresence; expiresAt: number } | undefined;
+
+export function clearDataPresenceCache(): void {
+    cachedPresence = undefined;
+}
+
+/**
+ * Cache data presence check in isolate memory for 60s to avoid hammering Neon
+ * and R2 on high-frequency health probes.
+ */
+export async function cachedDataPresence(
+    input: { sql?: SqlClient; bucket?: R2ListLike },
+    ttlMs = 60_000,
+): Promise<DataPresence> {
+    const now = Date.now();
+    if (cachedPresence && cachedPresence.expiresAt > now) {
+        return cachedPresence.data;
+    }
+    const data = await dataPresence(input);
+    cachedPresence = { data, expiresAt: now + ttlMs };
+    return data;
+}
+
 /**
  * The reading that mattered, named once so `/health` and the cron agree.
  *
@@ -129,3 +152,4 @@ export async function dataPresence(input: {
 export function isAudioBlackout(presence: DataPresence): boolean {
     return presence.records === 'present' && presence.blobs === 'empty';
 }
+

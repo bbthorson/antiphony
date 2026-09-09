@@ -17,14 +17,16 @@ Under a Node host the same values are read from `process.env`, so nothing here i
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres connection string for records, transcripts, processing state, and idempotency keys. **Required** — the composition root throws rather than falling back. The SQL client runs `@neondatabase/serverless` over HTTP, so this must be a host that serves Neon's HTTP SQL endpoint; Neon's pooled (`-pooler`) host is the right one, since the driver is stateless per query. Store as a secret. |
-| `ANTIPHONY_PUBLIC_BASE_URL` | **Required.** The absolute base URL this deployment answers on, e.g. `https://api.antiphony.dev`. The audio proxy streams bytes rather than redirecting, so `AudioEmbedView.url` is an absolute URL pointing back here — without this, a post with audio hydrates with no embed at all. |
+| `ANTIPHONY_PUBLIC_BASE_URL` | **Required.** The absolute base URL this deployment answers on, e.g. `https://api.antiphony.dev`. The audio proxy streams bytes rather than redirecting, so `AudioEmbedView.url` is an absolute URL pointing back here — without this, a post with audio hydrates with no embed at all. Validated at startup. |
+| `ANTIPHONY_PDS_HOST` | **Required.** The host an app DID's custody service endpoint (`#atproto_pds` or `#atproto_space_host`) must point to (e.g. `api.antiphony.dev`). Validated at startup. |
 | `ANTIPHONY_R2_BUCKET` | Name of the bucket behind the `BLOBS` binding. Used for logging and for the rendition service's own addressing, not for authorisation. |
-| `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Only the fallback rate-limit key uses the client IP now (see below), but a value that doesn't match your actual proxy depth still mis-attributes it. |
+| `TRUSTED_PROXY_HOPS` | Number of proxy hops to trust when deriving the client IP from `X-Forwarded-For`. Used for aggregate IP limits when running behind a proxy. |
+| `CLIENT_IP_SOURCE` | Source for resolving the client IP: `'cf'` (reads `CF-Connecting-IP` on Workers) or `'forwarded'` (reads `X-Forwarded-For`). Defaults to `'forwarded'` if unset. |
 | `LOG_LEVEL` | One of `debug`, `info`, `warn`, `error`, `silent`. Defaults to `info` in production, `debug` otherwise. |
 | `NODE_ENV` | Standard environment flag (`production` in deploys). |
 
 :::note[There is no `ANTIPHONY_BACKEND` flag]
-Which store backs the ports is decided by **which bindings are present**, not by a variable naming one. A deployment therefore cannot ask for Postgres and forget to attach the database. `GET /health` reports the answer as `backend`, alongside `records` and `blobs` presence signals — read those rather than `ok` alone when verifying a deployment.
+Which store backs the ports is decided by **which bindings are present**, not by a variable naming one. A deployment therefore cannot ask for Postgres and forget to attach the database. `GET /health` reports the answer as `backend`, alongside `records` and `blobs` presence signals (cached for 60s to prevent probing hot-loops), and the active `toggles` state (`stubProcessing`, `inlineProcessing`).
 :::
 
 :::note[Removed: `ANTIPHONY_ORIGIN_APP_ID`]
@@ -38,10 +40,10 @@ Every tenant needs **two** registry entries, and they're keyed on the same `orig
 | Variable | Purpose |
 |---|---|
 | `ANTIPHONY_APP_DIDS` | Comma-separated `appId:did` pairs pinning each tenant's `at://` authority, e.g. `voxpop:did:web:did.voxpop.audio`. Split on the first colon, so the DID's own colons are safe. **Required for any tenant that reads or writes posts** — see the custody note below. |
-| `ANTIPHONY_PDS_HOST` | Optional but recommended. Your Antiphony host (e.g. `api.antiphony.dev`). When set, a pin must also point its `#atproto_pds` `serviceEndpoint` at this host — that's what turns "the DID document exists" into "the DID names *us* as its PDS". Unset, core-api logs a warning and only requires the endpoint to be present. |
+| `ANTIPHONY_PDS_HOST` | Your Antiphony host (e.g. `api.antiphony.dev`). A pin's `#atproto_pds` `serviceEndpoint` must point at this host — that's what turns "the DID document exists" into "the DID names *us* as its PDS". |
 
 :::caution[Custody is proven per request, and fails closed]
-Before any handler runs, the auth middleware resolves the caller's pinned `did:web` (`https://<domain>/.well-known/did.json`), checks the document's `id`, and requires an `#atproto_pds` service entry. A pin that doesn't validate **refuses the request with 503** — the core will not mint an `at://` URI whose authority it hasn't proven.
+Before any handler runs, the auth middleware resolves the caller's pinned `did:web` (`https://<domain>/.well-known/did.json`), checks the document's `id`, and requires an `#atproto_pds` service entry. A pin that doesn't validate **refuses the request with 503** — the core will not mint an `at://` URI whose authority it hasn't proven. Previously validated pins enjoy a short 5-minute 404 grace window during transient tenant outages before being evicted.
 
 **Why per request rather than at boot.** A Worker has no boot phase to fail closed in, so the ordering guarantee has to be established somewhere a request passes through. The auth middleware already resolves `originAppId` and *is* the tenancy boundary, and a pin is a tenancy property. Three things keep the cost near zero: an isolate-local snapshot inside a freshness window, the shared `PIN_CACHE` KV namespace underneath it so a cold isolate doesn't re-resolve what another already proved, and a deploy-time gate (`npm run validate:pins`) that proves every pin in the config *before* it ships.
 
@@ -60,6 +62,7 @@ Applications (BFFs, workers) are the intended callers of the posts/audio surface
 |---|---|
 | `ANTIPHONY_APP_TOKENS` | Comma-separated `appId:token` pairs (tokens ≥32 chars). A caller presenting a matching `Authorization: Bearer <token>` is that app: its tenancy (`originAppId`) comes from the credential, and it asserts the acting user via `X-Antiphony-Acting-Actor` (+ optional `X-Antiphony-Acting-Actor-Did`). Store as a secret. |
 | `SYSTEM_AUTH_TOKEN` | Shared secret for the `/api/v1/system/*` routes. The system-auth middleware expects `Authorization: Bearer <SYSTEM_AUTH_TOKEN>` and **fails closed** (503) if the variable is unset — these routes are service-to-service plumbing, not public API. Store it as a secret, not in plaintext config. |
+| `RENDITION_SERVICE_TOKEN` | Optional dedicated bearer secret for outbound requests to `ANTIPHONY_RENDITION_SERVICE_URL`. Decouples the Cloud Run transcode service credential from `SYSTEM_AUTH_TOKEN`. Falls back to `SYSTEM_AUTH_TOKEN` if unset. Store as a secret. |
 
 ## Audio enrichment
 
@@ -136,15 +139,21 @@ Optional. When configured, the core POSTs a small signed webhook to a tenant's B
 | Variable | Purpose |
 |---|---|
 | `ANTIPHONY_APP_WEBHOOK_URLS` | Comma-separated `appId:url` pairs — where to POST each tenant's stage-settled events, e.g. `voxpop:https://bff.voxpop/hooks`. Split on the first colon, so a URL with a port is fine. Must be **https** unless the host is loopback (`localhost`, `127.0.0.1`, `::1`), which stays plaintext-friendly for developing a receiver locally. |
-| `ANTIPHONY_APP_WEBHOOK_SECRETS` | Comma-separated `appId:secret` pairs, secrets **≥32 chars**. The key for the `X-Antiphony-Signature: sha256=<hex>` header, an HMAC-SHA256 over the **raw request body**; the receiver recomputes and constant-time-compares. Store as a secret. |
+| `ANTIPHONY_APP_WEBHOOK_SECRETS` | Comma-separated `appId:secret` pairs, secrets **≥32 chars**. The key for the `X-Antiphony-Signature: sha256=<hex>` header, an HMAC-SHA256 computed over `${timestamp}.${body}`. Store as a secret. |
+
+Deliveries include `X-Antiphony-Timestamp` (Unix timestamp in seconds) and `X-Antiphony-Event-Id` (unique UUIDv4). Receivers must verify the signature over `${timestamp}.${body}`, enforce a maximum clock-drift window (e.g. 5 minutes), and deduplicate on event ID to prevent replay attacks. Outbound delivery enforces `redirect: 'manual'` so signed payloads are never reposted across redirects.
 
 A tenant present in **both** vars gets webhooks; a tenant in **neither** is a silent opt-out (the pull paths still work). A tenant in **exactly one** is a misconfiguration — logged at `error` and sent no webhooks, so it never pushes unsigned. An entry that fails validation — a secret under the length floor, or a plaintext `http:` target off loopback — is dropped with an `error` log for that tenant alone, on the same fail-closed principle: the signature is the receiver's entire basis for trusting an event, so a key short enough to brute-force offline, or a hop where the payload and its signature both travel in the clear, makes it decorative. Delivery is best-effort (a short timeout and a couple of retries); a failed POST is logged and swallowed, never failing the enrichment pass. The payload carries `{postId, originAppId, stage, status, occurredAt}` — enough to act on without a follow-up request; the artifact itself is fetched from the post view when wanted. Receivers should treat each event as "latest wins for `(postId, stage)`" (a recompute legitimately re-fires `ready`), using `occurredAt` as the tiebreaker.
 
 ### Development flags
 
+:::danger[Prohibited in production]
+Both flags below are for **local and test environments only**. In a production deployment (`NODE_ENV=production`), setting either `ANTIPHONY_PROCESSING_INLINE` or `ANTIPHONY_PROCESSING_STUB` causes startup validation to fail and the service refuses to start.
+:::
+
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_PROCESSING_INLINE` | When `true`, runs processing **synchronously inside the request** — the local/test trigger, no queue needed. Wins over every durable dispatcher, so a developer with queue config in their shell can't enqueue against a real queue by accident. |
+| `ANTIPHONY_PROCESSING_INLINE` | When `true`, runs processing **synchronously inside the request** — the local/test trigger, no queue needed. Wins over every durable dispatcher in development/test, so a developer with queue config in their shell can't enqueue against a real queue by accident. |
 | `ANTIPHONY_PROCESSING_STUB` | When `true`, wires pass-through **stub providers** instead of ElevenLabs — exercises the full create → process → hydrate loop with no key and no billing. Wins over `ELEVENLABS_API_KEY`, so a real key in the shell can't accidentally bill from a test run. |
 
 With no queue binding, no `ANTIPHONY_PROCESSING_INLINE`, and no `ANTIPHONY_TASKS_*` vars, dispatch is a no-op (logged and dropped) — enrichment is effectively off. Note the two flags govern different axes and neither implies the other: `_STUB` decides which providers can do the work, `_INLINE` decides who runs it.

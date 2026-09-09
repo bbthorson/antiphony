@@ -15,11 +15,15 @@ import { assertRequiredConfig, publicBaseUrl } from './app-config.js';
 describe('assertRequiredConfig', () => {
     it('throws when a required var is absent', () => {
         expect(() => assertRequiredConfig({})).toThrow(/ANTIPHONY_PUBLIC_BASE_URL/);
+        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev' })).toThrow(/ANTIPHONY_PDS_HOST/);
     });
 
     it('treats whitespace as absent, because a blank value degrades identically', () => {
-        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: '   ' })).toThrow(
+        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: '   ', ANTIPHONY_PDS_HOST: 'api.antiphony.dev' })).toThrow(
             /ANTIPHONY_PUBLIC_BASE_URL/,
+        );
+        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev', ANTIPHONY_PDS_HOST: '   ' })).toThrow(
+            /ANTIPHONY_PDS_HOST/,
         );
     });
 
@@ -29,7 +33,10 @@ describe('assertRequiredConfig', () => {
 
     it('passes when every required var is present', () => {
         expect(() =>
-            assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev' }),
+            assertRequiredConfig({
+                ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+            }),
         ).not.toThrow();
     });
 
@@ -37,6 +44,7 @@ describe('assertRequiredConfig', () => {
         expect(() =>
             assertRequiredConfig({
                 ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
                 ANTIPHONY_RENDITION_SERVICE_URL: undefined,
                 SOMETHING_ELSE: '',
             }),
@@ -53,14 +61,51 @@ describe('assertRequiredConfig', () => {
         'javascript:alert(1)',
         'file:///srv',
     ])('refuses a base URL that is not absolute http(s): %s', (ANTIPHONY_PUBLIC_BASE_URL) => {
-        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL })).toThrow(
+        expect(() => assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL, ANTIPHONY_PDS_HOST: 'api.antiphony.dev' })).toThrow(
             /ANTIPHONY_PUBLIC_BASE_URL is not an absolute http\(s\) URL/,
         );
     });
 
     it('accepts a plain-http base, for self-hosted and local deployments', () => {
         expect(() =>
-            assertRequiredConfig({ ANTIPHONY_PUBLIC_BASE_URL: 'http://localhost:8787' }),
+            assertRequiredConfig({
+                ANTIPHONY_PUBLIC_BASE_URL: 'http://localhost:8787',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+            }),
+        ).not.toThrow();
+    });
+
+    it('refuses ANTIPHONY_PROCESSING_STUB in production', () => {
+        expect(() =>
+            assertRequiredConfig({
+                ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+                NODE_ENV: 'production',
+                ANTIPHONY_PROCESSING_STUB: 'true',
+            }),
+        ).toThrow(/ANTIPHONY_PROCESSING_STUB and ANTIPHONY_PROCESSING_INLINE are not permitted/);
+    });
+
+    it('refuses ANTIPHONY_PROCESSING_INLINE in production', () => {
+        expect(() =>
+            assertRequiredConfig({
+                ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+                NODE_ENV: 'production',
+                ANTIPHONY_PROCESSING_INLINE: 'true',
+            }),
+        ).toThrow(/ANTIPHONY_PROCESSING_STUB and ANTIPHONY_PROCESSING_INLINE are not permitted/);
+    });
+
+    it('allows stub and inline in non-production environments', () => {
+        expect(() =>
+            assertRequiredConfig({
+                ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+                ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+                NODE_ENV: 'development',
+                ANTIPHONY_PROCESSING_STUB: 'true',
+                ANTIPHONY_PROCESSING_INLINE: 'true',
+            }),
         ).not.toThrow();
     });
 });

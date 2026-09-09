@@ -84,3 +84,27 @@ describe('isAudioBlackout', () => {
         expect(isAudioBlackout({ records: 'present', blobs: 'present' })).toBe(false);
     });
 });
+
+describe('cachedDataPresence', () => {
+    it('caches the probe result within the TTL', async () => {
+        const { cachedDataPresence, clearDataPresenceCache } = await import('./data-presence.js');
+        clearDataPresenceCache();
+
+        let count = 0;
+        const sql: SqlClient = {
+            query: async () => {
+                count++;
+                return [{ present: true }] as never;
+            },
+        };
+        const bucket = bucketWith(1);
+
+        const first = await cachedDataPresence({ sql, bucket }, 10_000);
+        const second = await cachedDataPresence({ sql, bucket }, 10_000);
+
+        expect(first).toEqual({ records: 'present', blobs: 'present' });
+        expect(second).toEqual({ records: 'present', blobs: 'present' });
+        expect(count).toBe(1);
+    });
+});
+

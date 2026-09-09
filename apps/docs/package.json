@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "node scripts/copy-openapi.mjs && astro dev",
     "start": "node scripts/copy-openapi.mjs && astro dev",
-    "build": "node scripts/copy-openapi.mjs --strict && astro build",
-    "typecheck": "astro check",
+    "build": "node scripts/copy-openapi.mjs --strict && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check",
     "preview": "astro preview",
     "astro": "astro"
   },

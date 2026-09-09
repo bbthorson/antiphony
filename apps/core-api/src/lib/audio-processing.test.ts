@@ -79,6 +79,22 @@ describe('processingCapabilities', () => {
         });
     });
 
+    it('ignores ANTIPHONY_PROCESSING_STUB in production', () => {
+        const oldNodeEnv = process.env.NODE_ENV;
+        try {
+            process.env.NODE_ENV = 'production';
+            process.env.ANTIPHONY_PROCESSING_STUB = 'true';
+            expect(processingCapabilities()).toEqual({
+                transcribe: false,
+                denoise: false,
+                trim: false,
+                waveform: false,
+            });
+        } finally {
+            process.env.NODE_ENV = oldNodeEnv;
+        }
+    });
+
     it('reports them unavailable on a PARTIAL backend config', () => {
         // A URL with no token is a stage that would 401 on every post. Half a
         // config must not advertise a capability.

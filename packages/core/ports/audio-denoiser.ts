@@ -11,6 +11,7 @@
 export interface DenoiseInput {
     bytes: Uint8Array;
     mimeType: string;
+    durationMs?: number;
 }
 
 export interface DenoiseResult {

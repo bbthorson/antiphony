@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
     checkIdempotency,
     saveIdempotencyResult,
+    releaseIdempotencyClaim,
     IdempotencyInProgressError,
 } from './idempotency.js';
 import type { IdempotencyStore, IdempotencyClaim } from '../ports/idempotency-store.js';
@@ -31,14 +32,15 @@ import type { IdempotencyStore, IdempotencyClaim } from '../ports/idempotency-st
  */
 
 /** Mirror of the (private) id derivation in idempotency.ts. */
-function expectedId(uid: string, key: string): string {
-    return `${uid}_${createHash('sha256').update(key).digest('hex')}`;
+function expectedId(originAppId: string, uid: string, key: string): string {
+    return `${originAppId}_${uid}_${createHash('sha256').update(key).digest('hex')}`;
 }
 
 /** A store that records every id it is asked about and answers as directed. */
 function recordingStore(claim: IdempotencyClaim = 'claimed') {
     const claimed: string[] = [];
     const settled: { id: string; response: unknown }[] = [];
+    const released: string[] = [];
     const store: IdempotencyStore = {
         async claim(id) {
             claimed.push(id);
@@ -47,17 +49,20 @@ function recordingStore(claim: IdempotencyClaim = 'claimed') {
         async settle(id, response) {
             settled.push({ id, response });
         },
+        async release(id) {
+            released.push(id);
+        },
     };
-    return { store, claimed, settled };
+    return { store, claimed, settled, released };
 }
 
 /** A minimal Hono-compatible context carrying the given header. */
-function makeCtx(idempotencyKey: string | null) {
+function makeCtx(idempotencyKey: string | null, originAppId = 'default') {
     return {
         req: {
             header: (name: string) => (name === 'idempotency-key' ? idempotencyKey : null),
         },
-        get: (key: string) => (key === 'requestId' ? 'test-req' : undefined),
+        get: (key: string) => (key === 'requestId' ? 'test-req' : key === 'originAppId' ? originAppId : undefined),
         env: undefined,
     } as unknown as Parameters<typeof checkIdempotency>[0];
 }
@@ -75,11 +80,11 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
         expect(claimed).toEqual([]);
     });
 
-    it('claims an id prefixed by the uid, never the raw key', async () => {
+    it('claims an id prefixed by originAppId and uid, never the raw key', async () => {
         const { store, claimed } = recordingStore();
         await checkIdempotency(makeCtx('my-key-123'), 'user-alpha', store);
 
-        expect(claimed).toEqual([expectedId('user-alpha', 'my-key-123')]);
+        expect(claimed).toEqual([expectedId('default', 'user-alpha', 'my-key-123')]);
         expect(claimed).not.toContain('my-key-123');
     });
 
@@ -95,8 +100,21 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
         await checkIdempotency(makeCtx(key), 'user-A', a.store);
         await checkIdempotency(makeCtx(key), 'user-B', b.store);
 
-        expect(a.claimed[0]).toBe(expectedId('user-A', key));
-        expect(b.claimed[0]).toBe(expectedId('user-B', key));
+        expect(a.claimed[0]).toBe(expectedId('default', 'user-A', key));
+        expect(b.claimed[0]).toBe(expectedId('default', 'user-B', key));
+        expect(a.claimed[0]).not.toBe(b.claimed[0]);
+    });
+
+    it('derives DIFFERENT ids for two tenants with the same user and raw key', async () => {
+        const key = 'tenant-key';
+        const a = recordingStore();
+        const b = recordingStore();
+
+        await checkIdempotency(makeCtx(key, 'tenant-1'), 'same-user', a.store);
+        await checkIdempotency(makeCtx(key, 'tenant-2'), 'same-user', b.store);
+
+        expect(a.claimed[0]).toBe(expectedId('tenant-1', 'same-user', key));
+        expect(b.claimed[0]).toBe(expectedId('tenant-2', 'same-user', key));
         expect(a.claimed[0]).not.toBe(b.claimed[0]);
     });
 
@@ -110,7 +128,7 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
         const { store, claimed } = recordingStore();
         await checkIdempotency(makeCtx(raw), 'user-slash', store);
 
-        expect(claimed[0]).toBe(expectedId('user-slash', raw));
+        expect(claimed[0]).toBe(expectedId('default', 'user-slash', raw));
         expect(claimed[0]).not.toContain('/');
     });
 
@@ -122,6 +140,7 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
                 return 'claimed';
             },
             async settle() {},
+            async release() {},
         };
         await checkIdempotency(makeCtx('k'), 'u', store);
         expect(seen).toBe(24 * 60 * 60 * 1000);
@@ -149,17 +168,32 @@ describe('checkIdempotency — claim outcomes', () => {
 });
 
 describe('saveIdempotencyResult', () => {
-    it('settles under the same uid-prefixed id', async () => {
+    it('settles under the same originAppId- and uid-prefixed id', async () => {
         const { store, settled } = recordingStore();
         const body = { success: true, data: { postId: 'p-1' } };
         await saveIdempotencyResult(makeCtx('save-key'), 'user-save', body, store);
 
-        expect(settled).toEqual([{ id: expectedId('user-save', 'save-key'), response: body }]);
+        expect(settled).toEqual([{ id: expectedId('default', 'user-save', 'save-key'), response: body }]);
     });
 
     it('is a no-op without the header', async () => {
         const { store, settled } = recordingStore();
         await saveIdempotencyResult(makeCtx(null), 'user-save', { ok: true }, store);
         expect(settled).toEqual([]);
+    });
+});
+
+describe('releaseIdempotencyClaim', () => {
+    it('releases the claim under the originAppId- and uid-prefixed id', async () => {
+        const { store, released } = recordingStore();
+        await releaseIdempotencyClaim(makeCtx('release-key', 'tenant-a'), 'user-rel', store);
+
+        expect(released).toEqual([expectedId('tenant-a', 'user-rel', 'release-key')]);
+    });
+
+    it('is a no-op without the header', async () => {
+        const { store, released } = recordingStore();
+        await releaseIdempotencyClaim(makeCtx(null), 'user-rel', store);
+        expect(released).toEqual([]);
     });
 });

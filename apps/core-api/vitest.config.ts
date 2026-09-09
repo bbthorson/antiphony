@@ -5,6 +5,10 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         include: ['src/**/*.test.ts'],
+        env: {
+            ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
+            ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
+        },
     },
     resolve: {
         alias: {

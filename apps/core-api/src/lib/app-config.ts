@@ -29,7 +29,7 @@ export const APP_CONFIG = {
  * optional by design. Adding a var that some other check already covers buys
  * nothing and makes a deployment brittle for no reason.
  */
-const REQUIRED_VARS = ['ANTIPHONY_PUBLIC_BASE_URL'] as const;
+const REQUIRED_VARS = ['ANTIPHONY_PUBLIC_BASE_URL', 'ANTIPHONY_PDS_HOST'] as const;
 
 /**
  * Throw unless every required var is present.
@@ -88,6 +88,17 @@ export function assertRequiredConfig(env: NodeJS.ProcessEnv = process.env): void
                 'It is concatenated into the playback URL on every post view, and the ' +
                 'contract restricts that field to the http/https schemes.',
         );
+    }
+
+    // Security/operational guards: processing stubs and inline processing are for
+    // dev and test environments only. A production deployment must never run stubs
+    // or run background processing inline synchronously on the request isolate.
+    if (env.NODE_ENV === 'production') {
+        if (env.ANTIPHONY_PROCESSING_STUB === 'true' || env.ANTIPHONY_PROCESSING_INLINE === 'true') {
+            throw new Error(
+                '[app-config] ANTIPHONY_PROCESSING_STUB and ANTIPHONY_PROCESSING_INLINE are not permitted when NODE_ENV=production',
+            );
+        }
     }
 }
 

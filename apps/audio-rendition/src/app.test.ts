@@ -51,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
     delete process.env.SYSTEM_AUTH_TOKEN;
+    delete process.env.RENDITION_SERVICE_TOKEN;
 });
 
 describe('GET /health', () => {
@@ -105,6 +106,20 @@ describe('POST /render — authorisation', () => {
         const res = await post(BODY);
 
         expect(res.status).toBe(200);
+        expect(buildRendition).toHaveBeenCalledWith(BODY);
+    });
+
+    it('prefers RENDITION_SERVICE_TOKEN over SYSTEM_AUTH_TOKEN when set', async () => {
+        process.env.RENDITION_SERVICE_TOKEN = 'rendition-specific-token-1234567890';
+        process.env.SYSTEM_AUTH_TOKEN = 'old-system-token-123456789012345678';
+
+        // Old token is now rejected
+        const resOld = await post(BODY, process.env.SYSTEM_AUTH_TOKEN);
+        expect(resOld.status).toBe(401);
+
+        // New token is accepted
+        const resNew = await post(BODY, process.env.RENDITION_SERVICE_TOKEN);
+        expect(resNew.status).toBe(200);
         expect(buildRendition).toHaveBeenCalledWith(BODY);
     });
 });

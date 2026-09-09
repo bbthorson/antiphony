@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
-import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
+import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { cidForBytes } from '../../../lib/cid.js';
@@ -72,7 +72,8 @@ const uploadRoute = createRoute({
         'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post.',
     middleware: [
         requireAuth(),
-        rateLimit(RATE_LIMITS.hourly),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.hourly, { keyBy: actingActorKey }),
         // Bound the body BEFORE the handler's `c.req.formData()` buffers it
         // whole. Without this the 25 MB check below only ran after the bytes
         // were already resident, so an authenticated caller could spend the

@@ -264,6 +264,10 @@ app.openapi(proxyRoute, async (c) => {
     c.header('Content-Length', String(read.size ?? 0));
 
     if (range && read.totalSize !== undefined) {
+        if (range.offset >= read.totalSize) {
+            c.header('Content-Range', `bytes */${read.totalSize}`);
+            return c.body(null, 416);
+        }
         const last = range.offset + (read.size ?? 0) - 1;
         c.header('Content-Range', `bytes ${range.offset}-${Math.max(range.offset, last)}/${read.totalSize}`);
         return c.body(read.body, 206);

@@ -50,8 +50,9 @@ vi.mock('../../../lib/idempotency.js', () => ({
 }));
 
 vi.mock('../../../middleware/rate-limit.js', () => ({
-    RATE_LIMITS: { read: {}, write: {}, expensive: {} },
+    RATE_LIMITS: { read: {}, write: {}, readAggregate: {}, writeAggregate: {}, expensive: {}, hourly: {} },
     rateLimit: () => async (_c: unknown, next: () => Promise<void>) => { await next(); },
+    actingActorKey: () => 'actor',
 }));
 
 // The caller authenticates as the application `test-app` via a service token;
