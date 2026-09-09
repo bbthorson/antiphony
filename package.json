@@ -28,7 +28,7 @@
     "sharp": true
   },
   "devDependencies": {
-    "@atproto/lex-document": "^0.1.9",
+    "@atproto/lex-document": "^0.1.10",
     "eslint": "^9.16.0",
     "knip": "^5.66.1",
     "typescript": "^5.7.2"
