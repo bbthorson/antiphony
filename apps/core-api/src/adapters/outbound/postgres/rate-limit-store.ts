@@ -36,7 +36,7 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * A closed window is detected by `reset_time < now()`, not by the row being
  * absent, so a bucket whose sweep has not run yet behaves identically to one
  * that has been reclaimed. `expires_at` exists solely so
- * `antiphony_sweep_expired()` can reclaim the space (db/schema.sql) — nothing
+ * `antiphony_sweep_expired()` can reclaim the space (migrations/0001_initial_schema.sql) — nothing
  * reads it on this path.
  */
 

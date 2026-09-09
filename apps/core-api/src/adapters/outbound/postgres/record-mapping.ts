@@ -10,7 +10,7 @@ import { logger } from '../../../lib/logger.js';
  *
  * ## Why the record is split across three columns
  *
- * `db/schema.sql` stores the canonical record as `jsonb` **minus** its
+ * `migrations/0001_initial_schema.sql` stores the canonical record as `jsonb` **minus** its
  * `processing` field, with `processing` in its own column and `lease_until`
  * promoted to a typed one. The reasons are in the schema, but the consequence
  * lives here: every write must take the record apart and every read must put it

@@ -194,7 +194,7 @@ export function createServices(env: RuntimeEnv): Services {
     // Rate limiting is selected on its OWN axis, ahead of the database.
     //
     // The other four stores are one record store seen from four angles. This one
-    // is not: it is a counter on the read path, the table in `db/schema.sql` is
+    // is not: it is a counter on the read path, the table in `migrations/0001_initial_schema.sql` is
     // explicitly a bridge rather than a destination, and the Durable Object is
     // where it is going. So a deployment WITH the binding attached should
     // already be using the binding — otherwise the last step of the migration

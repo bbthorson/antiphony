@@ -29,10 +29,10 @@ npm install
 
 ## 2. Create the database
 
-Apply the schema to an empty database. It is one `begin`/`commit`, so a failed apply rolls back whole:
+Apply the schema to an empty database. Each migration runs in its own transaction, so a failed apply rolls back whole and the ledger never records a file that did not run:
 
 ```bash
-psql "$DATABASE_URL" -f apps/core-api/db/schema.sql
+DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
 
 Four tables come out of it: `posts`, `audio_transcripts`, `idempotency_keys`, and `rate_limits`. Two properties are worth knowing because they are enforced rather than conventional — the query facets (`author_id`, `kind`, `cid`, …) are **generated columns** off the record JSON, so they cannot drift from it, and the "a reply has a parent and a root author; a prompt has neither" invariant is a **check constraint**, not just a Zod refinement.

@@ -58,7 +58,7 @@ describe('rate limiting selects on its own axis', () => {
     it('prefers the Durable Object over the Postgres table when bound', async () => {
         // The other four stores move together because they are one record
         // store seen from four angles. This one does not: the `rate_limits`
-        // table is explicitly a bridge (db/schema.sql says so) and the Durable
+        // table is explicitly a bridge (migrations/0001_initial_schema.sql says so) and the Durable
         // Object is the destination. Selecting it on the database's axis would
         // mean the last step of the migration needed its own cutover instead
         // of just attaching the binding.

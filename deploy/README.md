@@ -167,10 +167,19 @@ nothing like a bad binding id in the logs — check the token first.
 ## 4. Apply the database schema
 
 ```bash
-psql "$DATABASE_URL" -f apps/core-api/db/schema.sql
+DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
 
-Apply-once DDL, not a versioned chain. The first post-deploy schema change is
+A versioned chain now, not apply-once DDL: `apps/core-api/migrations/*.sql`
+applied in order with a `schema_migrations` ledger, one transaction per file,
+and a checksum per file so an already-applied migration cannot be edited. Run
+it with `-- --dry-run` first to see what is pending.
+
+⚠️ On a database that ALREADY has the schema — anything applied with the old
+`psql -f db/schema.sql` — run `-- --baseline` once instead, which records the
+chain as applied without executing it. See `apps/core-api/db/README.md`.
+
+The paragraph that used to be here said the first post-deploy schema change is
 when that stops being fine and a migration tool becomes necessary.
 
 ## 5. Move the data
