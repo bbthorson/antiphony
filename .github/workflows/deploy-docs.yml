@@ -52,7 +52,83 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
+    # Does this commit change anything the docs site is built from?
+    #
+    # `workflow_run` has no `paths`, so the filter has to be a job. Plain git
+    # rather than a third-party paths-filter action, to keep the dependency
+    # surface of a DEPLOY workflow as small as possible.
+    #
+    # ⚠️ `apps/core-api/openapi.json` IS A DOCS BUILD INPUT, AND THAT IS THE
+    # WHOLE REASON THIS FILTER NEEDED CARE.
+    # `npm run build -w @antiphony/docs` runs `copy-openapi.mjs --strict`
+    # first, which reads `apps/core-api/openapi.json` and FAILS the build if it
+    # is missing. So the API reference the site serves is generated from a file
+    # in ANOTHER app, and a filter of just `apps/docs/**` would publish a site
+    # whose reference silently lagged core-api's committed spec.
+    #
+    # Only that one file, not `apps/core-api/**`: the spec is a committed
+    # artefact and ci.yml regenerates it and fails on drift, so a schema change
+    # that matters is always accompanied by a change to this file. Filtering on
+    # the artefact is both narrower and more truthful than filtering on its
+    # source.
+    #
+    # This is exactly the class of coupling `deploy.yml`'s header warns about
+    # when it argues against reconstructing a path filter. The difference is
+    # that here it was findable — the build script says what it reads — so the
+    # filter is written from evidence rather than from memory.
+    changes:
+        # Only deploy a GREEN master. `workflow_run` fires on completion
+        # regardless of outcome, so the conclusion is checked rather than
+        # assumed. `workflow_dispatch` carries no `workflow_run` context and
+        # falls through the empty-string comparison.
+        if: >-
+            github.event_name == 'workflow_dispatch' ||
+            github.event.workflow_run.conclusion == 'success'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        outputs:
+            sha: ${{ steps.filter.outputs.sha }}
+            build: ${{ steps.filter.outputs.build }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+                  # 2, not 0: the diff needs one parent and nothing more.
+                  fetch-depth: 2
+
+            - id: filter
+              run: |
+                  SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+                  echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+                  # Diff against the first parent — for the merge commits that
+                  # land on master, that is master-before-the-merge, so the diff
+                  # is the whole change that just landed.
+                  #
+                  # A manual dispatch, or a commit whose parent we cannot reach,
+                  # BUILDS: a redundant build is recoverable, a skipped one ships
+                  # nothing while reporting success.
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+                     || ! git rev-parse -q --verify "$SHA^" >/dev/null; then
+                      echo "No usable diff base — building."
+                      echo "build=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+
+                  CHANGED=$(git diff --name-only "$SHA^" "$SHA")
+                  echo "Changed files:"
+                  echo "$CHANGED"
+
+                  if echo "$CHANGED" | grep -qE '^(apps/docs/|apps/core-api/openapi\.json$|package(-lock)?\.json$|\.github/workflows/deploy-docs\.yml$)'; then
+                      echo "build=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "build=false" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Nothing the docs site is built from changed — skipping."
+                  fi
+
     deploy:
+        needs: [changes]
+        if: needs.changes.outputs.build == 'true'
         name: build · deploy
         runs-on: ubuntu-latest
         # Recorded as a deployment against the `production` environment, so
@@ -64,16 +140,12 @@ jobs:
         environment:
             name: production
             url: https://docs.antiphony.dev
-        # A red CI must not ship. `workflow_run` fires on completion whatever
-        # the outcome, so the conclusion is checked rather than assumed —
-        # without this the trigger would be strictly worse than the `push` it
-        # replaced, deploying on exactly the runs that failed.
-        #
-        # `workflow_dispatch` has no `workflow_run` context, so it falls through
-        # this condition on the empty-string comparison.
-        if: >-
-            github.event_name == 'workflow_dispatch' ||
-            github.event.workflow_run.conclusion == 'success'
+        # The "a red CI must not ship" check moved to the `changes` job this
+        # job now needs — without it the trigger would be strictly worse than
+        # the `push` it replaced, deploying on exactly the runs that failed. It
+        # is not weakened by moving: a skipped `changes` skips this job too, and
+        # keeping the condition in both places would mean two copies of one
+        # rule, which is how they drift.
         steps:
             # The commit CI actually ran on. NOT `github.sha`: on a
             # `workflow_run` event that is the tip of the default branch when
@@ -82,7 +154,9 @@ jobs:
             # would publish a tree nothing verified.
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
               with:
-                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+                  # The commit the `changes` job resolved, not a second
+                  # derivation of it.
+                  ref: ${{ needs.changes.outputs.sha }}
 
             - uses: ./.github/actions/setup-node
 
