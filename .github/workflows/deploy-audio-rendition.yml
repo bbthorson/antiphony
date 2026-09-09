@@ -157,6 +157,14 @@ jobs:
             #                       and is the same coordinated change
             #                       core-api's system-auth middleware names as
             #                       its own swap point.
+            # The build time as a step OUTPUT rather than inline in the deploy
+            # command, so the smoke test can assert the exact value this run
+            # stamped. Inline, nothing downstream could see it — which is why
+            # the smoke test could only ever check the sha.
+            - name: Stamp the build time
+              id: stamp
+              run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
             - name: Deploy
               id: deploy
               run: |
@@ -170,7 +178,7 @@ jobs:
                     --memory 1Gi \
                     --timeout 120 \
                     --max-instances 4 \
-                    --set-env-vars "NODE_ENV=production,LOG_LEVEL=info,ANTIPHONY_R2_BUCKET=antiphony-r2-bucket,R2_ACCOUNT_ID=${{ vars.R2_ACCOUNT_ID }},COMMIT_SHA=${DEPLOY_SHA},BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                    --set-env-vars "NODE_ENV=production,LOG_LEVEL=info,ANTIPHONY_R2_BUCKET=antiphony-r2-bucket,R2_ACCOUNT_ID=${{ vars.R2_ACCOUNT_ID }},COMMIT_SHA=${DEPLOY_SHA},BUILD_TIME=${{ steps.stamp.outputs.time }}" \
                     --set-secrets "SYSTEM_AUTH_TOKEN=system-auth-token:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest" \
                     --quiet
                   URL="$(gcloud run services describe "${SERVICE}" \
@@ -187,14 +195,35 @@ jobs:
                   # What this catches is a revision that will not start, and it
                   # asserts the running sha so "is what I merged what is running"
                   # is answered rather than assumed.
-                  for attempt in 1 2 3 4 5; do
-                    if BODY="$(curl -fsS --max-time 10 "${{ steps.deploy.outputs.url }}/health")"; then
-                      echo "$BODY"
-                      echo "$BODY" | grep -q "${DEPLOY_SHA}" && exit 0
-                      echo "::warning::/health answered but reported a different sha"
+                  # ── Two assertions, and a two-minute window ─────────────────
+                  # `sha` proves the running revision was built from this
+                  # commit; it does NOT prove THIS RUN deployed it. Re-run this
+                  # workflow on a commit already live and the check passes
+                  # instantly, satisfied by the previous deploy — so a re-run
+                  # whose deploy silently did nothing reports success.
+                  # `builtAt` comes from the BUILD_TIME stamped seconds ago, so
+                  # matching it proves the live revision is this run's.
+                  #
+                  # This also stops matching the sha ANYWHERE in the body: the
+                  # old `grep -q "${DEPLOY_SHA}"` would have been satisfied by
+                  # the sha appearing in any other field. Both are matched as
+                  # JSON fields now (`sha` and `builtAt`, which is what this
+                  # service's /health actually calls them).
+                  #
+                  # 20 x 6s rather than 5 x 5s, so all three deploy workflows in
+                  # this repo and the two in vox-pop agree on how long
+                  # propagation is allowed to take. 25 seconds was not enough in
+                  # vox-pop on 2026-09-04 and failed a deploy that had worked.
+                  for attempt in $(seq 1 20); do
+                    BODY="$(curl -fsS --max-time 10 "${{ steps.deploy.outputs.url }}/health" || true)"
+                    echo "attempt ${attempt}: ${BODY}"
+                    if printf '%s' "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\"" \
+                       && printf '%s' "$BODY" | grep -q "\"builtAt\":\"${{ steps.stamp.outputs.time }}\""; then
+                      echo "live revision is ${DEPLOY_SHA}, built at ${{ steps.stamp.outputs.time }} by this run"
+                      exit 0
                     fi
-                    echo "attempt ${attempt} failed; retrying"
-                    sleep 5
+                    sleep 6
                   done
-                  echo "::error::/health did not report ${DEPLOY_SHA}"
+                  echo "::error::/health did not report sha=${DEPLOY_SHA} builtAt=${{ steps.stamp.outputs.time }} after 2 minutes."
+                  echo "::error::If sha matches but builtAt does not, the live revision is an EARLIER deploy of this same commit — this run's deploy did not take."
                   exit 1
