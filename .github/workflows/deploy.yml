@@ -23,16 +23,34 @@ name: Deploy core-api
 # Resources named in apps/core-api/wrangler.jsonc must exist first, and their
 # ids replace the placeholders in that file:
 #
-#     npx wrangler hyperdrive create antiphony-neon --connection-string "$DATABASE_URL"
 #     npx wrangler kv namespace create PIN_CACHE
 #     npx wrangler queues create antiphony-processing
 #     npx wrangler queues create antiphony-processing-dlq
 #
 # Then the secrets, which never appear in any committed file:
 #
+#     npx wrangler secret put DATABASE_URL          -c apps/core-api/wrangler.jsonc
 #     npx wrangler secret put SYSTEM_AUTH_TOKEN     -c apps/core-api/wrangler.jsonc
 #     npx wrangler secret put ANTIPHONY_APP_TOKENS  -c apps/core-api/wrangler.jsonc
 #     npx wrangler secret put ELEVENLABS_API_KEY    -c apps/core-api/wrangler.jsonc
+#
+# ⚠️ DO NOT CREATE A HYPERDRIVE, AND DO NOT BIND ONE.
+# This block used to open with `wrangler hyperdrive create antiphony-neon`,
+# which contradicted the decision recorded at length in
+# apps/core-api/wrangler.jsonc § "A DATABASE_URL secret, not Hyperdrive" — and
+# contradicted it in the dangerous direction, because this file is what someone
+# setting the deploy up from scratch reads first.
+#
+# The database is a plain `DATABASE_URL` secret (added above) precisely because
+# `adapters/outbound/postgres/client.ts` runs `@neondatabase/serverless` in HTTP
+# mode, which derives its HTTPS endpoint from the connection string's HOSTNAME.
+# A Hyperdrive string points into Cloudflare's network rather than at Neon, so
+# binding one with this driver does not degrade the database — it breaks it
+# outright. And `readRuntimeEnv` PREFERS Hyperdrive whenever it is bound, so the
+# breakage is invisible in config review and total at runtime.
+#
+# Hyperdrive becomes the right answer only after the driver is replaced with one
+# that speaks the Postgres wire protocol. That is a code change, not a binding.
 #
 # `CLOUDFLARE_API_TOKEN` is a repo secret with Workers Scripts:Edit, and
 # `CLOUDFLARE_ACCOUNT_ID` a repo variable (an identifier, not a credential).
@@ -91,43 +109,11 @@ jobs:
             # would then assert the wrong SHA and fail a deploy that worked.
             DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
               with:
                   ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-            - uses: actions/setup-node@v4
-              with:
-                  node-version-file: .nvmrc
-                  cache: npm
-
-
-            # Install the npm this repo is verified against, read from the
-            # `packageManager` field so there is exactly one place to bump it.
-            #
-            # `actions/setup-node` does NOT honour that field — corepack-aware
-            # tools do, and it is not one — so every workflow here silently
-            # built on whatever npm ships with the pinned Node instead: 10.9.8,
-            # a MAJOR behind the 12.0.2 the repo declares and the Cloudflare
-            # build resolved. The two are not interchangeable:
-            #
-            #   - npm 12 honours `allowScripts` and npm 10 ignores it, so the
-            #     two install DIFFERENT trees from the same lockfile.
-            #   - npm 10 rewrites package-lock.json on install, dropping the
-            #     `libc` fields npm 12 writes — so a contributor on 10 produces
-            #     lockfile churn that looks like a real change.
-            #
-            # Verifying on one npm and shipping from another is the setup that
-            # made "identical config passed and failed" a thing anyone had to
-            # reason about here.
-            - name: Use the pinned npm
-              run: |
-                  set -euo pipefail
-                  # Strip any `+sha…` integrity suffix; `npm install -g` wants
-                  # a plain spec.
-                  PM="$(node -p "require('./package.json').packageManager.split('+')[0]")"
-                  echo "package.json pins ${PM}; npm is now $(npm --version)"
-                  npm install --global "${PM}"
-                  npm --version
+            - uses: ./.github/actions/setup-node
 
             - run: npm ci
 

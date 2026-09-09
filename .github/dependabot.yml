@@ -1,0 +1,79 @@
+# Action and dependency updates arrive as reviewable PRs rather than as work
+# nobody remembers to do.
+#
+# ── Why this exists ───────────────────────────────────────────────────────────
+# Every action in this repo was pinned to a commit SHA in the same change that
+# added this file. That fixes the supply-chain half of the problem — a moved
+# `@v4` tag can no longer change what runs — and creates the other half: a
+# pinned SHA never updates, so a security fix in `actions/checkout` would sit
+# unapplied indefinitely. Pinning without Dependabot trades one silent failure
+# for another; the two belong together.
+#
+# ⚠️ THE FIRST RUN WILL PROPOSE MAJOR BUMPS, AND THAT IS EXPECTED.
+# The pins were set to the SHAs the `@v4`/`@v2` tags already resolved to, so
+# the pinning change shipped ZERO behaviour change. Upstream has since moved on
+# — checkout and setup-node are on v7, the google-github-actions pair on v3 —
+# so those arrive as major-version PRs. Real upgrades to read, not misconfig.
+version: 2
+
+updates:
+    # ── GitHub Actions ───────────────────────────────────────────────────────
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: weekly
+          day: monday
+      # One PR for all of them: five workflow files share the same four
+      # actions, so per-action PRs would each touch most of
+      # `.github/workflows/` and conflict with each other on rebase.
+      groups:
+          actions:
+              patterns:
+                  - '*'
+      commit-message:
+          prefix: 'ci'
+      labels:
+          - dependencies
+
+    # ── npm (the workspace root) ─────────────────────────────────────────────
+    #
+    # One lockfile at the root, installed by `npm ci`, so `directory: /` covers
+    # every workspace. Per-workspace entries would propose `package.json` edits
+    # without regenerating the single lockfile they resolve through.
+    #
+    # ⚠️ Dependabot resolves with its OWN npm, not the `packageManager` pin.
+    # This repo declares npm 12 for a reason recorded at length in ci.yml: npm
+    # 10 and 12 install different trees from the same lockfile, and npm 10
+    # rewrites `package-lock.json` on install, dropping the `libc` fields npm
+    # 12 writes. So a Dependabot PR may carry lockfile churn that is an
+    # artefact of its resolver rather than part of the upgrade. CI runs on the
+    # pinned npm and is the arbiter; if a PR's lockfile diff is larger than its
+    # `package.json` diff explains, regenerate it locally on npm 12 before
+    # merging rather than trusting the bot's copy.
+    - package-ecosystem: npm
+      directory: /
+      schedule:
+          interval: weekly
+          day: monday
+      # A solo repo cannot read 30 dependency PRs a week. Grouping by intent
+      # keeps it near three: the routine patch sweep, dev tooling, and anything
+      # major that wants reading on its own.
+      groups:
+          production-minor:
+              applies-to: version-updates
+              dependency-type: production
+              update-types:
+                  - minor
+                  - patch
+          development:
+              applies-to: version-updates
+              dependency-type: development
+              update-types:
+                  - minor
+                  - patch
+      open-pull-requests-limit: 5
+      commit-message:
+          prefix: 'deps'
+          prefix-development: 'deps(dev)'
+      labels:
+          - dependencies

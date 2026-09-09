@@ -4,10 +4,41 @@ name: CI
 # them mandatory. Until now nothing gated a merge, so `typecheck`, `lint`,
 # `test`, and the generated-OpenAPI drift check were all opt-in.
 
+# ⚠️ THE IGNORE LIST IS NARROW ON PURPOSE — DO NOT WIDEN IT TO `**/*.md`.
+#
+# `apps/docs/src/content/docs/**` is ELEVEN markdown/mdx files that ARE the
+# documentation site's content, and `deploy-docs.yml` is triggered by
+# `workflow_run` off THIS workflow. A blanket `**/*.md` ignore would therefore
+# mean: edit a docs page, CI is skipped, no `workflow_run` fires, and the docs
+# site never deploys — a prose change that silently fails to publish, which is
+# strictly worse than paying two minutes of CI for it.
+#
+# So only the locations that are prose AND are read by nothing are listed:
+# `specs/**` (16 files, all design records), and the two root documents.
+# Verified before writing this: nothing under apps/ or packages/ reads either
+# path at build, test, or release time, and `release.yml` derives the version
+# from `packages/shared/package.json` rather than from CHANGELOG.md.
+#
+# The payoff is deliberately modest. Over the last 25 first-parent merges here
+# exactly ONE was markdown-only, so this saves roughly 4% of merge runs — not
+# the ~24% the same filter saves in the Vox Pop repo, where every deployed app's
+# content is TypeScript and the blunt `**/*.md` form is safe. Copying that
+# filter across without checking would have broken the docs deploy.
+#
+# `paths-ignore` skips a run only when EVERY changed file matches, so a commit
+# touching code and specs together still runs the full suite.
 on:
   pull_request:
+    paths-ignore:
+      - 'specs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
   push:
     branches: [master]
+    paths-ignore:
+      - 'specs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
 
 # A new push to the same branch supersedes the run in flight.
 concurrency:
@@ -21,43 +52,25 @@ jobs:
   verify:
     name: typecheck · lint · test · build
     runs-on: ubuntu-latest
+
+    # A hung job bills until GitHub kills it, and the DEFAULT ceiling is 360
+    # minutes — six hours of billable time for a run that stopped making
+    # progress in the first two. The concurrency group above does not cover
+    # this: it supersedes runs a newer push made obsolete, never a run that
+    # simply fails to finish.
+    #
+    # Not hypothetical for this workflow. It shells out to the npm registry
+    # twice — once for `npm install --global npm@…`, once for `npm ci` — and a
+    # registry stall hangs rather than fails.
+    #
+    # 15 against a ~2-minute median is a ceiling on pathology, not a budget to
+    # fit inside. If a legitimate run ever approaches it, raise it; do not
+    # remove it.
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
-        with:
-          # Single source of truth for the version — matches `engines.node`
-          # (>=22) and the Volta pin in the root package.json.
-          node-version-file: .nvmrc
-          cache: npm
-
-
-      # Install the npm this repo is verified against, read from the
-      # `packageManager` field so there is exactly one place to bump it.
-      #
-      # `actions/setup-node` does NOT honour that field — corepack-aware tools
-      # do, and it is not one — so this workflow silently verified on whatever
-      # npm ships with the pinned Node instead: 10.9.8, a MAJOR behind the
-      # 12.0.2 the repo declares and the Cloudflare build resolved. The two are
-      # not interchangeable:
-      #
-      #   - npm 12 honours `allowScripts` and npm 10 ignores it, so the two
-      #     install DIFFERENT trees from the same lockfile. That is the sharp
-      #     end: this workflow is what says the tree is good.
-      #   - npm 10 rewrites package-lock.json on install, dropping the `libc`
-      #     fields npm 12 writes — so a contributor on 10 produces lockfile
-      #     churn that reads as a real change.
-      #
-      # Verifying on one npm and shipping from another is what made "identical
-      # config both passed and failed" something anyone had to reason about.
-      - name: Use the pinned npm
-        run: |
-          set -euo pipefail
-          # Strip any `+sha…` integrity suffix; `npm install -g` wants a plain spec.
-          PM="$(node -p "require('./package.json').packageManager.split('+')[0]")"
-          echo "package.json pins ${PM}; npm is now $(npm --version)"
-          npm install --global "${PM}"
-          npm --version
+      - uses: ./.github/actions/setup-node
 
       # `npm ci` at the root installs every workspace; core-api depends on
       # @antiphony/core + @antiphony/shared through npm workspaces.
