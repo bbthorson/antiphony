@@ -22,7 +22,7 @@ import { createFakeBucket } from '../../outbound/r2/testing/fake-bucket.js';
  * correct as that reading.
  *
  * It now runs on PGlite (real PostgreSQL 18, in-process) applying the shipped
- * `db/schema.sql`, and the in-memory `R2BucketLike` the R2 binding suites
+ * `migrations/0001_initial_schema.sql`, and the in-memory `R2BucketLike` the R2 binding suites
  * already use. Nothing here is a stand-in for the store any more: the SQL runs
  * against a real planner, and the only fakes left are the two things this test
  * is not about — the processing providers (stubs, by env flag, exactly as in

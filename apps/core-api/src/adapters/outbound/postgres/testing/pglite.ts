@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { loadMigrations } from '../../../../../migrations/load.js';
 import type { SqlClient } from '../../../../ports/sql-client.js';
 
 /**
@@ -14,22 +12,29 @@ import type { SqlClient } from '../../../../ports/sql-client.js';
  * parse, an `ON CONFLICT` naming a constraint that does not exist, or a type
  * that will not cast fails here instead of in production.
  *
- * ## It applies the SHIPPED schema, deliberately
+ * ## It applies the SHIPPED MIGRATIONS, deliberately
  *
- * `db/schema.sql` is the same file you apply to Neon. Copying it into a fixture
- * would let the two drift, and the drift would be silent in exactly the
+ * `../../../../../migrations/*.sql` is the same chain you apply to Neon, read
+ * through the same `loadMigrations()` the migrator uses. Copying it into a
+ * fixture would let the two drift, and the drift would be silent in exactly the
  * direction that matters — tests passing against a schema production does not
- * have. Reading the real file means a column renamed in the schema breaks the
+ * have. Reading the real files means a column renamed in a migration breaks the
  * binding suite immediately.
+ *
+ * This read `db/schema.sql` until that file became `0001_initial_schema.sql`.
+ * The property is unchanged and the guarantee is now slightly stronger: a
+ * migration nobody added to the chain cannot be exercised here, so a schema
+ * change that exists only in someone's psql history cannot pass tests.
+ *
+ * Applied in ORDER and one file at a time, because that is how the migrator
+ * applies them — a later migration that depends on an earlier one must fail
+ * here for the same reason it would fail there.
  *
  * It also means the schema's own claims get exercised. The `stored` keyword on
  * every generated column is load-bearing under PG18 (virtual is the default and
  * virtual columns cannot be indexed); if someone drops it, `CREATE INDEX` fails
  * during setup here and the suite says so.
  */
-
-const here = dirname(fileURLToPath(import.meta.url));
-const SCHEMA_PATH = resolve(here, '../../../../../db/schema.sql');
 
 export interface TestDatabase extends SqlClient {
     /** Close the instance. Call in `afterEach`/`afterAll`. */
@@ -47,7 +52,9 @@ export interface TestDatabase extends SqlClient {
  */
 export async function createTestDatabase(): Promise<TestDatabase> {
     const pg = await PGlite.create();
-    await pg.exec(readFileSync(SCHEMA_PATH, 'utf8'));
+    for (const migration of loadMigrations()) {
+        await pg.exec(migration.sql);
+    }
 
     return {
         async query<T = Record<string, unknown>>(

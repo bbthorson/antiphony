@@ -64,7 +64,7 @@ export function postgresAudioProcessingDependencies(
         async saveTranscript(record: TranscriptEnrichmentRecord): Promise<void> {
             // Last-write-wins by subject uri — which the port documents and
             // Firestore could only hope for. `subject_uri` is a generated
-            // column with a UNIQUE index (db/schema.sql), so the contract is
+            // column with a UNIQUE index (migrations/0001_initial_schema.sql), so the contract is
             // now enforced by the store: a second transcript for a post
             // REPLACES the first instead of quietly coexisting with it.
             await sql.query(

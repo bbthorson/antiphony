@@ -21,9 +21,12 @@ git clone https://github.com/bbthorson/antiphony.git
 cd antiphony
 npm install
 
-# Apply the schema once, to an empty database.
-psql "$DATABASE_URL" -f apps/core-api/db/schema.sql
+# Apply the migrations to an empty database.
+DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
+
+Schema changes are a numbered chain under `migrations/`; see `db/README.md` for
+how to add one, and why you must never edit a file that has been applied.
 
 core-api runs on the Workers runtime, so its config is not shell environment —
 it goes in `apps/core-api/.dev.vars` (gitignored):

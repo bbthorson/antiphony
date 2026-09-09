@@ -62,7 +62,8 @@ to install and no JDK to have on your PATH; `wrangler dev` simulates the R2
 bucket, the KV namespace, the queue, and the rate-limit Durable Object.
 
 See [the quick start](../docs/src/content/docs/self-hosting/quick-start.md) for
-the full walkthrough, including applying `apps/core-api/db/schema.sql`.
+the full walkthrough, including applying the migrations in
+`apps/core-api/migrations/`.
 
 Worker secrets are not environment variables, so core-api's local config goes
 in `apps/core-api/.dev.vars` (gitignored) rather than your shell:

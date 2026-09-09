@@ -47,7 +47,7 @@
 
 	// ## The TTL sweep finally gets a caller
 	//
-	// `antiphony_sweep_expired()` has shipped with `db/schema.sql` since step 2
+	// `antiphony_sweep_expired()` has shipped with `migrations/0001_initial_schema.sql` since step 2
 	// with nothing calling it. It replaces the native Firestore TTL on
 	// `idempotency_keys` and `rate_limits`, which Postgres has no equivalent
 	// for, so without a trigger both tables grow forever.
@@ -58,7 +58,7 @@
 	// a beta service is idle nearly always — which is precisely when scale to
 	// zero should be on. A trigger outside the database fires regardless of
 	// compute state, and waking Neon is the feature rather than the
-	// precondition. See schema.sql § Why NOT pg_cron.
+	// precondition. See migrations/0001_initial_schema.sql § Why NOT pg_cron.
 	"triggers": { "crons": ["17 * * * *"] },
 
 	// ## Audio processing — producer and consumer are the same Worker
@@ -129,7 +129,7 @@
 	// the Firestore binding needed a transaction plus a whole contention branch
 	// to get the same guarantee.
 	//
-	// The `rate_limits` table in db/schema.sql was always a bridge rather than
+	// The `rate_limits` table in migrations/0001_initial_schema.sql was always a bridge rather than
 	// a destination (its own comment says so). It stays, harmlessly, for a
 	// deployment without this binding attached.
 	//

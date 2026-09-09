@@ -8,8 +8,8 @@ import type { Logger } from '@antiphony/core/ports/logger';
  * ## Why the query is one statement with no arguments
  *
  * All of the policy — which tables, which predicate, how many rows per call —
- * is in the function, in `db/schema.sql`, versioned alongside the tables it
- * sweeps. That is deliberate and `schema.sql` says so at length: the caller is
+ * is in the function, in `migrations/0001_initial_schema.sql`, versioned alongside the tables it
+ * sweeps. That is deliberate and `../../../../db/README.md` says so at length: the caller is
  * `select * from antiphony_sweep_expired();`, so an adapter cannot drift from
  * the schema, and an operator can run the identical thing by hand from psql.
  * Adding a batch-size argument here would put half the policy in TypeScript.

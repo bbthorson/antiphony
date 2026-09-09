@@ -251,7 +251,7 @@ describe('postgresAudioPostDependencies', () => {
 
     describe('CID stability through jsonb', () => {
         it('preserves the record CID across a write/read round trip', async () => {
-            // The property db/schema.sql § Open asks for. jsonb does not
+            // The property db/README.md § Open questions asks for. jsonb does not
             // preserve key order (DAG-CBOR canonicalises, so that is fine) but
             // it DOES store numbers as `numeric`, which is wider than JS —
             // a coercion here would change the record and therefore its CID,
