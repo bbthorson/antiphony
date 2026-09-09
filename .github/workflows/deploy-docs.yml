@@ -118,17 +118,41 @@ jobs:
             # Deliberately a content check rather than a 200 check: the old page
             # returned 200 the whole time it was wrong.
             - name: Verify the published site is the current stack
+              env:
+                  QUICK_START: https://docs.antiphony.dev/self-hosting/quick-start/
               run: |
                   set -euo pipefail
-                  PAGE="$(curl -fsS --retry 5 --retry-delay 5 --retry-all-errors \
-                    --max-time 20 https://docs.antiphony.dev/self-hosting/quick-start/)"
 
-                  if ! grep -q '8787' <<<"$PAGE"; then
-                    echo "::error::docs.antiphony.dev quick start does not mention port 8787 — the published site is not this build."
-                    exit 1
-                  fi
-                  if grep -q 'firebase emulators:start' <<<"$PAGE"; then
-                    echo "::error::docs.antiphony.dev quick start still documents the Firebase emulator stack — a stale deploy is live."
-                    exit 1
-                  fi
-                  echo "docs.antiphony.dev is serving the Workers/Postgres quick start."
+                  # ── POLLED, because curl's --retry cannot help here ──────────
+                  # This was a single fetch with `--retry 5 --retry-delay 5
+                  # --retry-all-errors`, which retries on TRANSPORT failures —
+                  # and the failure this step exists to catch is not one. A
+                  # stale page returns 200 with the wrong content, so curl is
+                  # satisfied on the first attempt, the content check fails, and
+                  # the run goes red on a deploy that had merely not propagated.
+                  # The note directly above already says the old page "returned
+                  # 200 the whole time it was wrong"; the retry flags were
+                  # answering a different question from the assertion.
+                  #
+                  # So: re-FETCH on stale content, over the same 20 x 6s window
+                  # the other deploys in this repo use, and fail hard at the end.
+                  for attempt in $(seq 1 20); do
+                    PAGE="$(curl -fsS --max-time 20 "$QUICK_START" || true)"
+
+                    if printf '%s' "$PAGE" | grep -q '8787' \
+                       && ! printf '%s' "$PAGE" | grep -q 'firebase emulators:start'; then
+                      echo "docs.antiphony.dev is serving the Workers/Postgres quick start."
+                      exit 0
+                    fi
+
+                    if [ -z "$PAGE" ]; then
+                      echo "attempt ${attempt}: no response yet"
+                    else
+                      echo "attempt ${attempt}: page served, but still looks like the previous build"
+                    fi
+                    sleep 6
+                  done
+
+                  echo "::error::docs.antiphony.dev quick start is not this build after 2 minutes."
+                  echo "::error::Expected it to mention port 8787 and NOT to document 'firebase emulators:start'. A page that serves 200 with the old content is the stale-deploy signature — the deploy may have succeeded while the domain still serves the previous version."
+                  exit 1

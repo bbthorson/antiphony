@@ -147,6 +147,14 @@ jobs:
             - name: Assert the Worker bundle carries no Node-only dependency
               run: npm run check:worker-bundle -w @antiphony/core-api
 
+            # The build time as a step OUTPUT rather than inline in the deploy
+            # command, so the smoke test below can assert the exact value this
+            # run stamped. Inline, nothing downstream could see it — which is
+            # why the smoke test could only ever check the sha.
+            - name: Stamp the build time
+              id: stamp
+              run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
             - name: Deploy
               # Through the workspace script, so wrangler resolves from the
               # workspace that declares it and picks up its wrangler.jsonc by
@@ -160,14 +168,19 @@ jobs:
               run: |
                   npm run deploy -w @antiphony/core-api -- \
                     --var "COMMIT_SHA:${DEPLOY_SHA}" \
-                    --var "BUILD_TIME:$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    --var "BUILD_TIME:${{ steps.stamp.outputs.time }}"
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                   CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
             - name: Smoke test
+              env:
+                  # DEPLOY_SHA is already job-level env, so the shell reads it
+                  # directly; only the stamp needs passing in.
+                  EXPECT_BUILD_TIME: ${{ steps.stamp.outputs.time }}
+                  HEALTH_URL: https://api.antiphony.dev/health
               run: |
-                  # Asserts the SHA, not `"ok":true`.
+                  # Asserts the SHA and the build time, not `"ok":true`.
                   #
                   # `ok:true` is true of ANY healthy deployment at this hostname,
                   # including one this workflow did not produce — so it passed
@@ -178,23 +191,72 @@ jobs:
                   # failure SKIPPED this step for 17 hours, so the one step whose
                   # job is to say "live is not what you merged" never ran.
                   #
-                  # `/health` reports `sha` from the COMMIT_SHA var set above, so
-                  # matching it against DEPLOY_SHA proves THIS deploy is the one
-                  # serving. It also still prints `backend` and the data-presence
-                  # fields, which is what the log is worth reading for now that
-                  # `backend` has only one possible value.
-                  for attempt in 1 2 3 4 5; do
-                    if BODY="$(curl -fsS --max-time 10 https://api.antiphony.dev/health)"; then
-                      echo "$BODY"
-                      if echo "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\""; then
-                        echo "$BODY" | grep -q '"stubProcessing":false' || { echo "::error::stubProcessing is true in production"; exit 1; }
-                        echo "$BODY" | grep -q '"inlineProcessing":false' || { echo "::error::inlineProcessing is true in production"; exit 1; }
-                        exit 0
-                      fi
+                  # ── Why the SHA is not enough on its own ──────────────────────
+                  # `sha` proves the live Worker was built from this commit. It
+                  # does NOT prove THIS RUN deployed it: re-run this workflow on
+                  # a commit already live and the check passes instantly,
+                  # satisfied by the PREVIOUS deploy — so a re-run whose upload
+                  # silently did nothing reports success. That is the blind spot
+                  # the runbook names, and a manual re-run is exactly when a
+                  # false green costs most.
+                  #
+                  # `deployedAt` closes it: it comes from the BUILD_TIME var
+                  # stamped seconds ago, so matching it proves the live version
+                  # is the one this run uploaded rather than merely one carrying
+                  # the same commit. Matched EXACTLY rather than "at or after" —
+                  # the concurrency group serialises deploys, so a NEWER
+                  # deployedAt would mean something shipped underneath us, which
+                  # is worth failing on.
+                  #
+                  # ── Why the window is two minutes and not twenty-five seconds ─
+                  # This polled 5 times at 5s. A wrangler deploy returns when the
+                  # upload is accepted; Custom Domain routing catches up
+                  # separately, and in the Vox Pop repo it had NOT caught up by
+                  # second five on 2026-09-04 — that run failed red on a deploy
+                  # that had in fact succeeded. Both repos now use the same
+                  # 20 x 6s window, so they no longer disagree about how long
+                  # propagation is allowed to take.
+                  for attempt in $(seq 1 20); do
+                    BODY="$(curl -fsS --max-time 10 "$HEALTH_URL" || true)"
+                    echo "attempt ${attempt}: ${BODY}"
+                    if printf '%s' "$BODY" | grep -q "\"sha\":\"${DEPLOY_SHA}\"" \
+                       && printf '%s' "$BODY" | grep -q "\"deployedAt\":\"${EXPECT_BUILD_TIME}\""; then
+                      echo "live Worker is ${DEPLOY_SHA}, deployed at ${EXPECT_BUILD_TIME} by this run"
+
+                      # ── The processing toggles, from the pre-launch audit ─────
+                      # HARD failures, unchanged from what the audit added, and
+                      # deliberately inside the success branch: they are only
+                      # meaningful once we know this is our deploy. A production
+                      # Worker running stubbed or inline processing is broken in
+                      # a way `/health` will happily report as `ok:true`.
+                      printf '%s' "$BODY" | grep -q '"stubProcessing":false' \
+                        || { echo "::error::stubProcessing is true in production"; exit 1; }
+                      printf '%s' "$BODY" | grep -q '"inlineProcessing":false' \
+                        || { echo "::error::inlineProcessing is true in production"; exit 1; }
+
+                      # ── A WARNING, deliberately not a failure ────────────────
+                      # `/health` also reports whether the records and blobs
+                      # backends answered a presence probe. Unlike the toggles
+                      # above, those are NOT part of the deploy's correctness: a
+                      # probe can time out on a cold Neon branch while the deploy
+                      # is perfectly good, so failing on it would make this step
+                      # flaky and teach someone to re-run it without reading it —
+                      # the failure mode this step exists to avoid.
+                      #
+                      # But passing in silence is how `records: unavailable`
+                      # went unnoticed while a green deploy sat on top of it.
+                      # So: say something, loudly enough to appear in the run
+                      # summary, and keep going.
+                      for field in records blobs; do
+                        if ! printf '%s' "$BODY" | grep -q "\"${field}\":\"present\""; then
+                          echo "::warning::/health reports ${field} not present — the deploy is fine, but the ${field} backend did not answer its presence probe. Worth a look if it persists."
+                        fi
+                      done
+                      exit 0
                     fi
-                    echo "attempt ${attempt} failed; retrying"
-                    sleep 5
+                    sleep 6
                   done
-                  echo "::error::/health at api.antiphony.dev is not serving ${DEPLOY_SHA}."
+                  echo "::error::/health at api.antiphony.dev is not serving sha=${DEPLOY_SHA} deployedAt=${EXPECT_BUILD_TIME} after 2 minutes."
+                  echo "::error::If sha matches but deployedAt does not, the live version is an EARLIER deploy of this same commit — this run's upload did not take."
                   echo "::error::If the domain route is not attached to the antiphony-core-api Worker yet, this failure is CORRECT and expected — the deploy succeeded, the hostname just still points elsewhere. Attach it (Workers & Pages -> antiphony-core-api -> Settings -> Domains & Routes), then re-run this workflow."
                   exit 1
