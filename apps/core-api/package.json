@@ -24,7 +24,7 @@
   "dependencies": {
     "@antiphony/core": "*",
     "@antiphony/shared": "*",
-    "@atproto/syntax": "^0.7.5",
+    "@atproto/syntax": "^0.7.6",
     "@hono/zod-openapi": "^0.19.10",
     "@ipld/dag-cbor": "^10.0.2",
     "@neondatabase/serverless": "^1.1.0",
