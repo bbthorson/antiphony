@@ -4,13 +4,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Antiphony documentation site — Astro Starlight. Deploys to Cloudflare Workers (static assets) at docs.antiphony.dev.",
+  "//scripts.astro": "A PASSTHROUGH (`npm run astro -w @antiphony/docs -- add <integration>`), and the body is the word `astro` — not a version. fee1bce, a Dependabot production-minor group bump, rewrote it to `^7.3.1` while bumping the real `astro` dependency below: the group matched on the KEY NAME and clobbered the script entry alongside it, so `npm run astro` ran `sh -c ^7.3.1` for six days. Nothing caught it because no workflow invokes this script. If a future group bump touches this line again, that is the same bug, not a new one.",
   "scripts": {
     "dev": "node scripts/copy-openapi.mjs && astro dev",
     "start": "node scripts/copy-openapi.mjs && astro dev",
     "build": "node scripts/copy-openapi.mjs --strict && ASTRO_TELEMETRY_DISABLED=1 astro build",
     "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check",
     "preview": "astro preview",
-    "astro": "^7.3.1"
+    "astro": "astro"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.0",
