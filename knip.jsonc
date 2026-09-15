@@ -19,6 +19,23 @@
     // direction. If this starts reporting noise again, fix the config or the
     // code — do not take it back out of CI and leave it red.
     //
+    // ⚠️ VERIFY A KNIP CHANGE IN A CLEAN CLONE, NOT IN A DIRTY WORKING TREE OR
+    // A GIT WORKTREE. This config's `apps/audio-rendition` block was landed
+    // twice: the first attempt passed `npm run knip` locally and failed in CI
+    // on two `Remove redundant entry pattern` hints, and the fix for THAT
+    // reported an unused `esbuild` devDependency locally while being correct in
+    // CI — the two environments disagreed in both directions on the same
+    // commit. A `git clone` of the repo into a scratch directory followed by
+    // `npm ci` reproduced CI exactly, every time; the working tree did not,
+    // including immediately after its own clean `npm ci`. The cause was not
+    // found (it is not build state, not a stale node_modules, not the dot
+    // directory in the worktree path — each was tested and ruled out), so
+    // treat this as a standing caveat rather than something fixed: knip's
+    // entry auto-detection is the part that diverges, so any change to an
+    // `entry` or `project` pattern here needs the clean-clone check before it
+    // is believed. Everything else in CI (typecheck, lint, test, build) agreed
+    // between the two.
+    //
     // Known blind spot, important when reading a report: knip resolves imports
     // through node_modules, so it cannot follow this repo's tsconfig path
     // aliases (`shared/*` -> `packages/shared/*`, `@antiphony/core/*` ->
@@ -64,10 +81,12 @@
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
         },
         "apps/audio-rendition": {
-            // `esbuild.config.mjs` is the build, run from this workspace's own
-            // `build` script rather than imported by anything — the same shape
-            // as the root `scripts/*.mjs` entry above.
-            "entry": ["src/index.ts", "esbuild.config.mjs"],
+            // No `entry` here on purpose. It used to name `src/index.ts` and
+            // `esbuild.config.mjs`, and knip reports BOTH as redundant: it
+            // already finds the first through `main` in this workspace's
+            // package.json (mapped back through tsconfig) and the second
+            // through the `build` script that runs it. Stating them again
+            // added nothing, and as redundant config it fails the gate.
             "project": ["src/**/*.ts"]
         },
         "apps/reference": {
