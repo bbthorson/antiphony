@@ -46,7 +46,7 @@ permissions:
 
 jobs:
   verify:
-    name: typecheck · lint · test · build
+    name: typecheck · lint · knip · test · build
     runs-on: ubuntu-latest
 
     # A hung job bills until GitHub kills it, and the DEFAULT ceiling is 360
@@ -97,13 +97,21 @@ jobs:
       # above: every `@antiphony/shared` export resolves into dist/, which the
       # package's `prepare` script builds during `npm ci`.
       #
-      # ⚠️ The job `name:` above is NOT updated to mention knip, deliberately.
-      # `typecheck · lint · test · build` is the REQUIRED STATUS CHECK on
-      # master (ruleset 22653844), and GitHub matches required checks by name:
-      # renaming the job makes the required check stop reporting, and a check
-      # that never reports blocks every pull request with nothing red to
-      # explain why — the same trap the `paths-ignore` note at the top of this
-      # file describes. To rename it, change the ruleset in the same operation.
+      # ⚠️ THE JOB `name:` ABOVE IS THE REQUIRED STATUS CHECK ON MASTER
+      # (ruleset 22653844), AND GITHUB MATCHES REQUIRED CHECKS BY NAME. A
+      # required check that never reports blocks every pull request with
+      # nothing red to explain why — the same trap the `paths-ignore` note at
+      # the top of this file describes. So renaming this job is a TWO-PART
+      # change: edit `name:` here and update the ruleset's
+      # `required_status_checks` context in the same operation, or the repo
+      # locks itself. That is how `knip` got into the name — it was added to
+      # the steps first, with the name deliberately left alone, and the rename
+      # was done separately once the ruleset could move with it.
+      #
+      # Note what does NOT follow the job name: all three deploy workflows
+      # trigger on `workflow_run: workflows: [CI]`, which is the WORKFLOW name
+      # at the top of this file, not this job's. Renaming the job leaves them
+      # alone; renaming the workflow would break all three.
       - run: npm run knip
 
       - run: npm run test
