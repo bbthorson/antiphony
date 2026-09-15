@@ -104,7 +104,7 @@ function objectUrl(base: string, objectPath: string): string {
     return `${base}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
 }
 
-export const r2BlobStore: BlobStore = {
+const r2BlobStore: BlobStore = {
     async read(objectPath) {
         const { aws, base } = connection();
         const res = await aws.fetch(objectUrl(base, objectPath));
@@ -139,5 +139,9 @@ export const r2BlobStore: BlobStore = {
     },
 };
 
-/** The binding in use. */
+/**
+ * The binding in use. `r2BlobStore` above is deliberately NOT exported: it is
+ * the only implementation, nothing outside this module names it, and exporting
+ * both made it read as two bindings to choose between when there is one.
+ */
 export const blobStore: BlobStore = r2BlobStore;

@@ -53,17 +53,3 @@ export function neonSqlClient(connectionString: string): SqlClient {
         },
     };
 }
-
-/**
- * Read the connection string from the environment, or explain what is missing.
- *
- * Returns the reason rather than throwing so a caller can distinguish "not
- * configured" from "configured wrong" — the same pattern `cloudTasksConfig()`
- * uses, and for the same reason: those look identical at the call site and are
- * opposite problems.
- */
-export function neonConnectionString(): { url: string } | { missing: string } {
-    const url = process.env.DATABASE_URL?.trim();
-    if (!url) return { missing: 'DATABASE_URL' };
-    return { url };
-}

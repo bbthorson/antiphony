@@ -82,6 +82,30 @@ jobs:
 
       - run: npm run lint
 
+      # Dead code, unused exports, unlisted binaries and undeclared
+      # dependencies. This was a periodic sweep rather than a gate until now,
+      # and `knip.jsonc` carried the reasoning for that — but on master it had
+      # been exiting 1 with nothing watching, which is a check in the worst of
+      # both states: red, and load-bearing on nobody noticing. The findings it
+      # was sitting on were real; among them `apps/core-api`'s knip entry still
+      # naming `src/native.ts`, deleted with Firebase in 1b023cd, and the
+      # `npx wrangler deploy` in deploy-docs.yml running on a binary no
+      # manifest at the repo root declared.
+      #
+      # It goes after `lint` because it is the same family of check — static,
+      # needs no secrets and no network — and because it needs the install
+      # above: every `@antiphony/shared` export resolves into dist/, which the
+      # package's `prepare` script builds during `npm ci`.
+      #
+      # ⚠️ The job `name:` above is NOT updated to mention knip, deliberately.
+      # `typecheck · lint · test · build` is the REQUIRED STATUS CHECK on
+      # master (ruleset 22653844), and GitHub matches required checks by name:
+      # renaming the job makes the required check stop reporting, and a check
+      # that never reports blocks every pull request with nothing red to
+      # explain why — the same trap the `paths-ignore` note at the top of this
+      # file describes. To rename it, change the ruleset in the same operation.
+      - run: npm run knip
+
       - run: npm run test
 
       # Builds @antiphony/shared (dual ESM/CJS) then bundles core-api and

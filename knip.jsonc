@@ -1,11 +1,23 @@
 {
     // Knip — unused files / exports / dependencies.
     //
-    // Run it with `npm run knip`. It is deliberately NOT wired into CI: a
-    // meaningful share of what it reports on this repo is either a false
-    // positive (see `ignoreDependencies`) or an `export` keyword that is
-    // redundant but harmless, and gating merges on that trades real review
-    // attention for churn. Treat it as a periodic sweep, not a gate.
+    // Run it with `npm run knip`. It IS wired into CI (`ci.yml`), which it was
+    // not until now, and the two reasons it was held back are addressed here
+    // rather than waived:
+    //
+    //   - "an `export` keyword that is redundant but harmless" — that is real,
+    //     and `ignoreExportsUsedInFile` below is the setting for exactly it, so
+    //     those stop being reported at all instead of being triaged by hand
+    //     every sweep.
+    //   - "a meaningful share is a false positive" — each remaining one is now
+    //     named in `ignoreDependencies` / `ignoreBinaries` with the reason,
+    //     so the report is empty when the repo is clean.
+    //
+    // That is the bargain a gate requires: a check that is red by default
+    // teaches people to ignore it. Before it went into CI it had been failing
+    // on master with nothing watching, which is the same failure in the other
+    // direction. If this starts reporting noise again, fix the config or the
+    // code — do not take it back out of CI and leave it red.
     //
     // Known blind spot, important when reading a report: knip resolves imports
     // through node_modules, so it cannot follow this repo's tsconfig path
@@ -17,28 +29,38 @@
     "$schema": "https://unpkg.com/knip@5/schema.json",
 
     "workspaces": {
-        // The repo root is a workspace to knip too. Its source is `scripts/`,
-        // run from root npm scripts rather than imported by anything — without
-        // this entry, `validate-lexicons.mjs` reads as a dead file and its only
-        // dependency (`@atproto/lex-document`) as an unused devDependency.
-        // `eslint-rules/**` is in `project` but not `entry` purely so the
-        // `ignore` further down still has something to match; drop it and knip
-        // reports that ignore as redundant config.
+        // The repo root is a workspace to knip too. Its source is `scripts/`
+        // and `eslint-rules/`, both run from root npm scripts rather than
+        // imported by anything — without these entries `validate-lexicons.mjs`
+        // reads as a dead file and its only dependency (`@atproto/lex-document`)
+        // as an unused devDependency.
+        //
+        // `eslint-rules/` is DECLARED here rather than ignored. It used to sit
+        // under a blanket `"ignore": ["eslint-rules/**"]`, with the directory
+        // kept in `project` purely so that ignore still matched something —
+        // which knip eventually reported as redundant config. Naming the two
+        // real entry shapes is both more honest and stricter: `index.mjs` is
+        // imported by each workspace's eslint.config.mjs across a boundary knip
+        // does not follow, and the RuleTester suites run under `node --test`
+        // via the root `test:eslint-rules` script. An unreferenced rule file
+        // that is in neither now reports as dead, which the blanket ignore
+        // could never do.
         ".": {
-            "entry": ["scripts/*.mjs"],
+            "entry": ["scripts/*.mjs", "eslint-rules/index.mjs", "eslint-rules/*.test.mjs"],
             "project": ["scripts/**/*.mjs", "eslint-rules/**/*.mjs"]
         },
         "apps/core-api": {
             // `src/worker.ts` is the only runtime entry, and knip finds it
             // itself from `main` in apps/core-api/wrangler.jsonc — listing it
-            // here would be redundant and knip says so. `src/native.ts` is
-            // named because nothing in the Worker graph imports it: it installs
-            // the Firebase bindings that only the Node runtime could use, and it
-            // survives the Cloud Run removal solely to keep those adapters
-            // exercised until the Firestore data is migrated off. (It used to
-            // install the ffmpeg stage adapters too; those became a `fetch` at
-            // apps/audio-rendition and need no seam.)
-            "entry": ["scripts/*.ts", "src/native.ts"],
+            // here would be redundant and knip says so.
+            //
+            // `src/native.ts` used to be listed beside `scripts/*.ts`, to keep
+            // the Firebase adapters that only the Node runtime could reach from
+            // reading as dead. That file was deleted with Firebase and the Node
+            // runtime in 1b023cd, so the pattern had matched nothing since —
+            // knip reported it as an unmatched entry pattern, and that report
+            // is what surfaced it.
+            "entry": ["scripts/*.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts"]
         },
         "apps/audio-rendition": {
@@ -92,23 +114,41 @@
         "sharp"
     ],
 
-    // `eslint-rules/` is a plain directory of ESLint plugin sources, not a
-    // workspace. `index.mjs` is imported by each workspace's eslint.config.mjs
-    // across a boundary knip does not follow, and the RuleTester suites beside
-    // it run under `node --test` via the root `test:eslint-rules` script — they
-    // are entry points, not dead files. Knip flagged them as unused and was
-    // right at the time: nothing ran them at all until that script was added.
-    "ignore": ["eslint-rules/**"],
+    // An export used only inside its own file is a redundant `export` keyword,
+    // not dead code — the module still needs the binding. That distinction was
+    // the single biggest source of noise here (eleven of the thirteen exports
+    // reported when this went into CI), and triaging it by hand every sweep is
+    // what made the report feel not worth gating on. Knip has a setting for
+    // exactly this case; use it instead of deleting `export` keywords one at a
+    // time, and note that genuinely dead code is still reported — the sweep
+    // that turned this on also found `neonConnectionString`, unreferenced since
+    // the commit that introduced it, and deleted it.
+    "ignoreExportsUsedInFile": true,
 
     // `types` is off because it reports ~21 exported interfaces that are the
     // declared shape of a module's own contract — `AudioPostDependencies`,
     // `RateLimitOptions`, `ServiceApp` and friends. Exporting those is the
     // point of the ports pattern, not an oversight, and leaving the check on
-    // buries the findings that do matter. `exports` stays on but still needs
-    // triage by hand: most of what it flags is a function used inside its own
-    // module, where the `export` keyword is redundant rather than the code
-    // being dead.
+    // buries the findings that do matter.
     "rules": {
-        "types": "off"
+        "types": "off",
+
+        // `duplicates` is off because this repo aliases deliberately, and the
+        // published contract is where it does it: `ProcessingViewSchema` IS
+        // `ProcessingStageMapSchema`, and the separate name is the point — one
+        // is the structural schema, the other is the named thing the hydrated
+        // view promises, and `types/audio.ts` composes the view name. Both are
+        // genuinely used, so there is nothing to remove; the rule simply cannot
+        // tell a semantic alias in a contract from an accident.
+        //
+        // Tried first and did not work: knip's `tags` (`@knipAlias` on the
+        // export) filters unused-export detection but not this rule, so the
+        // finding survived it. If a narrower mechanism appears, prefer it —
+        // turning the rule off does mean an ACCIDENTAL duplicate now goes
+        // unreported, which is a real cost. The one that existed when this
+        // landed, `r2BlobStore|blobStore` in apps/audio-rendition, was fixed
+        // properly instead (the internal one is no longer exported) rather than
+        // swept under this switch.
+        "duplicates": "off"
     }
 }
