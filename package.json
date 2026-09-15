@@ -14,11 +14,13 @@
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present && npm run test:eslint-rules && npm run test:lexicons",
+    "test": "npm run test --workspaces --if-present && npm run test:eslint-rules && npm run test:lexicons && npm run test:dependency-ranges",
     "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them \u2014 they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
     "test:eslint-rules": "node --test \"eslint-rules/*.test.mjs\"",
     "//test:lexicons": "Validates lexicons/ against upstream's own encoding of the Lexicon spec (@atproto/lex-document), so a spec change upstream lands as a CI failure rather than a federation-time surprise. Lives at the root, not in a workspace, because lexicons/ is repo-level and belongs to no package. Refs into app.bsky.*/com.atproto.* are reported but NOT resolved \u2014 resolving them means vendoring ~20 third-party documents and putting a network fetch or CID-pinned manifest in the CI path (see specs/xrpc-and-atproto-lex-strategy.md \u00a77). The Zod-vs-lexicon parity oracle is separate, in @antiphony/shared's vitest suite.",
     "test:lexicons": "node scripts/validate-lexicons.mjs",
+    "//test:dependency-ranges": "Asserts every declared range is satisfied by the version package-lock.json resolves. NOT redundant with `npm ci`, which was checked before this was written: npm compares package.json against the manifest MIRROR the lockfile keeps of each workspace, not against the resolved tree, so `npm install` can bless a mirror while leaving a nested resolution that violates the range beside it. Replaying this repo's own case — 0e9d332 with apps/docs typescript moved to `^5.7.2` — gives `declared ^5.7.2 / installed 7.0.2` with BOTH `npm install` and `npm ci` exiting 0. The simple shape (range bumped, lockfile untouched) npm does catch, with EUSAGE, and needs no guard. Lives at the root next to validate-lexicons.mjs for the same reason: it is about repo-level files and belongs to no workspace.",
+    "test:dependency-ranges": "node scripts/check-dependency-ranges.mjs",
     "//knip": "`--treat-config-hints-as-errors` is load-bearing now that this runs in CI, and it is not a style preference. Knip splits its output: findings (dead exports, unlisted binaries) exit 1, but CONFIGURATION HINTS — an `entry` pattern matching no files, a redundant `ignore` — exit 0. Both of the config problems this script was turned into a gate to catch were hints: `apps/core-api`'s entry still naming `src/native.ts`, deleted with Firebase in 1b023cd, and a redundant `eslint-rules/**` ignore. Without this flag CI would print them and pass, so the config would rot exactly the way it had already rotted, just with a green check over it. Verified both ways: a bogus entry pattern exits 0 without the flag and 1 with it.",
     "knip": "knip --treat-config-hints-as-errors"
   },
@@ -28,11 +30,13 @@
     "fsevents": true,
     "sharp": true
   },
+  "//devDependencies.semver": "Declared because `scripts/check-dependency-ranges.mjs` imports it, and it was reachable only as a TRANSITIVE dependency before that — the same latent shape as the wrangler note below, found the same way. A transitively-hoisted import works until the package that actually declares it drops it or nests it, and then the failure lands on whoever next runs `npm test`. `npm run knip` reports an unlisted dependency if this is ever removed while the script still imports it.",
   "//devDependencies.wrangler": "Declared HERE, not inherited from apps/core-api, even though core-api is the workspace people think of as the Worker. `deploy-docs.yml` runs `npx wrangler deploy` FROM THE REPO ROOT against the root `wrangler.jsonc` (the assets-only Worker serving apps/docs/dist), and until now the root declared no wrangler at all — that command worked only because core-api's devDependency hoists into the root `node_modules/.bin`. The failure mode if it ever stopped hoisting is not a clean error: `npx` DOWNLOADS on a miss, so the docs deploy would quietly run whatever wrangler is newest on the registry instead of the pinned one, on the deploy path, with no signal. Keep this in step with the range in apps/core-api/package.json; `npm run knip` reports the root command as an unlisted binary if this is ever removed, which is how it was found.",
   "devDependencies": {
     "@atproto/lex-document": "^0.1.11",
     "eslint": "^9.16.0",
     "knip": "^5.66.1",
+    "semver": "^7.8.5",
     "typescript": "^5.7.2",
     "wrangler": "^4.131.0"
   },
