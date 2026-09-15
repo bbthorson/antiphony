@@ -20,8 +20,9 @@
     "astro": "^7.3.1",
     "sharp": "^0.35.4"
   },
+  "//typescript": "NOT `^7.0.2`, which is what this said from 2485cbd until now — and that 7 was loaded by NOTHING. `astro check` runs through @astrojs/language-server, which npm hoists to the repo root, so it resolved the ROOT typescript (5.9.3); the 7.0.2 installed here satisfied no consumer, violated @astrojs/check's own peer range (`^5.0.0 || ^6.0.0`) without npm ever saying so — `npm ci` does not enforce peers — and cost 3.5MB plus 20 platform-specific optional packages on every install. `^5.7.2` is what every other workspace declares, so this now DESCRIBES what is actually loaded and dedupes the nested copy away. ⚠️ Do not raise this to 7 until `astro check` supports it, and note that the green CI this pin replaces was never evidence it did: the check passed because the 7 was inert. TypeScript 7's npm package ships the CLI only — `lib/` is getExePath.js, tsc.js and version.cjs, and `require('typescript')` exports `{ version, versionMajorMinor }` and nothing else — so every tool built on the programmatic API refuses it by name. Astro tracks support in withastro/roadmap#1321. typescript-eslint (peer `>=4.8.4 <6.1.0`) and tsup's bundled rollup-plugin-dts are blocked on the same missing API; that is why #149 was closed rather than fixed.",
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "typescript": "^7.0.2"
+    "typescript": "^5.7.2"
   }
 }
