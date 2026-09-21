@@ -35,7 +35,7 @@
   "devDependencies": {
     "@atproto/lex-document": "^0.1.11",
     "eslint": "^9.16.0",
-    "knip": "^5.66.1",
+    "knip": "^6.37.0",
     "semver": "^7.8.5",
     "typescript": "^5.7.2",
     "wrangler": "^4.131.0"
