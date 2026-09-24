@@ -132,3 +132,16 @@ updates:
           - dependency-name: '@hono/zod-openapi'
             update-types:
                 - version-update:semver-major
+
+          # ⚠️ `zod` 4 IS THE SAME MIGRATION, ARRIVING FROM THE OTHER END.
+          #
+          # Dependabot opened it as a plain bump (#158). It fails typecheck in
+          # apps/core-api and packages/shared, and it rewrites the published
+          # `@antiphony/shared` peer range to `^4`, which the
+          # `//peerDependencies` note in packages/shared/package.json says must
+          # not widen until the schemas actually move. Everything said above
+          # about `@hono/zod-openapi` applies. Remove both entries together, as
+          # the first step of the zod 4 work.
+          - dependency-name: 'zod'
+            update-types:
+                - version-update:semver-major
