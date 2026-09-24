@@ -1,0 +1,459 @@
+---
+const mockCallWaveform = [12, 28, 45, 60, 75, 90, 85, 60, 40, 55, 70, 80, 65, 45, 30, 50, 75, 95, 80, 60, 45, 30, 20];
+const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50, 40, 60, 82, 90, 75, 50, 35, 25];
+---
+
+<div class="demo-wrapper">
+	<div class="demo-header">
+		<div class="voice-indicator">
+			<span class="voice-badge voice-call">Voice 1: The Call</span>
+			<span class="voice-arrow">→</span>
+			<span class="voice-badge voice-response">Voice 2: The Response</span>
+		</div>
+		<h2 class="demo-title">The Dialogue in Action</h2>
+		<p class="demo-desc">
+			Every Antiphony conversation is an AT Protocol record thread. An author publishes a call prompt; anyone in the network answers with a signed audio response.
+		</p>
+	</div>
+
+	<div class="thread-container">
+		<!-- Card 1: The Call (Voice 1 / Indigo) -->
+		<div class="audio-card call-card" id="call-card">
+			<div class="card-meta">
+				<div class="actor-info">
+					<div class="actor-avatar call-avatar">A</div>
+					<div>
+						<div class="actor-name">Alice <span class="actor-handle">@alice.bsky.social</span></div>
+						<div class="record-badge">at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
+					</div>
+				</div>
+				<span class="type-pill pill-call">Call Prompt</span>
+			</div>
+
+			<p class="card-prompt">
+				"What inspired you to explore decentralized, portable audio on AT Protocol?"
+			</p>
+
+			<div class="player-widget" data-player="call">
+				<button type="button" class="play-btn play-call" aria-label="Play Call Audio" data-play-btn="call">
+					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+						<polygon points="5 3 19 12 5 21 5 3"/>
+					</svg>
+					<svg class="pause-icon sl-hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+						<rect x="6" y="4" width="4" height="16"/>
+						<rect x="14" y="4" width="4" height="16"/>
+					</svg>
+				</button>
+
+				<div class="waveform-container" data-waveform="call">
+					{mockCallWaveform.map((peak, idx) => (
+						<div
+							class:list={['waveform-bar', { played: idx < 8 }]}
+							style={`height: ${peak}%`}
+							data-index={idx}
+						/>
+					))}
+				</div>
+
+				<span class="duration-display" data-time="call">0:14 / 0:42</span>
+			</div>
+
+			<div class="transcript-preview">
+				<span class="transcript-label">Transcript:</span>
+				"What inspired you to explore decentralized, portable audio on AT Protocol?"
+			</div>
+		</div>
+
+		<!-- Thread Connector Line -->
+		<div class="thread-connector">
+			<div class="connector-line"></div>
+			<div class="connector-node"></div>
+		</div>
+
+		<!-- Card 2: The Response (Voice 2 / Coral) -->
+		<div class="audio-card response-card" id="response-card">
+			<div class="card-meta">
+				<div class="actor-info">
+					<div class="actor-avatar response-avatar">B</div>
+					<div>
+						<div class="actor-name">Bob <span class="actor-handle">@bob.audio.social</span></div>
+						<div class="record-badge">reply to at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
+					</div>
+				</div>
+				<span class="type-pill pill-response">Response Reply</span>
+			</div>
+
+			<p class="card-prompt">
+				"Audio carries human warmth and intimacy that text threads simply lose. When voice posts are open records, creators own their sound across every client."
+			</p>
+
+			<div class="player-widget" data-player="response">
+				<button type="button" class="play-btn play-response" aria-label="Play Response Audio" data-play-btn="response">
+					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+						<polygon points="5 3 19 12 5 21 5 3"/>
+					</svg>
+					<svg class="pause-icon sl-hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+						<rect x="6" y="4" width="4" height="16"/>
+						<rect x="14" y="4" width="4" height="16"/>
+					</svg>
+				</button>
+
+				<div class="waveform-container" data-waveform="response">
+					{mockResponseWaveform.map((peak, idx) => (
+						<div
+							class:list={['waveform-bar', 'bar-response', { played: idx < 12 }]}
+							style={`height: ${peak}%`}
+							data-index={idx}
+						/>
+					))}
+				</div>
+
+				<span class="duration-display" data-time="response">0:21 / 0:38</span>
+			</div>
+
+			<div class="transcript-preview">
+				<span class="transcript-label">Transcript:</span>
+				"Audio carries human warmth and intimacy that text threads simply lose..."
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+	function setupMockPlayer(type: string, durationTotal: number) {
+		const btn = document.querySelector(`[data-play-btn="${type}"]`);
+		const playIcon = btn?.querySelector('.play-icon');
+		const pauseIcon = btn?.querySelector('.pause-icon');
+		const waveform = document.querySelector(`[data-waveform="${type}"]`);
+		const timeDisplay = document.querySelector(`[data-time="${type}"]`);
+
+		if (!btn || !waveform || !timeDisplay) return;
+
+		const bars = waveform.querySelectorAll('.waveform-bar');
+		let isPlaying = false;
+		let progress = type === 'call' ? 8 : 12;
+		let intervalId: any = null;
+
+		function updateView() {
+			bars.forEach((bar, i) => {
+				if (i <= progress) {
+					bar.classList.add('played');
+				} else {
+					bar.classList.remove('played');
+				}
+			});
+			const currentSec = Math.round((progress / bars.length) * durationTotal);
+			if (timeDisplay) {
+				timeDisplay.textContent = `0:${currentSec < 10 ? '0' : ''}${currentSec} / 0:${durationTotal}`;
+			}
+		}
+
+		btn.addEventListener('click', () => {
+			isPlaying = !isPlaying;
+			if (isPlaying) {
+				playIcon?.classList.add('sl-hidden');
+				pauseIcon?.classList.remove('sl-hidden');
+				intervalId = setInterval(() => {
+					progress++;
+					if (progress >= bars.length) {
+						progress = 0;
+					}
+					updateView();
+				}, 400);
+			} else {
+				playIcon?.classList.remove('sl-hidden');
+				pauseIcon?.classList.add('sl-hidden');
+				clearInterval(intervalId);
+			}
+		});
+	}
+
+	setupMockPlayer('call', 42);
+	setupMockPlayer('response', 38);
+</script>
+
+<style>
+	.demo-wrapper {
+		margin: var(--ap-space-12) auto;
+		max-width: 52rem;
+		padding: 0 var(--ap-space-4);
+	}
+
+	.demo-header {
+		text-align: center;
+		margin-bottom: var(--ap-space-8);
+	}
+
+	.voice-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		margin-bottom: var(--ap-space-3);
+	}
+
+	.voice-badge {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		padding: 2px var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+	}
+
+	.voice-call {
+		background: var(--ap-call-subtle);
+		color: var(--ap-call);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.voice-response {
+		background: var(--ap-response-subtle);
+		color: var(--ap-response);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.voice-arrow {
+		color: var(--ap-text-muted);
+		font-size: var(--ap-font-sm);
+	}
+
+	.demo-title {
+		font-family: var(--ap-font-display);
+		font-size: var(--ap-font-2xl);
+		font-weight: 700;
+		color: var(--ap-text-primary);
+		margin: 0 0 var(--ap-space-2);
+	}
+
+	.demo-desc {
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-secondary);
+		max-width: 38rem;
+		margin: 0 auto;
+		line-height: var(--ap-leading-relaxed);
+	}
+
+	.thread-container {
+		display: flex;
+		flex-direction: column;
+		position: relative;
+	}
+
+	.audio-card {
+		background: var(--ap-surface-card);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		padding: var(--ap-space-5);
+		box-shadow: var(--ap-shadow-md);
+		position: relative;
+		transition: all var(--ap-transition-fast);
+	}
+
+	.call-card {
+		border-left: 4px solid var(--ap-call);
+	}
+
+	.response-card {
+		border-left: 4px solid var(--ap-response);
+		margin-inline-start: var(--ap-space-8);
+	}
+
+	.card-meta {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--ap-space-3);
+	}
+
+	.actor-info {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-3);
+	}
+
+	.actor-avatar {
+		width: 36px;
+		height: 36px;
+		border-radius: var(--ap-radius-full);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 700;
+		font-size: var(--ap-font-sm);
+	}
+
+	.call-avatar {
+		background: var(--ap-call);
+		color: var(--ap-text-inverse);
+	}
+
+	.response-avatar {
+		background: var(--ap-response);
+		color: var(--ap-neutral-900);
+	}
+
+	.actor-name {
+		font-size: var(--ap-font-sm);
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.actor-handle {
+		font-weight: 400;
+		color: var(--ap-text-muted);
+		margin-inline-start: var(--ap-space-1);
+	}
+
+	.record-badge {
+		font-family: var(--ap-font-mono);
+		font-size: var(--ap-font-xs);
+		color: var(--ap-text-muted);
+	}
+
+	.type-pill {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		padding: 2px var(--ap-space-2);
+		border-radius: var(--ap-radius-sm);
+	}
+
+	.pill-call {
+		background: var(--ap-call-subtle);
+		color: var(--ap-call);
+	}
+
+	.pill-response {
+		background: var(--ap-response-subtle);
+		color: var(--ap-response);
+	}
+
+	.card-prompt {
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-primary);
+		line-height: var(--ap-leading-snug);
+		margin: 0 0 var(--ap-space-4);
+	}
+
+	.player-widget {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-3);
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-md);
+		padding: var(--ap-space-2) var(--ap-space-4);
+		margin-bottom: var(--ap-space-3);
+	}
+
+	.play-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: var(--ap-radius-full);
+		border: 1px solid transparent;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: all var(--ap-transition-fast);
+		flex-shrink: 0;
+	}
+
+	.play-call {
+		background: var(--ap-call);
+		color: var(--ap-text-inverse);
+	}
+	.play-call:hover {
+		background: var(--ap-call-hover);
+		box-shadow: var(--ap-shadow-call-glow);
+	}
+
+	.play-response {
+		background: var(--ap-response);
+		color: var(--ap-neutral-900);
+	}
+	.play-response:hover {
+		background: var(--ap-response-hover);
+		box-shadow: var(--ap-shadow-response-glow);
+	}
+
+	.waveform-container {
+		display: flex;
+		align-items: flex-end;
+		gap: 3px;
+		height: 38px;
+		flex: 1;
+		padding-bottom: 2px;
+	}
+
+	.waveform-bar {
+		flex: 1;
+		min-width: 3px;
+		border-radius: var(--ap-radius-sm);
+		background: var(--ap-audio-waveform-unplayed);
+		transition: background var(--ap-transition-fast);
+	}
+
+	.waveform-bar.played {
+		background: var(--ap-call);
+	}
+
+	.bar-response.played {
+		background: var(--ap-response);
+	}
+
+	.duration-display {
+		font-family: var(--ap-font-mono);
+		font-size: var(--ap-font-xs);
+		color: var(--ap-text-muted);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+
+	.transcript-preview {
+		font-size: var(--ap-font-xs);
+		color: var(--ap-text-secondary);
+		background: var(--ap-surface-sunken);
+		padding: var(--ap-space-2) var(--ap-space-3);
+		border-radius: var(--ap-radius-sm);
+		border-left: 2px solid var(--ap-border-default);
+	}
+
+	.transcript-label {
+		font-weight: 600;
+		color: var(--ap-text-muted);
+		margin-inline-end: var(--ap-space-1);
+	}
+
+	.thread-connector {
+		height: var(--ap-space-6);
+		margin-inline-start: calc(var(--ap-space-8) + 18px);
+		position: relative;
+	}
+
+	.connector-line {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		background: var(--ap-border-default);
+	}
+
+	.connector-node {
+		position: absolute;
+		left: -3px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 8px;
+		height: 8px;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+	}
+
+	@media (max-width: 40rem) {
+		.response-card {
+			margin-inline-start: var(--ap-space-2);
+		}
+		.thread-connector {
+			margin-inline-start: calc(var(--ap-space-2) + 18px);
+		}
+	}
+</style>

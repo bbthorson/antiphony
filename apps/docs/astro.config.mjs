@@ -12,6 +12,9 @@ export default defineConfig({
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/bbthorson/antiphony' },
 			],
+			components: {
+				Header: './src/components/Header.astro',
+			},
 			// Brand: self-hosted fonts (Sora/Inter/JetBrains Mono) + the
 			// "Two Voices" duotone theme. Order matters — fonts before brand.css
 			// so the @font-face families exist when the theme references them.
@@ -23,14 +26,7 @@ export default defineConfig({
 			],
 			sidebar: [
 				{
-					label: 'Introduction',
-					items: [
-						{ label: 'What is Antiphony?', slug: 'introduction/overview' },
-						{ label: 'Architecture', slug: 'introduction/architecture' },
-					],
-				},
-				{
-					label: 'Lexicons',
+					label: 'Protocol (Lexicons)',
 					items: [
 						// The crown jewel: the dev.antiphony.* AT Protocol lexicons.
 						// The canonical contract an adopter builds against — every
@@ -39,37 +35,41 @@ export default defineConfig({
 					],
 				},
 				{
-					label: 'Self-hosting',
+					label: 'Getting Started',
 					items: [
+						{ label: 'What is Antiphony?', slug: 'introduction/overview' },
 						{ label: 'Quick start', slug: 'self-hosting/quick-start' },
-						{ label: 'Configuration', slug: 'self-hosting/configuration' },
 					],
 				},
 				{
 					label: 'Build your own',
 					items: [
-						{ label: 'Build your own app', slug: 'build-your-own/overview' },
-						// The neutral reference app (apps/reference) is the worked
-						// example: record → upload → create post → hydrate → render.
-						{ label: 'Example: the reference app', slug: 'build-your-own/reference-app' },
+						{ label: 'Overview', slug: 'build-your-own/overview' },
 						// @antiphony/capture-kit — the headless browser audio
 						// primitives (recorder, player, waveform) split out of the
 						// reference app once Vox Pop became a second consumer.
 						{ label: 'The capture kit', slug: 'build-your-own/capture-kit' },
+						// The neutral reference app (apps/reference) is the worked
+						// example: record → upload → create post → hydrate → render.
+						{ label: 'Example: the reference app', slug: 'build-your-own/reference-app' },
 					],
 				},
 				{
-					label: 'Explanation',
+					label: 'Architecture & Design',
 					items: [
+						{ label: 'Internal architecture', slug: 'introduction/architecture' },
 						// The mental model: the core as a hub, every surface
-						// around it as a directional connector, the three API
-						// planes. Distinct from introduction/architecture
-						// (which is the internal ports-and-adapters wiring).
-						{ label: 'Architecture & connectors', slug: 'explanation/connectors' },
+						// around it as a directional connector, the three API planes.
+						{ label: 'Connectors & hub model', slug: 'explanation/connectors' },
 						// The design rules the consumer API obeys (primitives not
-						// compositions, queries, projections, descriptions as
-						// contracts).
+						// compositions, queries, projections, descriptions as contracts).
 						{ label: 'API design principles', slug: 'explanation/api-design-principles' },
+					],
+				},
+				{
+					label: 'Self-hosting & Ops',
+					items: [
+						{ label: 'Configuration', slug: 'self-hosting/configuration' },
 					],
 				},
 				{
@@ -77,8 +77,13 @@ export default defineConfig({
 					items: [
 						{ label: 'Overview', slug: 'api/overview' },
 						// Generated Scalar-rendered endpoint list — a secondary aid.
-						// The lexicons are the primary, hand-written contract.
 						{ label: 'Endpoint reference', link: '/api/reference/' },
+					],
+				},
+				{
+					label: 'Design System',
+					items: [
+						{ label: 'Tokens & Two Voices', slug: 'design-system/tokens' },
 					],
 				},
 			],

@@ -1,0 +1,259 @@
+---
+---
+
+<div class="showcase-container">
+	<div class="showcase-header">
+		<span class="showcase-tag">Developer Surface</span>
+		<h2 class="showcase-title">One Contract, Multiple Horizons</h2>
+		<p class="showcase-desc">
+			Whether you're querying the ATProto decentralized repository, dispatching REST calls from your server, or embedding headless React primitives into your UI, Antiphony provides an ergonomic, type-safe developer contract.
+		</p>
+	</div>
+
+	<div class="code-box">
+		<div class="tab-bar" role="tablist">
+			<button class="tab-btn active" role="tab" aria-selected="true" data-tab-btn="lexicon">
+				<span class="tab-icon">📄</span>
+				<span>ATProto Lexicon</span>
+				<span class="tab-pill">Record</span>
+			</button>
+			<button class="tab-btn" role="tab" aria-selected="false" data-tab-btn="rest">
+				<span class="tab-icon">⚡</span>
+				<span>Core REST API</span>
+				<span class="tab-pill">HTTP</span>
+			</button>
+			<button class="tab-btn" role="tab" aria-selected="false" data-tab-btn="capture">
+				<span class="tab-icon">🎙️</span>
+				<span>Capture Kit</span>
+				<span class="tab-pill">React</span>
+			</button>
+		</div>
+
+		<!-- Panel 1: Lexicon Record -->
+		<div class="code-panel active" data-tab-panel="lexicon">
+			<div class="panel-header">
+				<span class="file-name">dev.antiphony.audio.post.json</span>
+				<span class="contract-badge">Portable ATProto Schema</span>
+			</div>
+			<pre class="code-content"><code><span class="token-punct">&#123;</span>
+  <span class="token-key">"$type"</span><span class="token-punct">:</span> <span class="token-str">"dev.antiphony.audio.post"</span><span class="token-punct">,</span>
+  <span class="token-key">"text"</span><span class="token-punct">:</span> <span class="token-str">"What inspired you to explore decentralized audio?"</span><span class="token-punct">,</span>
+  <span class="token-key">"embed"</span><span class="token-punct">:</span> <span class="token-punct">&#123;</span>
+    <span class="token-key">"$type"</span><span class="token-punct">:</span> <span class="token-str">"dev.antiphony.embed.audio"</span><span class="token-punct">,</span>
+    <span class="token-key">"audio"</span><span class="token-punct">:</span> <span class="token-punct">&#123;</span>
+      <span class="token-key">"cid"</span><span class="token-punct">:</span> <span class="token-str">"bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"</span><span class="token-punct">,</span>
+      <span class="token-key">"mimeType"</span><span class="token-punct">:</span> <span class="token-str">"audio/mp4"</span><span class="token-punct">,</span>
+      <span class="token-key">"durationMs"</span><span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span>
+      <span class="token-key">"waveform"</span><span class="token-punct">:</span> <span class="token-punct">[</span><span class="token-num">12</span><span class="token-punct">,</span> <span class="token-num">28</span><span class="token-punct">,</span> <span class="token-num">45</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">75</span><span class="token-punct">,</span> <span class="token-num">90</span><span class="token-punct">,</span> <span class="token-num">85</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">40</span><span class="token-punct">]</span>
+    <span class="token-punct">&#123;</span>
+  <span class="token-punct">&#125;</span><span class="token-punct">,</span>
+  <span class="token-key">"createdAt"</span><span class="token-punct">:</span> <span class="token-str">"2026-09-24T18:00:00.000Z"</span>
+<span class="token-punct">&#125;</span></code></pre>
+		</div>
+
+		<!-- Panel 2: Core REST API -->
+		<div class="code-panel sl-hidden" data-tab-panel="rest">
+			<div class="panel-header">
+				<span class="file-name">post-audio.ts</span>
+				<span class="contract-badge">POST /api/v1/posts</span>
+			</div>
+			<pre class="code-content"><code><span class="token-comment">// Dispatch an audio post with service token + acting actor</span>
+<span class="token-keyword">const</span> res = <span class="token-keyword">await</span> fetch<span class="token-punct">(</span><span class="token-str">"https://api.antiphony.dev/api/v1/posts"</span><span class="token-punct">,</span> <span class="token-punct">&#123;</span>
+  method<span class="token-punct">:</span> <span class="token-str">"POST"</span><span class="token-punct">,</span>
+  headers<span class="token-punct">:</span> <span class="token-punct">&#123;</span>
+    <span class="token-str">"Authorization"</span><span class="token-punct">:</span> <span class="token-str">&grave;Bearer $&#123;serviceToken&#125;&grave;</span><span class="token-punct">,</span>
+    <span class="token-str">"X-Antiphony-Acting-Actor"</span><span class="token-punct">:</span> <span class="token-str">"did:plc:alice12345"</span><span class="token-punct">,</span>
+    <span class="token-str">"Content-Type"</span><span class="token-punct">:</span> <span class="token-str">"application/json"</span>
+  <span class="token-punct">&#125;</span><span class="token-punct">,</span>
+  body<span class="token-punct">:</span> JSON<span class="token-punct">.</span>stringify<span class="token-punct">(</span><span class="token-punct">&#123;</span>
+    text<span class="token-punct">:</span> <span class="token-str">"What inspired you to explore decentralized audio?"</span><span class="token-punct">,</span>
+    embed<span class="token-punct">:</span> <span class="token-punct">&#123;</span> audioBlobId<span class="token-punct">,</span> durationMs<span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span> waveform <span class="token-punct">&#125;</span>
+  <span class="token-punct">&#125;</span><span class="token-punct">)</span>
+<span class="token-punct">&#125;</span><span class="token-punct">)</span><span class="token-punct">;</span>
+<span class="token-keyword">const</span> <span class="token-punct">&#123;</span> data <span class="token-punct">&#125;</span> = <span class="token-keyword">await</span> res<span class="token-punct">.</span>json<span class="token-punct">(</span><span class="token-punct">)</span><span class="token-punct">;</span></code></pre>
+		</div>
+
+		<!-- Panel 3: Capture Kit -->
+		<div class="code-panel sl-hidden" data-tab-panel="capture">
+			<div class="panel-header">
+				<span class="file-name">VoicePrompt.tsx</span>
+				<span class="contract-badge">@antiphony/capture-kit</span>
+			</div>
+			<pre class="code-content"><code><span class="token-keyword">import</span> <span class="token-punct">&#123;</span> useAudioRecorder<span class="token-punct">,</span> useAudioPlayer <span class="token-punct">&#125;</span> <span class="token-keyword">from</span> <span class="token-str">'@antiphony/capture-kit'</span><span class="token-punct">;</span>
+
+<span class="token-keyword">export function</span> VoicePrompt<span class="token-punct">(</span><span class="token-punct">)</span> <span class="token-punct">&#123;</span>
+  <span class="token-keyword">const</span> <span class="token-punct">&#123;</span> status<span class="token-punct">,</span> start<span class="token-punct">,</span> stop<span class="token-punct">,</span> audioBlob<span class="token-punct">,</span> waveform <span class="token-punct">&#125;</span> = useAudioRecorder<span class="token-punct">(</span><span class="token-punct">)</span><span class="token-punct">;</span>
+
+  <span class="token-keyword">return</span> <span class="token-punct">(</span>
+    <span class="token-punct">&lt;</span>button onClick<span class="token-punct">=</span><span class="token-punct">&#123;</span>status <span class="token-punct">===</span> <span class="token-str">'recording'</span> <span class="token-punct">?</span> stop <span class="token-punct">:</span> start<span class="token-punct">&#125;</span><span class="token-punct">&gt;</span>
+      <span class="token-punct">&#123;</span>status <span class="token-punct">===</span> <span class="token-str">'recording'</span> <span class="token-punct">?</span> <span class="token-str">'Finish Recording'</span> <span class="token-punct">:</span> <span class="token-str">'Record Audio Prompt'</span><span class="token-punct">&#125;</span>
+    <span class="token-punct">&lt;</span>/button<span class="token-punct">&gt;</span>
+  <span class="token-punct">)</span><span class="token-punct">;</span>
+<span class="token-punct">&#125;</span></code></pre>
+		</div>
+	</div>
+</div>
+
+<script>
+	const tabs = document.querySelectorAll('[data-tab-btn]');
+	const panels = document.querySelectorAll('[data-tab-panel]');
+
+	tabs.forEach((tab) => {
+		tab.addEventListener('click', () => {
+			const target = tab.getAttribute('data-tab-btn');
+
+			tabs.forEach((t) => {
+				t.classList.remove('active');
+				t.setAttribute('aria-selected', 'false');
+			});
+			panels.forEach((p) => {
+				p.classList.add('sl-hidden');
+				p.classList.remove('active');
+			});
+
+			tab.classList.add('active');
+			tab.setAttribute('aria-selected', 'true');
+
+			const activePanel = document.querySelector(`[data-tab-panel="${target}"]`);
+			if (activePanel) {
+				activePanel.classList.remove('sl-hidden');
+				activePanel.classList.add('active');
+			}
+		});
+	});
+</script>
+
+<style>
+	.showcase-container {
+		max-width: 54rem;
+		margin: var(--ap-space-12) auto;
+		padding: 0 var(--ap-space-4);
+	}
+
+	.showcase-header {
+		text-align: center;
+		margin-bottom: var(--ap-space-8);
+	}
+
+	.showcase-tag {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		color: var(--ap-call);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: var(--ap-call-subtle);
+		padding: 2px var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+	}
+
+	.showcase-title {
+		font-family: var(--ap-font-display);
+		font-size: var(--ap-font-2xl);
+		font-weight: 700;
+		color: var(--ap-text-primary);
+		margin: var(--ap-space-3) 0 var(--ap-space-2);
+	}
+
+	.showcase-desc {
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-secondary);
+		max-width: 42rem;
+		margin: 0 auto;
+		line-height: var(--ap-leading-relaxed);
+	}
+
+	.code-box {
+		background: var(--ap-surface-base);
+		border: 1px solid var(--ap-border-default);
+		border-radius: var(--ap-radius-lg);
+		box-shadow: var(--ap-shadow-md);
+		overflow: hidden;
+	}
+
+	.tab-bar {
+		display: flex;
+		background: var(--ap-surface-sunken);
+		border-bottom: 1px solid var(--ap-border-subtle);
+		padding: var(--ap-space-1) var(--ap-space-2) 0;
+		gap: var(--ap-space-1);
+		overflow-x: auto;
+	}
+
+	.tab-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		padding: var(--ap-space-2) var(--ap-space-4);
+		font-size: var(--ap-font-sm);
+		font-weight: 500;
+		color: var(--ap-text-secondary);
+		background: transparent;
+		border: none;
+		border-top-left-radius: var(--ap-radius-md);
+		border-top-right-radius: var(--ap-radius-md);
+		cursor: pointer;
+		transition: all var(--ap-transition-fast);
+		border-bottom: 2px solid transparent;
+	}
+
+	.tab-btn:hover {
+		color: var(--ap-text-primary);
+	}
+
+	.tab-btn.active {
+		color: var(--ap-call);
+		background: var(--ap-surface-base);
+		font-weight: 600;
+		border-bottom: 2px solid var(--ap-call);
+	}
+
+	.tab-pill {
+		font-size: var(--ap-font-xs);
+		font-family: var(--ap-font-mono);
+		padding: 1px var(--ap-space-2);
+		border-radius: var(--ap-radius-sm);
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--ap-space-2) var(--ap-space-4);
+		background: var(--ap-surface-elevated);
+		border-bottom: 1px solid var(--ap-border-subtle);
+		font-size: var(--ap-font-xs);
+		font-family: var(--ap-font-mono);
+	}
+
+	.file-name {
+		color: var(--ap-text-secondary);
+	}
+
+	.contract-badge {
+		color: var(--ap-call);
+		font-weight: 500;
+	}
+
+	.code-content {
+		margin: 0;
+		padding: var(--ap-space-4);
+		background: var(--ap-surface-base);
+		font-family: var(--ap-font-mono);
+		font-size: var(--ap-font-sm);
+		line-height: var(--ap-leading-normal);
+		overflow-x: auto;
+	}
+
+	.token-punct { color: var(--ap-text-muted); }
+	.token-key { color: var(--ap-call); }
+	.token-str { color: var(--ap-response); }
+	.token-num { color: var(--ap-call-700); }
+	.token-keyword { color: var(--ap-call); font-weight: 600; }
+	.token-comment { color: var(--ap-text-muted); font-style: italic; }
+
+	:root[data-theme='dark'] .token-num {
+		color: var(--ap-call-300);
+	}
+</style>
