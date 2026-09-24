@@ -205,6 +205,8 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
    write, and is sealed once replied to. That is safe only because the paid
    upgrade is a *claim* of the minted `did:plc` (the user takes its top rotation
    key), never a switch to a different DID, so the DID string never changes.
+   Bringing an existing DID is supported at signup only, before anything is
+   written under a minted one.
    Brad settled this on 2026-09-24; the mechanism is in
    `specs/did-plc-and-multi-did-tenancy.md` (PR #159). If that ever changes to
    a switch, spaced records written before it stay under the old DID for good.
