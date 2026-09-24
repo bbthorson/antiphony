@@ -101,9 +101,11 @@ jobs:
                   SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
                   echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-                  # Diff against the first parent — for the merge commits that
-                  # land on master, that is master-before-the-merge, so the diff
-                  # is the whole change that just landed.
+                  # Diff against the first parent — for the merge commits (or
+                  # squash merges) that land on master, that is
+                  # master-before-the-merge, so the diff is the whole change
+                  # that just landed. (Assumes repo enforces merge/squash commits
+                  # and disallows rebase merges).
                   #
                   # A manual dispatch, or a commit whose parent we cannot reach,
                   # BUILDS: a redundant build is recoverable, a skipped one ships
@@ -131,6 +133,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         name: build · deploy
         runs-on: ubuntu-latest
+        timeout-minutes: 15
         # Recorded as a deployment against the `production` environment, so
         # "what is live and since when" is answerable from the repo rather than from
         # a provider console. Deliberately carries NO protection rules: a required

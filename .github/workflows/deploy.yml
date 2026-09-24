@@ -115,6 +115,7 @@ jobs:
     deploy:
         name: prove pins · deploy
         runs-on: ubuntu-latest
+        timeout-minutes: 15
         # Recorded as a deployment against the `production` environment, so
         # "what is live and since when" is answerable from the repo rather than from
         # a provider console. Deliberately carries NO protection rules: a required
