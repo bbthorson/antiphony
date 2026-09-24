@@ -7,6 +7,7 @@ import {
     resetValidatedPinsForTest,
     checkTenantRegistryDrift,
     didWebToUrl,
+    didPlcToUrl,
     custodyService,
     validateAppDid,
     ensureTenantPin,
@@ -250,8 +251,14 @@ describe('validateAppDid', () => {
         if (r.ok) expect(r.custody.endpoint).toBe('https://api.antiphony.dev');
     });
 
-    it('rejects a non-did:web DID before fetching', async () => {
-        expect(await validateAppDid('did:plc:abc', {})).toMatchObject({ ok: false, reason: 'not-did-web' });
+    it('rejects an unsupported DID method before fetching', async () => {
+        const fetchImpl = vi.fn() as unknown as typeof fetch;
+        expect(await validateAppDid('did:key:z6Mkabc', { fetchImpl })).toMatchObject({
+            ok: false,
+            reason: 'unsupported-did-method',
+            kind: 'disproof',
+        });
+        expect(fetchImpl).not.toHaveBeenCalled();
     });
 
     it('rejects an HTTP error resolving the doc', async () => {
@@ -288,6 +295,96 @@ describe('validateAppDid', () => {
         const r = await validateAppDid('did:web:did.voxpop.audio', { fetchImpl });
         expect(r.ok).toBe(false);
         if (!r.ok) expect(r.reason).toMatch(/did-doc-fetch-failed/);
+    });
+});
+
+describe('didPlcToUrl', () => {
+    const PLC = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
+
+    it('maps a well-formed did:plc onto the directory', () => {
+        expect(didPlcToUrl(PLC)).toBe(`https://plc.directory/${PLC}`);
+        expect(didPlcToUrl(PLC, 'http://localhost:2582/')).toBe(`http://localhost:2582/${PLC}`);
+    });
+
+    it('returns null for anything that is not exactly 24 base32 chars', () => {
+        expect(didPlcToUrl('did:plc:abc')).toBeNull();
+        expect(didPlcToUrl('did:plc:EWVI7NXZYOUN6ZHXRHS64OIZ')).toBeNull();
+        expect(didPlcToUrl('did:plc:ewvi7nxzyoun6zhxrhs64oi1')).toBeNull();
+        expect(didPlcToUrl('did:plc:ewvi7nxzyoun6zhxrhs64oiz/../x')).toBeNull();
+        expect(didPlcToUrl('did:web:example.com')).toBeNull();
+    });
+});
+
+describe('validateAppDid — did:plc', () => {
+    const PLC = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
+    const plcDoc = (over: Record<string, unknown> = {}) => ({
+        id: PLC,
+        service: [{ id: '#atproto_space_host', type: 'AtprotoSpaceHost', serviceEndpoint: 'https://api.antiphony.dev' }],
+        ...over,
+    });
+    const respond = (res: unknown) => vi.fn(async () => res) as unknown as typeof fetch;
+
+    it('resolves through the PLC directory and proves custody', async () => {
+        const fetchImpl = respond({ ok: true, json: async () => plcDoc() });
+        const r = await validateAppDid(PLC, { fetchImpl, expectedPdsHost: 'api.antiphony.dev' });
+        expect(r).toMatchObject({ ok: true, did: PLC, custody: { kind: 'space-host' } });
+        expect(fetchImpl).toHaveBeenCalledWith(`https://plc.directory/${PLC}`, expect.anything());
+    });
+
+    it('honours a configured directory', async () => {
+        const fetchImpl = respond({ ok: true, json: async () => plcDoc() });
+        await validateAppDid(PLC, { fetchImpl, plcDirectoryUrl: 'https://plc.example' });
+        expect(fetchImpl).toHaveBeenCalledWith(`https://plc.example/${PLC}`, expect.anything());
+    });
+
+    it('rejects a malformed did:plc as disproof, without fetching', async () => {
+        const fetchImpl = vi.fn() as unknown as typeof fetch;
+        expect(await validateAppDid('did:plc:abc', { fetchImpl })).toMatchObject({
+            ok: false,
+            reason: 'malformed-did',
+            kind: 'disproof',
+        });
+        expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('treats 404 (unknown DID) and 410 (tombstoned) as disproof', async () => {
+        for (const status of [404, 410]) {
+            const r = await validateAppDid(PLC, { fetchImpl: respond({ ok: false, status }) });
+            expect(r).toMatchObject({ ok: false, reason: `did-doc-http-${status}`, kind: 'disproof' });
+        }
+    });
+
+    it('treats a directory outage as unreachable, never disproof', async () => {
+        for (const status of [429, 500, 503]) {
+            const r = await validateAppDid(PLC, { fetchImpl: respond({ ok: false, status }) });
+            expect(r).toMatchObject({ ok: false, kind: 'unreachable' });
+        }
+        const thrown = vi.fn(async () => {
+            throw new Error('ECONNRESET');
+        }) as unknown as typeof fetch;
+        expect(await validateAppDid(PLC, { fetchImpl: thrown })).toMatchObject({ ok: false, kind: 'unreachable' });
+    });
+
+    it('applies the same custody checks as did:web', async () => {
+        const mismatch = await validateAppDid(PLC, {
+            fetchImpl: respond({ ok: true, json: async () => plcDoc({ id: 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa' }) }),
+        });
+        expect(mismatch).toMatchObject({ ok: false, reason: 'did-doc-id-mismatch', kind: 'disproof' });
+
+        const elsewhere = await validateAppDid(PLC, {
+            fetchImpl: respond({ ok: true, json: async () => plcDoc() }),
+            expectedPdsHost: 'other.host',
+        });
+        expect(elsewhere).toMatchObject({ ok: false, kind: 'disproof' });
+    });
+
+    it('pins a did:plc tenant end to end through ensureTenantPin', async () => {
+        process.env.ANTIPHONY_APP_DIDS = `bardcast:${PLC}`;
+        await ensureTenantPin('bardcast', {
+            expectedPdsHost: 'api.antiphony.dev',
+            fetchImpl: respond({ ok: true, json: async () => plcDoc() }),
+        });
+        expect(getAppDid('bardcast')).toBe(PLC);
     });
 });
 
