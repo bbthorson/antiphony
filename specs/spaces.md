@@ -23,8 +23,8 @@ so this change lives here and the authority-model update can link to it.
 3. **Vox Pop owns audience replies and holds the phone ↔ user-ID layer.**
    Antiphony still never sees a phone number.
 4. **DIDs are minted by default; owning your own DID is a paid upgrade** (which
-   also unlocks denoise). See open question 2: this interacts with the author
-   segment of a space URI.
+   also unlocks denoise), and the upgrade is a claim of the minted DID, not a
+   switch. See open question 2 for why that matters to the author segment.
 5. **The corpus is still wipeable.** Reply StrongRefs seal a parent's URI into
    the reply's CID at write time, so URI shape is free to change now and
    impossible to change later.
@@ -200,14 +200,14 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
    the tenant's DID. That is the same shape as the lower-priority operational
    key in the did:plc plan, and it should be designed together with it. It does
    not block Phases 1, 2 or 4.
-2. **"Upgrade to your own DID" versus a sealed author segment.** A player's
-   minted DID goes into the author segment of every spaced record they write, and
-   is sealed once replied to. If the paid upgrade means *switching to a
-   different DID*, their earlier records stay under the minted one for good. If
-   it means *taking control of the minted `did:plc`* (handing the user its top
-   rotation key, and repointing it at their own PDS), the DID string never
-   changes and nothing is orphaned. This plan recommends the second, and it
-   needs agreeing with the did:plc thread before the first kept spaced record.
+2. **"Upgrade to your own DID" versus a sealed author segment — settled.** A
+   player's minted DID goes into the author segment of every spaced record they
+   write, and is sealed once replied to. That is safe only because the paid
+   upgrade is a *claim* of the minted `did:plc` (the user takes its top rotation
+   key), never a switch to a different DID, so the DID string never changes.
+   Brad settled this on 2026-09-24; the mechanism is in
+   `specs/did-plc-and-multi-did-tenancy.md` (PR #159). If that ever changes to
+   a switch, spaced records written before it stay under the old DID for good.
 3. **Blob visibility in the proxy.** One blob CID can be referenced by a public
    post and a spaced one. Choices: derive "public if any flat record references
    it" on upload and on post create; or put spaced blobs under a separate path
