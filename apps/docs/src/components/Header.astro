@@ -1,0 +1,136 @@
+---
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import Search from '@astrojs/starlight/components/Search.astro';
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+
+const currentPath = Astro.url.pathname;
+
+const navItems = [
+	{ label: 'Lexicons', href: '/lexicons/overview/', badge: 'Protocol' },
+	{ label: 'Guides', href: '/self-hosting/quick-start/' },
+	{ label: 'Capture Kit', href: '/build-your-own/capture-kit/' },
+	{ label: 'Architecture', href: '/introduction/architecture/' },
+	{ label: 'API Reference', href: '/api/overview/' },
+];
+
+function isActive(href: string): boolean {
+	if (href === '/') return currentPath === '/';
+	return currentPath.startsWith(href.replace(/\/$/, ''));
+}
+---
+
+<div class="header">
+	<div class="title-wrapper sl-flex">
+		<SiteTitle {...Astro.props} />
+	</div>
+
+	<!-- Top-level Primary Navigation Links -->
+	<nav class="top-nav sl-hidden lg:sl-flex" aria-label="Main Navigation">
+		{navItems.map((item) => (
+			<a
+				href={item.href}
+				class:list={['nav-link', { active: isActive(item.href) }]}
+				aria-current={isActive(item.href) ? 'page' : undefined}
+			>
+				<span>{item.label}</span>
+				{item.badge && <span class="nav-badge">{item.badge}</span>}
+			</a>
+		))}
+	</nav>
+
+	<div class="search-wrapper sl-flex print:hidden">
+		<Search {...Astro.props} />
+	</div>
+
+	<div class="sl-hidden md:sl-flex print:hidden right-group">
+		<div class="sl-flex social-icons">
+			<SocialIcons {...Astro.props} />
+		</div>
+		<ThemeSelect {...Astro.props} />
+		<LanguageSelect {...Astro.props} />
+	</div>
+</div>
+
+<style>
+	.header {
+		display: flex;
+		gap: var(--sl-nav-gap, var(--ap-space-4));
+		justify-content: space-between;
+		align-items: center;
+		height: 100%;
+		width: 100%;
+	}
+
+	.title-wrapper {
+		overflow: clip;
+		padding: var(--ap-space-1);
+		margin: calc(-1 * var(--ap-space-1));
+		min-width: 0;
+		flex-shrink: 0;
+	}
+
+	.top-nav {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		margin-inline: var(--ap-space-3);
+	}
+
+	.nav-link {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		padding: var(--ap-space-1) var(--ap-space-3);
+		border-radius: var(--ap-radius-md);
+		font-size: var(--ap-font-sm);
+		font-weight: 500;
+		color: var(--ap-text-secondary);
+		text-decoration: none;
+		transition: all var(--ap-transition-fast);
+		border: 1px solid transparent;
+	}
+
+	.nav-link:hover {
+		color: var(--ap-call);
+		background: var(--ap-call-subtle);
+		border-color: var(--ap-border-subtle);
+	}
+
+	.nav-link.active {
+		color: var(--ap-call);
+		font-weight: 600;
+		background: var(--ap-call-subtle);
+		border-color: var(--ap-border-default);
+	}
+
+	.nav-badge {
+		font-size: var(--ap-font-xs);
+		font-family: var(--ap-font-mono);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 1px var(--ap-space-2);
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response-subtle);
+		color: var(--ap-response);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.search-wrapper {
+		flex: 1;
+		max-width: 24rem;
+	}
+
+	.right-group,
+	.social-icons {
+		gap: var(--ap-space-3);
+		align-items: center;
+	}
+
+	.social-icons::after {
+		content: '';
+		height: var(--ap-space-6);
+		border-inline-end: 1px solid var(--ap-border-subtle);
+	}
+</style>

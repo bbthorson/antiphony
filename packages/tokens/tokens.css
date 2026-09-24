@@ -1,0 +1,187 @@
+/**
+ * Antiphony Design System Tokens — "Two Voices" Duotone
+ *
+ * Voice 1 (The Call): Indigo (#4f46e5 / #6366f1) — primary action, structural authority
+ * Voice 2 (The Response): Coral (#f97362) — dialogue, active reply, deliberate focal moments
+ *
+ * Strict token definitions for the Antiphony ecosystem.
+ */
+
+:root {
+	/* Voice 1: The Call (Indigo Ramp) */
+	--ap-call-50: #eef2ff;
+	--ap-call-100: #e0e7ff;
+	--ap-call-200: #c7d2fe;
+	--ap-call-300: #a5b4fc;
+	--ap-call-400: #818cf8;
+	--ap-call-500: #6366f1;
+	--ap-call-600: #4f46e5;
+	--ap-call-700: #4338ca;
+	--ap-call-800: #3730a3;
+	--ap-call-900: #312e81;
+	--ap-call-950: #1e1b4b;
+
+	/* Voice 2: The Response (Coral Ramp) */
+	--ap-response-50: #fff1f0;
+	--ap-response-100: #ffe4e1;
+	--ap-response-200: #ffccd3;
+	--ap-response-300: #ffa2a8;
+	--ap-response-400: #fc737c;
+	--ap-response-500: #f97362;
+	--ap-response-600: #e85645;
+	--ap-response-700: #c33e2f;
+	--ap-response-800: #a23326;
+	--ap-response-900: #852f26;
+	--ap-response-950: #49150f;
+
+	/* Neutral Ramp (Slate) */
+	--ap-neutral-50: #f8fafc;
+	--ap-neutral-100: #f1f5f9;
+	--ap-neutral-200: #e2e8f0;
+	--ap-neutral-300: #cbd5e1;
+	--ap-neutral-400: #94a3b8;
+	--ap-neutral-500: #64748b;
+	--ap-neutral-600: #475569;
+	--ap-neutral-700: #334155;
+	--ap-neutral-800: #1e293b;
+	--ap-neutral-900: #0f172a;
+	--ap-neutral-950: #080c15;
+
+	/* Semantic Colors — Light Theme Default */
+	--ap-call: var(--ap-call-600);
+	--ap-call-hover: var(--ap-call-700);
+	--ap-call-subtle: var(--ap-call-100);
+	--ap-call-glow: rgba(79, 70, 229, 0.2);
+
+	--ap-response: var(--ap-response-500);
+	--ap-response-hover: var(--ap-response-600);
+	--ap-response-subtle: var(--ap-response-100);
+	--ap-response-glow: rgba(249, 115, 98, 0.25);
+
+	/* Surfaces */
+	--ap-surface-base: #ffffff;
+	--ap-surface-elevated: var(--ap-neutral-50);
+	--ap-surface-card: #ffffff;
+	--ap-surface-overlay: rgba(255, 255, 255, 0.88);
+	--ap-surface-sunken: var(--ap-neutral-100);
+
+	/* Borders */
+	--ap-border-subtle: rgba(203, 213, 225, 0.6);
+	--ap-border-default: var(--ap-neutral-300);
+	--ap-border-strong: var(--ap-neutral-400);
+	--ap-border-call: var(--ap-call-600);
+	--ap-border-response: var(--ap-response-500);
+
+	/* Text */
+	--ap-text-primary: var(--ap-neutral-900);
+	--ap-text-secondary: var(--ap-neutral-600);
+	--ap-text-muted: var(--ap-neutral-500);
+	--ap-text-inverse: #ffffff;
+
+	/* Audio & Waveform UI */
+	--ap-audio-waveform-played: var(--ap-call);
+	--ap-audio-waveform-unplayed: var(--ap-neutral-300);
+	--ap-audio-waveform-response-played: var(--ap-response);
+	--ap-audio-waveform-hover: var(--ap-call-400);
+	--ap-audio-pulse: var(--ap-response);
+
+	/* Typography Families */
+	--ap-font-display: 'Sora Variable', ui-sans-serif, system-ui, sans-serif;
+	--ap-font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+	--ap-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+	/* Typography Scale */
+	--ap-font-xs: 0.75rem;
+	--ap-font-sm: 0.875rem;
+	--ap-font-base: 1rem;
+	--ap-font-lg: 1.125rem;
+	--ap-font-xl: 1.25rem;
+	--ap-font-2xl: 1.5rem;
+	--ap-font-3xl: 1.875rem;
+	--ap-font-4xl: 2.25rem;
+	--ap-font-5xl: 3rem;
+
+	/* Line Heights */
+	--ap-leading-tight: 1.2;
+	--ap-leading-snug: 1.35;
+	--ap-leading-normal: 1.5;
+	--ap-leading-relaxed: 1.625;
+
+	/* Spacing Scale (4px base) */
+	--ap-space-1: 0.25rem;  /* 4px */
+	--ap-space-2: 0.5rem;   /* 8px */
+	--ap-space-3: 0.75rem;  /* 12px */
+	--ap-space-4: 1rem;     /* 16px */
+	--ap-space-5: 1.25rem;  /* 20px */
+	--ap-space-6: 1.5rem;   /* 24px */
+	--ap-space-8: 2rem;     /* 32px */
+	--ap-space-10: 2.5rem;  /* 40px */
+	--ap-space-12: 3rem;    /* 48px */
+	--ap-space-16: 4rem;    /* 64px */
+	--ap-space-20: 5rem;    /* 80px */
+	--ap-space-24: 6rem;    /* 96px */
+
+	/* Radii */
+	--ap-radius-sm: 4px;
+	--ap-radius-md: 8px;
+	--ap-radius-lg: 12px;
+	--ap-radius-xl: 16px;
+	--ap-radius-full: 9999px;
+
+	/* Shadows & Glows */
+	--ap-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+	--ap-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+	--ap-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+	--ap-shadow-call-glow: 0 0 24px -4px var(--ap-call-glow);
+	--ap-shadow-response-glow: 0 0 24px -4px var(--ap-response-glow);
+
+	/* Transitions */
+	--ap-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+	--ap-transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark Theme Overrides */
+:root[data-theme='dark'] {
+	/* Voice 1: Brighter Indigo in Dark Mode */
+	--ap-call: var(--ap-call-500);
+	--ap-call-hover: var(--ap-call-400);
+	--ap-call-subtle: rgba(99, 102, 241, 0.15);
+	--ap-call-glow: rgba(99, 102, 241, 0.35);
+
+	/* Voice 2: Coral carries cleanly on dark fields */
+	--ap-response: var(--ap-response-500);
+	--ap-response-hover: var(--ap-response-400);
+	--ap-response-subtle: rgba(249, 115, 98, 0.18);
+	--ap-response-glow: rgba(249, 115, 98, 0.35);
+
+	/* Surfaces */
+	--ap-surface-base: var(--ap-neutral-950);
+	--ap-surface-elevated: #0f1523;
+	--ap-surface-card: rgba(15, 21, 35, 0.8);
+	--ap-surface-overlay: rgba(8, 12, 21, 0.88);
+	--ap-surface-sunken: #05080e;
+
+	/* Borders */
+	--ap-border-subtle: rgba(255, 255, 255, 0.08);
+	--ap-border-default: rgba(255, 255, 255, 0.14);
+	--ap-border-strong: rgba(255, 255, 255, 0.24);
+	--ap-border-call: var(--ap-call-500);
+	--ap-border-response: var(--ap-response-500);
+
+	/* Text */
+	--ap-text-primary: var(--ap-neutral-50);
+	--ap-text-secondary: var(--ap-neutral-300);
+	--ap-text-muted: var(--ap-neutral-400);
+	--ap-text-inverse: var(--ap-neutral-950);
+
+	/* Audio & Waveform UI */
+	--ap-audio-waveform-played: var(--ap-call);
+	--ap-audio-waveform-unplayed: var(--ap-neutral-700);
+	--ap-audio-waveform-response-played: var(--ap-response);
+	--ap-audio-waveform-hover: var(--ap-call-300);
+
+	/* Shadows */
+	--ap-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+	--ap-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+	--ap-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+}

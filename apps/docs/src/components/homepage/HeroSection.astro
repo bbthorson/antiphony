@@ -1,0 +1,215 @@
+---
+---
+
+<section class="hero-container">
+	<div class="hero-badge">
+		<span class="badge-dot"></span>
+		<span>AT Protocol Audio Standard · MIT-Licensed Infrastructure</span>
+	</div>
+
+	<h1 class="hero-title">
+		Call-and-Response Audio<br />
+		<span class="gradient-text">for the Open Social Web</span>
+	</h1>
+
+	<p class="hero-subtitle">
+		An open protocol standard and edge-ready infrastructure for portable audio posts, threaded voice replies, waveforms, and transcription — unified behind one clean HTTP API.
+	</p>
+
+	<div class="hero-actions">
+		<a href="/lexicons/overview/" class="btn-primary">
+			<span>Explore the Lexicons</span>
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M5 12h14M12 5l7 7-7 7"/>
+			</svg>
+		</a>
+		<a href="/self-hosting/quick-start/" class="btn-secondary">
+			<span>Quick Start</span>
+		</a>
+		<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer" class="btn-ghost">
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+				<path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+			</svg>
+			<span>GitHub</span>
+		</a>
+	</div>
+
+	<div class="hero-stats">
+		<div class="stat-item">
+			<span class="stat-icon">🎙️</span>
+			<span class="stat-text"><code>dev.antiphony.*</code> Lexicons</span>
+		</div>
+		<div class="stat-divider"></div>
+		<div class="stat-item">
+			<span class="stat-icon">⚡</span>
+			<span class="stat-text">Cloudflare Workers & Postgres</span>
+		</div>
+		<div class="stat-divider"></div>
+		<div class="stat-item">
+			<span class="stat-icon">🧩</span>
+			<span class="stat-text">Headless <code>@antiphony/capture-kit</code></span>
+		</div>
+	</div>
+</section>
+
+<style>
+	.hero-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: var(--ap-space-12) var(--ap-space-4) var(--ap-space-8);
+		max-width: 58rem;
+		margin: 0 auto;
+	}
+
+	.hero-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		padding: var(--ap-space-1) var(--ap-space-4);
+		border-radius: var(--ap-radius-full);
+		font-size: var(--ap-font-xs);
+		font-weight: 500;
+		color: var(--ap-call);
+		background: var(--ap-call-subtle);
+		border: 1px solid var(--ap-border-subtle);
+		box-shadow: var(--ap-shadow-call-glow);
+		margin-bottom: var(--ap-space-6);
+	}
+
+	.badge-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+	}
+
+	.hero-title {
+		font-family: var(--ap-font-display);
+		font-size: clamp(var(--ap-font-3xl), 5vw, var(--ap-font-5xl));
+		font-weight: 700;
+		line-height: var(--ap-leading-tight);
+		letter-spacing: -0.025em;
+		color: var(--ap-text-primary);
+		margin: 0 0 var(--ap-space-5);
+	}
+
+	.gradient-text {
+		color: var(--ap-call);
+	}
+
+	.hero-subtitle {
+		font-size: clamp(var(--ap-font-base), 2.2vw, var(--ap-font-lg));
+		line-height: var(--ap-leading-relaxed);
+		color: var(--ap-text-secondary);
+		max-width: 44rem;
+		margin: 0 0 var(--ap-space-8);
+	}
+
+	.hero-actions {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: var(--ap-space-3);
+		margin-bottom: var(--ap-space-10);
+	}
+
+	.btn-primary {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		padding: var(--ap-space-3) var(--ap-space-6);
+		border-radius: var(--ap-radius-md);
+		background: var(--ap-call);
+		color: var(--ap-text-inverse);
+		font-weight: 600;
+		font-size: var(--ap-font-base);
+		text-decoration: none;
+		box-shadow: var(--ap-shadow-md);
+		transition: all var(--ap-transition-fast);
+		border: 1px solid transparent;
+	}
+
+	.btn-primary:hover {
+		background: var(--ap-call-hover);
+		box-shadow: var(--ap-shadow-call-glow);
+		text-decoration: none;
+	}
+
+	.btn-secondary {
+		display: inline-flex;
+		align-items: center;
+		padding: var(--ap-space-3) var(--ap-space-5);
+		border-radius: var(--ap-radius-md);
+		background: var(--ap-surface-elevated);
+		color: var(--ap-text-primary);
+		font-weight: 500;
+		font-size: var(--ap-font-base);
+		text-decoration: none;
+		border: 1px solid var(--ap-border-default);
+		transition: all var(--ap-transition-fast);
+	}
+
+	.btn-secondary:hover {
+		border-color: var(--ap-call);
+		color: var(--ap-call);
+		background: var(--ap-call-subtle);
+		text-decoration: none;
+	}
+
+	.btn-ghost {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		padding: var(--ap-space-3) var(--ap-space-4);
+		border-radius: var(--ap-radius-md);
+		color: var(--ap-text-secondary);
+		font-weight: 500;
+		font-size: var(--ap-font-base);
+		text-decoration: none;
+		transition: all var(--ap-transition-fast);
+	}
+
+	.btn-ghost:hover {
+		color: var(--ap-text-primary);
+		text-decoration: none;
+	}
+
+	.hero-stats {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: var(--ap-space-4);
+		padding: var(--ap-space-3) var(--ap-space-6);
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+	}
+
+	.stat-item {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-2);
+		font-size: var(--ap-font-sm);
+		color: var(--ap-text-secondary);
+	}
+
+	.stat-icon {
+		font-size: var(--ap-font-base);
+	}
+
+	.stat-divider {
+		width: 1px;
+		height: var(--ap-space-4);
+		background: var(--ap-border-subtle);
+	}
+
+	@media (max-width: 40rem) {
+		.stat-divider {
+			display: none;
+		}
+	}
+</style>

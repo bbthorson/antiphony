@@ -1,0 +1,22 @@
+{
+  "name": "@antiphony/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Antiphony design system tokens — Two Voices duotone, typography, spacing, surface, and audio waveform variables.",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./tokens.css": "./tokens.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}
