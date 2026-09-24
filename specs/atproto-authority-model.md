@@ -5,6 +5,12 @@
 Informed by a Fable design review of `buildPostUri`/`canonicalPostRecord` and the
 `ActorIdentityRecord` design.
 
+**Updated 2026-09-24:** the decisions for making Antiphony publicly available —
+spaces adopted, authority chosen by context, minted DIDs by default, attribution
+owned by the app — are in
+[§ Update 2026-09-24](#update-2026-09-24--decisions-for-public-availability).
+Where they revise an earlier paragraph, that paragraph says so in place.
+
 ## Decision
 
 The calling **application is the repo owner**. Each tenant (`originAppId`) has its own
@@ -41,14 +47,17 @@ the acting end-user has ever linked an identity.
   isn't a record field *because* repo location carries it). Custody → app DID in the URI;
   authorship → attribution facet. The two are never conflated.
 - **App DID:** one per `originAppId`; the `at://` authority; stable for the tenant's life.
+  *Revised 2026-09-24 (D2):* the app DID stays the authority for what the app itself
+  owns (audience replies), but an org's posts and a user's own posts are authored under
+  *their* DID. The tenant becomes the custodian of several authorities, not one.
 - **User DID + `authorId`:** attribution, stamped as facets, **out of the record CID** and
   out of the URI — so they stay mutable and backfillable.
-- **The attribution table is part of the exportable corpus.** The `ActorIdentityRecord`
-  (actor↔DID) mapping **stays in Antiphony** and is a first-class exportable artifact (or
-  projected into a sidecar record at export time), so an exported app repo still has
-  joinable per-user attribution. **This reverses the earlier "move actor↔DID to the BFF"
-  lean:** under B's portability goal, attribution must travel *with* the corpus — which
-  lives here, not with the BFF that stays behind.
+- **Superseded — attribution is owned by the app** (decided 2026-09-24, D5; closes
+  [#121](https://github.com/bbthorson/antiphony/issues/121)). This bullet used to say the
+  actor↔DID table stays in Antiphony and travels with an export. The table was removed on
+  2026-07-05 (see `core-bff-boundary.md`) and this bullet never caught up. As built, and now
+  as decided, the calling app holds the mapping from its opaque `authorId` to a person, and
+  an exported corpus carries ids only that app can resolve.
 
 ## Why keep attribution out of the CID
 
@@ -106,6 +115,10 @@ it's what makes the method a per-tenant choice by construction):
   surfaced and acknowledged, never silently absorbed. For `did:web`, document drift is
   indistinguishable from domain hijack, so **drift detection is the fragility mitigation you
   get to have before `did:plc`.**
+  **Not implemented** ([#117](https://github.com/bbthorson/antiphony/issues/117)): nothing
+  compares a resolved document to an acknowledged baseline today, so this point is a
+  requirement, not a guarantee. A `did:plc` authority largely doesn't need it, because PLC's
+  signed, append-only operation log tells a legitimate rotation from an attack by inspection.
 
 **The revisit deadline is the first Vox Pop post we commit to keeping** — i.e. the
 end-of-beta keep-or-wipe call (effectively GA). `did:web:did.voxpop.audio` is provisional exactly
@@ -124,6 +137,10 @@ document lives on Antiphony's domain forever, permanently inverting the exit-sov
 story that justifies `did:web` at all (lock-in wearing the exit hatch's syntax). Reserve
 hosted `did:web` only for explicitly throwaway tenants (staging, integration tests) where
 "orphaned forever" is fine because forever is a sprint.
+
+*Revised 2026-09-24 (D3):* minting is now the **default**, not the domain-less fallback,
+and it covers orgs and users as well as tenants. Own-domain `did:web` stays accepted. The
+exclusion of hosted `did:web` stands unchanged.
 
 **BFF prerequisite:** Vox Pop serving `/.well-known/did.json` on `did.voxpop.audio` is a **beta
 onboarding prerequisite** — it belongs on the coupled BFF work list next to the B3 cross-repo
@@ -170,6 +187,11 @@ tenant repoints.
 
 ### Decision 2 — spaces is not adopted now; it is the destination if the data plane moves
 
+> **Revised 2026-09-24: adopted** (D1). The second reason below no longer holds:
+> Bardcast's semi-private campaigns are gated, non-public audio, which is the product need
+> this section was waiting for. The first reason (alpha) is accepted as a risk while the
+> corpus can still be wiped.
+
 atproto spaces are per-space permissioned repos with access control at a space
 boundary — a space authority DID, a space host, and repo hosts, explicitly not
 required to be collocated. **Not adopted**, for two reasons that are about
@@ -203,6 +225,12 @@ Two notes for whoever picks this up:
   argument above. The relevant policy is `managing-app`, which defers
   authorization to the application's own state via `checkUserAccess`; adopting
   spaces would **not** require giving up an existing role model.
+  *Revised 2026-09-24 (D2):* "posts published under an org stay with the org" is
+  decided, and it is met by giving the org its **own DID as the authority**, not an
+  `skey` under the tenant. The per-org-DID objection above was the hosted-`did:web`
+  permanence problem, which a minted `did:plc` doesn't have. An org still needs no
+  space for *visibility*: Vox Pop prompts are public by invariant (vox-pop
+  `specs/organizations.md` § 1).
 - **The tenant's DID is already the space authority.** `did:web:did.voxpop.audio`
   would be the space DID. Migration inserts a path segment; it does not change
   who the authority is.
@@ -240,6 +268,71 @@ inside a space, alongside real-DID authors who bring their own repos. The
 alternative — minting DIDs for SMS repliers — creates a permanent public
 identity for someone whose only act was replying to a text, and is a consent
 question before it is an architectural one.
+
+## Update 2026-09-24 — decisions for public availability
+
+Decided by Brad in the project thread between 2026-09-22 and 2026-09-24, for the "make
+Antiphony publicly available" work. Nothing here is implemented yet. The build work is
+tracked in its own threads: `did:plc` minting and multi-authority tenancy, spaces
+support, the paid DID upgrade in Vox Pop, and Bardcast's campaign model. **All of it is free to change until the first kept post**, because reply
+StrongRefs seal the authority at write time (see "What this does to the URIs" above).
+
+### D1 — Spaces are adopted
+
+Decision 2 above is reversed. The first consumer is Bardcast: each campaign is a
+semi-private space, an `skey` under Bardcast's authority, with membership answered by the
+`managing-app` policy from Bardcast's own state. There are no nested spaces and no
+per-campaign DID. Vox Pop doesn't need spaces for its orgs (D2).
+
+### D2 — Authority is chosen by who should keep the post
+
+Model B's rule, "authority = custody", still holds. What changes is that the tenant can now
+hold custody of more than one authority.
+
+| Who posts | `at://` authority | Author | Who keeps it |
+| :--- | :--- | :--- | :--- |
+| An audience reply (Vox Pop, phone or SMS) | the app's DID | opaque `authorId` facet | the app. The app can leave Antiphony; the replier can't take it. |
+| A post published under an org | the org's own DID | the creator | the org, including after the creator leaves. |
+| A solo user's own post | the user's DID | the user | the user. Brad's stated lean ("their URI should be their handle, I think") and the reason D3 mints user DIDs; to confirm before it's built. |
+| Bardcast campaign content | Bardcast's DID, campaign `skey` | the player's DID segment | the campaign. |
+| A Bardcast character (profile, voice) | the player's DID | the player | the player, portable off Bardcast. |
+
+A DID may be an authority only if its document names Antiphony as the custody host. That is
+the same custody check tenants pass today, applied per DID. It's why Model B's reason 2
+(a user's `did:plc` points at their own PDS, not here) doesn't block user or org
+authorities: a DID Antiphony minted names Antiphony from genesis, and a user who brings a
+DID must add the `#atproto_space_host` entry themselves.
+
+### D3 — DIDs are minted by default, and owning yours is a paid upgrade
+
+- New tenants, orgs and users get an **Antiphony-minted `did:plc`**, with the owner holding
+  the highest-priority rotation key and Antiphony a lower-priority operational key.
+  Own-domain `did:web` stays accepted.
+- **"Own your DID" is a paid feature, and it's app-tier.** In Vox Pop it also unlocks
+  processing such as denoise. Antiphony stays unaware of tiers: the app decides which
+  posts to opt into processing, as it does today.
+- **The upgrade claims the minted DID. It never switches to a different one.** Claiming
+  means handing over the rotation key and attaching a custom handle. Switching would give
+  every existing post a new authority and orphan every reply that points at it. Bringing an
+  existing DID is therefore supported at signup only.
+
+### D4 — A person's DID is reassignable only while it's a facet
+
+`authorId` and `authorDid` are kept out of the record CID (`canonicalPostRecord`,
+`packages/core/services/audio-posts.ts`), so filling in or changing them later is a plain
+update. Once a DID is the authority, or the `{authorDid}` segment of a space URI, it is
+sealed into every reply's CID at write time and can't be reassigned. So the choice between
+facet and authority has to be made per author, before their first kept write; it can't be
+deferred into a later migration. That is why audience replies stay facets (D2): a replier
+who later links a DID can be attributed without anything being rewritten.
+
+### D5 — Attribution is owned by the app
+
+The app holds the mapping from its opaque ids to people. Vox Pop's `users` table holds the
+phone number and linked DID against a random uid, and only the uid ever reaches Antiphony.
+An export carries opaque ids. This is option 2 of
+[#121](https://github.com/bbthorson/antiphony/issues/121), and it is what "the app can
+leave with its corpus" promised, no more: an export doesn't attribute itself.
 
 ## Honest tradeoffs / where B hurts (ranked)
 

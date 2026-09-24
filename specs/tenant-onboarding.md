@@ -47,7 +47,10 @@ a coordinated cutover.
 the legacy branch can be removed once that line stops appearing.
 
 Three ways to get a qualifying DID (pick per tenant — the method is a per-tenant
-choice by construction):
+choice by construction). **Decided 2026-09-24: the minted `did:plc` is the default**
+([`atproto-authority-model.md` D3](./atproto-authority-model.md#d3--dids-are-minted-by-default-and-owning-yours-is-a-paid-upgrade)).
+It isn't built yet, so until it is, the own-domain `did:web` below is the only
+path that works for a real tenant:
 
 - **Own-domain `did:web`** (the sealed beta decision): register a domain, host
   `/.well-known/did.json` (below). Cleanest; works with the validator as-is; the
