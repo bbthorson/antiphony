@@ -11,7 +11,8 @@ import { logger } from './logger.js';
  *  - **The pin (sync):** parse `ANTIPHONY_APP_DIDS` (`appId:did,appId2:did2`)
  *    into an opaque `originAppId → did` map. The DID is stored and returned
  *    verbatim — nothing downstream re-derives it from a domain.
- *  - **Validation (async, off the hot path):** resolve a `did:web` document,
+ *  - **Validation (async, off the hot path):** resolve the DID document
+ *    (`did:web` from its domain, `did:plc` from the PLC directory),
  *    require a custody service endpoint pointing at Antiphony —
  *    `#atproto_space_host`, or legacy `#atproto_pds` — and snapshot it. Run at
  *    boot / onboarding, never per request.
@@ -73,7 +74,7 @@ function parseAppDidsUncached(raw: string | undefined): Map<string, string> {
 
 // --- Validation (async, off the hot path) ----------------------------------
 
-/** Time-box each did:web resolve so a hanging endpoint can't block the boot gate. */
+/** Time-box each DID-document resolve so a hanging endpoint can't block the boot gate. */
 const DID_FETCH_TIMEOUT_MS = 5000;
 
 /** True if a decoded DID segment smuggles a char that would escape the host/path. */
@@ -219,24 +220,73 @@ function classifyHttpStatus(status: number): AppDidFailureKind {
     return status === 404 || status === 410 ? 'disproof' : 'unreachable';
 }
 
+/** The public PLC directory. Overridable per call for tests and a future mirror. */
+export const DEFAULT_PLC_DIRECTORY_URL = 'https://plc.directory';
+
+/** `did:plc:` + 24 chars of lowercase base32 — the only shape the method mints. */
+const DID_PLC_RE = /^did:plc:[a-z2-7]{24}$/;
+
 /**
- * Resolve + validate an app `did:web` against the four-point pinning contract:
- * fetch the DID document, confirm its `id`, require an `#atproto_pds` endpoint,
- * and — when an expected host is configured — require that endpoint to point at
- * Antiphony (the "custody claim is true" check). Returns the document snapshot
- * on success. Off the hot path; call at boot / onboarding.
+ * The document URL for a `did:plc`: `{directory}/{did}`. Returns `null` for a
+ * DID that is not a well-formed `did:plc`, so a crafted identifier can never
+ * steer the request path — the same guarantee `didWebToUrl` gives for hosts.
+ */
+export function didPlcToUrl(did: string, directory: string = DEFAULT_PLC_DIRECTORY_URL): string | null {
+    if (!DID_PLC_RE.test(did)) return null;
+    return `${directory.replace(/\/+$/, '')}/${did}`;
+}
+
+/**
+ * Classify an HTTP status from the PLC directory. Same shape as the `did:web`
+ * rule, with the directory's own vocabulary: **404** (no such DID) and **410**
+ * (tombstoned by its rotation keys) are answers about the DID, so disproof.
+ * Anything else is `plc.directory` not answering — and a third party's outage
+ * must never become a failed deploy for every `did:plc` tenant.
+ */
+function classifyPlcStatus(status: number): AppDidFailureKind {
+    return status === 404 || status === 410 ? 'disproof' : 'unreachable';
+}
+
+export interface ValidateAppDidOptions {
+    expectedPdsHost?: string;
+    fetchImpl?: typeof fetch;
+    /** PLC directory base URL; defaults to `https://plc.directory`. */
+    plcDirectoryUrl?: string;
+}
+
+/**
+ * Resolve + validate an app DID against the four-point pinning contract:
+ * fetch the DID document, confirm its `id`, require a custody service
+ * endpoint, and — when an expected host is configured — require that endpoint
+ * to point at Antiphony (the "custody claim is true" check). Returns the
+ * document snapshot on success. Off the hot path; call at boot / onboarding.
+ *
+ * Method-dispatched only at the resolve step: `did:web` via its own domain,
+ * `did:plc` via the PLC directory. Everything after the document is in hand is
+ * method-blind — custody is a property of the document, not of how we got it.
+ * See `specs/did-plc-and-multi-did-tenancy.md` §1.
  */
 export async function validateAppDid(
     did: string,
-    opts: { expectedPdsHost?: string; fetchImpl?: typeof fetch } = {},
+    opts: ValidateAppDidOptions = {},
 ): Promise<AppDidValidation> {
-    const url = didWebToUrl(did);
+    let url: string | null;
+    let classify: (status: number) => AppDidFailureKind;
+    if (did.startsWith('did:web:')) {
+        url = didWebToUrl(did);
+        classify = classifyHttpStatus;
+    } else if (did.startsWith('did:plc:')) {
+        url = didPlcToUrl(did, opts.plcDirectoryUrl);
+        classify = classifyPlcStatus;
+    } else {
+        return { ok: false, did, reason: 'unsupported-did-method', kind: 'disproof' };
+    }
     // A DID that cannot be turned into a URL at all is malformed, not offline.
-    if (!url) return { ok: false, did, reason: 'not-did-web', kind: 'disproof' };
+    if (!url) return { ok: false, did, reason: 'malformed-did', kind: 'disproof' };
     const doFetch = opts.fetchImpl ?? fetch;
     let doc: unknown;
     try {
-        // Time-box the resolve so a hanging did:web endpoint can't block a
+        // Time-box the resolve so a hanging DID host can't block a
         // caller; a timeout throws and is caught below as `unreachable`.
         const res = await doFetch(url, { signal: AbortSignal.timeout(DID_FETCH_TIMEOUT_MS) });
         if (!res.ok) {
@@ -244,7 +294,7 @@ export async function validateAppDid(
                 ok: false,
                 did,
                 reason: `did-doc-http-${res.status}`,
-                kind: classifyHttpStatus(res.status),
+                kind: classify(res.status),
             };
         }
         doc = await res.json();
@@ -377,6 +427,8 @@ export interface PinCacheKV {
 
 export interface EnsurePinOptions {
     expectedPdsHost?: string;
+    /** PLC directory base URL for `did:plc` pins; defaults to `https://plc.directory`. */
+    plcDirectoryUrl?: string;
     /** Shared across isolates, so a cold one need not re-fetch what a warm one proved. */
     kv?: PinCacheKV;
     fetchImpl?: typeof fetch;
@@ -435,7 +487,7 @@ function remember(pin: ValidatedPin): void {
  *   1. **Isolate-local** — the `validatedPins` map. A warm isolate pays nothing.
  *   2. **KV** — shared across isolates, so a cold isolate does not re-resolve a
  *      document another isolate proved a minute ago.
- *   3. **Resolve** — the actual `did:web` fetch.
+ *   3. **Resolve** — the actual DID-document fetch.
  *
  * **Blast radius is per tenant.** `validateAllPins` throws on the first
  * failure, so one bad pin fails the whole boot and takes every other tenant
@@ -477,6 +529,7 @@ export async function ensureTenantPin(
     const result = await validateAppDid(did, {
         expectedPdsHost: opts.expectedPdsHost,
         fetchImpl: opts.fetchImpl,
+        plcDirectoryUrl: opts.plcDirectoryUrl,
     });
 
     if (result.ok) {
@@ -508,7 +561,7 @@ export async function ensureTenantPin(
                     reason: result.reason,
                     graceRemainingMs: PIN_FRESH_MS + PIN_404_GRACE_MS - (now - lastGood.validatedAt),
                 },
-                '[app-did] transient 404 on did:web — serving existing custody snapshot within grace period',
+                '[app-did] transient 404 resolving the DID document — serving existing custody snapshot within grace period',
             );
             remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
             return;
@@ -536,7 +589,7 @@ export async function ensureTenantPin(
                 reason: result.reason,
                 staleForMs: now - lastGood.validatedAt,
             },
-            '[app-did] did:web unreachable — serving the last proven custody snapshot',
+            '[app-did] DID document unreachable — serving the last proven custody snapshot',
         );
         // `validatedAt` carried over deliberately, so the staleness bound keeps
         // counting from the last real proof rather than restarting here.
@@ -546,7 +599,7 @@ export async function ensureTenantPin(
 
     logger.error(
         { originAppId, did, reason: result.reason },
-        '[app-did] did:web unreachable and no usable snapshot — failing closed',
+        '[app-did] DID document unreachable and no usable snapshot — failing closed',
     );
     throw new Error(
         `[app-did] cannot prove custody for tenant "${originAppId}": ${result.reason}`,
@@ -575,6 +628,7 @@ export async function revalidateAllPins(
         const result = await validateAppDid(did, {
             expectedPdsHost: opts.expectedPdsHost,
             fetchImpl: opts.fetchImpl,
+            plcDirectoryUrl: opts.plcDirectoryUrl,
         });
         if (result.ok) {
             const pin: ValidatedPin = {
@@ -609,7 +663,7 @@ export async function revalidateAllPins(
  * snapshot — `getAppDid` then throws per-tenant, not globally.
  */
 export async function validateAllPins(
-    opts: { expectedPdsHost?: string; fetchImpl?: typeof fetch; raw?: string } = {},
+    opts: ValidateAppDidOptions & { raw?: string } = {},
 ): Promise<Map<string, ValidatedPin>> {
     const pins = parseAppDids(opts.raw);
     const snapshot = new Map<string, ValidatedPin>();
@@ -617,6 +671,7 @@ export async function validateAllPins(
         const result = await validateAppDid(did, {
             expectedPdsHost: opts.expectedPdsHost,
             fetchImpl: opts.fetchImpl,
+            plcDirectoryUrl: opts.plcDirectoryUrl,
         });
         if (!result.ok) {
             throw new Error(
