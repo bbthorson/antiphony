@@ -112,6 +112,9 @@
             // `project` because AudioPlayer is a component — without it knip
             // reports the file as unused and `react` as an unused dependency.
             "project": ["**/*.{ts,tsx}"]
+        },
+        "packages/tokens": {
+            "project": ["**/*.ts"]
         }
     },
 
@@ -121,6 +124,9 @@
     //                            packages/core, but via the `shared/*` tsconfig
     //                            path alias rather than the package specifier,
     //                            which knip does not follow.
+    //   @antiphony/tokens        imported into apps/docs/src/styles/brand.css
+    //                            via CSS @import (tokens.css); knip reads JS
+    //                            imports only.
     //   @fontsource-variable/*   referenced from `apps/docs/astro.config.mjs`
     //                            in a Vite `optimizeDeps` string array and from
     //                            `src/styles/brand.css`; knip reads neither.
@@ -132,6 +138,7 @@
     // Re-verify before deleting any of these, don't just trust the report.
     "ignoreDependencies": [
         "@antiphony/shared",
+        "@antiphony/tokens",
         "@fontsource-variable/inter",
         "@fontsource-variable/sora",
         "@fontsource-variable/jetbrains-mono"

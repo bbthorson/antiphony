@@ -6,33 +6,29 @@
  * is used sparingly as the second voice (selection, link-hover, the title mark)
  * so the duotone reads as a dialogue, not noise.
  *
- * Type: Sora (display/headings) · Inter (body) · JetBrains Mono (code),
- * self-hosted via @fontsource-variable (no external requests).
+ * All values are strictly bound to @antiphony/tokens.
  */
 
-:root {
-	/* Brand anchors */
-	--ap-call: #4f46e5; /* the call — primary */
-	--ap-response: #f97362; /* the response — secondary */
-	--ap-font-display: 'Sora Variable', var(--sl-font);
+@import '../../../../packages/tokens/tokens.css';
 
-	/* Typography */
-	--sl-font: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-	--sl-font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+:root {
+	/* Starlight font bindings */
+	--sl-font: var(--ap-font-sans);
+	--sl-font-mono: var(--ap-font-mono);
 
 	/* Accent ramp — indigo (the call). Light theme. */
-	--sl-color-accent-low: #e0e7ff;
-	--sl-color-accent: #4f46e5;
-	--sl-color-accent-high: #312e81;
-	--sl-color-text-accent: #4338ca;
+	--sl-color-accent-low: var(--ap-call-100);
+	--sl-color-accent: var(--ap-call-600);
+	--sl-color-accent-high: var(--ap-call-900);
+	--sl-color-text-accent: var(--ap-call-700);
 }
 
 /* Accent ramp — dark theme (brighter indigo so it carries on a dark field). */
 :root[data-theme='dark'] {
-	--sl-color-accent-low: #1e1b4b;
-	--sl-color-accent: #6366f1;
-	--sl-color-accent-high: #c7d2fe;
-	--sl-color-text-accent: #a5b4fc;
+	--sl-color-accent-low: var(--ap-call-950);
+	--sl-color-accent: var(--ap-call-500);
+	--sl-color-accent-high: var(--ap-call-200);
+	--sl-color-text-accent: var(--ap-call-300);
 }
 
 /* Display font on headings + the site title. */
@@ -52,15 +48,15 @@ h6,
 ::selection {
 	background: var(--ap-response);
 	/* Ink (not white) on coral — white-on-coral is ~2.7:1, below WCAG AA;
-	   ink is ~5.9:1 and reads cleanly. */
-	color: #0f172a;
+	   ink (neutral-900) is ~5.9:1 and reads cleanly. */
+	color: var(--ap-neutral-900);
 }
 
 /* Links answer in coral on hover (the response to the indigo call). */
 .sl-markdown-content a {
 	text-decoration-color: color-mix(in srgb, var(--sl-color-text-accent) 40%, transparent);
 	text-underline-offset: 0.15em;
-	transition: text-decoration-color 0.15s ease;
+	transition: text-decoration-color var(--ap-transition-fast);
 }
 .sl-markdown-content a:hover {
 	text-decoration-color: var(--ap-response);
@@ -73,7 +69,7 @@ h6,
 	width: 0.4em;
 	height: 0.4em;
 	margin-inline-start: 0.35em;
-	border-radius: 50%;
+	border-radius: var(--ap-radius-full);
 	background: var(--ap-response);
 	vertical-align: 0.08em;
 }

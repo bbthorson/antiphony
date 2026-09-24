@@ -1,0 +1,154 @@
+---
+---
+
+<section class="boundary-section">
+	<div class="boundary-header">
+		<span class="boundary-tag">Architectural Contract</span>
+		<h2 class="boundary-title">Where the Line Is</h2>
+		<p class="boundary-desc">
+			Antiphony is infrastructure and an open protocol, not a monolithic SaaS app. It draws a deliberate line between what the decentralized audio protocol owns and what remains in your application layer.
+		</p>
+	</div>
+
+	<div class="boundary-grid">
+		<div class="boundary-card core-card">
+			<div class="boundary-badge badge-core">In Antiphony Core</div>
+			<ul class="boundary-list">
+				<li>
+					<strong>ATProto Lexicons:</strong> <code>dev.antiphony.*</code> records for portable audio posts, threaded replies, and transcripts.
+				</li>
+				<li>
+					<strong>Edge Audio REST API:</strong> Chunked audio upload, pre-signed URLs, and transactional post creation.
+				</li>
+				<li>
+					<strong>Enrichment Engine:</strong> Background ffmpeg audio rendition, peak waveform extraction, and AI transcription.
+				</li>
+				<li>
+					<strong>Multi-Tenancy Isolation:</strong> <code>originAppId</code> security boundaries and directional AppView federation.
+				</li>
+			</ul>
+		</div>
+
+		<div class="boundary-card app-card">
+			<div class="boundary-badge badge-app">In Your App Layer</div>
+			<ul class="boundary-list">
+				<li>
+					<strong>Identity & Accounts:</strong> User profiles, passwords, OAuth sessions, and handle verification stay with your app.
+				</li>
+				<li>
+					<strong>Product Experience:</strong> Custom player themes, distribution channels, feeds, and community rules.
+				</li>
+				<li>
+					<strong>Organizations & Teams:</strong> Workspaces, invite links, roles, and SaaS billing subscriptions.
+				</li>
+				<li>
+					<strong>Proprietary Connectors:</strong> Custom telephony integrations, broadcast feeds, and closed integrations.
+				</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<style>
+	.boundary-section {
+		max-width: 56rem;
+		margin: var(--ap-space-16) auto var(--ap-space-12);
+		padding: 0 var(--ap-space-4);
+	}
+
+	.boundary-header {
+		text-align: center;
+		margin-bottom: var(--ap-space-8);
+	}
+
+	.boundary-tag {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		color: var(--ap-call);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: var(--ap-call-subtle);
+		padding: 2px var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+	}
+
+	.boundary-title {
+		font-family: var(--ap-font-display);
+		font-size: var(--ap-font-2xl);
+		font-weight: 700;
+		color: var(--ap-text-primary);
+		margin: var(--ap-space-3) 0 var(--ap-space-2);
+	}
+
+	.boundary-desc {
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-secondary);
+		max-width: 42rem;
+		margin: 0 auto;
+		line-height: var(--ap-leading-relaxed);
+	}
+
+	.boundary-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: var(--ap-space-6);
+	}
+
+	.boundary-card {
+		background: var(--ap-surface-card);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		padding: var(--ap-space-6);
+		box-shadow: var(--ap-shadow-md);
+	}
+
+	.core-card {
+		border-top: 4px solid var(--ap-call);
+	}
+
+	.app-card {
+		border-top: 4px solid var(--ap-response);
+	}
+
+	.boundary-badge {
+		display: inline-block;
+		font-size: var(--ap-font-xs);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: var(--ap-space-1) var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+		margin-bottom: var(--ap-space-4);
+	}
+
+	.badge-core {
+		background: var(--ap-call-subtle);
+		color: var(--ap-call);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.badge-app {
+		background: var(--ap-response-subtle);
+		color: var(--ap-response);
+		border: 1px solid var(--ap-border-subtle);
+	}
+
+	.boundary-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-3);
+	}
+
+	.boundary-list li {
+		font-size: var(--ap-font-sm);
+		color: var(--ap-text-secondary);
+		line-height: var(--ap-leading-relaxed);
+	}
+
+	.boundary-list strong {
+		color: var(--ap-text-primary);
+	}
+</style>

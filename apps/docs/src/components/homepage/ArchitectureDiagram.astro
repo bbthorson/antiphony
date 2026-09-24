@@ -1,0 +1,328 @@
+---
+---
+
+<div class="arch-container">
+	<div class="arch-header">
+		<span class="arch-tag">System Topology</span>
+		<h2 class="arch-title">Hub-and-Connector Architecture</h2>
+		<p class="arch-desc">
+			Antiphony acts as a high-throughput, edge-native audio hub. Audio enters through pluggable ingress doors, hydrates into immutable ATProto records, and syncs across the network.
+		</p>
+	</div>
+
+	<div class="diagram-grid">
+		<!-- Ingress Doors -->
+		<div class="tier-card ingress-tier">
+			<div class="tier-badge">Ingress Doors</div>
+			<div class="tier-items">
+				<div class="node-pill">
+					<span class="node-icon">🧩</span>
+					<div>
+						<div class="node-title">@antiphony/capture-kit</div>
+						<div class="node-sub">Web Audio / React</div>
+					</div>
+				</div>
+				<div class="node-pill">
+					<span class="node-icon">📞</span>
+					<div>
+						<div class="node-title">Telephony Connectors</div>
+						<div class="node-sub">Voice calls / SMS audio</div>
+					</div>
+				</div>
+				<div class="node-pill">
+					<span class="node-icon">🪝</span>
+					<div>
+						<div class="node-title">External BFF & Webhooks</div>
+						<div class="node-sub">Third-party integrations</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Central Core Hub -->
+		<div class="tier-card hub-tier">
+			<div class="tier-badge core-badge">Antiphony Core Hub</div>
+			<div class="core-hub-content">
+				<div class="core-box">
+					<div class="core-icon">⚡</div>
+					<div class="core-name">Cloudflare Workers</div>
+					<div class="core-desc">Edge Hono API Runtime</div>
+				</div>
+				<div class="core-subgrid">
+					<div class="sub-core-box">
+						<span class="sub-icon">🗄️</span>
+						<span class="sub-name">Postgres (Neon)</span>
+						<span class="sub-desc">Record & facet index</span>
+					</div>
+					<div class="sub-core-box">
+						<span class="sub-icon">📦</span>
+						<span class="sub-name">Cloudflare R2</span>
+						<span class="sub-desc">Deduplicated audio blobs</span>
+					</div>
+				</div>
+				<div class="pipeline-row">
+					<div class="pipeline-badge">Async Enrichment Engine</div>
+					<div class="pipeline-flow">
+						<span>ffmpeg (Docker)</span>
+						<span class="flow-arrow">→</span>
+						<span>Waveform Peaks</span>
+						<span class="flow-arrow">→</span>
+						<span>Whisper / ElevenLabs</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Outbound Consumers -->
+		<div class="tier-card egress-tier">
+			<div class="tier-badge">Network Egress</div>
+			<div class="tier-items">
+				<div class="node-pill">
+					<span class="node-icon">🌐</span>
+					<div>
+						<div class="node-title">ATProto Atmosphere</div>
+						<div class="node-sub">PDS & AppView sync</div>
+					</div>
+				</div>
+				<div class="node-pill">
+					<span class="node-icon">📱</span>
+					<div>
+						<div class="node-title">Client Applications</div>
+						<div class="node-sub">Vox Pop, Bardcast, custom apps</div>
+					</div>
+				</div>
+				<div class="node-pill">
+					<span class="node-icon">📡</span>
+					<div>
+						<div class="node-title">REST & Event Stream</div>
+						<div class="node-sub">JSON envelopes & webhooks</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.arch-container {
+		max-width: 56rem;
+		margin: var(--ap-space-12) auto;
+		padding: 0 var(--ap-space-4);
+	}
+
+	.arch-header {
+		text-align: center;
+		margin-bottom: var(--ap-space-8);
+	}
+
+	.arch-tag {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		color: var(--ap-call);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: var(--ap-call-subtle);
+		padding: 2px var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+	}
+
+	.arch-title {
+		font-family: var(--ap-font-display);
+		font-size: var(--ap-font-2xl);
+		font-weight: 700;
+		color: var(--ap-text-primary);
+		margin: var(--ap-space-3) 0 var(--ap-space-2);
+	}
+
+	.arch-desc {
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-secondary);
+		max-width: 44rem;
+		margin: 0 auto;
+		line-height: var(--ap-leading-relaxed);
+	}
+
+	.diagram-grid {
+		display: grid;
+		grid-template-columns: 1fr 1.35fr 1fr;
+		gap: var(--ap-space-4);
+		align-items: stretch;
+	}
+
+	.tier-card {
+		background: var(--ap-surface-card);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		padding: var(--ap-space-4);
+		display: flex;
+		flex-direction: column;
+		box-shadow: var(--ap-shadow-md);
+		position: relative;
+	}
+
+	.hub-tier {
+		border-color: var(--ap-call);
+		box-shadow: var(--ap-shadow-call-glow);
+		background: var(--ap-surface-elevated);
+	}
+
+	.tier-badge {
+		align-self: center;
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 2px var(--ap-space-3);
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-surface-sunken);
+		color: var(--ap-text-secondary);
+		border: 1px solid var(--ap-border-subtle);
+		margin-bottom: var(--ap-space-4);
+	}
+
+	.core-badge {
+		background: var(--ap-call-subtle);
+		color: var(--ap-call);
+		border-color: var(--ap-border-default);
+	}
+
+	.tier-items {
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-3);
+		height: 100%;
+		justify-content: space-around;
+	}
+
+	.node-pill {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-3);
+		background: var(--ap-surface-base);
+		border: 1px solid var(--ap-border-default);
+		border-radius: var(--ap-radius-md);
+		padding: var(--ap-space-3);
+		transition: all var(--ap-transition-fast);
+	}
+
+	.node-pill:hover {
+		border-color: var(--ap-call);
+	}
+
+	.node-icon {
+		font-size: var(--ap-font-lg);
+	}
+
+	.node-title {
+		font-size: var(--ap-font-sm);
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.node-sub {
+		font-size: var(--ap-font-xs);
+		color: var(--ap-text-muted);
+	}
+
+	.core-hub-content {
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-3);
+		height: 100%;
+	}
+
+	.core-box {
+		background: var(--ap-surface-base);
+		border: 1px solid var(--ap-call);
+		border-radius: var(--ap-radius-md);
+		padding: var(--ap-space-3);
+		text-align: center;
+	}
+
+	.core-icon {
+		font-size: var(--ap-font-xl);
+		margin-bottom: 2px;
+	}
+
+	.core-name {
+		font-size: var(--ap-font-sm);
+		font-weight: 700;
+		color: var(--ap-text-primary);
+	}
+
+	.core-desc {
+		font-size: var(--ap-font-xs);
+		color: var(--ap-call);
+		font-weight: 500;
+	}
+
+	.core-subgrid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--ap-space-2);
+	}
+
+	.sub-core-box {
+		background: var(--ap-surface-base);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-sm);
+		padding: var(--ap-space-2);
+		text-align: center;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.sub-icon {
+		font-size: var(--ap-font-base);
+	}
+
+	.sub-name {
+		font-size: var(--ap-font-xs);
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.sub-desc {
+		font-size: 10px;
+		color: var(--ap-text-muted);
+	}
+
+	.pipeline-row {
+		background: var(--ap-surface-sunken);
+		border: 1px dashed var(--ap-border-default);
+		border-radius: var(--ap-radius-md);
+		padding: var(--ap-space-2) var(--ap-space-3);
+		text-align: center;
+		margin-top: auto;
+	}
+
+	.pipeline-badge {
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		font-weight: 700;
+		color: var(--ap-response);
+		margin-bottom: 2px;
+	}
+
+	.pipeline-flow {
+		font-size: 11px;
+		font-family: var(--ap-font-mono);
+		color: var(--ap-text-secondary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+	}
+
+	.flow-arrow {
+		color: var(--ap-response);
+	}
+
+	@media (max-width: 48rem) {
+		.diagram-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>
