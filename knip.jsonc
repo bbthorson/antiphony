@@ -43,7 +43,7 @@
     // to it. That is also why it could not see that `packages/core/ports/
     // auth-port.ts` was dead — a barrel re-export in `index.ts` made the file
     // reachable from an entry point even though nothing imported the barrel.
-    "$schema": "https://unpkg.com/knip@5/schema.json",
+    "$schema": "https://unpkg.com/knip@6/schema.json",
 
     "workspaces": {
         // The repo root is a workspace to knip too. Its source is `scripts/`
@@ -93,7 +93,10 @@
             "project": ["src/**/*.{ts,tsx}"]
         },
         "apps/docs": {
-            "project": ["src/**/*.{ts,astro}"]
+            // `.mdx` is listed because knip 6 compiles it and reports a hint
+            // when a workspace has `.mdx` files outside `project`.
+            // `src/content/docs/index.mdx` is one, so leaving it out fails the gate.
+            "project": ["src/**/*.{ts,astro,mdx}"]
         },
         "packages/core": {
             "entry": ["index.ts"],
@@ -127,8 +130,10 @@
     //   @fontsource-variable/*   referenced from `apps/docs/astro.config.mjs`
     //                            in a Vite `optimizeDeps` string array and from
     //                            `src/styles/brand.css`; knip reads neither.
-    //   sharp                    Astro's default image service loads it by name
-    //                            at build time; nothing imports it in source.
+    //
+    // `sharp` was here too (Astro's image service loads it by name). knip 6
+    // follows that through its Astro plugin, and listing it here is now
+    // redundant config, so it was removed in the knip 6 upgrade.
     //
     // Re-verify before deleting any of these, don't just trust the report.
     "ignoreDependencies": [
@@ -136,9 +141,14 @@
         "@antiphony/tokens",
         "@fontsource-variable/inter",
         "@fontsource-variable/sora",
-        "@fontsource-variable/jetbrains-mono",
-        "sharp"
+        "@fontsource-variable/jetbrains-mono"
     ],
+
+    // `ffmpeg` is a system binary, not an npm package. apps/audio-rendition
+    // spawns it (`src/rendition.ts`), and its Dockerfile installs it with apt
+    // and asserts it is on PATH. knip 6 started reporting spawned binaries it
+    // cannot find in any package.json.
+    "ignoreBinaries": ["ffmpeg"],
 
     // An export used only inside its own file is a redundant `export` keyword,
     // not dead code — the module still needs the binding. That distinction was
