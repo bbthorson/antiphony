@@ -84,7 +84,7 @@
     "tsup": "^8.5.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.70.1",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.1"
   },
   "publishConfig": {
     "access": "public"
