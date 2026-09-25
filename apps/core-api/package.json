@@ -35,15 +35,15 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^9.39.2",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.2",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.2",
     "globals": "^17.12.0",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.70.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.9",
-    "wrangler": "^4.134.0"
+    "wrangler": "^4.136.1"
   },
   "engines": {
     "node": ">=22"
