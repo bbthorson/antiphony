@@ -22,28 +22,19 @@
  *   z.string().url()
  *   z.string().trim().url()
  *   z.string().min(1).url().optional()
+ *   z.url()
+ *   zod.url()
  *
- * — any `.url()` reached through a `z.string()` chain, whatever sits in between
- * or follows.
+ * — any `.url()` reached through a `z.string()` chain, or called top-level on `z`/`zod`.
  *
  * ## Does NOT fire on
  *
- *   - `foo.url()` where the chain does not start at `z.string()` — an unrelated
- *     `.url()` method on some other object.
- *   - `z.url()` (Zod 4's top-level form). This repo is on Zod 3 and the shared
- *     package pins `^3`; add the case here if that changes, rather than
- *     guessing at it now.
+ *   - `foo.url()` where the chain does not start at `z.string()` and the receiver
+ *     is not `z` or `zod` — an unrelated `.url()` method on some other object.
  *
  * `types/url.ts` is the one file that must call `.url()` bare — it is the
  * helper. It opts out with an inline `eslint-disable-next-line`, which is the
  * point: exactly one audited exception, visible at the call site.
- *
- * ## Scope
- *
- * The chain root must be an `<ident>.string()` call. The identifier is not
- * matched against a name (`z`, `zod` and a namespace import are all legitimate
- * spellings), which keeps the rule syntactic and dependency-free. False
- * positives are essentially impossible: nothing else spells `.string().…url()`.
  */
 
 /**
@@ -82,11 +73,11 @@ const rule = {
         type: "problem",
         docs: {
             description:
-                "Ban bare `z.string().url()`; use `httpsUrl()` so `javascript:`/`data:`/`file:` URLs cannot enter the contract.",
+                "Ban bare `z.string().url()` and `z.url()`; use `httpsUrl()` so `javascript:`/`data:`/`file:` URLs cannot enter the contract.",
         },
         messages: {
             bareUrl:
-                "`z.string().url()` accepts ANY scheme (`javascript:`, `data:`, `file:`) because it is `new URL()` underneath — a stored-XSS shape for any URL a client dereferences. Use `httpsUrl()` from `@antiphony/shared/types/url` instead.",
+                "`z.string().url()` / `z.url()` accepts ANY scheme (`javascript:`, `data:`, `file:`) because it is `new URL()` underneath — a stored-XSS shape for any URL a client dereferences. Use `httpsUrl()` from `@antiphony/shared/types/url` instead.",
         },
         schema: [],
     },
@@ -101,7 +92,10 @@ const rule = {
                 ) {
                     return;
                 }
-                if (startsAtZodString(node.callee.object)) {
+                const receiver = node.callee.object;
+                const isTopLevelZod =
+                    receiver.type === "Identifier" && (receiver.name === "z" || receiver.name === "zod");
+                if (isTopLevelZod || startsAtZodString(receiver)) {
                     // Report on the `url` identifier, not the whole
                     // CallExpression: a chain written across several lines
                     // starts at `z`, and an `eslint-disable-next-line` above

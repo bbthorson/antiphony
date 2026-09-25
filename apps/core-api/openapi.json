@@ -36,6 +36,7 @@
               "description": "1–100 (default 20)"
             },
             "required": false,
+            "description": "1–100 (default 20)",
             "name": "limit",
             "in": "query"
           },
@@ -45,6 +46,7 @@
               "description": "Pagination cursor — the last post id from the prior page"
             },
             "required": false,
+            "description": "Pagination cursor — the last post id from the prior page",
             "name": "cursor",
             "in": "query"
           },
@@ -58,6 +60,7 @@
               "description": "Restrict to prompts or replies (ignored when `rootAuthor` is set)"
             },
             "required": false,
+            "description": "Restrict to prompts or replies (ignored when `rootAuthor` is set)",
             "name": "kind",
             "in": "query"
           },
@@ -67,6 +70,7 @@
               "description": "Return replies addressed to this author (thread-root author) instead of the viewer's own posts"
             },
             "required": false,
+            "description": "Return replies addressed to this author (thread-root author) instead of the viewer's own posts",
             "name": "rootAuthor",
             "in": "query"
           }
@@ -183,7 +187,29 @@
                                   },
                                   "createdAt": {
                                     "anyOf": [
-                                      {},
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "seconds": {
+                                            "type": "number"
+                                          },
+                                          "nanoseconds": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "seconds",
+                                          "nanoseconds"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "toDate": {
+                                            "nullable": true
+                                          }
+                                        }
+                                      },
                                       {
                                         "type": "string"
                                       },
@@ -191,7 +217,8 @@
                                         "type": "number"
                                       },
                                       {
-                                        "type": "string"
+                                        "type": "string",
+                                        "format": "date-time"
                                       }
                                     ]
                                   }
@@ -212,8 +239,7 @@
                                   },
                                   "url": {
                                     "type": "string",
-                                    "format": "uri",
-                                    "pattern": "^https?:\\/\\/"
+                                    "pattern": "^https?:\\/\\//i"
                                   },
                                   "durationMs": {
                                     "type": "integer",
@@ -471,6 +497,7 @@
               "description": "Optional idempotency key — repeated requests with the same key return the cached response."
             },
             "required": false,
+            "description": "Optional idempotency key — repeated requests with the same key return the cached response.",
             "name": "idempotency-key",
             "in": "header"
           }
@@ -833,6 +860,7 @@
               "description": "The post id"
             },
             "required": true,
+            "description": "The post id",
             "name": "postId",
             "in": "path"
           }
@@ -944,7 +972,29 @@
                             },
                             "createdAt": {
                               "anyOf": [
-                                {},
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "seconds": {
+                                      "type": "number"
+                                    },
+                                    "nanoseconds": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "seconds",
+                                    "nanoseconds"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "toDate": {
+                                      "nullable": true
+                                    }
+                                  }
+                                },
                                 {
                                   "type": "string"
                                 },
@@ -952,7 +1002,8 @@
                                   "type": "number"
                                 },
                                 {
-                                  "type": "string"
+                                  "type": "string",
+                                  "format": "date-time"
                                 }
                               ]
                             }
@@ -973,8 +1024,7 @@
                             },
                             "url": {
                               "type": "string",
-                              "format": "uri",
-                              "pattern": "^https?:\\/\\/"
+                              "pattern": "^https?:\\/\\//i"
                             },
                             "durationMs": {
                               "type": "integer",
@@ -1175,6 +1225,7 @@
               "description": "The post id"
             },
             "required": true,
+            "description": "The post id",
             "name": "postId",
             "in": "path"
           }
@@ -1320,7 +1371,29 @@
                             },
                             "createdAt": {
                               "anyOf": [
-                                {},
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "seconds": {
+                                      "type": "number"
+                                    },
+                                    "nanoseconds": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "seconds",
+                                    "nanoseconds"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "toDate": {
+                                      "nullable": true
+                                    }
+                                  }
+                                },
                                 {
                                   "type": "string"
                                 },
@@ -1328,7 +1401,8 @@
                                   "type": "number"
                                 },
                                 {
-                                  "type": "string"
+                                  "type": "string",
+                                  "format": "date-time"
                                 }
                               ]
                             }
@@ -1349,8 +1423,7 @@
                             },
                             "url": {
                               "type": "string",
-                              "format": "uri",
-                              "pattern": "^https?:\\/\\/"
+                              "pattern": "^https?:\\/\\//i"
                             },
                             "durationMs": {
                               "type": "integer",
@@ -1691,6 +1764,7 @@
               "description": "The parent post id"
             },
             "required": true,
+            "description": "The parent post id",
             "name": "postId",
             "in": "path"
           },
@@ -1702,6 +1776,7 @@
               "description": "1–100 (default 50)"
             },
             "required": false,
+            "description": "1–100 (default 50)",
             "name": "limit",
             "in": "query"
           },
@@ -1711,6 +1786,7 @@
               "description": "Pagination cursor — the last reply id from the prior page"
             },
             "required": false,
+            "description": "Pagination cursor — the last reply id from the prior page",
             "name": "cursor",
             "in": "query"
           }
@@ -1827,7 +1903,29 @@
                                   },
                                   "createdAt": {
                                     "anyOf": [
-                                      {},
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "seconds": {
+                                            "type": "number"
+                                          },
+                                          "nanoseconds": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "seconds",
+                                          "nanoseconds"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "toDate": {
+                                            "nullable": true
+                                          }
+                                        }
+                                      },
                                       {
                                         "type": "string"
                                       },
@@ -1835,7 +1933,8 @@
                                         "type": "number"
                                       },
                                       {
-                                        "type": "string"
+                                        "type": "string",
+                                        "format": "date-time"
                                       }
                                     ]
                                   }
@@ -1856,8 +1955,7 @@
                                   },
                                   "url": {
                                     "type": "string",
-                                    "format": "uri",
-                                    "pattern": "^https?:\\/\\/"
+                                    "pattern": "^https?:\\/\\//i"
                                   },
                                   "durationMs": {
                                     "type": "integer",
@@ -2288,6 +2386,7 @@
               "example": "blobs/<originAppId>/<cid>"
             },
             "required": true,
+            "description": "REQUIRED. The object path of the audio to serve, or a canonical storage URL. Must resolve to an object under the content-addressed blob namespace (`blobs/`). Returns 400 if absent.",
             "name": "url",
             "in": "query"
           },
@@ -2298,6 +2397,7 @@
               "example": "mp3"
             },
             "required": false,
+            "description": "Optional. Serve a derived rendition of the audio instead of the canonical bytes. One of: mp3. Omitted, the stored audio is served as-is.\n\nRead-path only: the canonical blob is never re-encoded, because its CID is what every record, blob ref, and dedup guarantee rides on.",
             "name": "format",
             "in": "query"
           }

@@ -104,15 +104,35 @@ function objectOf(def: LexiconDef): LexiconObject {
  * Strips the wrappers that don't change the shape — `.optional()`,
  * `.nullable()`, `.default()`, and the `ZodEffects` produced by `.refine()`.
  */
+interface ZodDefInspection {
+    type?: string;
+    typeName?: string;
+    schema?: z.ZodTypeAny;
+    innerType?: z.ZodTypeAny;
+    element?: z.ZodTypeAny;
+    checks?: Array<Record<string, unknown> & { _zod?: { def?: Record<string, unknown> } }>;
+    maxLength?: { value: number };
+}
+
+interface ZodCheckInspection {
+    check?: string;
+    kind?: string;
+    maximum?: number;
+    value?: number;
+}
+
+function getDef(schema: z.ZodTypeAny): ZodDefInspection | undefined {
+    return (schema as unknown as { _def?: ZodDefInspection })._def;
+}
+
 function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
     let current = schema;
     for (;;) {
-        const def = current._def as { typeName?: string; innerType?: z.ZodTypeAny; schema?: z.ZodTypeAny };
-        if (def.typeName === 'ZodEffects' && def.schema) current = def.schema;
-        else if (
-            (def.typeName === 'ZodOptional' || def.typeName === 'ZodNullable' || def.typeName === 'ZodDefault') &&
-            def.innerType
-        ) {
+        const def = getDef(current);
+        if (!def) return current;
+        if (def.schema) {
+            current = def.schema;
+        } else if (def.innerType) {
             current = def.innerType;
         } else {
             return current;
@@ -121,27 +141,35 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 }
 
 function shapeOf(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> {
-    const unwrapped = unwrap(schema) as z.ZodObject<z.ZodRawShape>;
-    if (typeof unwrapped.shape !== 'object') throw new Error('expected a ZodObject');
-    return unwrapped.shape as Record<string, z.ZodTypeAny>;
+    const unwrapped = unwrap(schema) as unknown as { shape?: Record<string, z.ZodTypeAny> };
+    if (!unwrapped.shape || typeof unwrapped.shape !== 'object') throw new Error('expected a ZodObject');
+    return unwrapped.shape;
+}
+
+function getChecks(schema: z.ZodTypeAny): ZodCheckInspection[] {
+    const unwrapped = unwrap(schema);
+    const def = getDef(unwrapped);
+    if (!def?.checks) return [];
+    return def.checks.map((c) => (c._zod?.def ?? c) as ZodCheckInspection);
 }
 
 /** The `max` check on a string or number, or the max length of an array. */
 function maxOf(schema: z.ZodTypeAny): number | undefined {
-    const inner = unwrap(schema);
-    const def = inner._def as {
-        typeName?: string;
-        checks?: { kind: string; value: number }[];
-        maxLength?: { value: number } | null;
-    };
-    if (def.typeName === 'ZodArray') return def.maxLength?.value;
-    return def.checks?.find((c) => c.kind === 'max')?.value;
+    const unwrapped = unwrap(schema);
+    const def = getDef(unwrapped);
+    if (def?.typeName === 'ZodArray') return def.maxLength?.value;
+    const checks = getChecks(schema);
+    const maxCheck = checks.find((c) => c.check === 'max_length' || c.check === 'less_than' || c.kind === 'max');
+    if (maxCheck) return maxCheck.maximum ?? maxCheck.value;
+    return undefined;
 }
 
 /** The `min` check on a number. */
 function minOf(schema: z.ZodTypeAny): number | undefined {
-    const def = unwrap(schema)._def as { checks?: { kind: string; value: number }[] };
-    return def.checks?.find((c) => c.kind === 'min')?.value;
+    const checks = getChecks(schema);
+    const minCheck = checks.find((c) => c.check === 'greater_than' || c.kind === 'min');
+    if (minCheck) return minCheck.value;
+    return undefined;
 }
 
 /**
@@ -151,13 +179,17 @@ function minOf(schema: z.ZodTypeAny): number | undefined {
  */
 function hasDefault(schema: z.ZodTypeAny | undefined): boolean {
     if (!schema) return false;
-    return (schema._def as { typeName?: string }).typeName === 'ZodDefault';
+    const def = getDef(schema);
+    return def?.type === 'default' || def?.typeName === 'ZodDefault';
 }
 
 /** The element schema of an array. */
 function elementOf(schema: z.ZodTypeAny): z.ZodTypeAny | undefined {
-    const def = unwrap(schema)._def as { typeName?: string; type?: z.ZodTypeAny };
-    return def.typeName === 'ZodArray' ? def.type : undefined;
+    const unwrapped = unwrap(schema);
+    const def = getDef(unwrapped);
+    if (def?.typeName === 'ZodArray') return (def as { type?: z.ZodTypeAny }).type;
+    if (def?.type === 'array') return def.element;
+    return undefined;
 }
 
 // --- The cases --------------------------------------------------------------

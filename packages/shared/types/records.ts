@@ -14,16 +14,16 @@ import { z } from 'zod';
  * downstream-crashing value.
  */
 export const FirestoreTimestampSchema = z.union([
-    z.custom<unknown>((data: unknown) => {
-        return (
-            data &&
-            typeof data === 'object' &&
-            (typeof (data as { toDate?: unknown }).toDate === 'function' || ('seconds' in data && 'nanoseconds' in data))
-        );
+    z.object({
+        seconds: z.number(),
+        nanoseconds: z.number(),
+    }),
+    z.object({
+        toDate: z.unknown(),
     }),
     z.string(),
     z.number(),
-    z.date()
+    z.date(),
 ]).transform((data: unknown, ctx) => {
     let date: Date;
     if (data instanceof Date) {
