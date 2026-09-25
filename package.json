@@ -37,7 +37,7 @@
   "//devDependencies.zod": "Declared at the root to force npm to hoist a single instance of zod across the monorepo. Without this, packages/shared and apps/core-api receive separate nested copies of zod in their node_modules, breaking @hono/zod-openapi's prototype schema extension.",
   "devDependencies": {
     "@atproto/lex-document": "^0.1.11",
-    "eslint": "^9.16.0",
+    "eslint": "^10.11.0",
     "knip": "^6.37.0",
     "semver": "^7.8.5",
     "typescript": "^5.7.2",
