@@ -13,7 +13,7 @@
 	</h1>
 
 	<p class="hero-subtitle">
-		An open protocol standard and edge-ready infrastructure for portable audio posts, threaded voice replies, waveforms, and transcription — unified behind one clean HTTP API.
+		An open standard and edge-ready infrastructure for portable voice posts, threaded audio replies, waveforms, and AI transcription — unified behind one clean developer contract.
 	</p>
 
 	<div class="hero-actions">
@@ -42,12 +42,12 @@
 		<div class="stat-divider"></div>
 		<div class="stat-item">
 			<span class="stat-icon">⚡</span>
-			<span class="stat-text">Cloudflare Workers & Postgres</span>
+			<span class="stat-text">Cloudflare Workers + Neon Postgres</span>
 		</div>
 		<div class="stat-divider"></div>
 		<div class="stat-item">
 			<span class="stat-icon">🧩</span>
-			<span class="stat-text">Headless <code>@antiphony/capture-kit</code></span>
+			<span class="stat-text">Headless React Capture Kit</span>
 		</div>
 	</div>
 </section>
@@ -58,8 +58,8 @@
 		flex-direction: column;
 		align-items: center;
 		text-align: center;
-		padding: var(--ap-space-12) var(--ap-space-4) var(--ap-space-8);
-		max-width: 58rem;
+		padding: var(--ap-space-12) var(--ap-space-4) var(--ap-space-10);
+		max-width: 56rem;
 		margin: 0 auto;
 	}
 
@@ -92,7 +92,7 @@
 		line-height: var(--ap-leading-tight);
 		letter-spacing: -0.025em;
 		color: var(--ap-text-primary);
-		margin: 0 0 var(--ap-space-5);
+		margin: 0 0 var(--ap-space-4);
 	}
 
 	.gradient-text {
@@ -113,7 +113,7 @@
 		justify-content: center;
 		flex-wrap: wrap;
 		gap: var(--ap-space-3);
-		margin-bottom: var(--ap-space-10);
+		margin-bottom: var(--ap-space-8);
 	}
 
 	.btn-primary {
@@ -207,9 +207,29 @@
 		background: var(--ap-border-subtle);
 	}
 
-	@media (max-width: 40rem) {
+	@media (max-width: 48rem) {
+		.hero-container {
+			padding: var(--ap-space-8) var(--ap-space-4) var(--ap-space-6);
+		}
+
+		.hero-actions {
+			margin-bottom: var(--ap-space-6);
+		}
+
+		.hero-stats {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: var(--ap-space-2);
+			padding: var(--ap-space-3) var(--ap-space-4);
+			width: 100%;
+		}
+
 		.stat-divider {
 			display: none;
+		}
+
+		.stat-item {
+			justify-content: center;
 		}
 	}
 </style>

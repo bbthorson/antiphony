@@ -4,9 +4,9 @@
 <div class="showcase-container">
 	<div class="showcase-header">
 		<span class="showcase-tag">Developer Surface</span>
-		<h2 class="showcase-title">One Contract, Multiple Horizons</h2>
+		<h2 class="showcase-title">One Open Standard, Three Integration Layers</h2>
 		<p class="showcase-desc">
-			Whether you're querying the ATProto decentralized repository, dispatching REST calls from your server, or embedding headless React primitives into your UI, Antiphony provides an ergonomic, type-safe developer contract.
+			Whether you are publishing AT Protocol records, dispatching authenticated REST requests from your server, or dropping headless React hooks into your frontend, Antiphony provides an ergonomic, end-to-end type contract.
 		</p>
 	</div>
 
@@ -45,7 +45,7 @@
       <span class="token-key">"mimeType"</span><span class="token-punct">:</span> <span class="token-str">"audio/mp4"</span><span class="token-punct">,</span>
       <span class="token-key">"durationMs"</span><span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span>
       <span class="token-key">"waveform"</span><span class="token-punct">:</span> <span class="token-punct">[</span><span class="token-num">12</span><span class="token-punct">,</span> <span class="token-num">28</span><span class="token-punct">,</span> <span class="token-num">45</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">75</span><span class="token-punct">,</span> <span class="token-num">90</span><span class="token-punct">,</span> <span class="token-num">85</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">40</span><span class="token-punct">]</span>
-    <span class="token-punct">&#123;</span>
+    <span class="token-punct">&#125;</span>
   <span class="token-punct">&#125;</span><span class="token-punct">,</span>
   <span class="token-key">"createdAt"</span><span class="token-punct">:</span> <span class="token-str">"2026-09-24T18:00:00.000Z"</span>
 <span class="token-punct">&#125;</span></code></pre>
@@ -125,7 +125,7 @@
 
 <style>
 	.showcase-container {
-		max-width: 54rem;
+		max-width: 56rem;
 		margin: var(--ap-space-12) auto;
 		padding: 0 var(--ap-space-4);
 	}
@@ -157,7 +157,7 @@
 	.showcase-desc {
 		font-size: var(--ap-font-base);
 		color: var(--ap-text-secondary);
-		max-width: 42rem;
+		max-width: 44rem;
 		margin: 0 auto;
 		line-height: var(--ap-leading-relaxed);
 	}
@@ -177,6 +177,12 @@
 		padding: var(--ap-space-1) var(--ap-space-2) 0;
 		gap: var(--ap-space-1);
 		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		scrollbar-width: none;
+	}
+
+	.tab-bar::-webkit-scrollbar {
+		display: none;
 	}
 
 	.tab-btn {
@@ -194,6 +200,8 @@
 		cursor: pointer;
 		transition: all var(--ap-transition-fast);
 		border-bottom: 2px solid transparent;
+		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.tab-btn:hover {
@@ -241,7 +249,7 @@
 		padding: var(--ap-space-4);
 		background: var(--ap-surface-base);
 		font-family: var(--ap-font-mono);
-		font-size: var(--ap-font-sm);
+		font-size: clamp(var(--ap-font-xs), 2.2vw, var(--ap-font-sm));
 		line-height: var(--ap-leading-normal);
 		overflow-x: auto;
 	}
@@ -255,5 +263,20 @@
 
 	:root[data-theme='dark'] .token-num {
 		color: var(--ap-call-300);
+	}
+
+	@media (max-width: 48rem) {
+		.showcase-container {
+			margin: var(--ap-space-8) auto;
+		}
+
+		.tab-btn {
+			padding: var(--ap-space-2) var(--ap-space-3);
+			font-size: var(--ap-font-xs);
+		}
+
+		.code-content {
+			padding: var(--ap-space-3);
+		}
 	}
 </style>

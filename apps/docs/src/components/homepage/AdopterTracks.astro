@@ -4,7 +4,7 @@ const tracks = [
 		title: "Protocol Adopters",
 		badge: "ATProto Lexicons",
 		badgeType: "call",
-		desc: "Integrate dev.antiphony.* records into your AppView or PDS. Give your users sovereign, portable audio posts and threaded voice replies that transcend any single platform.",
+		desc: "Adopt dev.antiphony.* records in your AppView or PDS. Give your users sovereign, portable audio posts and threaded voice replies that travel anywhere on the network.",
 		link: "/lexicons/overview/",
 		linkText: "Explore Lexicon Specs →",
 		icon: "🌐",
@@ -13,7 +13,7 @@ const tracks = [
 		title: "App Builders",
 		badge: "Capture Kit",
 		badgeType: "response",
-		desc: "Add voice capture to your client with @antiphony/capture-kit. Headless React hooks for mic access, waveform visualization, and resilient audio upload in just a few lines of code.",
+		desc: "Ship audio recording in your web app with @antiphony/capture-kit. Headless React hooks for mic access, live waveform visualization, and resilient chunked uploads.",
 		link: "/build-your-own/overview/",
 		linkText: "Build Your App →",
 		icon: "🎙️",
@@ -22,7 +22,7 @@ const tracks = [
 		title: "Self-Hosters",
 		badge: "Infrastructure",
 		badgeType: "neutral",
-		desc: "Deploy Antiphony's open core on Cloudflare Workers and Neon Postgres. Enjoy zero VM maintenance, edge latency worldwide, and pluggable AI transcription pipelines.",
+		desc: "Run your own Antiphony hub on Cloudflare Workers and Neon Postgres. Low maintenance, worldwide edge latency, and pluggable transcription pipelines.",
 		link: "/self-hosting/quick-start/",
 		linkText: "Self-Host in 5 Minutes →",
 		icon: "⚡",
@@ -92,7 +92,7 @@ const tracks = [
 	.tracks-desc {
 		font-size: var(--ap-font-base);
 		color: var(--ap-text-secondary);
-		max-width: 40rem;
+		max-width: 44rem;
 		margin: 0 auto;
 		line-height: var(--ap-leading-relaxed);
 	}
@@ -183,5 +183,15 @@ const tracks = [
 	.track-link:hover {
 		color: var(--ap-response);
 		text-decoration: none;
+	}
+
+	@media (max-width: 48rem) {
+		.tracks-container {
+			margin: var(--ap-space-8) auto;
+		}
+
+		.track-card {
+			padding: var(--ap-space-4);
+		}
 	}
 </style>
