@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BlobRefSchema } from './blob';
-import { FirestoreTimestampSchema } from './records';
+import { TimestampSchema } from './records';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
 import { httpsUrl } from './url';
 
@@ -205,7 +205,7 @@ export const AudioPostRecordSchema = z.object({
     /** Author-applied self-label values (content warnings). Simplified from the
      *  lexicon's `com.atproto.label.defs#selfLabels` to the bare value strings. */
     selfLabels: z.array(z.string()).optional(),
-    createdAt: FirestoreTimestampSchema,
+    createdAt: TimestampSchema,
 }).refine(
     // `kind` is denormalized from `reply` presence at write time; enforce the
     // invariant so an inconsistent record can't be written or read silently.
@@ -237,7 +237,7 @@ export const TranscriptEnrichmentRecordSchema = z.object({
     lang: z.string().optional(),
     /** Model/provider provenance (the generator is a pluggable port). */
     model: z.string().optional(),
-    createdAt: FirestoreTimestampSchema,
+    createdAt: TimestampSchema,
 });
 export type TranscriptEnrichmentRecord = z.infer<typeof TranscriptEnrichmentRecordSchema>;
 
@@ -301,7 +301,7 @@ export const PostRecordPublicSchema = z.object({
     reply: ReplyRefSchema.optional(),
     langs: z.array(z.string()).max(3).optional(),
     selfLabels: z.array(z.string()).optional(),
-    createdAt: FirestoreTimestampSchema,
+    createdAt: TimestampSchema,
 });
 export type PostRecordPublic = z.infer<typeof PostRecordPublicSchema>;
 

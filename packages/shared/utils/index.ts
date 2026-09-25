@@ -1,12 +1,6 @@
-export function isFirestoreTimestamp(data: unknown): data is { seconds: number; nanoseconds: number; toDate: () => Date } {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    'seconds' in data &&
-    'nanoseconds' in data &&
-    typeof data.seconds === 'number' &&
-    typeof data.nanoseconds === 'number' &&
-    'toDate' in data &&
-    typeof data.toDate === 'function'
-  );
+/**
+ * Type guard checking whether a value is a valid Date instance (not NaN).
+ */
+export function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
 }

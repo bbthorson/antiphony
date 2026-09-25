@@ -2,7 +2,7 @@
  * AT Protocol Namespaced Identifiers (NSIDs) for Antiphony record types.
  *
  * NSIDs are the canonical way to identify record types in AT Protocol.
- * This mapping connects AT Protocol NSIDs to Firestore collection names,
+ * This mapping connects AT Protocol NSIDs to storage collection / table names,
  * creating a single source of truth for the relationship.
  *
  * @see https://atproto.com/specs/nsid
@@ -63,8 +63,8 @@ export const XRPC_NSID = {
 export type XrpcNsidValue = typeof XRPC_NSID[keyof typeof XRPC_NSID];
 
 /**
- * Maps the STORED AT Protocol record-type NSIDs to Firestore collection
- * names. When migrating to a PDS, this mapping becomes the adapter layer.
+ * Maps the STORED AT Protocol record-type NSIDs to database table names.
+ * When migrating to a PDS, this mapping becomes the adapter layer.
  * `actor.profile` is deliberately absent — portable schema, no core storage.
  */
 export const COLLECTIONS: Record<StoredNsidValue, string> = {

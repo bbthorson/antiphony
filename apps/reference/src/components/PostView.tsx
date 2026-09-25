@@ -72,7 +72,7 @@ export function PostView({ client, postId }: { client: AntiphonyClient; postId: 
     );
 }
 
-/** FirestoreTimestamp can arrive as ISO string, {seconds}/{_seconds}, or Date. */
+/** Timestamp can arrive as ISO string, epoch number, {seconds}/{_seconds}, or Date. */
 function formatCreatedAt(value: unknown): string {
     let date: Date | null = null;
     if (value instanceof Date) date = value;
