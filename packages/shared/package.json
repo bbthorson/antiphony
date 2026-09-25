@@ -1,6 +1,6 @@
 {
   "name": "@antiphony/shared",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Shared types, Zod schemas, and codecs for Antiphony — open audio call-and-response infrastructure and AT Protocol lexicons.",
   "license": "MIT",
   "homepage": "https://docs.antiphony.dev",
@@ -137,9 +137,9 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
   },
-  "//peerDependencies": "zod is a PEER, not a dependency, and the build has always assumed as much: tsup.config.ts marks it `external` so that there is ONE zod module instance shared with the consumer — the comment there spells out the consequence, that `@hono/zod-openapi`'s `.openapi()` extension never reaches schemas defined here if the instance is duplicated. Declaring it under `dependencies` said the opposite, that this package brings its own, and the contradiction was not theoretical: a consumer pinned to zod 3.22.4 against this package's `^3.24.1` gets TWO instances, 3.22.4 hoisted and 3.25.76 nested here. That is a live hazard inside zod 3, not a hedge against zod 4. As a peer, npm resolves one instance and says so when it cannot. The range is `^3.24.1` and is deliberately NOT widened to include `^4.0.0`: the schemas here are written against the zod 3 API, #148 verified that a zod 4 consumer breaks at parse time, and a peer range that overstates what the code supports is exactly the failure mode `@hono/zod-openapi` demonstrated with its `zod: >=3.0.0` — a range npm cannot fault, since 3.25.76 satisfies it, while the code underneath needed `^3.20.2`. Widen it only when the schemas actually move. ⚠️ SHIPS IN 0.6.0, which is unreleased — this changes the install contract, so a consumer that did not declare zod itself must now do so (npm 7+ auto-installs peers, but a consumer with `legacy-peer-deps` set does not). Vox Pop already declares zod in every workspace, so it is a no-op there.",
+  "//peerDependencies": "zod is a PEER, not a dependency, and the build has always assumed as much: tsup.config.ts marks it `external` so that there is ONE zod module instance shared with the consumer — the comment there spells out the consequence, that `@hono/zod-openapi`'s `.openapi()` extension never reaches schemas defined here if the instance is duplicated. Declaring it under `dependencies` said the opposite, that this package brings its own, and the contradiction was not theoretical: a consumer pinned to zod 3 against this package's range gets two instances. As a peer, npm resolves one instance and says so when it cannot. The range is `^4.0.0` following the Zod 4 migration.",
   "peerDependencies": {
-    "zod": "^3.24.1"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -147,6 +147,6 @@
     "typescript-eslint": "^8.70.1",
     "typescript": "^5.7.2",
     "vitest": "^5.0.1",
-    "zod": "^3.24.1"
+    "zod": "^4.6.5"
   }
 }

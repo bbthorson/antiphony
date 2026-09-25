@@ -54,5 +54,14 @@ ruleTester.run("no-bare-zod-url", rule, {
             code: "const s = z.object({ a: z.string().url(), b: z.string().url() });",
             errors: [{ messageId: "bareUrl" }, { messageId: "bareUrl" }],
         },
+        // Zod 4 top-level z.url() and zod.url()
+        {
+            code: "const s = z.object({ url: z.url() });",
+            errors: [{ messageId: "bareUrl" }],
+        },
+        {
+            code: "const s = zod.url();",
+            errors: [{ messageId: "bareUrl" }],
+        },
     ],
 });

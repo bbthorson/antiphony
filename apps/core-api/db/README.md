@@ -148,9 +148,9 @@ content — see specs/archive/cloudflare-migration.md § Where renditions live.
    for the Cloud Run window — the sweep is pure space reclamation and beta
    volume is trivial; run it by hand if it ever looks large.
 
-2. `FirestoreTimestampSchema` needs renaming. It already accepts ISO strings
-   and transforms to `Date`, so jsonb round-trips work unchanged — but the
-   name stops being true the moment Firestore is gone. Behavioural no-op.
+2. ~~`FirestoreTimestampSchema` needs renaming.~~ RESOLVED — renamed to
+   `TimestampSchema` in `@antiphony/shared`, removing legacy Firestore naming
+   and types across the monorepo. Behavioural no-op.
 
 3. Verify CID round-trip stability before trusting the jsonb column. DAG-CBOR
    canonicalises key order, so jsonb reordering is safe in theory. Numeric

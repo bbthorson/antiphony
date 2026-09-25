@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FirestoreTimestampSchema } from './records';
+import { TimestampSchema } from './records';
 
 /**
  * Audio hygiene / enrichment processing (B5).
@@ -204,8 +204,8 @@ export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
      * Internal, like the variant fields above: `toProcessingView` projects
      * stages only, so this never reaches a client.
      */
-    leaseUntil: FirestoreTimestampSchema.optional(),
-    updatedAt: FirestoreTimestampSchema,
+    leaseUntil: TimestampSchema.optional(),
+    updatedAt: TimestampSchema,
 });
 export type ProcessingState = z.infer<typeof ProcessingStateSchema>;
 

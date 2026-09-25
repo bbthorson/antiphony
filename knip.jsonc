@@ -130,6 +130,10 @@
     //   @fontsource-variable/*   referenced from `apps/docs/astro.config.mjs`
     //                            in a Vite `optimizeDeps` string array and from
     //                            `src/styles/brand.css`; knip reads neither.
+    //   zod                      declared in root package.json purely to force
+    //                            npm 12 to hoist a single instance across the
+    //                            monorepo, ensuring @hono/zod-openapi's prototype
+    //                            extension works across workspace boundaries.
     //
     // `sharp` was here too (Astro's image service loads it by name). knip 6
     // follows that through its Astro plugin, and listing it here is now
@@ -141,7 +145,8 @@
         "@antiphony/tokens",
         "@fontsource-variable/inter",
         "@fontsource-variable/sora",
-        "@fontsource-variable/jetbrains-mono"
+        "@fontsource-variable/jetbrains-mono",
+        "zod"
     ],
 
     // `ffmpeg` is a system binary, not an npm package. apps/audio-rendition

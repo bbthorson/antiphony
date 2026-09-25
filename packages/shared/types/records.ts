@@ -4,26 +4,25 @@ import { z } from 'zod';
 // =================================================================================================
 
 /**
- * Firestore Timestamp schema (strict).
+ * Timestamp schema (strict).
  *
- * Accepts the shapes Firestore-derived timestamps come back as across our
- * transports (admin SDK Timestamp object, ISO string, epoch number, native
- * Date), and produces a `Date`. **The Date is validated** — if the input
- * coerces to an Invalid Date (e.g. `new Date("")` or a malformed string),
- * the parse fails loudly via a `ZodIssue` rather than returning a
+ * Accepts timestamps across transports (ISO string, epoch number, native Date,
+ * or legacy timestamp object with seconds/nanoseconds or toDate()), and produces a `Date`.
+ * **The Date is validated** — if the input coerces to an Invalid Date (e.g. `new Date("")`
+ * or a malformed string), the parse fails loudly via a `ZodIssue` rather than returning a
  * downstream-crashing value.
  */
-export const FirestoreTimestampSchema = z.union([
-    z.custom<unknown>((data: unknown) => {
-        return (
-            data &&
-            typeof data === 'object' &&
-            (typeof (data as { toDate?: unknown }).toDate === 'function' || ('seconds' in data && 'nanoseconds' in data))
-        );
+export const TimestampSchema = z.union([
+    z.object({
+        seconds: z.number(),
+        nanoseconds: z.number(),
+    }),
+    z.object({
+        toDate: z.unknown(),
     }),
     z.string(),
     z.number(),
-    z.date()
+    z.date(),
 ]).transform((data: unknown, ctx) => {
     let date: Date;
     if (data instanceof Date) {
@@ -41,12 +40,12 @@ export const FirestoreTimestampSchema = z.union([
     if (Number.isNaN(date.getTime())) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'FirestoreTimestamp coerced to Invalid Date',
+            message: 'Timestamp coerced to Invalid Date',
         });
         return z.NEVER;
     }
     return date;
 });
-export type FirestoreTimestamp = Date;
+export type Timestamp = Date;
 
 // #endregion
