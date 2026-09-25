@@ -19,7 +19,7 @@ function isActive(href: string): boolean {
 }
 ---
 
-<div class="lg:sl-hidden mobile-primary-section">
+<div class="mobile-primary-section print:hidden">
 	<div class="primary-section-title">Primary Navigation</div>
 	<div class="primary-nav-list">
 		{primaryNav.map((item) => (
@@ -44,9 +44,16 @@ function isActive(href: string): boolean {
 
 <style>
 	.mobile-primary-section {
+		display: block;
 		padding-bottom: var(--ap-space-3);
 		margin-bottom: var(--ap-space-3);
 		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	@media (min-width: 64rem) {
+		.mobile-primary-section {
+			display: none;
+		}
 	}
 
 	.primary-section-title {

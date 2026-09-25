@@ -28,8 +28,8 @@ function isActive(href: string): boolean {
 			<SiteTitle {...Astro.props} />
 		</div>
 
-		<!-- Top-level Primary Navigation Links (Desktop) -->
-		<nav class="top-nav sl-hidden lg:sl-flex" aria-label="Main Navigation">
+		<!-- Top-level Primary Navigation Links (Desktop only via media query) -->
+		<nav class="top-nav print:hidden" aria-label="Main Navigation">
 			{navItems.map((item) => (
 				<a
 					href={item.href}
@@ -48,7 +48,7 @@ function isActive(href: string): boolean {
 			<Search {...Astro.props} />
 		</div>
 
-		<div class="sl-hidden md:sl-flex print:hidden right-group">
+		<div class="right-group print:hidden">
 			<div class="sl-flex social-icons">
 				<SocialIcons {...Astro.props} />
 			</div>
@@ -60,7 +60,7 @@ function isActive(href: string): boolean {
 		{!hasSidebar && (
 			<button
 				type="button"
-				class="mobile-menu-btn lg:sl-hidden print:hidden"
+				class="mobile-menu-btn print:hidden"
 				aria-label="Toggle navigation menu"
 				aria-expanded="false"
 				aria-controls="mobile-nav-drawer"
@@ -71,7 +71,7 @@ function isActive(href: string): boolean {
 					<line x1="3" y1="12" x2="21" y2="12"></line>
 					<line x1="3" y1="18" x2="21" y2="18"></line>
 				</svg>
-				<svg class="menu-icon-close sl-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<svg class="menu-icon-close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
 					<line x1="18" y1="6" x2="6" y2="18"></line>
 					<line x1="6" y1="6" x2="18" y2="18"></line>
 				</svg>
@@ -80,9 +80,9 @@ function isActive(href: string): boolean {
 	</div>
 </div>
 
-<!-- Mobile Navigation Drawer / Sheet for Splash Pages -->
+<!-- Mobile Navigation Drawer for Splash Pages -->
 {!hasSidebar && (
-	<div id="mobile-nav-drawer" class="mobile-nav-drawer sl-hidden" aria-hidden="true">
+	<div id="mobile-nav-drawer" class="mobile-nav-drawer print:hidden" hidden aria-hidden="true">
 		<nav class="mobile-nav-list" aria-label="Mobile Navigation">
 			{navItems.map((item) => (
 				<a
@@ -111,39 +111,41 @@ function isActive(href: string): boolean {
 	const drawer = document.getElementById('mobile-nav-drawer');
 
 	if (trigger && drawer) {
-		const iconBars = trigger.querySelector('.menu-icon-bars');
-		const iconClose = trigger.querySelector('.menu-icon-close');
+		const iconBars = trigger.querySelector('.menu-icon-bars') as HTMLElement | null;
+		const iconClose = trigger.querySelector('.menu-icon-close') as HTMLElement | null;
 
-		function toggleMenu(open?: boolean) {
+		function setMenuOpen(open: boolean) {
 			if (!drawer || !trigger) return;
-			const shouldOpen = open !== undefined ? open : drawer.classList.contains('sl-hidden');
-			if (shouldOpen) {
-				drawer.classList.remove('sl-hidden');
+			if (open) {
+				drawer.removeAttribute('hidden');
 				drawer.setAttribute('aria-hidden', 'false');
 				trigger.setAttribute('aria-expanded', 'true');
-				iconBars?.classList.add('sl-hidden');
-				iconClose?.classList.remove('sl-hidden');
+				if (iconBars) iconBars.style.display = 'none';
+				if (iconClose) iconClose.style.display = 'block';
 				document.body.style.overflow = 'hidden';
 			} else {
-				drawer.classList.add('sl-hidden');
+				drawer.setAttribute('hidden', '');
 				drawer.setAttribute('aria-hidden', 'true');
 				trigger.setAttribute('aria-expanded', 'false');
-				iconBars?.classList.remove('sl-hidden');
-				iconClose?.classList.add('sl-hidden');
+				if (iconBars) iconBars.style.display = 'block';
+				if (iconClose) iconClose.style.display = 'none';
 				document.body.style.overflow = '';
 			}
 		}
 
-		trigger.addEventListener('click', () => toggleMenu());
+		trigger.addEventListener('click', () => {
+			const isCurrentlyOpen = !drawer.hasAttribute('hidden');
+			setMenuOpen(!isCurrentlyOpen);
+		});
 
 		window.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape' && !drawer.classList.contains('sl-hidden')) {
-				toggleMenu(false);
+			if (e.key === 'Escape' && !drawer.hasAttribute('hidden')) {
+				setMenuOpen(false);
 			}
 		});
 
 		drawer.querySelectorAll('a').forEach((link) => {
-			link.addEventListener('click', () => toggleMenu(false));
+			link.addEventListener('click', () => setMenuOpen(false));
 		});
 	}
 </script>
@@ -168,7 +170,7 @@ function isActive(href: string): boolean {
 	.header-right {
 		display: flex;
 		align-items: center;
-		gap: var(--ap-space-3);
+		gap: var(--ap-space-2);
 		flex-shrink: 0;
 	}
 
@@ -180,11 +182,18 @@ function isActive(href: string): boolean {
 		flex-shrink: 0;
 	}
 
+	/* Top navigation: strictly hidden on mobile/tablet; flex on desktop */
 	.top-nav {
-		display: flex;
-		align-items: center;
-		gap: var(--ap-space-1);
-		margin-inline-start: var(--ap-space-2);
+		display: none;
+	}
+
+	@media (min-width: 64rem) {
+		.top-nav {
+			display: flex;
+			align-items: center;
+			gap: var(--ap-space-1);
+			margin-inline-start: var(--ap-space-2);
+		}
 	}
 
 	.nav-link {
@@ -234,12 +243,24 @@ function isActive(href: string): boolean {
 
 	@media (min-width: 50rem) {
 		.search-wrapper {
-			min-width: 14rem;
-			max-width: 20rem;
+			min-width: 12rem;
+			max-width: 18rem;
 		}
 	}
 
-	.right-group,
+	/* Right group (Social icons + Theme selector): hidden on mobile; flex on tablet & desktop */
+	.right-group {
+		display: none;
+		align-items: center;
+		gap: var(--ap-space-3);
+	}
+
+	@media (min-width: 50rem) {
+		.right-group {
+			display: flex;
+		}
+	}
+
 	.social-icons {
 		gap: var(--ap-space-3);
 		align-items: center;
@@ -251,6 +272,7 @@ function isActive(href: string): boolean {
 		border-inline-end: 1px solid var(--ap-border-subtle);
 	}
 
+	/* Mobile menu toggle button: flex on mobile/tablet; hidden on desktop */
 	.mobile-menu-btn {
 		display: inline-flex;
 		align-items: center;
@@ -264,6 +286,7 @@ function isActive(href: string): boolean {
 		cursor: pointer;
 		transition: all var(--ap-transition-fast);
 		padding: 0;
+		flex-shrink: 0;
 	}
 
 	.mobile-menu-btn:hover {
@@ -272,6 +295,13 @@ function isActive(href: string): boolean {
 		background: var(--ap-call-subtle);
 	}
 
+	@media (min-width: 64rem) {
+		.mobile-menu-btn {
+			display: none;
+		}
+	}
+
+	/* Full viewport drawer for mobile splash navigation */
 	.mobile-nav-drawer {
 		position: fixed;
 		top: var(--sl-nav-height);
@@ -288,8 +318,8 @@ function isActive(href: string): boolean {
 		animation: mobileDrawerFadeIn var(--ap-transition-fast) ease-out;
 	}
 
-	.mobile-nav-drawer.sl-hidden {
-		display: none;
+	.mobile-nav-drawer[hidden] {
+		display: none !important;
 	}
 
 	@keyframes mobileDrawerFadeIn {
