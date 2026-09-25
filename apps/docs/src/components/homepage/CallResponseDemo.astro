@@ -12,7 +12,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		</div>
 		<h2 class="demo-title">The Dialogue in Action</h2>
 		<p class="demo-desc">
-			Every Antiphony conversation is an AT Protocol record thread. An author publishes a call prompt; anyone in the network answers with a signed audio response.
+			Every conversation is an AT Protocol record thread. An author publishes a voice call prompt; anyone in the network answers with a cryptographically signed audio response.
 		</p>
 	</div>
 
@@ -22,9 +22,9 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 			<div class="card-meta">
 				<div class="actor-info">
 					<div class="actor-avatar call-avatar">A</div>
-					<div>
+					<div class="actor-text">
 						<div class="actor-name">Alice <span class="actor-handle">@alice.bsky.social</span></div>
-						<div class="record-badge">at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
+						<div class="record-badge" title="at://did:plc:alice.../dev.antiphony.audio.post/3k6w">at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
 					</div>
 				</div>
 				<span class="type-pill pill-call">Call Prompt</span>
@@ -75,9 +75,9 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 			<div class="card-meta">
 				<div class="actor-info">
 					<div class="actor-avatar response-avatar">B</div>
-					<div>
+					<div class="actor-text">
 						<div class="actor-name">Bob <span class="actor-handle">@bob.audio.social</span></div>
-						<div class="record-badge">reply to at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
+						<div class="record-badge" title="reply to at://did:plc:alice.../dev.antiphony.audio.post/3k6w">reply to at://did:plc:alice.../3k6w</div>
 					</div>
 				</div>
 				<span class="type-pill pill-response">Response Reply</span>
@@ -175,7 +175,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 <style>
 	.demo-wrapper {
 		margin: var(--ap-space-12) auto;
-		max-width: 52rem;
+		max-width: 56rem;
 		padding: 0 var(--ap-space-4);
 	}
 
@@ -226,7 +226,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	.demo-desc {
 		font-size: var(--ap-font-base);
 		color: var(--ap-text-secondary);
-		max-width: 38rem;
+		max-width: 42rem;
 		margin: 0 auto;
 		line-height: var(--ap-leading-relaxed);
 	}
@@ -260,6 +260,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: var(--ap-space-2);
 		margin-bottom: var(--ap-space-3);
 	}
 
@@ -267,6 +268,8 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		display: flex;
 		align-items: center;
 		gap: var(--ap-space-3);
+		min-width: 0;
+		flex: 1;
 	}
 
 	.actor-avatar {
@@ -278,6 +281,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		justify-content: center;
 		font-weight: 700;
 		font-size: var(--ap-font-sm);
+		flex-shrink: 0;
 	}
 
 	.call-avatar {
@@ -290,10 +294,18 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		color: var(--ap-neutral-900);
 	}
 
+	.actor-text {
+		min-width: 0;
+		overflow: hidden;
+	}
+
 	.actor-name {
 		font-size: var(--ap-font-sm);
 		font-weight: 600;
 		color: var(--ap-text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.actor-handle {
@@ -306,6 +318,10 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		font-family: var(--ap-font-mono);
 		font-size: var(--ap-font-xs);
 		color: var(--ap-text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 16rem;
 	}
 
 	.type-pill {
@@ -313,6 +329,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		font-weight: 600;
 		padding: 2px var(--ap-space-2);
 		border-radius: var(--ap-radius-sm);
+		flex-shrink: 0;
 	}
 
 	.pill-call {
@@ -377,15 +394,16 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	.waveform-container {
 		display: flex;
 		align-items: flex-end;
-		gap: 3px;
+		gap: 2px;
 		height: 38px;
 		flex: 1;
+		min-width: 0;
 		padding-bottom: 2px;
 	}
 
 	.waveform-bar {
 		flex: 1;
-		min-width: 3px;
+		min-width: 2px;
 		border-radius: var(--ap-radius-sm);
 		background: var(--ap-audio-waveform-unplayed);
 		transition: background var(--ap-transition-fast);
@@ -405,6 +423,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		color: var(--ap-text-muted);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
+		flex-shrink: 0;
 	}
 
 	.transcript-preview {
@@ -448,12 +467,30 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 		background: var(--ap-response);
 	}
 
-	@media (max-width: 40rem) {
+	@media (max-width: 48rem) {
+		.demo-wrapper {
+			margin: var(--ap-space-8) auto;
+		}
+
+		.audio-card {
+			padding: var(--ap-space-4);
+		}
+
 		.response-card {
 			margin-inline-start: var(--ap-space-2);
 		}
+
 		.thread-connector {
 			margin-inline-start: calc(var(--ap-space-2) + 18px);
+		}
+
+		.player-widget {
+			padding: var(--ap-space-2) var(--ap-space-3);
+			gap: var(--ap-space-2);
+		}
+
+		.record-badge {
+			max-width: 10rem;
 		}
 	}
 </style>

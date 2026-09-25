@@ -14,6 +14,8 @@ export default defineConfig({
 			],
 			components: {
 				Header: './src/components/Header.astro',
+				Sidebar: './src/components/Sidebar.astro',
+				PageTitle: './src/components/PageTitle.astro',
 			},
 			// Brand: self-hosted fonts (Sora/Inter/JetBrains Mono) + the
 			// "Two Voices" duotone theme. Order matters — fonts before brand.css

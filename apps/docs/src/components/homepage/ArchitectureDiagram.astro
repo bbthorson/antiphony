@@ -6,7 +6,7 @@
 		<span class="arch-tag">System Topology</span>
 		<h2 class="arch-title">Hub-and-Connector Architecture</h2>
 		<p class="arch-desc">
-			Antiphony acts as a high-throughput, edge-native audio hub. Audio enters through pluggable ingress doors, hydrates into immutable ATProto records, and syncs across the network.
+			Antiphony functions as a high-throughput, edge-native audio hub. Audio enters through pluggable ingress doors, commits to immutable AT Protocol records, and replicates across the network.
 		</p>
 	</div>
 
@@ -26,18 +26,20 @@
 					<span class="node-icon">📞</span>
 					<div>
 						<div class="node-title">Telephony Connectors</div>
-						<div class="node-sub">Voice calls / SMS audio</div>
+						<div class="node-sub">SIP & voice call ingest</div>
 					</div>
 				</div>
 				<div class="node-pill">
 					<span class="node-icon">🪝</span>
 					<div>
 						<div class="node-title">External BFF & Webhooks</div>
-						<div class="node-sub">Third-party integrations</div>
+						<div class="node-sub">App backends & third-party ingest</div>
 					</div>
 				</div>
 			</div>
 		</div>
+
+		<div class="tier-flow-arrow" aria-hidden="true">↓</div>
 
 		<!-- Central Core Hub -->
 		<div class="tier-card hub-tier">
@@ -73,6 +75,8 @@
 			</div>
 		</div>
 
+		<div class="tier-flow-arrow" aria-hidden="true">↓</div>
+
 		<!-- Outbound Consumers -->
 		<div class="tier-card egress-tier">
 			<div class="tier-badge">Network Egress</div>
@@ -81,7 +85,7 @@
 					<span class="node-icon">🌐</span>
 					<div>
 						<div class="node-title">ATProto Atmosphere</div>
-						<div class="node-sub">PDS & AppView sync</div>
+						<div class="node-sub">PDS & AppView federation</div>
 					</div>
 				</div>
 				<div class="node-pill">
@@ -198,25 +202,28 @@
 		display: flex;
 		align-items: center;
 		gap: var(--ap-space-3);
-		background: var(--ap-surface-base);
-		border: 1px solid var(--ap-border-default);
+		background: var(--ap-surface-sunken);
+		border: 1px solid var(--ap-border-subtle);
 		border-radius: var(--ap-radius-md);
-		padding: var(--ap-space-3);
+		padding: var(--ap-space-2) var(--ap-space-3);
 		transition: all var(--ap-transition-fast);
 	}
 
 	.node-pill:hover {
-		border-color: var(--ap-call);
+		border-color: var(--ap-border-default);
+		background: var(--ap-surface-elevated);
 	}
 
 	.node-icon {
 		font-size: var(--ap-font-lg);
+		flex-shrink: 0;
 	}
 
 	.node-title {
-		font-size: var(--ap-font-sm);
+		font-size: var(--ap-font-xs);
 		font-weight: 600;
 		color: var(--ap-text-primary);
+		font-family: var(--ap-font-mono);
 	}
 
 	.node-sub {
@@ -227,13 +234,13 @@
 	.core-hub-content {
 		display: flex;
 		flex-direction: column;
-		gap: var(--ap-space-3);
 		height: 100%;
+		gap: var(--ap-space-3);
 	}
 
 	.core-box {
-		background: var(--ap-surface-base);
-		border: 1px solid var(--ap-call);
+		background: var(--ap-surface-card);
+		border: 1px solid var(--ap-border-default);
 		border-radius: var(--ap-radius-md);
 		padding: var(--ap-space-3);
 		text-align: center;
@@ -247,13 +254,12 @@
 	.core-name {
 		font-size: var(--ap-font-sm);
 		font-weight: 700;
-		color: var(--ap-text-primary);
+		color: var(--ap-call);
 	}
 
 	.core-desc {
 		font-size: var(--ap-font-xs);
-		color: var(--ap-call);
-		font-weight: 500;
+		color: var(--ap-text-secondary);
 	}
 
 	.core-subgrid {
@@ -263,14 +269,15 @@
 	}
 
 	.sub-core-box {
-		background: var(--ap-surface-base);
+		background: var(--ap-surface-sunken);
 		border: 1px solid var(--ap-border-subtle);
-		border-radius: var(--ap-radius-sm);
+		border-radius: var(--ap-radius-md);
 		padding: var(--ap-space-2);
 		text-align: center;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
+		gap: 2px;
 	}
 
 	.sub-icon {
@@ -284,7 +291,7 @@
 	}
 
 	.sub-desc {
-		font-size: 10px;
+		font-size: var(--ap-font-xs);
 		color: var(--ap-text-muted);
 	}
 
@@ -298,7 +305,7 @@
 	}
 
 	.pipeline-badge {
-		font-size: 10px;
+		font-size: var(--ap-font-xs);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		font-weight: 700;
@@ -307,22 +314,46 @@
 	}
 
 	.pipeline-flow {
-		font-size: 11px;
+		font-size: var(--ap-font-xs);
 		font-family: var(--ap-font-mono);
 		color: var(--ap-text-secondary);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 4px;
+		flex-wrap: wrap;
+		gap: var(--ap-space-1);
 	}
 
 	.flow-arrow {
 		color: var(--ap-response);
 	}
 
-	@media (max-width: 48rem) {
+	.tier-flow-arrow {
+		display: none;
+		align-items: center;
+		justify-content: center;
+		font-size: var(--ap-font-lg);
+		color: var(--ap-call);
+		font-weight: 700;
+		padding: var(--ap-space-1) 0;
+	}
+
+	@media (max-width: 58rem) {
+		.arch-container {
+			margin: var(--ap-space-8) auto;
+		}
+
 		.diagram-grid {
 			grid-template-columns: 1fr;
+			gap: var(--ap-space-2);
+		}
+
+		.tier-flow-arrow {
+			display: flex;
+		}
+
+		.tier-items {
+			gap: var(--ap-space-2);
 		}
 	}
 </style>

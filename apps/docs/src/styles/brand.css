@@ -73,3 +73,13 @@ h6,
 	background: var(--ap-response);
 	vertical-align: 0.08em;
 }
+
+/* Splash layout resets — remove empty Starlight title panel & top rule on homepage */
+:root:not([data-has-sidebar]) main > .content-panel:first-child {
+	display: none;
+}
+:root:not([data-has-sidebar]) main > .content-panel {
+	border-top: none;
+	padding-top: 0;
+}
+

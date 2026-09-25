@@ -6,6 +6,7 @@ import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
 import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
 
 const currentPath = Astro.url.pathname;
+const { hasSidebar } = Astro.locals.starlightRoute;
 
 const navItems = [
 	{ label: 'Lexicons', href: '/lexicons/overview/', badge: 'Protocol' },
@@ -22,45 +23,153 @@ function isActive(href: string): boolean {
 ---
 
 <div class="header">
-	<div class="title-wrapper sl-flex">
-		<SiteTitle {...Astro.props} />
-	</div>
-
-	<!-- Top-level Primary Navigation Links -->
-	<nav class="top-nav sl-hidden lg:sl-flex" aria-label="Main Navigation">
-		{navItems.map((item) => (
-			<a
-				href={item.href}
-				class:list={['nav-link', { active: isActive(item.href) }]}
-				aria-current={isActive(item.href) ? 'page' : undefined}
-			>
-				<span>{item.label}</span>
-				{item.badge && <span class="nav-badge">{item.badge}</span>}
-			</a>
-		))}
-	</nav>
-
-	<div class="search-wrapper sl-flex print:hidden">
-		<Search {...Astro.props} />
-	</div>
-
-	<div class="sl-hidden md:sl-flex print:hidden right-group">
-		<div class="sl-flex social-icons">
-			<SocialIcons {...Astro.props} />
+	<div class="header-left">
+		<div class="title-wrapper sl-flex">
+			<SiteTitle {...Astro.props} />
 		</div>
-		<ThemeSelect {...Astro.props} />
-		<LanguageSelect {...Astro.props} />
+
+		<!-- Top-level Primary Navigation Links (Desktop) -->
+		<nav class="top-nav sl-hidden lg:sl-flex" aria-label="Main Navigation">
+			{navItems.map((item) => (
+				<a
+					href={item.href}
+					class:list={['nav-link', { active: isActive(item.href) }]}
+					aria-current={isActive(item.href) ? 'page' : undefined}
+				>
+					<span>{item.label}</span>
+					{item.badge && <span class="nav-badge">{item.badge}</span>}
+				</a>
+			))}
+		</nav>
+	</div>
+
+	<div class="header-right">
+		<div class="search-wrapper sl-flex print:hidden">
+			<Search {...Astro.props} />
+		</div>
+
+		<div class="sl-hidden md:sl-flex print:hidden right-group">
+			<div class="sl-flex social-icons">
+				<SocialIcons {...Astro.props} />
+			</div>
+			<ThemeSelect {...Astro.props} />
+			<LanguageSelect {...Astro.props} />
+		</div>
+
+		<!-- Mobile Menu Button (rendered on splash pages without a sidebar) -->
+		{!hasSidebar && (
+			<button
+				type="button"
+				class="mobile-menu-btn lg:sl-hidden print:hidden"
+				aria-label="Toggle navigation menu"
+				aria-expanded="false"
+				aria-controls="mobile-nav-drawer"
+				id="mobile-menu-trigger"
+			>
+				<svg class="menu-icon-bars" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="3" y1="6" x2="21" y2="6"></line>
+					<line x1="3" y1="12" x2="21" y2="12"></line>
+					<line x1="3" y1="18" x2="21" y2="18"></line>
+				</svg>
+				<svg class="menu-icon-close sl-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="18" y1="6" x2="6" y2="18"></line>
+					<line x1="6" y1="6" x2="18" y2="18"></line>
+				</svg>
+			</button>
+		)}
 	</div>
 </div>
+
+<!-- Mobile Navigation Drawer / Sheet for Splash Pages -->
+{!hasSidebar && (
+	<div id="mobile-nav-drawer" class="mobile-nav-drawer sl-hidden" aria-hidden="true">
+		<nav class="mobile-nav-list" aria-label="Mobile Navigation">
+			{navItems.map((item) => (
+				<a
+					href={item.href}
+					class:list={['mobile-nav-link', { active: isActive(item.href) }]}
+					aria-current={isActive(item.href) ? 'page' : undefined}
+				>
+					<span>{item.label}</span>
+					{item.badge && <span class="nav-badge">{item.badge}</span>}
+				</a>
+			))}
+		</nav>
+		<div class="mobile-nav-footer">
+			<div class="mobile-social sl-flex">
+				<SocialIcons {...Astro.props} />
+			</div>
+			<div class="mobile-theme">
+				<ThemeSelect {...Astro.props} />
+			</div>
+		</div>
+	</div>
+)}
+
+<script>
+	const trigger = document.getElementById('mobile-menu-trigger');
+	const drawer = document.getElementById('mobile-nav-drawer');
+
+	if (trigger && drawer) {
+		const iconBars = trigger.querySelector('.menu-icon-bars');
+		const iconClose = trigger.querySelector('.menu-icon-close');
+
+		function toggleMenu(open?: boolean) {
+			if (!drawer || !trigger) return;
+			const shouldOpen = open !== undefined ? open : drawer.classList.contains('sl-hidden');
+			if (shouldOpen) {
+				drawer.classList.remove('sl-hidden');
+				drawer.setAttribute('aria-hidden', 'false');
+				trigger.setAttribute('aria-expanded', 'true');
+				iconBars?.classList.add('sl-hidden');
+				iconClose?.classList.remove('sl-hidden');
+				document.body.style.overflow = 'hidden';
+			} else {
+				drawer.classList.add('sl-hidden');
+				drawer.setAttribute('aria-hidden', 'true');
+				trigger.setAttribute('aria-expanded', 'false');
+				iconBars?.classList.remove('sl-hidden');
+				iconClose?.classList.add('sl-hidden');
+				document.body.style.overflow = '';
+			}
+		}
+
+		trigger.addEventListener('click', () => toggleMenu());
+
+		window.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape' && !drawer.classList.contains('sl-hidden')) {
+				toggleMenu(false);
+			}
+		});
+
+		drawer.querySelectorAll('a').forEach((link) => {
+			link.addEventListener('click', () => toggleMenu(false));
+		});
+	}
+</script>
 
 <style>
 	.header {
 		display: flex;
-		gap: var(--sl-nav-gap, var(--ap-space-4));
+		gap: var(--ap-space-3);
 		justify-content: space-between;
 		align-items: center;
 		height: 100%;
 		width: 100%;
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+		gap: var(--ap-space-3);
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-3);
+		flex-shrink: 0;
 	}
 
 	.title-wrapper {
@@ -74,8 +183,8 @@ function isActive(href: string): boolean {
 	.top-nav {
 		display: flex;
 		align-items: center;
-		gap: var(--ap-space-2);
-		margin-inline: var(--ap-space-3);
+		gap: var(--ap-space-1);
+		margin-inline-start: var(--ap-space-2);
 	}
 
 	.nav-link {
@@ -90,6 +199,7 @@ function isActive(href: string): boolean {
 		text-decoration: none;
 		transition: all var(--ap-transition-fast);
 		border: 1px solid transparent;
+		white-space: nowrap;
 	}
 
 	.nav-link:hover {
@@ -118,8 +228,15 @@ function isActive(href: string): boolean {
 	}
 
 	.search-wrapper {
-		flex: 1;
-		max-width: 24rem;
+		display: flex;
+		align-items: center;
+	}
+
+	@media (min-width: 50rem) {
+		.search-wrapper {
+			min-width: 14rem;
+			max-width: 20rem;
+		}
 	}
 
 	.right-group,
@@ -130,7 +247,103 @@ function isActive(href: string): boolean {
 
 	.social-icons::after {
 		content: '';
-		height: var(--ap-space-6);
+		height: var(--ap-space-5);
 		border-inline-end: 1px solid var(--ap-border-subtle);
+	}
+
+	.mobile-menu-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		border-radius: var(--ap-radius-md);
+		border: 1px solid var(--ap-border-subtle);
+		background: var(--ap-surface-elevated);
+		color: var(--ap-text-primary);
+		cursor: pointer;
+		transition: all var(--ap-transition-fast);
+		padding: 0;
+	}
+
+	.mobile-menu-btn:hover {
+		border-color: var(--ap-call);
+		color: var(--ap-call);
+		background: var(--ap-call-subtle);
+	}
+
+	.mobile-nav-drawer {
+		position: fixed;
+		top: var(--sl-nav-height);
+		inset-inline: 0;
+		bottom: 0;
+		background: var(--ap-surface-base);
+		border-top: 1px solid var(--ap-border-subtle);
+		padding: var(--ap-space-5) var(--ap-space-4);
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		z-index: var(--sl-z-index-menu, 5);
+		overflow-y: auto;
+		animation: mobileDrawerFadeIn var(--ap-transition-fast) ease-out;
+	}
+
+	.mobile-nav-drawer.sl-hidden {
+		display: none;
+	}
+
+	@keyframes mobileDrawerFadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(-6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.mobile-nav-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-2);
+	}
+
+	.mobile-nav-link {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--ap-space-3) var(--ap-space-4);
+		border-radius: var(--ap-radius-lg);
+		font-size: var(--ap-font-base);
+		font-weight: 500;
+		color: var(--ap-text-primary);
+		text-decoration: none;
+		border: 1px solid var(--ap-border-subtle);
+		background: var(--ap-surface-card);
+		transition: all var(--ap-transition-fast);
+	}
+
+	.mobile-nav-link:hover,
+	.mobile-nav-link.active {
+		border-color: var(--ap-call);
+		background: var(--ap-call-subtle);
+		color: var(--ap-call);
+		font-weight: 600;
+	}
+
+	.mobile-nav-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-top: var(--ap-space-4);
+		margin-top: var(--ap-space-6);
+		border-top: 1px solid var(--ap-border-subtle);
+	}
+
+	.mobile-social {
+		display: flex;
+		align-items: center;
+		gap: var(--ap-space-3);
 	}
 </style>
