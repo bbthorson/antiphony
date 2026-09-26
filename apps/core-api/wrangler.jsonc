@@ -188,6 +188,19 @@
 		}
 	],
 
+	// ## Workers AI
+	//
+	// Transcription runs on Whisper through this binding when it is bound
+	// (`adapters/outbound/workers-ai/`), so no transcription vendor key is
+	// needed. Like R2 above, the binding is the credential. It never appears in
+	// `process.env`, which is why `worker.ts` hands `env` to
+	// `workers-ai/binding.ts` at the top of every handler. Denoise has no Workers
+	// AI equivalent and stays on ElevenLabs. `ANTIPHONY_TRANSCRIBER=elevenlabs`
+	// keeps Scribe; `WORKERS_AI_STT_MODEL` overrides the Whisper model.
+	"ai": {
+		"binding": "AI"
+	},
+
 	// ## A DATABASE_URL secret, not Hyperdrive
 	//
 	// There is deliberately no `hyperdrive` block here, and its absence is the

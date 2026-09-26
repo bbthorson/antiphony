@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { selectTranscriber } from './provider-registry.js';
+import { setWorkersAiForTest } from '../adapters/outbound/workers-ai/binding.js';
 
 /**
  * End-to-end check on the one thing the two unit suites cannot see between
@@ -114,5 +115,42 @@ describe('per-tenant model binding', () => {
         const result = await transcriber!.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
         expect(result.model).toBe('stub');
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('workers-ai transcriber selection', () => {
+    const whisper = () => ({ run: vi.fn().mockResolvedValue({ text: 'from whisper' }) });
+
+    afterEach(() => setWorkersAiForTest(undefined));
+
+    it('is preferred by the default scan when the AI binding is bound', async () => {
+        const ai = whisper();
+        setWorkersAiForTest(ai);
+        const result = await selectTranscriber()!.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        expect(result.model).toBe('@cf/openai/whisper-large-v3-turbo');
+        expect(ai.run).toHaveBeenCalledOnce();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('yields to ElevenLabs when ANTIPHONY_TRANSCRIBER names it', async () => {
+        const ai = whisper();
+        setWorkersAiForTest(ai);
+        process.env.ANTIPHONY_TRANSCRIBER = 'elevenlabs';
+        await transcribeAs();
+        expect(ai.run).not.toHaveBeenCalled();
+        expect(modelSent()).toBe('scribe_v2');
+    });
+
+    it('carries a tenant pinned model to Whisper', async () => {
+        const ai = whisper();
+        setWorkersAiForTest(ai);
+        process.env.ANTIPHONY_APP_STT_MODELS = 'acme:@cf/openai/whisper';
+        const result = await selectTranscriber('acme')!.transcribe({ bytes: new Uint8Array([1]), mimeType: 'audio/wav' });
+        expect(result.model).toBe('@cf/openai/whisper');
+    });
+
+    it('disables the stage when workers-ai is requested but not bound', () => {
+        process.env.ANTIPHONY_TRANSCRIBER = 'workers-ai';
+        expect(selectTranscriber()).toBeUndefined();
     });
 });
