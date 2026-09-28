@@ -12,51 +12,57 @@ audio-embed lexicon contribution, and the public REST surface that products
 | Package | Role |
 | :--- | :--- |
 | `packages/shared` (`@antiphony/shared`) | Records, views, codecs, NSIDs — the published contract. Dual ESM/CJS build. |
+| `packages/capture-kit` (`@antiphony/capture-kit`) | Headless browser audio primitives for Antiphony clients (microphone recorder, playback hook, client-side waveform peaks). Dual ESM/CJS build. |
+| `packages/tokens` (`@antiphony/tokens`) | Antiphony design system tokens — Two Voices duotone palette, typography, spacing, surface, and audio waveform variables. |
 | `packages/core` (`@antiphony/core`) | Backend-free domain services + ports (hexagonal). No vendor SDK imports, lint-enforced. |
 | `apps/core-api` (`@antiphony/core-api`) | Hono REST + XRPC API on Cloudflare Workers — wires `core` ports to Neon and R2 bindings, serves `/api/v1/*` and `/xrpc/*`. |
 | `apps/docs` (`@antiphony/docs`) | Astro/Starlight docs site, deployed to the `antiphony-docs` Worker (see `wrangler.jsonc`). |
 | `apps/audio-rendition` (`@antiphony/audio-rendition`) | The one service that is not a Worker: an ffmpeg container on Cloud Run that derives renditions into R2 and backs the `trim` / `waveform` stages. |
 | `apps/reference` (`@antiphony/reference`) | Minimal Vite/React reference client that drives the published contract end to end. |
-| `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.post`, `audio.transcript`, `embed.audio`, `embed.recordWithAudio`, `actor.profile`). |
+| `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.*`, `embed.*`, `actor.profile`). |
 
 ## Commands
 
 ```bash
 npm install
-npm run build        # build @antiphony/shared (dual) + bundle core-api + gen OpenAPI
+npm run build        # build @antiphony/shared (dual), @antiphony/capture-kit (dual), bundle core-api (gen OpenAPI), and audio-rendition
 npm run typecheck    # all workspaces
 npm run lint         # all workspaces
-npm run test         # all workspaces
+npm run test         # all workspaces + root suites (eslint rules, lexicons, dependency ranges, design tokens)
 npm run dev          # core-api on :8787 via `wrangler dev` (needs apps/core-api/.dev.vars)
-npm run knip         # unused files/exports/deps sweep (manual, not a CI gate)
+npm run knip         # dead code/exports/deps sweep (CI gate with --treat-config-hints-as-errors)
 ```
 
 ## Releasing
 
-`@antiphony/shared` is the only published package. Releases are cut by tag —
-`.github/workflows/release.yml` does the publishing, so no one needs npm
-credentials locally.
+`@antiphony/shared` and `@antiphony/capture-kit` are the two published packages.
+Releases are cut by package-prefixed tag — `.github/workflows/release.yml` does the
+publishing to npm, so no one needs npm credentials locally.
 
 ```bash
-# 1. bump the version, land it on master
-#    packages/shared/package.json -> "version": "0.6.0"
+# 1. bump the version in the target package.json, land it on master
+#    packages/shared/package.json -> "version": "0.7.0"
+#    or packages/capture-kit/package.json -> "version": "0.1.0"
 # 2. tag the merge commit and push the tag
-git tag shared-v0.6.0
-git push origin shared-v0.6.0
+git tag shared-v0.7.0 && git push origin shared-v0.7.0
+# or
+git tag capture-kit-v0.1.0 && git push origin capture-kit-v0.1.0
 ```
 
-The workflow re-runs typecheck, lint, test, and build, then asserts the tag
-matches `packages/shared/package.json` and that the version is unclaimed on the
-registry, before publishing. A version with a prerelease identifier
-(`shared-v0.6.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
+The workflow re-runs typecheck, lint, knip, test, and build, then asserts the tag
+matches the selected package's `package.json` and that the version is unclaimed on
+the registry, before publishing. A version with a prerelease identifier
+(`shared-v0.7.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
 
-`workflow_dispatch` runs the same pipeline with a `dry_run` input (default on)
-to validate a release without publishing.
+`workflow_dispatch` runs the same pipeline with a `package` choice (`shared` or
+`capture-kit`) and a `dry_run` input (default on) to validate a release without publishing.
 
 Authentication is npm [trusted publishing](https://docs.npmjs.com/trusted-publishers)
 over OIDC — there is no `NPM_TOKEN` secret. The trust policy on npmjs.com names
 this repo **and the workflow filename**, so renaming `release.yml` breaks
-publishing until the policy is updated.
+publishing until the policy is updated. Note that a brand-new package name must be
+published once manually (`npm publish -w @antiphony/<pkg> --access public`) before
+its trusted publisher policy can be configured on npmjs.com.
 
 Note that `CHANGELOG.md` tracks the **API contract** version, not package
 releases; the two version lines are independent.
