@@ -31,10 +31,10 @@ literal to drift.
 
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
-divergence. Today `@antiphony/shared` is at `0.4.0` (the only published package)
-while the contract is at `0.3.0` and the private packages sit at `0.1.0`. That
-is correct: the shared package bumped for a breaking *type* export change, which
-is a different event from a breaking *contract* change.
+divergence. For example, `@antiphony/shared` (at `0.7.0`) and `@antiphony/capture-kit`
+(at `0.1.0`) track their own release lines while the contract sits at `0.6.0` and
+internal packages sit at `0.1.0`. That is correct: a package bump for an export
+or dependency change is a different event from a breaking *contract* change.
 
 ### Pre-1.0 semantics (we are here)
 

@@ -365,9 +365,15 @@ deliberate version of this decision, either way.
 ## 8. The docs site is a second Worker
 
 `docs.antiphony.dev` is a separate, assets-only Worker named **`antiphony-docs`**,
-built by Workers Builds (dashboard → the Worker → Settings → Builds) rather than
-by anything in `.github/workflows/`. It has no bindings and no `main` script: it
-serves the static Astro build.
+deployed via [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)
+(on completion of CI on `master`, or manually via `workflow_dispatch`). It has no
+bindings and no `main` script: it serves the static Astro build (`apps/docs/dist`).
+
+> **Previously deployed via Cloudflare Workers Builds** (dashboard → the Worker →
+> Settings → Builds). That path was disconnected in favor of the GitHub Actions
+> workflow to provide explicit build reporting and eliminate silent deploy stalls.
+> Ensure the Git repository is disconnected in the Cloudflare dashboard so it does
+> not deploy twice.
 
 | Setting | Value |
 | :--- | :--- |
@@ -414,9 +420,10 @@ resolving to a version that is not in the image, forcing the download step that
 failed above. An exact pin that matches a preinstalled version skips it.
 
 So when Cloudflare changes what the image preinstalls, this file should follow.
-`.nvmrc` is also the single source of truth for `actions/setup-node` in `ci.yml`,
-`deploy.yml`, and `release.yml`, so a bump moves CI and the production deploy
-together — which is the point, but check all three when you change it.
+`.nvmrc` is also the single source of truth for `actions/setup-node` across all
+workflows (`ci.yml`, `deploy.yml`, `deploy-docs.yml`, `deploy-audio-rendition.yml`,
+and `release.yml`), so a bump moves CI and all production deploys together —
+which is the point, but check all of them when you change it.
 
 **Node 22 is the maintenance line** (LTS since 2024-10-29, maintenance since
 2025-10-21, EOL 2027-04-30). Node 24 is the active LTS and is Workers Builds'
