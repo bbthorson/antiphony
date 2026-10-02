@@ -8,7 +8,7 @@
 	</h1>
 
 	<p class="hero-subtitle">
-		Someone records a question, other people record answers. Antiphony stores both as portable <code>dev.antiphony.*</code> records, can transcribe and clean up the audio, and gives your app one REST API to do it through. MIT-licensed.
+		Someone records a question and other people record answers. Antiphony stores both as portable <code>dev.antiphony.*</code> records, transcribes and cleans up the audio when you ask, and gives your app one REST API for all of it. It's MIT-licensed.
 	</p>
 
 	<div class="hero-actions">
@@ -29,19 +29,6 @@
 		</a>
 	</div>
 
-	<div class="hero-stats">
-		<div class="stat-item">
-			<span class="stat-text"><code>dev.antiphony.*</code> lexicons</span>
-		</div>
-		<div class="stat-divider"></div>
-		<div class="stat-item">
-			<span class="stat-text">Cloudflare Workers, Neon Postgres, R2</span>
-		</div>
-		<div class="stat-divider"></div>
-		<div class="stat-item">
-			<span class="stat-text">Headless React capture kit</span>
-		</div>
-	</div>
 </section>
 
 <style>
@@ -83,7 +70,6 @@
 		justify-content: center;
 		flex-wrap: wrap;
 		gap: var(--ap-space-3);
-		margin-bottom: var(--ap-space-8);
 	}
 
 	.btn-primary {
@@ -146,55 +132,9 @@
 		text-decoration: none;
 	}
 
-	.hero-stats {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-wrap: wrap;
-		gap: var(--ap-space-4);
-		padding: var(--ap-space-3) var(--ap-space-6);
-		background: var(--ap-surface-elevated);
-		border: 1px solid var(--ap-border-subtle);
-		border-radius: var(--ap-radius-lg);
-	}
-
-	.stat-item {
-		display: flex;
-		align-items: center;
-		gap: var(--ap-space-2);
-		font-size: var(--ap-font-sm);
-		color: var(--ap-text-secondary);
-	}
-
-	.stat-divider {
-		width: 1px;
-		height: var(--ap-space-4);
-		background: var(--ap-border-subtle);
-	}
-
 	@media (max-width: 48rem) {
 		.hero-container {
 			padding: var(--ap-space-8) var(--ap-space-4) var(--ap-space-6);
-		}
-
-		.hero-actions {
-			margin-bottom: var(--ap-space-6);
-		}
-
-		.hero-stats {
-			display: grid;
-			grid-template-columns: 1fr;
-			gap: var(--ap-space-2);
-			padding: var(--ap-space-3) var(--ap-space-4);
-			width: 100%;
-		}
-
-		.stat-divider {
-			display: none;
-		}
-
-		.stat-item {
-			justify-content: center;
 		}
 	}
 </style>

@@ -23,7 +23,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 			</p>
 
 			<div class="player-widget" data-player="call">
-				<button type="button" class="play-btn play-call" aria-label="Play prompt audio" data-play-btn="call">
+				<button type="button" class="play-btn play-call" aria-label="Play prompt audio" aria-pressed="false" data-play-btn="call">
 					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<polygon points="5 3 19 12 5 21 5 3"/>
 					</svg>
@@ -36,14 +36,14 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 				<div class="waveform-container" data-waveform="call">
 					{mockCallWaveform.map((peak, idx) => (
 						<div
-							class:list={['waveform-bar', { played: idx < 8 }]}
+							class="waveform-bar"
 							style={`height: ${peak}%`}
 							data-index={idx}
 						/>
 					))}
 				</div>
 
-				<span class="duration-display" data-time="call">0:14 / 0:42</span>
+				<span class="duration-display" data-time="call">0:00 / 0:03</span>
 			</div>
 
 			<div class="transcript-preview">
@@ -72,7 +72,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 			</div>
 
 			<div class="player-widget" data-player="response">
-				<button type="button" class="play-btn play-response" aria-label="Play reply audio" data-play-btn="response">
+				<button type="button" class="play-btn play-response" aria-label="Play reply audio" aria-pressed="false" data-play-btn="response">
 					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<polygon points="5 3 19 12 5 21 5 3"/>
 					</svg>
@@ -85,14 +85,14 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 				<div class="waveform-container" data-waveform="response">
 					{mockResponseWaveform.map((peak, idx) => (
 						<div
-							class:list={['waveform-bar', 'bar-response', { played: idx < 12 }]}
+							class="waveform-bar bar-response"
 							style={`height: ${peak}%`}
 							data-index={idx}
 						/>
 					))}
 				</div>
 
-				<span class="duration-display" data-time="response">0:21 / 0:38</span>
+				<span class="duration-display" data-time="response">0:00 / 0:04</span>
 			</div>
 
 			<div class="transcript-preview">
@@ -104,56 +104,142 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 </div>
 
 <script>
-	function setupMockPlayer(type: string, durationTotal: number) {
+	// The two cards "speak" when played: a wordless, voice-like murmur made
+	// with Web Audio, no audio files. Alice's phrase rises at the end like a
+	// question; Bob's falls like an answer. Playing Alice's card cues Bob's
+	// reply when hers finishes, which is the whole product in five seconds.
+
+	type Voice = {
+		syllables: number;
+		seconds: number;
+		/** Pitch in Hz at the start and end of the phrase. */
+		from: number;
+		to: number;
+	};
+
+	const VOICES: Record<'call' | 'response', Voice> = {
+		call: { syllables: 7, seconds: 2.4, from: 210, to: 320 },
+		response: { syllables: 10, seconds: 3.2, from: 150, to: 105 },
+	};
+
+	let ctx: AudioContext | null = null;
+	let current: { stop: () => void } | null = null;
+
+	function speak(voice: Voice, onEnd: () => void) {
+		ctx ??= new AudioContext();
+		const t0 = ctx.currentTime + 0.05;
+		const osc = ctx.createOscillator();
+		const filter = ctx.createBiquadFilter();
+		const gain = ctx.createGain();
+
+		osc.type = 'triangle';
+		filter.type = 'lowpass';
+		filter.frequency.value = 900;
+		gain.gain.value = 0;
+
+		// Intonation: glide from `from` to `to`, wobbling a little per syllable.
+		const steps = voice.syllables * 4;
+		const curve = new Float32Array(steps);
+		for (let i = 0; i < steps; i++) {
+			const t = i / (steps - 1);
+			const wobble = 1 + 0.06 * Math.sin(i * 1.7);
+			curve[i] = (voice.from + (voice.to - voice.from) * t * t) * wobble;
+		}
+		osc.frequency.setValueCurveAtTime(curve, t0, voice.seconds);
+
+		// Syllables: a soft swell and fall for each one.
+		const per = voice.seconds / voice.syllables;
+		for (let i = 0; i < voice.syllables; i++) {
+			const at = t0 + i * per;
+			gain.gain.setValueAtTime(0, at);
+			gain.gain.linearRampToValueAtTime(0.12, at + per * 0.3);
+			gain.gain.linearRampToValueAtTime(0.02, at + per * 0.85);
+		}
+		gain.gain.linearRampToValueAtTime(0, t0 + voice.seconds);
+
+		osc.connect(filter).connect(gain).connect(ctx.destination);
+		osc.start(t0);
+		osc.stop(t0 + voice.seconds + 0.05);
+
+		let stopped = false;
+		osc.onended = () => {
+			if (!stopped) onEnd();
+		};
+		return {
+			stop() {
+				stopped = true;
+				osc.stop();
+			},
+		};
+	}
+
+	function setupCard(type: 'call' | 'response', next?: () => void) {
 		const btn = document.querySelector(`[data-play-btn="${type}"]`);
-		const playIcon = btn?.querySelector('.play-icon');
-		const pauseIcon = btn?.querySelector('.pause-icon');
 		const waveform = document.querySelector(`[data-waveform="${type}"]`);
 		const timeDisplay = document.querySelector(`[data-time="${type}"]`);
+		if (!btn || !waveform || !timeDisplay) return () => {};
 
-		if (!btn || !waveform || !timeDisplay) return;
-
+		const voice = VOICES[type];
 		const bars = waveform.querySelectorAll('.waveform-bar');
-		let isPlaying = false;
-		let progress = type === 'call' ? 8 : 12;
-		let intervalId: any = null;
+		const total = Math.ceil(voice.seconds);
+		let raf = 0;
 
-		function updateView() {
-			bars.forEach((bar, i) => {
-				if (i <= progress) {
-					bar.classList.add('played');
-				} else {
-					bar.classList.remove('played');
-				}
+		function render(progress: number) {
+			const lit = Math.round(progress * bars.length);
+			bars.forEach((bar, i) => bar.classList.toggle('played', i < lit));
+			const sec = Math.min(total, Math.floor(progress * voice.seconds));
+			timeDisplay!.textContent = `0:0${sec} / 0:0${total}`;
+		}
+
+		function setPlaying(on: boolean) {
+			btn!.querySelector('.play-icon')?.classList.toggle('sl-hidden', on);
+			btn!.querySelector('.pause-icon')?.classList.toggle('sl-hidden', !on);
+			btn!.setAttribute('aria-pressed', String(on));
+		}
+
+		function stop() {
+			cancelAnimationFrame(raf);
+			setPlaying(false);
+		}
+
+		function play(thenNext: boolean) {
+			current?.stop();
+			setPlaying(true);
+			const started = performance.now();
+			const tick = () => {
+				const progress = Math.min(1, (performance.now() - started) / (voice.seconds * 1000));
+				render(progress);
+				if (progress < 1) raf = requestAnimationFrame(tick);
+			};
+			tick();
+			const handle = speak(voice, () => {
+				stop();
+				current = null;
+				if (thenNext) next?.();
 			});
-			const currentSec = Math.round((progress / bars.length) * durationTotal);
-			if (timeDisplay) {
-				timeDisplay.textContent = `0:${currentSec < 10 ? '0' : ''}${currentSec} / 0:${durationTotal}`;
-			}
+			current = {
+				stop() {
+					handle.stop();
+					stop();
+				},
+			};
 		}
 
 		btn.addEventListener('click', () => {
-			isPlaying = !isPlaying;
-			if (isPlaying) {
-				playIcon?.classList.add('sl-hidden');
-				pauseIcon?.classList.remove('sl-hidden');
-				intervalId = setInterval(() => {
-					progress++;
-					if (progress >= bars.length) {
-						progress = 0;
-					}
-					updateView();
-				}, 400);
-			} else {
-				playIcon?.classList.remove('sl-hidden');
-				pauseIcon?.classList.add('sl-hidden');
-				clearInterval(intervalId);
+			if (btn.getAttribute('aria-pressed') === 'true') {
+				current?.stop();
+				current = null;
+				return;
 			}
+			play(true);
 		});
+
+		render(0);
+		return () => play(false);
 	}
 
-	setupMockPlayer('call', 42);
-	setupMockPlayer('response', 38);
+	const playReply = setupCard('response');
+	setupCard('call', playReply);
 </script>
 
 <style>

@@ -121,7 +121,9 @@ jobs:
                   echo "Changed files:"
                   echo "$CHANGED"
 
-                  if echo "$CHANGED" | grep -qE '^(apps/docs/|apps/core-api/openapi\.json$|package(-lock)?\.json$|\.github/workflows/deploy-docs\.yml$)'; then
+                  # packages/capture-kit/: the homepage's "record a reply" turn
+                  # bundles its waveform and mime helpers.
+                  if echo "$CHANGED" | grep -qE '^(apps/docs/|apps/core-api/openapi\.json$|packages/capture-kit/|package(-lock)?\.json$|\.github/workflows/deploy-docs\.yml$)'; then
                       echo "build=true" >> "$GITHUB_OUTPUT"
                   else
                       echo "build=false" >> "$GITHUB_OUTPUT"
