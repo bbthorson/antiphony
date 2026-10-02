@@ -17,7 +17,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "aws4fetch": "^1.0.20",
-    "hono": "^4.13.8"
+    "hono": "^4.13.10"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
