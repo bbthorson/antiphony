@@ -1,0 +1,184 @@
+---
+/**
+ * One exchange on the homepage thread. The call (a question) sits left of a
+ * single centre line, marked with a solid indigo dot; its answer comes in
+ * lower on the right, marked with a coral ring. Below 55rem the thread moves
+ * to the left edge and both halves stack beside it.
+ */
+interface Props {
+	/** Small mono line above the heading: a number, or "The call" on the hero. */
+	eyebrow?: string;
+	title: string;
+	/** The hero is the page's h1; every other turn is an h2. */
+	hero?: boolean;
+	id?: string;
+	/** The last answered turn leaves less room before the open reply. */
+	last?: boolean;
+}
+
+const { eyebrow, title, hero = false, id, last = false } = Astro.props;
+const Heading = hero ? 'h1' : 'h2';
+---
+
+<section class:list={['turn', { hero, last }]} id={id}>
+	<div class="call">
+		{eyebrow && <div class="eyebrow">{eyebrow}</div>}
+		<Heading class="question">{title}</Heading>
+	</div>
+	<div class="mark call-mark" aria-hidden="true"><span class="line"></span><span class="dot"></span></div>
+	<div class="mark resp-mark" aria-hidden="true"><span class="line"></span><span class="ring"></span></div>
+	<div class="resp"><slot /></div>
+</section>
+
+<style>
+	.turn {
+		display: grid;
+		grid-template-columns: 40px minmax(0, 1fr);
+		grid-template-areas: 'cm c' 'rm r';
+	}
+
+	@media (min-width: 55rem) {
+		.turn {
+			grid-template-columns: minmax(0, 5fr) 72px minmax(0, 6.5fr);
+			grid-template-areas: 'c cm .' '. rm r';
+		}
+		.call {
+			text-align: right;
+		}
+	}
+
+	.call {
+		grid-area: c;
+		padding-bottom: 24px;
+	}
+
+	.hero .call {
+		padding-bottom: 28px;
+	}
+
+	.eyebrow {
+		margin-bottom: 8px;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		color: var(--ap-text-muted);
+	}
+
+	.hero .eyebrow {
+		margin-bottom: 16px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-call-ink);
+	}
+
+	.question {
+		margin: 0;
+		font-family: var(--ap-font-display);
+		font-size: 24px;
+		font-weight: 600;
+		line-height: 1.15;
+		letter-spacing: -0.02em;
+		color: var(--ap-text-primary);
+		text-wrap: balance;
+	}
+
+	h1.question {
+		font-size: 38px;
+		font-weight: 700;
+		line-height: 1.08;
+		letter-spacing: -0.03em;
+	}
+
+	@media (min-width: 55rem) {
+		.question {
+			font-size: 30px;
+		}
+		h1.question {
+			font-size: clamp(40px, 4.6vw, 60px);
+		}
+	}
+
+	.mark {
+		position: relative;
+		display: flex;
+		justify-content: center;
+	}
+
+	.call-mark {
+		grid-area: cm;
+	}
+
+	.resp-mark {
+		grid-area: rm;
+	}
+
+	.line {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 50%;
+		border-left: 1px solid var(--ap-border-default);
+	}
+
+	/* The thread starts at the first dot, not above it. */
+	.hero .call-mark .line {
+		top: 40px;
+	}
+
+	.dot,
+	.ring {
+		position: relative;
+		width: 14px;
+		height: 14px;
+		flex: none;
+		box-sizing: border-box;
+		border-radius: var(--ap-radius-full);
+	}
+
+	.dot {
+		margin-top: 33px;
+		background: var(--ap-call);
+	}
+
+	.hero .dot {
+		margin-top: 9px;
+	}
+
+	.ring {
+		margin-top: 7px;
+		border: 3px solid var(--ap-response);
+		background: var(--ap-surface-base);
+	}
+
+	.resp {
+		grid-area: r;
+		min-width: 0;
+		padding-bottom: 120px;
+	}
+
+	.last .resp {
+		padding-bottom: 96px;
+	}
+
+	/* The open reply below draws the last stretch of the thread itself. */
+	.last .resp-mark .line {
+		bottom: 96px;
+	}
+
+	/* The opening paragraph of an answer. */
+	.resp :global(.answer) {
+		max-width: 36rem;
+		margin: 2px 0 28px;
+		font-size: 17px;
+		line-height: 1.65;
+		color: var(--ap-text-secondary);
+		text-wrap: pretty;
+	}
+
+	.resp :global(code) {
+		font-family: var(--ap-font-mono);
+		font-size: 0.85em;
+		color: var(--ap-text-primary);
+		background: none;
+		padding: 0;
+	}
+</style>

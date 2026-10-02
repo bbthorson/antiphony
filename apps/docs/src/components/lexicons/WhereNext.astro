@@ -1,0 +1,68 @@
+---
+interface Props {
+	links: { title: string; desc: string; href: string }[];
+}
+
+const { links } = Astro.props;
+---
+
+<nav class="not-content ap-where-next" aria-label="Where next">
+	<div class="label">Where next</div>
+	<div class="grid">
+		{links.map((l, i) => (
+			<a href={l.href} class:list={{ first: i === 0 }}>
+				<span class="title">{l.title} →</span>
+				<span class="desc">{l.desc}</span>
+			</a>
+		))}
+	</div>
+</nav>
+
+<style>
+	.ap-where-next {
+		margin-top: 56px;
+		padding-top: 40px;
+		border-top: 1px solid var(--ap-border-default);
+	}
+
+	.label {
+		margin-bottom: 12px;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 24px;
+	}
+
+	a {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding-top: 14px;
+		border-top: 2px solid var(--ap-border-default);
+		color: inherit;
+		text-decoration: none;
+		transition: border-color var(--ap-transition-fast);
+	}
+
+	a.first,
+	a:hover {
+		border-top-color: var(--ap-call);
+	}
+
+	.title {
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.desc {
+		font-size: 14px;
+		color: var(--ap-text-secondary);
+	}
+</style>

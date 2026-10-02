@@ -1,0 +1,76 @@
+---
+---
+
+<div class="hero-answer">
+	<div class="label">The response</div>
+	<p>
+		Someone records a question. Other people record answers. Antiphony stores both as portable <code>dev.antiphony.*</code> records, transcribes and cleans up the audio when you ask, and gives your app one REST API for all of it. MIT-licensed.
+	</p>
+	<div class="actions">
+		<a href="/lexicons/overview/" class="primary">Read the lexicons <span aria-hidden="true">→</span></a>
+		<a href="/self-hosting/quick-start/" class="secondary">Quick start</a>
+	</div>
+</div>
+
+<style>
+	.hero-answer {
+		max-width: 36rem;
+	}
+
+	.label {
+		margin: 4px 0 16px;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-response-ink);
+	}
+
+	p {
+		margin: 0 0 28px;
+		font-size: 19px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+		text-wrap: pretty;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.actions a {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 20px;
+		border-radius: var(--ap-radius-md);
+		font-size: 15px;
+		text-decoration: none;
+		transition: background var(--ap-transition-fast), border-color var(--ap-transition-fast);
+	}
+
+	.primary {
+		background: var(--ap-call);
+		color: var(--ap-on-call);
+		font-weight: 600;
+	}
+
+	.primary:hover {
+		background: var(--ap-call-hover);
+		color: var(--ap-on-call);
+	}
+
+	.secondary {
+		border: 1px solid var(--ap-border-default);
+		color: var(--ap-text-primary);
+		font-weight: 500;
+	}
+
+	.secondary:hover {
+		border-color: var(--ap-border-strong);
+		color: var(--ap-text-primary);
+	}
+</style>

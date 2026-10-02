@@ -1,0 +1,146 @@
+---
+title: The Antiphony lexicons
+description: The dev.antiphony.* AT Protocol lexicons — the canonical, portable contract every Antiphony app shares.
+eyebrow: Protocol / dev.antiphony.*
+---
+
+import Split from '../../../components/lexicons/Split.astro';
+import Example from '../../../components/lexicons/Example.astro';
+import FieldTable from '../../../components/lexicons/FieldTable.astro';
+import MirrorTable from '../../../components/lexicons/MirrorTable.astro';
+import Pair from '../../../components/lexicons/Pair.astro';
+import RecordMap from '../../../components/lexicons/RecordMap.astro';
+import UriCard from '../../../components/lexicons/UriCard.astro';
+import WhereNext from '../../../components/lexicons/WhereNext.astro';
+import {
+	examples,
+	postFields,
+	embedRecordFields,
+	embedViewFields,
+	transcriptFields,
+} from '../../../lib/lexicon-examples';
+
+<p class="lead">The AT Protocol record definitions under <code>dev.antiphony.*</code> describe everything Antiphony stores. The REST API, the Zod schemas in <code>packages/shared</code>, and every app built on the core derive from them. If you read one page before building, read this one.</p>
+
+<p class="note">Source of truth: [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony). This page is the guided tour.</p>
+
+## Why do these look like Bluesky's records?
+
+<Split>
+
+Antiphony mirrors the `app.bsky.*` shapes wherever one exists, so an AT Protocol client already understands the record. It adds a new shape only where audio call-and-response needs one. There are two such gaps:
+
+**Audio embeds.** atproto has image, video, external and record embeds, but no audio. `dev.antiphony.embed.audio` is the protocol's audio attachment.
+
+**Timed transcripts.** A machine transcript stored as platform enrichment, not a field the author writes.
+
+<MirrorTable slot="example" />
+
+</Split>
+
+## What is a post?
+
+<p class="ap-nsid">dev.antiphony.audio.post</p>
+
+<Split>
+
+One record carries both halves of the conversation. A post <strong class="ap-call-ink">without</strong> a `reply` is a prompt, the root of a thread. A post <strong class="ap-response-ink">with</strong> one is a reply. The audio rides in `embed`; `text` is what the author typed, never the transcript.
+
+<FieldTable rows={postFields} hint />
+
+**Threading is content-addressed.** `reply.root` points at the prompt; `reply.parent` points at the post being answered. Who may reply is not a field: the AppView gates replies into participant-only sub-threads. See [reply gating](/api/overview/#reply-gating).
+
+<Example
+	slot="example"
+	variants={[
+		{ id: 'prompt', label: 'Prompt', voice: 'call', code: examples.prompt },
+		{ id: 'reply', label: 'Reply', voice: 'response', code: examples.reply },
+	]}
+/>
+
+</Split>
+
+## How is audio attached?
+
+<p class="ap-nsid">dev.antiphony.embed.audio</p>
+
+<Split>
+
+The embed has two forms. The <strong class="ap-call-ink">record</strong> is what you write: the stored bytes and facts that don't depend on rendering. The <strong class="ap-response-ink">view</strong> is what a read gives back: a playable URL, the transcript, and the values that describe the audio the listener actually hears.
+
+<FieldTable label="Record · #main" rows={embedRecordFields} variant="record" />
+<FieldTable label="View · #view" voice="response" rows={embedViewFields} variant="view" />
+
+**url, durationMs and waveform move together.** Once processing produces a variant, all three describe it, or none do. If you cached duration or peaks at upload, read them again from the view: `trim` shortens the audio and `waveform` recomputes the peaks. Uploads have a tighter size limit than the lexicon; see [Limits](/api/overview/#limits).
+
+<Example
+	slot="example"
+	variants={[
+		{ id: 'record', label: 'You write', voice: 'call', code: examples.record },
+		{ id: 'view', label: 'You read', voice: 'response', code: examples.view },
+	]}
+/>
+
+</Split>
+
+## Where does the transcript live?
+
+<p class="ap-nsid">dev.antiphony.audio.transcript</p>
+
+<Split>
+
+In its own record, never on the post. The transcript is platform enrichment, like denoise or waveforms. It points at the post by StrongRef, the same pattern as likes and labels, and is lifted into `embed.audio#view.transcript` at read time.
+
+<FieldTable rows={transcriptFields} />
+
+A `#timedTranscript` is a list of segments, each `{ startMs, endMs, text }`, plus an optional plain-text rollup for consumers that don't need timing.
+
+<Example slot="example" code={examples.transcript} />
+
+</Split>
+
+## What else is in the namespace?
+
+<Pair>
+<div slot="call">
+<p class="ap-pair-name">dev.antiphony.embed.recordWithAudio</p>
+
+A post that quotes another record and carries its own audio. The audio counterpart of `app.bsky.embed.recordWithMedia`.
+</div>
+<div slot="response">
+<p class="ap-pair-name">dev.antiphony.actor.profile</p>
+
+One record per actor at the `self` rkey, with a public handle, an optional usage intent and an RSS feed. Lexicon-only: the core never stores or serves it. Profiles belong to the calling app; this shape exists so a federating deployment has somewhere to project them.
+</div>
+</Pair>
+
+## How do the records relate?
+
+<RecordMap />
+
+A prompt and its replies are all `audio.post` records, threaded by StrongRef. Each carries an `embed.audio`. The transcript is its own record, folded into the embed's view only once it exists.
+
+## How faithful is this to AT Protocol?
+
+<Split>
+
+Records validate against the official `@atproto/lexicon` parser, blob refs use the canonical JSON shape, and CIDs are real content addresses.
+
+**Blob CIDs.** CIDv1, raw codec, sha2-256 over the audio bytes. Storage location is derived from the CID and never stored, so records stay portable across deployments.
+
+**Record CIDs.** CIDv1, dag-cbor, sha2-256 over the public record fields. Every view's `cid`, and every StrongRef in a reply, is verifiable.
+
+**The at:// authority is the tenant app's DID.** Antiphony owns the repo, so a post's URI authority is always the tenant's `did:web`. The acting user's identity rides alongside as `authorDid`, outside the record CID. See [Tenant identity](/self-hosting/configuration/#tenant-identity) and the [authority model](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
+
+<Example slot="example" title="Blob ref" dot={false} code={examples.blob} />
+<UriCard slot="example" />
+
+</Split>
+
+<WhereNext
+	links={[
+		{ title: 'API reference', desc: 'The REST surface derived from these records.', href: '/api/overview/' },
+		{ title: 'Build your own app', desc: 'Put a client on top of them.', href: '/build-your-own/overview/' },
+		{ title: 'Architecture', desc: 'Where the record-to-lexicon transform lives.', href: '/introduction/architecture/' },
+	]}
+/>
