@@ -2,13 +2,6 @@
 ---
 
 <div class="arch-container">
-	<div class="arch-header">
-		<h2 class="arch-title">How audio moves through it</h2>
-		<p class="arch-desc">
-			Apps send audio in. Antiphony stores it, runs whichever processing the app asked for, and serves the records back out over REST and XRPC.
-		</p>
-	</div>
-
 	<div class="diagram-grid">
 		<!-- In: whatever the calling app puts in front of the API -->
 		<div class="tier-card ingress-tier">
@@ -98,33 +91,6 @@
 </div>
 
 <style>
-	.arch-container {
-		max-width: 56rem;
-		margin: var(--ap-space-12) auto;
-		padding: 0 var(--ap-space-4);
-	}
-
-	.arch-header {
-		text-align: center;
-		margin-bottom: var(--ap-space-8);
-	}
-
-	.arch-title {
-		font-family: var(--ap-font-display);
-		font-size: var(--ap-font-2xl);
-		font-weight: 700;
-		color: var(--ap-text-primary);
-		margin: 0 0 var(--ap-space-2);
-	}
-
-	.arch-desc {
-		font-size: var(--ap-font-base);
-		color: var(--ap-text-secondary);
-		max-width: 44rem;
-		margin: 0 auto;
-		line-height: var(--ap-leading-relaxed);
-	}
-
 	.diagram-grid {
 		display: grid;
 		grid-template-columns: 1fr 1.35fr 1fr;
@@ -299,10 +265,6 @@
 	}
 
 	@media (max-width: 58rem) {
-		.arch-container {
-			margin: var(--ap-space-8) auto;
-		}
-
 		.diagram-grid {
 			grid-template-columns: 1fr;
 			gap: var(--ap-space-2);

@@ -2,13 +2,6 @@
 ---
 
 <div class="showcase-container">
-	<div class="showcase-header">
-		<h2 class="showcase-title">The same post, three ways</h2>
-		<p class="showcase-desc">
-			The record the lexicon defines, the REST call your server makes to create it, and the React hook that records the audio in a browser.
-		</p>
-	</div>
-
 	<div class="code-box">
 		<div class="tab-bar" role="tablist">
 			<button class="tab-btn active" role="tab" aria-selected="true" data-tab-btn="lexicon">
@@ -119,33 +112,6 @@
 </script>
 
 <style>
-	.showcase-container {
-		max-width: 56rem;
-		margin: var(--ap-space-12) auto;
-		padding: 0 var(--ap-space-4);
-	}
-
-	.showcase-header {
-		text-align: center;
-		margin-bottom: var(--ap-space-8);
-	}
-
-	.showcase-title {
-		font-family: var(--ap-font-display);
-		font-size: var(--ap-font-2xl);
-		font-weight: 700;
-		color: var(--ap-text-primary);
-		margin: 0 0 var(--ap-space-2);
-	}
-
-	.showcase-desc {
-		font-size: var(--ap-font-base);
-		color: var(--ap-text-secondary);
-		max-width: 44rem;
-		margin: 0 auto;
-		line-height: var(--ap-leading-relaxed);
-	}
-
 	.code-box {
 		background: var(--ap-surface-base);
 		border: 1px solid var(--ap-border-default);
@@ -241,10 +207,6 @@
 	}
 
 	@media (max-width: 48rem) {
-		.showcase-container {
-			margin: var(--ap-space-8) auto;
-		}
-
 		.tab-btn {
 			padding: var(--ap-space-2) var(--ap-space-3);
 			font-size: var(--ap-font-xs);

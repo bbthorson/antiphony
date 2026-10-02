@@ -4,13 +4,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 ---
 
 <div class="demo-wrapper">
-	<div class="demo-header">
-		<h2 class="demo-title">A prompt and a reply</h2>
-		<p class="demo-desc">
-			Both are <code>dev.antiphony.audio.post</code> records. A post with no <code>reply</code> field is a prompt; a post that points back at one is a reply. Each reply opens a thread that only the prompt's author and that responder can continue.
-		</p>
-	</div>
-
 	<div class="thread-container">
 		<!-- Card 1: The Call (Voice 1 / Indigo) -->
 		<div class="audio-card call-card" id="call-card">
@@ -164,33 +157,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 </script>
 
 <style>
-	.demo-wrapper {
-		margin: var(--ap-space-12) auto;
-		max-width: 56rem;
-		padding: 0 var(--ap-space-4);
-	}
-
-	.demo-header {
-		text-align: center;
-		margin-bottom: var(--ap-space-8);
-	}
-
-	.demo-title {
-		font-family: var(--ap-font-display);
-		font-size: var(--ap-font-2xl);
-		font-weight: 700;
-		color: var(--ap-text-primary);
-		margin: 0 0 var(--ap-space-2);
-	}
-
-	.demo-desc {
-		font-size: var(--ap-font-base);
-		color: var(--ap-text-secondary);
-		max-width: 42rem;
-		margin: 0 auto;
-		line-height: var(--ap-leading-relaxed);
-	}
-
 	.thread-container {
 		display: flex;
 		flex-direction: column;
@@ -426,10 +392,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	}
 
 	@media (max-width: 48rem) {
-		.demo-wrapper {
-			margin: var(--ap-space-8) auto;
-		}
-
 		.audio-card {
 			padding: var(--ap-space-4);
 		}

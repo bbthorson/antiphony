@@ -1,0 +1,128 @@
+---
+/**
+ * The homepage body as one thread: a vertical line runs through every
+ * <Exchange>'s ℣/℟ marks and ends on an empty ℟ — the reply that is the
+ * reader's to make.
+ */
+---
+
+<div class="conversation">
+	<div class="thread">
+		<slot />
+	</div>
+
+	<div class="open-turn">
+		<span class="mark-open" aria-hidden="true">℟</span>
+		<p class="open-text">
+			The next reply is yours.
+			<a href="/self-hosting/quick-start/">Quick start</a>
+			<span class="sep" aria-hidden="true">·</span>
+			<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer">GitHub</a>
+		</p>
+	</div>
+</div>
+
+<script>
+	// Mark the page as JS-capable, then let each response "answer" once its
+	// call is on screen. Exchange.astro holds the matching CSS.
+	const exchanges = document.querySelectorAll('.exchange');
+	if ('IntersectionObserver' in window && exchanges.length) {
+		document.documentElement.classList.add('ap-answering');
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						entry.target.classList.add('answered');
+						observer.unobserve(entry.target);
+					}
+				}
+			},
+			{ rootMargin: '0px 0px -15% 0px' },
+		);
+		exchanges.forEach((el) => observer.observe(el));
+	}
+</script>
+
+<style>
+	.conversation {
+		--thread-gutter: 2.75rem;
+		max-width: 56rem;
+		margin: var(--ap-space-8) auto var(--ap-space-12);
+		padding: 0 var(--ap-space-4);
+	}
+
+	/* The thread: solid through the exchanges, dashed into the open reply. */
+	.thread {
+		position: relative;
+	}
+
+	.thread::before,
+	.open-turn::before {
+		content: '';
+		position: absolute;
+		left: calc(var(--thread-gutter) / 2 - 1px);
+		width: 0;
+	}
+
+	.thread::before {
+		top: 0.5rem;
+		bottom: 0;
+		border-left: 2px solid var(--ap-border-default);
+	}
+
+	.open-turn {
+		position: relative;
+		display: grid;
+		grid-template-columns: var(--thread-gutter) minmax(0, 1fr);
+		align-items: center;
+	}
+
+	.open-turn::before {
+		top: calc(-1 * var(--ap-space-12));
+		height: calc(var(--ap-space-12) + 0.25rem);
+		border-left: 2px dashed var(--ap-border-default);
+	}
+
+	.mark-open {
+		justify-self: center;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: var(--ap-radius-full);
+		border: 2px dashed var(--ap-response);
+		background: var(--sl-color-bg);
+		color: var(--ap-response);
+		font-family: var(--ap-font-display);
+		font-size: var(--ap-font-sm);
+		font-weight: 600;
+		line-height: 1;
+		position: relative;
+		z-index: 1;
+	}
+
+	.open-text {
+		margin: 0;
+		font-size: var(--ap-font-base);
+		color: var(--ap-text-secondary);
+	}
+
+	.open-text a {
+		font-weight: 600;
+	}
+
+	.open-text a:first-of-type {
+		margin-inline-start: var(--ap-space-2);
+	}
+
+	.sep {
+		margin: 0 var(--ap-space-2);
+	}
+
+	@media (max-width: 48rem) {
+		.conversation {
+			--thread-gutter: 2.25rem;
+		}
+	}
+</style>
