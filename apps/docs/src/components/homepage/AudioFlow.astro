@@ -1,0 +1,143 @@
+---
+/** In → Antiphony → Out, as flat rows rather than a boxed diagram. */
+const rows = [
+	{
+		label: 'In',
+		core: false,
+		items: [
+			{ name: '@antiphony/capture-kit', desc: 'Records in the browser (React)' },
+			{ name: "Your app's backend", desc: 'Uploads audio, creates posts over REST' },
+			{ name: 'Your connectors', desc: 'A phone line, for example, run by your app' },
+		],
+	},
+	{
+		label: 'Antiphony',
+		core: true,
+		items: [
+			{ name: 'Cloudflare Workers', desc: 'Hono API' },
+			{ name: 'Neon Postgres', desc: 'Records and indexes' },
+			{ name: 'Cloudflare R2', desc: 'Audio, stored by CID' },
+		],
+	},
+	{
+		label: 'Out',
+		core: false,
+		items: [
+			{ name: 'REST and XRPC', desc: '/api/v1/* and /xrpc/dev.antiphony.*' },
+			{ name: 'Webhooks', desc: 'HMAC-signed, sent as each stage finishes' },
+			{ name: 'Apps', desc: 'Vox Pop, Bardcast, yours' },
+		],
+	},
+];
+
+const stages = ['Denoise · ElevenLabs', 'Trim · ffmpeg', 'Transcript · Whisper, waveform'];
+---
+
+<div class="flow">
+	{rows.map((row) => (
+		<div class="row">
+			<div class:list={['label', { core: row.core }]}>{row.label}</div>
+			<div class="items">
+				{row.items.map((it) => (
+					<div class="item">
+						<span class="name">{it.name}</span>
+						<span class="desc">{it.desc}</span>
+					</div>
+				))}
+				{row.core && (
+					<div class="stages">
+						<span class="opt-in">Opt-in</span>
+						{stages.map((s, i) => (
+							<>
+								{i > 0 && <span class="arrow" aria-hidden="true">→</span>}
+								<span class="stage">{s}</span>
+							</>
+						))}
+					</div>
+				)}
+			</div>
+		</div>
+	))}
+</div>
+
+<style>
+	.flow {
+		border-top: 1px solid var(--ap-border-default);
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+		gap: 16px;
+		padding: 18px 0;
+		border-bottom: 1px solid var(--ap-border-default);
+	}
+
+	.label {
+		padding-top: 2px;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+	}
+
+	.label.core {
+		color: var(--ap-call-ink);
+	}
+
+	.items {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.item {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: 12px;
+		row-gap: 2px;
+	}
+
+	.name {
+		font-family: var(--ap-font-mono);
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--ap-text-primary);
+	}
+
+	.desc {
+		font-size: 14px;
+		color: var(--ap-text-secondary);
+	}
+
+	.stages {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-top: 6px;
+	}
+
+	.opt-in {
+		margin-right: 4px;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-response-ink);
+	}
+
+	.stage {
+		padding: 4px 10px;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response-subtle);
+		font-size: 13px;
+		color: var(--ap-text-primary);
+	}
+
+	.arrow {
+		color: var(--ap-response-ink);
+	}
+</style>

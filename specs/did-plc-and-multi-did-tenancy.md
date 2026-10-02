@@ -25,7 +25,8 @@ does not reopen them.
    Antiphony-minted `did:plc`. Owning it is an upgrade that also unlocks
    premium processing (denoise, …).
 
-Two defaults picked here where the decisions leave a fork:
+Two more, first picked as defaults here and confirmed by the project owner on
+2026-10-02:
 
 - **The upgrade claims the DID already minted. It never switches to a new
   one.** Reply StrongRefs seal every parent's URI authority into the reply's
@@ -175,14 +176,24 @@ The rules, from the decisions:
 
 "Posts under the org stay with the org" puts the org DID in the **authority**
 position, so an org that leaves a tenant, or a member who leaves an org,
-doesn't take the org's posts with them.
+doesn't take the org's posts with them. `atproto-authority-model.md` (D2) now
+records the same decision.
 
-This departs from the authority-model spec's note that orgs are an `skey`
-under the tenant, which was written to avoid a per-org **hosted `did:web`**.
-With a minted `did:plc` the objection that note was answering goes away, and
-putting the org DID in the authority slot is the only way the org's posts can
-outlive the org's relationship with the tenant. That spec is being edited
-elsewhere, so reconciling the two is left to it.
+Three rules follow, all confirmed by the project owner on 2026-10-02:
+
+- **Replies follow the org's posts.** An audience reply to an org's post lives
+  in the org's space, so if the org leaves the tenant, those replies leave with
+  it. The phone↔user mapping behind each reply does **not** leave: it stays with
+  the tenant (decision 3). The reply's author segment is the tenant DID, so what
+  travels is the audio and the record, never the replier's identity.
+- **Org DIDs are minted lazily**, at the org's first kept post, not when the org
+  is created. A DID outlives the org that held it: dissolving an org leaves its
+  DID, and merging two orgs cannot fold their posts under one authority, since
+  the URIs are sealed. Minting only when something durable is written keeps
+  throwaway orgs from becoming permanent identities.
+- **Ownership is nominal until the org claims its key.** Until then the tenant
+  holds the org DID's top rotation key on its behalf (§4), exactly as for users.
+  The org can only take its posts elsewhere after the claim (§5).
 
 Whether the author segment carries a user's DID or the tenant's is the
 **reassignment rule** from the authority recommendation. A user DID in the URI

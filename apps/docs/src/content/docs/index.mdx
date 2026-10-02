@@ -7,21 +7,43 @@ head:
     content: Antiphony — open audio call-and-response infrastructure
 ---
 
-import HeroSection from '../../components/homepage/HeroSection.astro';
-import CallResponseDemo from '../../components/homepage/CallResponseDemo.astro';
-import CodeShowcase from '../../components/homepage/CodeShowcase.astro';
-import ArchitectureDiagram from '../../components/homepage/ArchitectureDiagram.astro';
-import AdopterTracks from '../../components/homepage/AdopterTracks.astro';
-import BoundarySection from '../../components/homepage/BoundarySection.astro';
+import Turn from '../../components/homepage/Turn.astro';
+import HeroAnswer from '../../components/homepage/HeroAnswer.astro';
+import PostDemo from '../../components/homepage/PostDemo.astro';
+import CodeTabs from '../../components/homepage/CodeTabs.astro';
+import AudioFlow from '../../components/homepage/AudioFlow.astro';
+import Boundary from '../../components/homepage/Boundary.astro';
+import StartTracks from '../../components/homepage/StartTracks.astro';
+import YourTurn from '../../components/homepage/YourTurn.astro';
 
-<HeroSection />
+<div class="not-content ap-home">
+	<Turn hero eyebrow="The call" title="Call-and-response audio on the AT Protocol">
+		<HeroAnswer />
+	</Turn>
 
-<CallResponseDemo />
+	<Turn eyebrow="01" title="What does a post look like?" id="post">
+		<p class="answer">Both halves are the same record, <code>dev.antiphony.audio.post</code>. A post with no <code>reply</code> field is a prompt. A post that points back at one is a reply, and only the prompt's author and that responder can continue the thread. Press play on Alice's question.</p>
+		<PostDemo />
+	</Turn>
 
-<CodeShowcase />
+	<Turn eyebrow="02" title="How do I make one?" id="code">
+		<p class="answer">The same post three ways: the record the lexicon defines, the REST call your server makes, and the React hook that records audio in the browser.</p>
+		<CodeTabs />
+	</Turn>
 
-<ArchitectureDiagram />
+	<Turn eyebrow="03" title="What happens to the audio?" id="pipeline">
+		<p class="answer">Apps send audio in. Antiphony stores it, runs whichever processing the app asked for, and serves the records back out.</p>
+		<AudioFlow />
+	</Turn>
 
-<AdopterTracks />
+	<Turn eyebrow="04" title="What's Antiphony's job, and what's mine?" id="boundary">
+		<p class="answer">Antiphony owns the audio and the facts derived from it. Who your users are and what they see stays in your app.</p>
+		<Boundary />
+	</Turn>
 
-<BoundarySection />
+	<Turn eyebrow="05" title="Where do I start?" id="start" last>
+		<StartTracks />
+	</Turn>
+
+	<YourTurn />
+</div>

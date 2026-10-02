@@ -1,62 +1,47 @@
 ---
-import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
 import Search from '@astrojs/starlight/components/Search.astro';
-import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
-import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
-import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+import ThemeToggle from './ThemeToggle.astro';
+import { primaryNav, isActive } from '../lib/nav';
 
 const currentPath = Astro.url.pathname;
 const { hasSidebar } = Astro.locals.starlightRoute;
-
-const navItems = [
-	{ label: 'Lexicons', href: '/lexicons/overview/', badge: 'Protocol' },
-	{ label: 'Guides', href: '/self-hosting/quick-start/' },
-	{ label: 'Capture Kit', href: '/build-your-own/capture-kit/' },
-	{ label: 'Architecture', href: '/introduction/architecture/' },
-	{ label: 'API Reference', href: '/api/overview/' },
-];
-
-function isActive(href: string): boolean {
-	if (href === '/') return currentPath === '/';
-	return currentPath.startsWith(href.replace(/\/$/, ''));
-}
 ---
 
 <div class="header">
 	<div class="header-left">
-		<div class="title-wrapper sl-flex">
-			<SiteTitle {...Astro.props} />
-		</div>
+		<a href="/" class="brand">
+			<img src="/favicon.svg" alt="" width="24" height="24" />
+			<span>Antiphony</span>
+		</a>
 
-		<!-- Top-level Primary Navigation Links (Desktop only via media query) -->
 		<nav class="top-nav print:hidden" aria-label="Main Navigation">
-			{navItems.map((item) => (
+			{primaryNav.map((item) => (
 				<a
 					href={item.href}
-					class:list={['nav-link', { active: isActive(item.href) }]}
-					aria-current={isActive(item.href) ? 'page' : undefined}
+					class:list={['nav-link', { active: isActive(item.href, currentPath) }]}
+					aria-current={isActive(item.href, currentPath) ? 'page' : undefined}
 				>
-					<span>{item.label}</span>
-					{item.badge && <span class="nav-badge">{item.badge}</span>}
+					{item.label}
 				</a>
 			))}
 		</nav>
 	</div>
 
 	<div class="header-right">
-		<div class="search-wrapper sl-flex print:hidden">
+		<div class="search-wrapper print:hidden">
 			<Search {...Astro.props} />
 		</div>
 
 		<div class="right-group print:hidden">
-			<div class="sl-flex social-icons">
-				<SocialIcons {...Astro.props} />
-			</div>
-			<ThemeSelect {...Astro.props} />
-			<LanguageSelect {...Astro.props} />
+			<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer" aria-label="GitHub" class="github">
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+					<path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+				</svg>
+			</a>
+			<ThemeToggle />
 		</div>
 
-		<!-- Mobile Menu Button (rendered on splash pages without a sidebar) -->
+		<!-- Splash pages have no sidebar, so they get their own menu button. -->
 		{!hasSidebar && (
 			<button
 				type="button"
@@ -80,28 +65,22 @@ function isActive(href: string): boolean {
 	</div>
 </div>
 
-<!-- Mobile Navigation Drawer for Splash Pages -->
 {!hasSidebar && (
 	<div id="mobile-nav-drawer" class="mobile-nav-drawer print:hidden" hidden aria-hidden="true">
 		<nav class="mobile-nav-list" aria-label="Mobile Navigation">
-			{navItems.map((item) => (
+			{primaryNav.map((item) => (
 				<a
 					href={item.href}
-					class:list={['mobile-nav-link', { active: isActive(item.href) }]}
-					aria-current={isActive(item.href) ? 'page' : undefined}
+					class:list={['mobile-nav-link', { active: isActive(item.href, currentPath) }]}
+					aria-current={isActive(item.href, currentPath) ? 'page' : undefined}
 				>
-					<span>{item.label}</span>
-					{item.badge && <span class="nav-badge">{item.badge}</span>}
+					{item.label}
 				</a>
 			))}
 		</nav>
 		<div class="mobile-nav-footer">
-			<div class="mobile-social sl-flex">
-				<SocialIcons {...Astro.props} />
-			</div>
-			<div class="mobile-theme">
-				<ThemeSelect {...Astro.props} />
-			</div>
+			<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer">GitHub</a>
+			<ThemeToggle />
 		</div>
 	</div>
 )}
@@ -111,49 +90,30 @@ function isActive(href: string): boolean {
 	const drawer = document.getElementById('mobile-nav-drawer');
 
 	if (trigger && drawer) {
-		const iconBars = trigger.querySelector('.menu-icon-bars') as HTMLElement | null;
-		const iconClose = trigger.querySelector('.menu-icon-close') as HTMLElement | null;
+		const iconBars = trigger.querySelector<HTMLElement>('.menu-icon-bars');
+		const iconClose = trigger.querySelector<HTMLElement>('.menu-icon-close');
 
-		function setMenuOpen(open: boolean) {
-			if (!drawer || !trigger) return;
-			if (open) {
-				drawer.removeAttribute('hidden');
-				drawer.setAttribute('aria-hidden', 'false');
-				trigger.setAttribute('aria-expanded', 'true');
-				if (iconBars) iconBars.style.display = 'none';
-				if (iconClose) iconClose.style.display = 'block';
-				document.body.style.overflow = 'hidden';
-			} else {
-				drawer.setAttribute('hidden', '');
-				drawer.setAttribute('aria-hidden', 'true');
-				trigger.setAttribute('aria-expanded', 'false');
-				if (iconBars) iconBars.style.display = 'block';
-				if (iconClose) iconClose.style.display = 'none';
-				document.body.style.overflow = '';
-			}
-		}
+		const setMenuOpen = (open: boolean) => {
+			drawer.toggleAttribute('hidden', !open);
+			drawer.setAttribute('aria-hidden', String(!open));
+			trigger.setAttribute('aria-expanded', String(open));
+			if (iconBars) iconBars.style.display = open ? 'none' : 'block';
+			if (iconClose) iconClose.style.display = open ? 'block' : 'none';
+			document.body.style.overflow = open ? 'hidden' : '';
+		};
 
-		trigger.addEventListener('click', () => {
-			const isCurrentlyOpen = !drawer.hasAttribute('hidden');
-			setMenuOpen(!isCurrentlyOpen);
-		});
-
+		trigger.addEventListener('click', () => setMenuOpen(drawer.hasAttribute('hidden')));
 		window.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape' && !drawer.hasAttribute('hidden')) {
-				setMenuOpen(false);
-			}
+			if (e.key === 'Escape' && !drawer.hasAttribute('hidden')) setMenuOpen(false);
 		});
-
-		drawer.querySelectorAll('a').forEach((link) => {
-			link.addEventListener('click', () => setMenuOpen(false));
-		});
+		drawer.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMenuOpen(false)));
 	}
 </script>
 
 <style>
 	.header {
 		display: flex;
-		gap: var(--ap-space-3);
+		gap: 16px;
 		justify-content: space-between;
 		align-items: center;
 		height: 100%;
@@ -163,96 +123,113 @@ function isActive(href: string): boolean {
 	.header-left {
 		display: flex;
 		align-items: center;
+		gap: 28px;
 		min-width: 0;
-		gap: var(--ap-space-3);
+		height: 100%;
 	}
 
 	.header-right {
 		display: flex;
 		align-items: center;
-		gap: var(--ap-space-2);
+		gap: 12px;
 		flex-shrink: 0;
 	}
 
-	.title-wrapper {
-		overflow: clip;
-		padding: var(--ap-space-1);
-		margin: calc(-1 * var(--ap-space-1));
-		min-width: 0;
-		flex-shrink: 0;
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: none;
+		text-decoration: none;
+		color: var(--ap-text-primary);
+		font-family: var(--ap-font-display);
+		font-weight: 600;
+		font-size: 18px;
+		letter-spacing: -0.015em;
 	}
 
-	/* Top navigation: strictly hidden on mobile/tablet; flex on desktop */
+	.brand img {
+		display: block;
+		width: 24px;
+		height: 24px;
+	}
+
+	/* The primary nav: underline tabs that sit on the header's bottom edge. */
 	.top-nav {
 		display: none;
 	}
 
-	@media (min-width: 64rem) {
+	@media (min-width: 72rem) {
 		.top-nav {
 			display: flex;
-			align-items: center;
-			gap: var(--ap-space-1);
-			margin-inline-start: var(--ap-space-2);
+			align-items: stretch;
+			gap: 22px;
+			height: calc(100% + 2 * var(--sl-nav-pad-y));
+			margin-block: calc(-1 * var(--sl-nav-pad-y));
 		}
 	}
 
 	.nav-link {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		gap: var(--ap-space-2);
-		padding: var(--ap-space-1) var(--ap-space-3);
-		border-radius: var(--ap-radius-md);
-		font-size: var(--ap-font-sm);
+		font-size: 14px;
 		font-weight: 500;
 		color: var(--ap-text-secondary);
 		text-decoration: none;
-		transition: all var(--ap-transition-fast);
-		border: 1px solid transparent;
 		white-space: nowrap;
+		box-shadow: inset 0 -2px 0 transparent;
+		transition: color var(--ap-transition-fast), box-shadow var(--ap-transition-fast);
 	}
 
 	.nav-link:hover {
-		color: var(--ap-call);
-		background: var(--ap-call-subtle);
-		border-color: var(--ap-border-subtle);
+		color: var(--ap-text-primary);
 	}
 
 	.nav-link.active {
-		color: var(--ap-call);
-		font-weight: 600;
-		background: var(--ap-call-subtle);
-		border-color: var(--ap-border-default);
+		color: var(--ap-text-primary);
+		box-shadow: inset 0 -2px 0 var(--ap-call);
 	}
 
-	.nav-badge {
-		font-size: var(--ap-font-xs);
-		font-family: var(--ap-font-mono);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		padding: 1px var(--ap-space-2);
-		border-radius: var(--ap-radius-full);
-		background: var(--ap-response-subtle);
-		color: var(--ap-response);
-		border: 1px solid var(--ap-border-subtle);
-	}
-
+	/* Restyle Starlight's search trigger as the quiet "Search docs ⌘K" field. */
 	.search-wrapper {
 		display: flex;
 		align-items: center;
 	}
 
-	@media (min-width: 50rem) {
-		.search-wrapper {
-			min-width: 12rem;
-			max-width: 18rem;
+	.search-wrapper :global(button[data-open-modal]) {
+		height: 34px;
+		border: 1px solid var(--ap-border-default);
+		border-radius: var(--ap-radius-md);
+		background: transparent;
+		color: var(--ap-text-muted);
+		font-size: 13px;
+		box-shadow: none;
+	}
+
+	@media (min-width: 45rem) {
+		.search-wrapper :global(button[data-open-modal]) {
+			width: 220px;
+			padding: 0 8px 0 12px;
 		}
 	}
 
-	/* Right group (Social icons + Theme selector): hidden on mobile; flex on tablet & desktop */
+	.search-wrapper :global(button[data-open-modal]:hover) {
+		border-color: var(--ap-border-strong);
+		color: var(--ap-text-secondary);
+	}
+
+	.search-wrapper :global(button[data-open-modal] kbd) {
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		background: transparent;
+		border-color: var(--ap-border-default);
+		color: var(--ap-text-muted);
+	}
+
 	.right-group {
 		display: none;
 		align-items: center;
-		gap: var(--ap-space-3);
+		gap: 12px;
 	}
 
 	@media (min-width: 50rem) {
@@ -261,47 +238,36 @@ function isActive(href: string): boolean {
 		}
 	}
 
-	.social-icons {
-		gap: var(--ap-space-3);
-		align-items: center;
+	.github {
+		display: flex;
+		color: var(--ap-text-secondary);
 	}
 
-	.social-icons::after {
-		content: '';
-		height: var(--ap-space-5);
-		border-inline-end: 1px solid var(--ap-border-subtle);
+	.github:hover {
+		color: var(--ap-text-primary);
 	}
 
-	/* Mobile menu toggle button: flex on mobile/tablet; hidden on desktop */
 	.mobile-menu-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		width: 36px;
 		height: 36px;
-		border-radius: var(--ap-radius-md);
-		border: 1px solid var(--ap-border-subtle);
-		background: var(--ap-surface-elevated);
-		color: var(--ap-text-primary);
-		cursor: pointer;
-		transition: all var(--ap-transition-fast);
 		padding: 0;
 		flex-shrink: 0;
+		border-radius: var(--ap-radius-md);
+		border: 1px solid var(--ap-border-default);
+		background: transparent;
+		color: var(--ap-text-primary);
+		cursor: pointer;
 	}
 
-	.mobile-menu-btn:hover {
-		border-color: var(--ap-call);
-		color: var(--ap-call);
-		background: var(--ap-call-subtle);
-	}
-
-	@media (min-width: 64rem) {
+	@media (min-width: 72rem) {
 		.mobile-menu-btn {
 			display: none;
 		}
 	}
 
-	/* Full viewport drawer for mobile splash navigation */
 	.mobile-nav-drawer {
 		position: fixed;
 		top: var(--sl-nav-height);
@@ -309,56 +275,36 @@ function isActive(href: string): boolean {
 		bottom: 0;
 		background: var(--ap-surface-base);
 		border-top: 1px solid var(--ap-border-subtle);
-		padding: var(--ap-space-5) var(--ap-space-4);
+		padding: 20px 16px;
 		display: flex;
 		flex-direction: column;
 		justify-content: space-between;
 		z-index: var(--sl-z-index-menu, 5);
 		overflow-y: auto;
-		animation: mobileDrawerFadeIn var(--ap-transition-fast) ease-out;
 	}
 
 	.mobile-nav-drawer[hidden] {
 		display: none !important;
 	}
 
-	@keyframes mobileDrawerFadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(-6px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
 	.mobile-nav-list {
 		display: flex;
 		flex-direction: column;
-		gap: var(--ap-space-2);
 	}
 
 	.mobile-nav-link {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: var(--ap-space-3) var(--ap-space-4);
-		border-radius: var(--ap-radius-lg);
-		font-size: var(--ap-font-base);
+		padding: 14px 4px;
+		border-bottom: 1px solid var(--ap-border-subtle);
+		font-size: 16px;
 		font-weight: 500;
 		color: var(--ap-text-primary);
 		text-decoration: none;
-		border: 1px solid var(--ap-border-subtle);
-		background: var(--ap-surface-card);
-		transition: all var(--ap-transition-fast);
+		box-shadow: inset 2px 0 0 transparent;
 	}
 
-	.mobile-nav-link:hover,
 	.mobile-nav-link.active {
-		border-color: var(--ap-call);
-		background: var(--ap-call-subtle);
-		color: var(--ap-call);
+		padding-inline-start: 12px;
+		box-shadow: inset 2px 0 0 var(--ap-call);
 		font-weight: 600;
 	}
 
@@ -366,14 +312,10 @@ function isActive(href: string): boolean {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding-top: var(--ap-space-4);
-		margin-top: var(--ap-space-6);
+		padding-top: 16px;
+		margin-top: 24px;
 		border-top: 1px solid var(--ap-border-subtle);
-	}
-
-	.mobile-social {
-		display: flex;
-		align-items: center;
-		gap: var(--ap-space-3);
+		font-size: 14px;
+		font-weight: 600;
 	}
 </style>

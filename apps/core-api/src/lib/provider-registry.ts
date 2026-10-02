@@ -11,6 +11,8 @@ import {
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
+import { workersAi } from '../adapters/outbound/workers-ai/binding.js';
+import { workersAiTranscriber } from '../adapters/outbound/workers-ai/transcriber.js';
 import { renditionServiceConfig } from '../adapters/outbound/rendition/http.js';
 import { httpTrimmer, httpWaveform } from '../adapters/outbound/rendition/stages.js';
 import {
@@ -90,7 +92,18 @@ export interface ProviderEntry<T> {
  * provider.
  */
 
+// `workers-ai` leads the scan: when the Worker has its `AI` binding,
+// transcription runs on Cloudflare (Whisper) with no vendor key. Set
+// `ANTIPHONY_TRANSCRIBER=elevenlabs` to keep Scribe on a deployment that has
+// both. Off-Worker (the Node entry) the binding is never set, so the scan falls
+// through to ElevenLabs exactly as before.
 const TRANSCRIBERS: ProviderEntry<TranscriberPort>[] = [
+    {
+        name: 'workers-ai',
+        available: () => !!workersAi(),
+        create: (model) => workersAiTranscriber(model),
+        acceptsModel: true,
+    },
     {
         name: 'elevenlabs',
         available: () => !!elevenLabsApiKey(),

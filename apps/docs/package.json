@@ -15,6 +15,7 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@antiphony/capture-kit": "*",
     "@antiphony/tokens": "*",
     "@astrojs/starlight": "^0.42.2",
     "@fontsource-variable/inter": "^5.3.0",

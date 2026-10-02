@@ -8,6 +8,7 @@ import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
 import { installDurableDispatcher } from './lib/audio-processing.js';
 import { queueResolver } from './adapters/outbound/dispatch/queue.js';
+import { bindWorkersAi } from './adapters/outbound/workers-ai/binding.js';
 import { runProcessingJob, shouldRetry } from './lib/process-audio-job.js';
 import type {
     ExecutionContext,
@@ -109,6 +110,9 @@ export default {
      * specs/archive/cloudflare-migration.md § The boot gate.
      */
     async fetch(request: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
+        // The Workers AI binding has no `process.env` form; every handler hands
+        // it to the provider registry first. See `workers-ai/binding.ts`.
+        bindWorkersAi(env);
         // Hono's `fetch` types `env` as an object; the handler signature keeps
         // it `unknown` so no second description of the bindings exists. The
         // cast is the one place those two meet.
@@ -127,6 +131,7 @@ export default {
      * own resolving.
      */
     async scheduled(_event: ScheduledController, env: unknown, _ctx: ExecutionContext): Promise<void> {
+        bindWorkersAi(env);
         const bindings = env as Record<string, unknown>;
 
         // Mechanism 4 of the boot-gate replacement: revalidate every pin off
@@ -227,6 +232,8 @@ export default {
         env: unknown,
         _ctx: ExecutionContext,
     ): Promise<void> {
+        // The queue consumer is where transcription actually runs.
+        bindWorkersAi(env);
         if (batch.queue === 'antiphony-processing-dlq') {
             for (const message of batch.messages) {
                 logger.error(

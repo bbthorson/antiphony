@@ -1,0 +1,85 @@
+---
+const tracks = [
+	{
+		title: 'Use the lexicons',
+		desc: 'Read and write dev.antiphony.* records from your own AppView or PDS tooling. The audio embed and the post/reply shape are the contract every Antiphony app shares.',
+		href: '/lexicons/overview/',
+	},
+	{
+		title: 'Build an app',
+		desc: 'Record in the browser with @antiphony/capture-kit, then upload and create posts through the REST API. The kit hands you a Blob; the upload is yours.',
+		href: '/build-your-own/overview/',
+	},
+	{
+		title: 'Run your own',
+		desc: 'Deploy the API to Cloudflare Workers with Neon Postgres and R2. The processing providers are adapters you can swap.',
+		href: '/self-hosting/quick-start/',
+	},
+];
+---
+
+<div class="tracks">
+	{tracks.map((t) => (
+		<a href={t.href} class="track">
+			<span class="body">
+				<span class="title">{t.title}</span>
+				<span class="desc">{t.desc}</span>
+			</span>
+			<span class="arrow" aria-hidden="true">→</span>
+		</a>
+	))}
+</div>
+
+<style>
+	.tracks {
+		border-top: 1px solid var(--ap-border-default);
+	}
+
+	.track {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 20px;
+		padding: 20px 0;
+		border-bottom: 1px solid var(--ap-border-default);
+		color: inherit;
+		text-decoration: none;
+		transition: background var(--ap-transition-fast);
+	}
+
+	.track:hover {
+		background: var(--ap-surface-elevated);
+		color: inherit;
+	}
+
+	.body {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.title {
+		font-family: var(--ap-font-display);
+		font-size: 19px;
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.desc {
+		max-width: 34rem;
+		font-size: 14px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+	}
+
+	.arrow {
+		padding-right: 8px;
+		font-size: 20px;
+		color: var(--ap-call-ink);
+		transition: transform var(--ap-transition-fast);
+	}
+
+	.track:hover .arrow {
+		transform: translateX(4px);
+	}
+</style>

@@ -66,12 +66,14 @@ Applications (BFFs, workers) are the intended callers of the posts/audio surface
 
 ## Audio enrichment
 
-Opt-in processing runs four stages over a post's audio: **denoise** and **transcribe** (ElevenLabs), and **trim** and **waveform** (ffmpeg, in the rendition service). None run unless the relevant variables below are set; a deployment with none of them still serves audio, it just does no enrichment. Stages requested against a deployment that can't run them settle `skipped`, not `pending`.
+Opt-in processing runs four stages over a post's audio: **transcribe** (Whisper on Cloudflare Workers AI, or ElevenLabs Scribe), **denoise** (ElevenLabs), and **trim** and **waveform** (ffmpeg, in the rendition service). None run unless the relevant variables below are set; a deployment with none of them still serves audio, it just does no enrichment. Stages requested against a deployment that can't run them settle `skipped`, not `pending`.
 
 ### Providers
 
 | Variable | Purpose |
 |---|---|
+| `AI` binding | On a Cloudflare Worker, an `"ai": { "binding": "AI" }` block in `wrangler.jsonc` enables the `workers-ai` transcriber (Whisper, `@cf/openai/whisper-large-v3-turbo`). It needs no key: the binding is the credential. When bound it is **preferred over ElevenLabs** for transcription; denoise has no Workers AI equivalent. Not available under the Node entry. |
+| `WORKERS_AI_STT_MODEL` | Optional. Overrides the Whisper model id. |
 | `ELEVENLABS_API_KEY` | Enables the ElevenLabs providers — Scribe (transcription) and Voice Isolator (denoise). **Presence alone selects them**; there is no separate enable flag. Absent → `denoise`/`transcribe` settle `skipped`. Store as a secret. |
 | `ELEVENLABS_STT_MODEL` | Optional. Overrides the default Scribe model id used for transcription. Not validated against a list of known ids — a typo reaches the provider and fails the stage — so the resolved value is logged on first use. |
 | `ANTIPHONY_RENDITION_SERVICE_URL` | Base URL of the transcode backend ([`apps/audio-rendition`](https://github.com/bbthorson/antiphony/tree/master/apps/audio-rendition)). Enables `trim` and `waveform`, and lets `GET /api/v1/audio?format=mp3` build a rendition on a miss instead of 404ing. Absent is a **supported state**: both stages resolve unavailable and settle `skipped`, and the audio proxy serves only renditions that already exist. Requires `SYSTEM_AUTH_TOKEN` — the service is system-authed, so a URL without a token is the same failure wearing a 401. |
@@ -86,7 +88,7 @@ Optional, and rarely needed: with none of these set, each stage takes the first 
 
 | Variable | Purpose |
 |---|---|
-| `ANTIPHONY_TRANSCRIBER` | `elevenlabs` \| `stub` |
+| `ANTIPHONY_TRANSCRIBER` | `workers-ai` \| `elevenlabs` \| `stub` — set `elevenlabs` to keep Scribe on a Worker that also has the `AI` binding |
 | `ANTIPHONY_DENOISER` | `elevenlabs` \| `stub` |
 | `ANTIPHONY_TRIMMER` | `service` \| `stub` |
 | `ANTIPHONY_WAVEFORM` | `service` \| `stub` |

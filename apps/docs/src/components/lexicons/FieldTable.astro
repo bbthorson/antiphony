@@ -1,0 +1,146 @@
+---
+/**
+ * A lexicon's fields as rows. Hovering (or focusing) a row lights its lines
+ * in the Example beside it, switching the example to `variant` first when a
+ * row names one (e.g. `reply` only appears on the Reply example).
+ */
+interface Row {
+	field: string;
+	type: string;
+	note: string;
+	variant?: string;
+}
+
+interface Props {
+	rows: Row[];
+	/** Optional heading over the rows, e.g. "Record · #main". */
+	label?: string;
+	/** Which voice colours the field names. */
+	voice?: 'call' | 'response';
+	/** The example variant every row in this table belongs to. */
+	variant?: string;
+	/** Show the "hover a field" hint above the rows. */
+	hint?: boolean;
+}
+
+const { rows, label, voice = 'call', variant, hint = false } = Astro.props;
+---
+
+<div class:list={['not-content', 'ap-fields', `voice-${voice}`]}>
+	{label && <div class="label">{label}</div>}
+	{hint && <div class="hint">Hover a field to find it in the example.</div>}
+	{rows.map((r) => (
+		<div class="row" tabindex="0" data-field-row={r.field} data-row-variant={r.variant ?? variant}>
+			<div class="name">
+				<span class="field">{r.field}</span>
+				<span class="type">{r.type}</span>
+			</div>
+			<div class="note">{r.note}</div>
+		</div>
+	))}
+</div>
+
+<script>
+	function light(row: HTMLElement, on: boolean) {
+		const split = row.closest('[data-split]');
+		const example = split?.querySelector<HTMLElement>('[data-example]');
+		row.classList.toggle('lit', on);
+		if (!example) return;
+		const variant = row.dataset.rowVariant;
+		if (on && variant) {
+			example.querySelector<HTMLButtonElement>(`[data-variant-btn="${variant}"]`)?.click();
+		}
+		example.querySelectorAll('.ap-line.lit').forEach((l) => l.classList.remove('lit'));
+		if (on) {
+			example
+				.querySelectorAll(`[data-variant]:not([hidden]) .ap-line[data-field="${row.dataset.fieldRow}"]`)
+				.forEach((l) => l.classList.add('lit'));
+		}
+	}
+
+	document.querySelectorAll<HTMLElement>('[data-field-row]').forEach((row) => {
+		row.addEventListener('mouseenter', () => light(row, true));
+		row.addEventListener('mouseleave', () => light(row, false));
+		row.addEventListener('focus', () => light(row, true));
+		row.addEventListener('blur', () => light(row, false));
+	});
+</script>
+
+<style>
+	.ap-fields {
+		--voice-ink: var(--ap-call-ink);
+	}
+
+	.voice-response {
+		--voice-ink: var(--ap-response-ink);
+	}
+
+	.ap-fields + :global(.ap-fields) {
+		margin-top: 32px;
+	}
+
+	.label {
+		margin-bottom: 8px;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--voice-ink);
+	}
+
+	.hint {
+		margin-bottom: 8px;
+		font-size: 12px;
+		color: var(--ap-text-muted);
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+		gap: 16px;
+		padding: 12px 10px;
+		border-top: 1px solid var(--ap-border-subtle);
+		border-radius: 6px;
+		transition: background var(--ap-transition-fast);
+		outline: none;
+	}
+
+	@media (max-width: 30rem) {
+		.row {
+			grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+			gap: 12px;
+		}
+	}
+
+	.row.lit {
+		background: var(--ap-call-subtle);
+	}
+
+	.row:focus-visible {
+		box-shadow: inset 0 0 0 2px var(--ap-call);
+	}
+
+	.name {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-family: var(--ap-font-mono);
+	}
+
+	.field {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--voice-ink);
+	}
+
+	.type {
+		font-size: 11px;
+		color: var(--ap-text-muted);
+	}
+
+	.note {
+		font-size: 14px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+	}
+</style>
