@@ -25,7 +25,8 @@ does not reopen them.
    Antiphony-minted `did:plc`. Owning it is an upgrade that also unlocks
    premium processing (denoise, …).
 
-Two defaults picked here where the decisions leave a fork:
+Two more, first picked as defaults here and confirmed by the project owner on
+2026-10-02:
 
 - **The upgrade claims the DID already minted. It never switches to a new
   one.** Reply StrongRefs seal every parent's URI authority into the reply's
