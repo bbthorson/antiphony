@@ -2,47 +2,39 @@
 ---
 
 <section class="boundary-section">
-	<div class="boundary-header">
-		<span class="boundary-tag">Architectural Contract</span>
-		<h2 class="boundary-title">Where the Line Is</h2>
-		<p class="boundary-desc">
-			Antiphony is open protocol infrastructure, not an opinionated SaaS product. It maintains a strict separation between protocol-level audio primitives and your application's domain logic.
-		</p>
-	</div>
-
 	<div class="boundary-grid">
 		<div class="boundary-card core-card">
-			<div class="boundary-badge badge-core">In Antiphony Core</div>
+			<div class="boundary-badge badge-core">Antiphony</div>
 			<ul class="boundary-list">
 				<li>
-					<strong>ATProto Lexicons:</strong> <code>dev.antiphony.*</code> records for portable audio posts, threaded replies, and transcripts.
+					<strong>Lexicons.</strong> <code>dev.antiphony.*</code> records for audio posts, replies, and transcripts.
 				</li>
 				<li>
-					<strong>Edge Audio REST API:</strong> Chunked audio upload, pre-signed URLs, and transactional post creation.
+					<strong>REST API.</strong> Audio upload, post and reply creation, and playback URLs.
 				</li>
 				<li>
-					<strong>Enrichment Engine:</strong> Background ffmpeg transcoding, waveform extraction, and pluggable transcription.
+					<strong>Processing.</strong> Transcription, denoising, silence trimming, waveforms, and mp3 renditions, each opt-in.
 				</li>
 				<li>
-					<strong>Multi-Tenancy Isolation:</strong> <code>originAppId</code> security boundaries and directional AppView federation.
+					<strong>Tenancy.</strong> Every post is scoped to the app that created it (<code>originAppId</code>).
 				</li>
 			</ul>
 		</div>
 
 		<div class="boundary-card app-card">
-			<div class="boundary-badge badge-app">In Your App Layer</div>
+			<div class="boundary-badge badge-app">Your app</div>
 			<ul class="boundary-list">
 				<li>
-					<strong>Identity & Authentication:</strong> User profiles, sessions, passwords, and OAuth remain in your app.
+					<strong>Accounts.</strong> Profiles, sign-in, sessions, and OAuth.
 				</li>
 				<li>
-					<strong>Product Experience:</strong> Custom UI, feeds, algorithms, moderation policies, and community rules.
+					<strong>Product.</strong> UI, feeds, ranking, moderation, and community rules.
 				</li>
 				<li>
-					<strong>Teams & Billing:</strong> Workspaces, organization roles, permissions, and SaaS subscriptions.
+					<strong>Teams and billing.</strong> Workspaces, roles, permissions, and subscriptions.
 				</li>
 				<li>
-					<strong>Proprietary Connectors:</strong> Custom telephony providers, broadcast feeds, and internal webhooks.
+					<strong>Connectors.</strong> Telephony, broadcast feeds, and your own webhooks.
 				</li>
 			</ul>
 		</div>
@@ -50,48 +42,15 @@
 </section>
 
 <style>
-	.boundary-section {
-		max-width: 56rem;
-		margin: var(--ap-space-12) auto var(--ap-space-10);
-		padding: 0 var(--ap-space-4);
-	}
-
-	.boundary-header {
-		text-align: center;
-		margin-bottom: var(--ap-space-8);
-	}
-
-	.boundary-tag {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		color: var(--ap-call);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: var(--ap-call-subtle);
-		padding: 2px var(--ap-space-3);
-		border-radius: var(--ap-radius-full);
-	}
-
-	.boundary-title {
-		font-family: var(--ap-font-display);
-		font-size: var(--ap-font-2xl);
-		font-weight: 700;
-		color: var(--ap-text-primary);
-		margin: var(--ap-space-3) 0 var(--ap-space-2);
-	}
-
-	.boundary-desc {
-		font-size: var(--ap-font-base);
-		color: var(--ap-text-secondary);
-		max-width: 44rem;
-		margin: 0 auto;
-		line-height: var(--ap-leading-relaxed);
-	}
-
 	.boundary-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: var(--ap-space-4);
+	}
+
+	/* Starlight spaces sibling markdown blocks apart; grid cells shouldn't be. */
+	.boundary-grid > .boundary-card {
+		margin-top: 0;
 	}
 
 	.boundary-card {
@@ -153,10 +112,6 @@
 	}
 
 	@media (max-width: 48rem) {
-		.boundary-section {
-			margin: var(--ap-space-8) auto var(--ap-space-8);
-		}
-
 		.boundary-card {
 			padding: var(--ap-space-4);
 		}

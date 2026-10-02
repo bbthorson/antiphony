@@ -1,53 +1,30 @@
 ---
 const tracks = [
 	{
-		title: "Protocol Adopters",
-		badge: "ATProto Lexicons",
-		badgeType: "call",
-		desc: "Adopt dev.antiphony.* records in your AppView or PDS. Give your users sovereign, portable audio posts and threaded voice replies that travel anywhere on the network.",
+		title: "Use the lexicons",
+		desc: "Read and write dev.antiphony.* records from your own AppView or PDS tooling. The audio embed and the post/reply shape are the contract every Antiphony app shares.",
 		link: "/lexicons/overview/",
-		linkText: "Explore Lexicon Specs →",
-		icon: "🌐",
+		linkText: "Read the lexicons →",
 	},
 	{
-		title: "App Builders",
-		badge: "Capture Kit",
-		badgeType: "response",
-		desc: "Ship audio recording in your web app with @antiphony/capture-kit. Headless React hooks for mic access, live waveform visualization, and resilient chunked uploads.",
+		title: "Build an app",
+		desc: "Record in the browser with @antiphony/capture-kit, then upload and create posts through the REST API. The kit hands you a Blob; the upload is yours.",
 		link: "/build-your-own/overview/",
-		linkText: "Build Your App →",
-		icon: "🎙️",
+		linkText: "Build an app →",
 	},
 	{
-		title: "Self-Hosters",
-		badge: "Infrastructure",
-		badgeType: "neutral",
-		desc: "Run your own Antiphony hub on Cloudflare Workers and Neon Postgres. Low maintenance, worldwide edge latency, and pluggable transcription pipelines.",
+		title: "Run your own",
+		desc: "Deploy the API to Cloudflare Workers with Neon Postgres and R2. The processing providers are adapters you can swap.",
 		link: "/self-hosting/quick-start/",
-		linkText: "Self-Host in 5 Minutes →",
-		icon: "⚡",
+		linkText: "Quick start →",
 	},
 ];
 ---
 
 <div class="tracks-container">
-	<div class="tracks-header">
-		<span class="tracks-tag">Adopter Pathways</span>
-		<h2 class="tracks-title">Choose Your Starting Point</h2>
-		<p class="tracks-desc">
-			Whether you're defining protocol schemas, building interactive user experiences, or operating edge infrastructure, Antiphony gives you modular foundations.
-		</p>
-	</div>
-
 	<div class="tracks-grid">
 		{tracks.map((track) => (
 			<div class="track-card">
-				<div class="card-top">
-					<span class="track-icon">{track.icon}</span>
-					<span class:list={['track-badge', `badge-${track.badgeType}`]}>
-						{track.badge}
-					</span>
-				</div>
 				<h3 class="track-title">{track.title}</h3>
 				<p class="track-desc">{track.desc}</p>
 				<a href={track.link} class="track-link">
@@ -59,48 +36,15 @@ const tracks = [
 </div>
 
 <style>
-	.tracks-container {
-		max-width: 56rem;
-		margin: var(--ap-space-12) auto;
-		padding: 0 var(--ap-space-4);
-	}
-
-	.tracks-header {
-		text-align: center;
-		margin-bottom: var(--ap-space-8);
-	}
-
-	.tracks-tag {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		color: var(--ap-call);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: var(--ap-call-subtle);
-		padding: 2px var(--ap-space-3);
-		border-radius: var(--ap-radius-full);
-	}
-
-	.tracks-title {
-		font-family: var(--ap-font-display);
-		font-size: var(--ap-font-2xl);
-		font-weight: 700;
-		color: var(--ap-text-primary);
-		margin: var(--ap-space-3) 0 var(--ap-space-2);
-	}
-
-	.tracks-desc {
-		font-size: var(--ap-font-base);
-		color: var(--ap-text-secondary);
-		max-width: 44rem;
-		margin: 0 auto;
-		line-height: var(--ap-leading-relaxed);
-	}
-
 	.tracks-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: var(--ap-space-4);
+	}
+
+	/* Starlight spaces sibling markdown blocks apart; grid cells shouldn't be. */
+	.tracks-grid > .track-card {
+		margin-top: 0;
 	}
 
 	.track-card {
@@ -111,49 +55,6 @@ const tracks = [
 		display: flex;
 		flex-direction: column;
 		box-shadow: var(--ap-shadow-md);
-		transition: all var(--ap-transition-fast);
-	}
-
-	.track-card:hover {
-		border-color: var(--ap-call);
-		box-shadow: var(--ap-shadow-call-glow);
-		transform: translateY(-2px);
-	}
-
-	.card-top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: var(--ap-space-3);
-	}
-
-	.track-icon {
-		font-size: var(--ap-font-2xl);
-	}
-
-	.track-badge {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		padding: 2px var(--ap-space-2);
-		border-radius: var(--ap-radius-sm);
-	}
-
-	.badge-call {
-		background: var(--ap-call-subtle);
-		color: var(--ap-call);
-		border: 1px solid var(--ap-border-subtle);
-	}
-
-	.badge-response {
-		background: var(--ap-response-subtle);
-		color: var(--ap-response);
-		border: 1px solid var(--ap-border-subtle);
-	}
-
-	.badge-neutral {
-		background: var(--ap-surface-sunken);
-		color: var(--ap-text-secondary);
-		border: 1px solid var(--ap-border-subtle);
 	}
 
 	.track-title {
@@ -186,10 +87,6 @@ const tracks = [
 	}
 
 	@media (max-width: 48rem) {
-		.tracks-container {
-			margin: var(--ap-space-8) auto;
-		}
-
 		.track-card {
 			padding: var(--ap-space-4);
 		}

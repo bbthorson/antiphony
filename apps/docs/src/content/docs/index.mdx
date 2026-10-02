@@ -8,6 +8,8 @@ head:
 ---
 
 import HeroSection from '../../components/homepage/HeroSection.astro';
+import Conversation from '../../components/homepage/Conversation.astro';
+import Exchange from '../../components/homepage/Exchange.astro';
 import CallResponseDemo from '../../components/homepage/CallResponseDemo.astro';
 import CodeShowcase from '../../components/homepage/CodeShowcase.astro';
 import ArchitectureDiagram from '../../components/homepage/ArchitectureDiagram.astro';
@@ -16,12 +18,28 @@ import BoundarySection from '../../components/homepage/BoundarySection.astro';
 
 <HeroSection />
 
-<CallResponseDemo />
+<Conversation>
+	<Exchange call="What does a post look like?" id="post">
+		<p class="lead">Both halves of the conversation are <code>dev.antiphony.audio.post</code> records. A post with no <code>reply</code> field is a prompt; a post that points back at one is a reply. Each reply opens a thread that only the prompt's author and that responder can continue. Press play on Alice's question.</p>
+		<CallResponseDemo />
+	</Exchange>
 
-<CodeShowcase />
+	<Exchange call="How do I make one?" id="code">
+		<p class="lead">Here is the same post three ways: the record the lexicon defines, the REST call your server makes to create it, and the React hook that records the audio in a browser.</p>
+		<CodeShowcase />
+	</Exchange>
 
-<ArchitectureDiagram />
+	<Exchange call="What happens to the audio?" id="pipeline">
+		<p class="lead">Apps send audio in. Antiphony stores it, runs whichever processing the app asked for, and serves the records back out over REST and XRPC.</p>
+		<ArchitectureDiagram />
+	</Exchange>
 
-<AdopterTracks />
+	<Exchange call="What's Antiphony's job, and what's mine?" id="boundary">
+		<p class="lead">Antiphony owns the audio and the facts derived from it. Who your users are and what they see stays in your app.</p>
+		<BoundarySection />
+	</Exchange>
 
-<BoundarySection />
+	<Exchange call="Where do I start?" id="start">
+		<AdopterTracks />
+	</Exchange>
+</Conversation>
