@@ -3,37 +3,33 @@
 
 <div class="arch-container">
 	<div class="arch-header">
-		<span class="arch-tag">System Topology</span>
-		<h2 class="arch-title">Hub-and-Connector Architecture</h2>
+		<h2 class="arch-title">How audio moves through it</h2>
 		<p class="arch-desc">
-			Antiphony functions as a high-throughput, edge-native audio hub. Audio enters through pluggable ingress doors, commits to immutable AT Protocol records, and replicates across the network.
+			Apps send audio in. Antiphony stores it, runs whichever processing the app asked for, and serves the records back out over REST and XRPC.
 		</p>
 	</div>
 
 	<div class="diagram-grid">
-		<!-- Ingress Doors -->
+		<!-- In: whatever the calling app puts in front of the API -->
 		<div class="tier-card ingress-tier">
-			<div class="tier-badge">Ingress Doors</div>
+			<div class="tier-badge">In</div>
 			<div class="tier-items">
 				<div class="node-pill">
-					<span class="node-icon">🧩</span>
 					<div>
 						<div class="node-title">@antiphony/capture-kit</div>
-						<div class="node-sub">Web Audio / React</div>
+						<div class="node-sub">Recording in the browser (React)</div>
 					</div>
 				</div>
 				<div class="node-pill">
-					<span class="node-icon">📞</span>
 					<div>
-						<div class="node-title">Telephony Connectors</div>
-						<div class="node-sub">SIP & voice call ingest</div>
+						<div class="node-title">Your app's backend</div>
+						<div class="node-sub">Uploads audio, creates posts over REST</div>
 					</div>
 				</div>
 				<div class="node-pill">
-					<span class="node-icon">🪝</span>
 					<div>
-						<div class="node-title">External BFF & Webhooks</div>
-						<div class="node-sub">App backends & third-party ingest</div>
+						<div class="node-title">Your connectors</div>
+						<div class="node-sub">A phone line, for example. The app runs it.</div>
 					</div>
 				</div>
 			</div>
@@ -41,35 +37,32 @@
 
 		<div class="tier-flow-arrow" aria-hidden="true">↓</div>
 
-		<!-- Central Core Hub -->
+		<!-- Antiphony itself -->
 		<div class="tier-card hub-tier">
-			<div class="tier-badge core-badge">Antiphony Core Hub</div>
+			<div class="tier-badge core-badge">Antiphony</div>
 			<div class="core-hub-content">
 				<div class="core-box">
-					<div class="core-icon">⚡</div>
 					<div class="core-name">Cloudflare Workers</div>
-					<div class="core-desc">Edge Hono API Runtime</div>
+					<div class="core-desc">Hono API</div>
 				</div>
 				<div class="core-subgrid">
 					<div class="sub-core-box">
-						<span class="sub-icon">🗄️</span>
-						<span class="sub-name">Postgres (Neon)</span>
-						<span class="sub-desc">Record & facet index</span>
+						<span class="sub-name">Neon Postgres</span>
+						<span class="sub-desc">Records and indexes</span>
 					</div>
 					<div class="sub-core-box">
-						<span class="sub-icon">📦</span>
 						<span class="sub-name">Cloudflare R2</span>
-						<span class="sub-desc">Deduplicated audio blobs</span>
+						<span class="sub-desc">Audio, stored by CID</span>
 					</div>
 				</div>
 				<div class="pipeline-row">
-					<div class="pipeline-badge">Async Enrichment Engine</div>
+					<div class="pipeline-badge">Opt-in processing</div>
 					<div class="pipeline-flow">
-						<span>ffmpeg (Docker)</span>
+						<span>Denoise (ElevenLabs)</span>
 						<span class="flow-arrow">→</span>
-						<span>Waveform Peaks</span>
+						<span>Trim (ffmpeg)</span>
 						<span class="flow-arrow">→</span>
-						<span>Whisper / ElevenLabs</span>
+						<span>Transcript (Whisper) and waveform</span>
 					</div>
 				</div>
 			</div>
@@ -77,29 +70,26 @@
 
 		<div class="tier-flow-arrow" aria-hidden="true">↓</div>
 
-		<!-- Outbound Consumers -->
+		<!-- Out -->
 		<div class="tier-card egress-tier">
-			<div class="tier-badge">Network Egress</div>
+			<div class="tier-badge">Out</div>
 			<div class="tier-items">
 				<div class="node-pill">
-					<span class="node-icon">🌐</span>
 					<div>
-						<div class="node-title">ATProto Atmosphere</div>
-						<div class="node-sub">PDS & AppView federation</div>
+						<div class="node-title">REST and XRPC</div>
+						<div class="node-sub"><code>/api/v1/*</code> and <code>/xrpc/dev.antiphony.*</code></div>
 					</div>
 				</div>
 				<div class="node-pill">
-					<span class="node-icon">📱</span>
 					<div>
-						<div class="node-title">Client Applications</div>
-						<div class="node-sub">Vox Pop, Bardcast, custom apps</div>
+						<div class="node-title">Webhooks</div>
+						<div class="node-sub">Signed, as each processing stage finishes</div>
 					</div>
 				</div>
 				<div class="node-pill">
-					<span class="node-icon">📡</span>
 					<div>
-						<div class="node-title">REST & Event Stream</div>
-						<div class="node-sub">JSON envelopes & webhooks</div>
+						<div class="node-title">Apps</div>
+						<div class="node-sub">Vox Pop, Bardcast, yours</div>
 					</div>
 				</div>
 			</div>
@@ -119,23 +109,12 @@
 		margin-bottom: var(--ap-space-8);
 	}
 
-	.arch-tag {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		color: var(--ap-call);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: var(--ap-call-subtle);
-		padding: 2px var(--ap-space-3);
-		border-radius: var(--ap-radius-full);
-	}
-
 	.arch-title {
 		font-family: var(--ap-font-display);
 		font-size: var(--ap-font-2xl);
 		font-weight: 700;
 		color: var(--ap-text-primary);
-		margin: var(--ap-space-3) 0 var(--ap-space-2);
+		margin: 0 0 var(--ap-space-2);
 	}
 
 	.arch-desc {
@@ -166,7 +145,6 @@
 
 	.hub-tier {
 		border-color: var(--ap-call);
-		box-shadow: var(--ap-shadow-call-glow);
 		background: var(--ap-surface-elevated);
 	}
 
@@ -209,15 +187,6 @@
 		transition: all var(--ap-transition-fast);
 	}
 
-	.node-pill:hover {
-		border-color: var(--ap-border-default);
-		background: var(--ap-surface-elevated);
-	}
-
-	.node-icon {
-		font-size: var(--ap-font-lg);
-		flex-shrink: 0;
-	}
 
 	.node-title {
 		font-size: var(--ap-font-xs);
@@ -244,11 +213,6 @@
 		border-radius: var(--ap-radius-md);
 		padding: var(--ap-space-3);
 		text-align: center;
-	}
-
-	.core-icon {
-		font-size: var(--ap-font-xl);
-		margin-bottom: 2px;
 	}
 
 	.core-name {
@@ -278,10 +242,6 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 2px;
-	}
-
-	.sub-icon {
-		font-size: var(--ap-font-base);
 	}
 
 	.sub-name {

@@ -5,14 +5,9 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 
 <div class="demo-wrapper">
 	<div class="demo-header">
-		<div class="voice-indicator">
-			<span class="voice-badge voice-call">Voice 1: The Call</span>
-			<span class="voice-arrow">→</span>
-			<span class="voice-badge voice-response">Voice 2: The Response</span>
-		</div>
-		<h2 class="demo-title">The Dialogue in Action</h2>
+		<h2 class="demo-title">A prompt and a reply</h2>
 		<p class="demo-desc">
-			Every conversation is an AT Protocol record thread. An author publishes a voice call prompt; anyone in the network answers with a cryptographically signed audio response.
+			Both are <code>dev.antiphony.audio.post</code> records. A post with no <code>reply</code> field is a prompt; a post that points back at one is a reply. Each reply opens a thread that only the prompt's author and that responder can continue.
 		</p>
 	</div>
 
@@ -27,15 +22,15 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 						<div class="record-badge" title="at://did:plc:alice.../dev.antiphony.audio.post/3k6w">at://did:plc:alice.../dev.antiphony.audio.post/3k6w</div>
 					</div>
 				</div>
-				<span class="type-pill pill-call">Call Prompt</span>
+				<span class="type-pill pill-call">Prompt</span>
 			</div>
 
 			<p class="card-prompt">
-				"What inspired you to explore decentralized, portable audio on AT Protocol?"
+				First-job advice?
 			</p>
 
 			<div class="player-widget" data-player="call">
-				<button type="button" class="play-btn play-call" aria-label="Play Call Audio" data-play-btn="call">
+				<button type="button" class="play-btn play-call" aria-label="Play prompt audio" data-play-btn="call">
 					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<polygon points="5 3 19 12 5 21 5 3"/>
 					</svg>
@@ -60,7 +55,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 
 			<div class="transcript-preview">
 				<span class="transcript-label">Transcript:</span>
-				"What inspired you to explore decentralized, portable audio on AT Protocol?"
+				"What's the best advice you got in your first year of work?"
 			</div>
 		</div>
 
@@ -80,15 +75,11 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 						<div class="record-badge" title="reply to at://did:plc:alice.../dev.antiphony.audio.post/3k6w">reply to at://did:plc:alice.../3k6w</div>
 					</div>
 				</div>
-				<span class="type-pill pill-response">Response Reply</span>
+				<span class="type-pill pill-response">Reply</span>
 			</div>
 
-			<p class="card-prompt">
-				"Audio carries human warmth and intimacy that text threads simply lose. When voice posts are open records, creators own their sound across every client."
-			</p>
-
 			<div class="player-widget" data-player="response">
-				<button type="button" class="play-btn play-response" aria-label="Play Response Audio" data-play-btn="response">
+				<button type="button" class="play-btn play-response" aria-label="Play reply audio" data-play-btn="response">
 					<svg class="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<polygon points="5 3 19 12 5 21 5 3"/>
 					</svg>
@@ -113,7 +104,7 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 
 			<div class="transcript-preview">
 				<span class="transcript-label">Transcript:</span>
-				"Audio carries human warmth and intimacy that text threads simply lose..."
+				"Write down why you made a decision, not just what you decided. Six months later you won't remember."
 			</div>
 		</div>
 	</div>
@@ -182,37 +173,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	.demo-header {
 		text-align: center;
 		margin-bottom: var(--ap-space-8);
-	}
-
-	.voice-indicator {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--ap-space-2);
-		margin-bottom: var(--ap-space-3);
-	}
-
-	.voice-badge {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		padding: 2px var(--ap-space-3);
-		border-radius: var(--ap-radius-full);
-	}
-
-	.voice-call {
-		background: var(--ap-call-subtle);
-		color: var(--ap-call);
-		border: 1px solid var(--ap-border-subtle);
-	}
-
-	.voice-response {
-		background: var(--ap-response-subtle);
-		color: var(--ap-response);
-		border: 1px solid var(--ap-border-subtle);
-	}
-
-	.voice-arrow {
-		color: var(--ap-text-muted);
-		font-size: var(--ap-font-sm);
 	}
 
 	.demo-title {
@@ -379,7 +339,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	}
 	.play-call:hover {
 		background: var(--ap-call-hover);
-		box-shadow: var(--ap-shadow-call-glow);
 	}
 
 	.play-response {
@@ -388,7 +347,6 @@ const mockResponseWaveform = [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50
 	}
 	.play-response:hover {
 		background: var(--ap-response-hover);
-		box-shadow: var(--ap-shadow-response-glow);
 	}
 
 	.waveform-container {

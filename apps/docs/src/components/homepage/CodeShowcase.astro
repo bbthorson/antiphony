@@ -3,49 +3,43 @@
 
 <div class="showcase-container">
 	<div class="showcase-header">
-		<span class="showcase-tag">Developer Surface</span>
-		<h2 class="showcase-title">One Open Standard, Three Integration Layers</h2>
+		<h2 class="showcase-title">The same post, three ways</h2>
 		<p class="showcase-desc">
-			Whether you are publishing AT Protocol records, dispatching authenticated REST requests from your server, or dropping headless React hooks into your frontend, Antiphony provides an ergonomic, end-to-end type contract.
+			The record the lexicon defines, the REST call your server makes to create it, and the React hook that records the audio in a browser.
 		</p>
 	</div>
 
 	<div class="code-box">
 		<div class="tab-bar" role="tablist">
 			<button class="tab-btn active" role="tab" aria-selected="true" data-tab-btn="lexicon">
-				<span class="tab-icon">📄</span>
-				<span>ATProto Lexicon</span>
-				<span class="tab-pill">Record</span>
+				<span>Lexicon record</span>
 			</button>
 			<button class="tab-btn" role="tab" aria-selected="false" data-tab-btn="rest">
-				<span class="tab-icon">⚡</span>
-				<span>Core REST API</span>
-				<span class="tab-pill">HTTP</span>
+				<span>REST API</span>
 			</button>
 			<button class="tab-btn" role="tab" aria-selected="false" data-tab-btn="capture">
-				<span class="tab-icon">🎙️</span>
-				<span>Capture Kit</span>
-				<span class="tab-pill">React</span>
+				<span>Capture kit</span>
 			</button>
 		</div>
 
 		<!-- Panel 1: Lexicon Record -->
 		<div class="code-panel active" data-tab-panel="lexicon">
 			<div class="panel-header">
-				<span class="file-name">dev.antiphony.audio.post.json</span>
-				<span class="contract-badge">Portable ATProto Schema</span>
+				<span class="file-name">dev.antiphony.audio.post</span>
 			</div>
 			<pre class="code-content"><code><span class="token-punct">&#123;</span>
   <span class="token-key">"$type"</span><span class="token-punct">:</span> <span class="token-str">"dev.antiphony.audio.post"</span><span class="token-punct">,</span>
-  <span class="token-key">"text"</span><span class="token-punct">:</span> <span class="token-str">"What inspired you to explore decentralized audio?"</span><span class="token-punct">,</span>
+  <span class="token-key">"text"</span><span class="token-punct">:</span> <span class="token-str">"First-job advice?"</span><span class="token-punct">,</span>
   <span class="token-key">"embed"</span><span class="token-punct">:</span> <span class="token-punct">&#123;</span>
     <span class="token-key">"$type"</span><span class="token-punct">:</span> <span class="token-str">"dev.antiphony.embed.audio"</span><span class="token-punct">,</span>
     <span class="token-key">"audio"</span><span class="token-punct">:</span> <span class="token-punct">&#123;</span>
-      <span class="token-key">"cid"</span><span class="token-punct">:</span> <span class="token-str">"bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"</span><span class="token-punct">,</span>
+      <span class="token-key">"$type"</span><span class="token-punct">:</span> <span class="token-str">"blob"</span><span class="token-punct">,</span>
+      <span class="token-key">"ref"</span><span class="token-punct">:</span> <span class="token-punct">&#123;</span> <span class="token-key">"$link"</span><span class="token-punct">:</span> <span class="token-str">"bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"</span> <span class="token-punct">&#125;</span><span class="token-punct">,</span>
       <span class="token-key">"mimeType"</span><span class="token-punct">:</span> <span class="token-str">"audio/mp4"</span><span class="token-punct">,</span>
-      <span class="token-key">"durationMs"</span><span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span>
-      <span class="token-key">"waveform"</span><span class="token-punct">:</span> <span class="token-punct">[</span><span class="token-num">12</span><span class="token-punct">,</span> <span class="token-num">28</span><span class="token-punct">,</span> <span class="token-num">45</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">75</span><span class="token-punct">,</span> <span class="token-num">90</span><span class="token-punct">,</span> <span class="token-num">85</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">40</span><span class="token-punct">]</span>
-    <span class="token-punct">&#125;</span>
+      <span class="token-key">"size"</span><span class="token-punct">:</span> <span class="token-num">672310</span>
+    <span class="token-punct">&#125;</span><span class="token-punct">,</span>
+    <span class="token-key">"durationMs"</span><span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span>
+    <span class="token-key">"waveform"</span><span class="token-punct">:</span> <span class="token-punct">[</span><span class="token-num">12</span><span class="token-punct">,</span> <span class="token-num">28</span><span class="token-punct">,</span> <span class="token-num">45</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">75</span><span class="token-punct">,</span> <span class="token-num">90</span><span class="token-punct">,</span> <span class="token-num">85</span><span class="token-punct">,</span> <span class="token-num">60</span><span class="token-punct">,</span> <span class="token-num">40</span><span class="token-punct">]</span>
   <span class="token-punct">&#125;</span><span class="token-punct">,</span>
   <span class="token-key">"createdAt"</span><span class="token-punct">:</span> <span class="token-str">"2026-09-24T18:00:00.000Z"</span>
 <span class="token-punct">&#125;</span></code></pre>
@@ -57,7 +51,7 @@
 				<span class="file-name">post-audio.ts</span>
 				<span class="contract-badge">POST /api/v1/posts</span>
 			</div>
-			<pre class="code-content"><code><span class="token-comment">// Dispatch an audio post with service token + acting actor</span>
+			<pre class="code-content"><code><span class="token-comment">// Your server creates the post on behalf of the user who recorded it.</span>
 <span class="token-keyword">const</span> res = <span class="token-keyword">await</span> fetch<span class="token-punct">(</span><span class="token-str">"https://api.antiphony.dev/api/v1/posts"</span><span class="token-punct">,</span> <span class="token-punct">&#123;</span>
   method<span class="token-punct">:</span> <span class="token-str">"POST"</span><span class="token-punct">,</span>
   headers<span class="token-punct">:</span> <span class="token-punct">&#123;</span>
@@ -66,8 +60,9 @@
     <span class="token-str">"Content-Type"</span><span class="token-punct">:</span> <span class="token-str">"application/json"</span>
   <span class="token-punct">&#125;</span><span class="token-punct">,</span>
   body<span class="token-punct">:</span> JSON<span class="token-punct">.</span>stringify<span class="token-punct">(</span><span class="token-punct">&#123;</span>
-    text<span class="token-punct">:</span> <span class="token-str">"What inspired you to explore decentralized audio?"</span><span class="token-punct">,</span>
-    embed<span class="token-punct">:</span> <span class="token-punct">&#123;</span> audioBlobId<span class="token-punct">,</span> durationMs<span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span> waveform <span class="token-punct">&#125;</span>
+    text<span class="token-punct">:</span> <span class="token-str">"First-job advice?"</span><span class="token-punct">,</span>
+    embed<span class="token-punct">:</span> <span class="token-punct">&#123;</span> $type<span class="token-punct">:</span> <span class="token-str">"dev.antiphony.embed.audio"</span><span class="token-punct">,</span> audio<span class="token-punct">,</span> durationMs<span class="token-punct">:</span> <span class="token-num">42000</span><span class="token-punct">,</span> waveform <span class="token-punct">&#125;</span><span class="token-punct">,</span>
+    processing<span class="token-punct">:</span> <span class="token-punct">&#123;</span> transcribe<span class="token-punct">:</span> <span class="token-keyword">true</span> <span class="token-punct">&#125;</span>
   <span class="token-punct">&#125;</span><span class="token-punct">)</span>
 <span class="token-punct">&#125;</span><span class="token-punct">)</span><span class="token-punct">;</span>
 <span class="token-keyword">const</span> <span class="token-punct">&#123;</span> data <span class="token-punct">&#125;</span> = <span class="token-keyword">await</span> res<span class="token-punct">.</span>json<span class="token-punct">(</span><span class="token-punct">)</span><span class="token-punct">;</span></code></pre>
@@ -79,14 +74,14 @@
 				<span class="file-name">VoicePrompt.tsx</span>
 				<span class="contract-badge">@antiphony/capture-kit</span>
 			</div>
-			<pre class="code-content"><code><span class="token-keyword">import</span> <span class="token-punct">&#123;</span> useAudioRecorder<span class="token-punct">,</span> useAudioPlayer <span class="token-punct">&#125;</span> <span class="token-keyword">from</span> <span class="token-str">'@antiphony/capture-kit'</span><span class="token-punct">;</span>
+			<pre class="code-content"><code><span class="token-keyword">import</span> <span class="token-punct">&#123;</span> useAudioRecorder <span class="token-punct">&#125;</span> <span class="token-keyword">from</span> <span class="token-str">'@antiphony/capture-kit'</span><span class="token-punct">;</span>
 
 <span class="token-keyword">export function</span> VoicePrompt<span class="token-punct">(</span><span class="token-punct">)</span> <span class="token-punct">&#123;</span>
-  <span class="token-keyword">const</span> <span class="token-punct">&#123;</span> status<span class="token-punct">,</span> start<span class="token-punct">,</span> stop<span class="token-punct">,</span> audioBlob<span class="token-punct">,</span> waveform <span class="token-punct">&#125;</span> = useAudioRecorder<span class="token-punct">(</span><span class="token-punct">)</span><span class="token-punct">;</span>
+  <span class="token-keyword">const</span> <span class="token-punct">&#123;</span> status<span class="token-punct">,</span> start<span class="token-punct">,</span> stop <span class="token-punct">&#125;</span> = useAudioRecorder<span class="token-punct">(</span><span class="token-punct">)</span><span class="token-punct">;</span>
 
   <span class="token-keyword">return</span> <span class="token-punct">(</span>
     <span class="token-punct">&lt;</span>button onClick<span class="token-punct">=</span><span class="token-punct">&#123;</span>status <span class="token-punct">===</span> <span class="token-str">'recording'</span> <span class="token-punct">?</span> stop <span class="token-punct">:</span> start<span class="token-punct">&#125;</span><span class="token-punct">&gt;</span>
-      <span class="token-punct">&#123;</span>status <span class="token-punct">===</span> <span class="token-str">'recording'</span> <span class="token-punct">?</span> <span class="token-str">'Finish Recording'</span> <span class="token-punct">:</span> <span class="token-str">'Record Audio Prompt'</span><span class="token-punct">&#125;</span>
+      <span class="token-punct">&#123;</span>status <span class="token-punct">===</span> <span class="token-str">'recording'</span> <span class="token-punct">?</span> <span class="token-str">'Stop'</span> <span class="token-punct">:</span> <span class="token-str">'Record'</span><span class="token-punct">&#125;</span>
     <span class="token-punct">&lt;</span>/button<span class="token-punct">&gt;</span>
   <span class="token-punct">)</span><span class="token-punct">;</span>
 <span class="token-punct">&#125;</span></code></pre>
@@ -135,23 +130,12 @@
 		margin-bottom: var(--ap-space-8);
 	}
 
-	.showcase-tag {
-		font-size: var(--ap-font-xs);
-		font-weight: 600;
-		color: var(--ap-call);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		background: var(--ap-call-subtle);
-		padding: 2px var(--ap-space-3);
-		border-radius: var(--ap-radius-full);
-	}
-
 	.showcase-title {
 		font-family: var(--ap-font-display);
 		font-size: var(--ap-font-2xl);
 		font-weight: 700;
 		color: var(--ap-text-primary);
-		margin: var(--ap-space-3) 0 var(--ap-space-2);
+		margin: 0 0 var(--ap-space-2);
 	}
 
 	.showcase-desc {
@@ -213,15 +197,6 @@
 		background: var(--ap-surface-base);
 		font-weight: 600;
 		border-bottom: 2px solid var(--ap-call);
-	}
-
-	.tab-pill {
-		font-size: var(--ap-font-xs);
-		font-family: var(--ap-font-mono);
-		padding: 1px var(--ap-space-2);
-		border-radius: var(--ap-radius-sm);
-		background: var(--ap-surface-elevated);
-		border: 1px solid var(--ap-border-subtle);
 	}
 
 	.panel-header {

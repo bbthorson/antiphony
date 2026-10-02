@@ -9,7 +9,7 @@ const currentPath = Astro.url.pathname;
 const { hasSidebar } = Astro.locals.starlightRoute;
 
 const navItems = [
-	{ label: 'Lexicons', href: '/lexicons/overview/', badge: 'Protocol' },
+	{ label: 'Lexicons', href: '/lexicons/overview/' },
 	{ label: 'Guides', href: '/self-hosting/quick-start/' },
 	{ label: 'Capture Kit', href: '/build-your-own/capture-kit/' },
 	{ label: 'Architecture', href: '/introduction/architecture/' },
@@ -37,7 +37,6 @@ function isActive(href: string): boolean {
 					aria-current={isActive(item.href) ? 'page' : undefined}
 				>
 					<span>{item.label}</span>
-					{item.badge && <span class="nav-badge">{item.badge}</span>}
 				</a>
 			))}
 		</nav>
@@ -91,7 +90,6 @@ function isActive(href: string): boolean {
 					aria-current={isActive(item.href) ? 'page' : undefined}
 				>
 					<span>{item.label}</span>
-					{item.badge && <span class="nav-badge">{item.badge}</span>}
 				</a>
 			))}
 		</nav>
@@ -222,18 +220,6 @@ function isActive(href: string): boolean {
 		font-weight: 600;
 		background: var(--ap-call-subtle);
 		border-color: var(--ap-border-default);
-	}
-
-	.nav-badge {
-		font-size: var(--ap-font-xs);
-		font-family: var(--ap-font-mono);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		padding: 1px var(--ap-space-2);
-		border-radius: var(--ap-radius-full);
-		background: var(--ap-response-subtle);
-		color: var(--ap-response);
-		border: 1px solid var(--ap-border-subtle);
 	}
 
 	.search-wrapper {

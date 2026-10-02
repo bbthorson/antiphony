@@ -2,29 +2,24 @@
 ---
 
 <section class="hero-container">
-	<div class="hero-badge">
-		<span class="badge-dot"></span>
-		<span>AT Protocol Audio Standard · MIT-Licensed Infrastructure</span>
-	</div>
-
 	<h1 class="hero-title">
-		Call-and-Response Audio<br />
-		<span class="gradient-text">for the Open Social Web</span>
+		Call-and-response audio<br />
+		<span class="title-accent">on the AT Protocol</span>
 	</h1>
 
 	<p class="hero-subtitle">
-		An open standard and edge-ready infrastructure for portable voice posts, threaded audio replies, waveforms, and AI transcription — unified behind one clean developer contract.
+		Someone records a question, other people record answers. Antiphony stores both as portable <code>dev.antiphony.*</code> records, can transcribe and clean up the audio, and gives your app one REST API to do it through. MIT-licensed.
 	</p>
 
 	<div class="hero-actions">
 		<a href="/lexicons/overview/" class="btn-primary">
-			<span>Explore the Lexicons</span>
+			<span>Read the lexicons</span>
 			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<path d="M5 12h14M12 5l7 7-7 7"/>
 			</svg>
 		</a>
 		<a href="/self-hosting/quick-start/" class="btn-secondary">
-			<span>Quick Start</span>
+			<span>Quick start</span>
 		</a>
 		<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer" class="btn-ghost">
 			<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -36,18 +31,15 @@
 
 	<div class="hero-stats">
 		<div class="stat-item">
-			<span class="stat-icon">🎙️</span>
-			<span class="stat-text"><code>dev.antiphony.*</code> Lexicons</span>
+			<span class="stat-text"><code>dev.antiphony.*</code> lexicons</span>
 		</div>
 		<div class="stat-divider"></div>
 		<div class="stat-item">
-			<span class="stat-icon">⚡</span>
-			<span class="stat-text">Cloudflare Workers + Neon Postgres</span>
+			<span class="stat-text">Cloudflare Workers, Neon Postgres, R2</span>
 		</div>
 		<div class="stat-divider"></div>
 		<div class="stat-item">
-			<span class="stat-icon">🧩</span>
-			<span class="stat-text">Headless React Capture Kit</span>
+			<span class="stat-text">Headless React capture kit</span>
 		</div>
 	</div>
 </section>
@@ -63,28 +55,6 @@
 		margin: 0 auto;
 	}
 
-	.hero-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--ap-space-2);
-		padding: var(--ap-space-1) var(--ap-space-4);
-		border-radius: var(--ap-radius-full);
-		font-size: var(--ap-font-xs);
-		font-weight: 500;
-		color: var(--ap-call);
-		background: var(--ap-call-subtle);
-		border: 1px solid var(--ap-border-subtle);
-		box-shadow: var(--ap-shadow-call-glow);
-		margin-bottom: var(--ap-space-6);
-	}
-
-	.badge-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: var(--ap-radius-full);
-		background: var(--ap-response);
-	}
-
 	.hero-title {
 		font-family: var(--ap-font-display);
 		font-size: clamp(var(--ap-font-3xl), 5vw, var(--ap-font-5xl));
@@ -95,7 +65,7 @@
 		margin: 0 0 var(--ap-space-4);
 	}
 
-	.gradient-text {
+	.title-accent {
 		color: var(--ap-call);
 	}
 
@@ -134,7 +104,6 @@
 
 	.btn-primary:hover {
 		background: var(--ap-call-hover);
-		box-shadow: var(--ap-shadow-call-glow);
 		text-decoration: none;
 	}
 
@@ -195,10 +164,6 @@
 		gap: var(--ap-space-2);
 		font-size: var(--ap-font-sm);
 		color: var(--ap-text-secondary);
-	}
-
-	.stat-icon {
-		font-size: var(--ap-font-base);
 	}
 
 	.stat-divider {
