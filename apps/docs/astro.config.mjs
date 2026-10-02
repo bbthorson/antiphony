@@ -16,7 +16,11 @@ export default defineConfig({
 				Header: './src/components/Header.astro',
 				Sidebar: './src/components/Sidebar.astro',
 				PageTitle: './src/components/PageTitle.astro',
+				ThemeSelect: './src/components/ThemeToggle.astro',
 			},
+			// No right-hand "On this page": the sidebar lists the current
+			// page's H2s under its entry instead (see Sidebar.astro).
+			tableOfContents: false,
 			// Brand: self-hosted fonts (Sora/Inter/JetBrains Mono) + the
 			// "Two Voices" duotone theme. Order matters — fonts before brand.css
 			// so the @font-face families exist when the theme references them.

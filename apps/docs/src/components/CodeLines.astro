@@ -1,0 +1,70 @@
+---
+/**
+ * Highlighted code, one row per line. Rows carry `data-field` (the top-level
+ * JSON field they belong to) so a FieldTable can light them up on hover.
+ */
+import { codeLines } from '../lib/code';
+
+interface Props {
+	code: string;
+}
+
+const lines = codeLines(Astro.props.code);
+---
+
+<pre class="ap-code"><code>{lines.map((line) => (
+	<span class="ap-line" data-field={line.field ?? undefined}>{line.tokens.length ? line.tokens.map((t) => <span class={`tok-${t.kind}`}>{t.text}</span>) : ' '}</span>
+))}</code></pre>
+
+<style>
+	.ap-code {
+		margin: 0;
+		padding: 14px 0;
+		background: transparent;
+		border: 0;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		line-height: 1.75;
+		overflow-x: auto;
+	}
+
+	.ap-code code {
+		display: block;
+		min-width: max-content;
+		/* Rows are blocks that keep their own whitespace; the markup between them must not render. */
+		white-space: normal;
+		font: inherit;
+		background: none;
+		padding: 0;
+	}
+
+	.ap-line {
+		display: block;
+		padding: 0 16px;
+		white-space: pre;
+		min-height: 1.75em;
+		transition: background var(--ap-transition-fast), box-shadow var(--ap-transition-fast);
+	}
+
+	.ap-line.lit {
+		background: var(--ap-call-subtle);
+		box-shadow: inset 2px 0 0 var(--ap-call);
+	}
+
+	.tok-key,
+	.tok-kw {
+		color: var(--ap-call-ink);
+	}
+	.tok-str {
+		color: var(--ap-response-ink);
+	}
+	.tok-num {
+		color: var(--ap-num);
+	}
+	.tok-com {
+		color: var(--ap-text-muted);
+	}
+	.tok-plain {
+		color: var(--ap-text-secondary);
+	}
+</style>

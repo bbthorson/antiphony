@@ -62,18 +62,6 @@ h6,
 	text-decoration-color: var(--ap-response);
 }
 
-/* A coral tick on the site title — a tiny call-and-response mark in the chrome. */
-.site-title::after {
-	content: '';
-	display: inline-block;
-	width: 0.4em;
-	height: 0.4em;
-	margin-inline-start: 0.35em;
-	border-radius: var(--ap-radius-full);
-	background: var(--ap-response);
-	vertical-align: 0.08em;
-}
-
 /* Splash layout resets — remove empty Starlight title panel & top rule on homepage */
 :root:not([data-has-sidebar]) main > .content-panel:first-child {
 	display: none;
@@ -83,3 +71,156 @@ h6,
 	padding-top: 0;
 }
 
+
+/*
+ * Ink variants of the two voices: the shade of each voice that is legible as
+ * text on the page surface (the base tokens are tuned for fills). Docs-only
+ * until another surface needs them.
+ */
+:root {
+	--ap-call-ink: var(--ap-call-700);
+	--ap-response-ink: var(--ap-response-700);
+	--ap-num: var(--ap-call-800);
+	/* Text on a solid indigo fill, in both themes. */
+	--ap-on-call: #ffffff;
+	/* Text on a solid coral fill: ink, since white on coral fails AA. */
+	--ap-on-response: var(--ap-neutral-900);
+}
+:root[data-theme='dark'] {
+	--ap-call-ink: var(--ap-call-300);
+	--ap-response-ink: var(--ap-response-500);
+	--ap-num: var(--ap-call-200);
+}
+
+/*
+ * Starlight's surfaces, bound to the tokens. Both themes come for free: the
+ * --ap-* values already switch on [data-theme]. Unlayered, so these win over
+ * Starlight's own layered defaults.
+ */
+:root {
+	--sl-color-bg: var(--ap-surface-base);
+	--sl-color-bg-nav: var(--ap-surface-base);
+	--sl-color-bg-sidebar: var(--ap-surface-base);
+	--sl-color-hairline: var(--ap-border-subtle);
+	--sl-color-hairline-shade: var(--ap-border-subtle);
+	--sl-color-hairline-light: var(--ap-border-default);
+	--sl-color-white: var(--ap-text-primary);
+	--sl-color-text: var(--ap-text-secondary);
+
+	--sl-sidebar-width: 17rem;
+	/* Wide enough for spec + example side by side; prose is capped below. */
+	--sl-content-width: 68rem;
+}
+
+/* ===================================================================
+ * Inner pages: every H2 is a turn in the conversation.
+ * An indigo dot (the call) opens each section, and a rule separates them.
+ * =================================================================== */
+
+.sl-markdown-content {
+	font-size: 15px;
+	line-height: 1.7;
+}
+
+/* Prose keeps a readable measure even though the column is wide. */
+.sl-markdown-content > :is(p, ul, ol, blockquote),
+.sl-markdown-content > .sl-heading-wrapper:not(.level-h2) {
+	max-width: 44rem;
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+	position: relative;
+	margin-top: 56px;
+	padding-top: 40px;
+	padding-inline-start: 28px;
+	border-top: 1px solid var(--ap-border-default);
+	font-size: 28px;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h2::before {
+	content: '';
+	position: absolute;
+	inset-inline-start: 0;
+	/* Centred on the first line of the heading. */
+	top: calc(40px + (1.2em - 14px) / 2);
+	width: 14px;
+	height: 14px;
+	border-radius: var(--ap-radius-full);
+	background: var(--ap-call);
+}
+.sl-markdown-content h2 {
+	font-size: 28px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h2 + * {
+	margin-top: 28px;
+}
+
+/* The NSID a section documents, set right under its question. */
+.sl-markdown-content .sl-heading-wrapper.level-h2 + .ap-nsid {
+	margin-top: 6px;
+	padding-inline-start: 28px;
+	font-family: var(--ap-font-mono);
+	font-size: 13px;
+	color: var(--ap-text-muted);
+}
+.sl-markdown-content .ap-nsid + * {
+	margin-top: 28px;
+}
+
+/* An opening paragraph, larger than the body. */
+.sl-markdown-content > p.lead {
+	font-size: 18px;
+	line-height: 1.6;
+	max-width: 42rem;
+	text-wrap: pretty;
+}
+.sl-markdown-content > p.note {
+	font-size: 14px;
+	color: var(--ap-text-muted);
+}
+
+/* Inline code reads as a quiet monospace name, not a chip. */
+.sl-markdown-content :not(pre) > code {
+	font-size: 0.85em;
+	color: var(--ap-text-primary);
+	background: transparent;
+	padding: 0;
+	border: 0;
+}
+
+.sl-markdown-content strong {
+	color: var(--ap-text-primary);
+}
+
+/* The homepage runs wider than an inner page: 76rem including its gutters. */
+:root:not([data-has-sidebar]) {
+	--sl-content-width: 73rem;
+}
+.ap-home {
+	padding: 72px 0 120px;
+}
+@media (max-width: 50rem) {
+	.ap-home {
+		padding-top: 40px;
+	}
+}
+
+/* Inline emphasis in one voice or the other ("a post *without* a reply"). */
+.sl-markdown-content strong.ap-call-ink {
+	color: var(--ap-call-ink);
+}
+.sl-markdown-content strong.ap-response-ink {
+	color: var(--ap-response-ink);
+}
+
+/* Inner pages: the title flows straight into the intro, no rule between. */
+[data-has-sidebar] main > .content-panel + .content-panel {
+	border-top: none;
+	padding-top: 0;
+}
+[data-has-sidebar] main > .content-panel:first-child {
+	padding-top: 48px;
+	padding-bottom: 16px;
+}

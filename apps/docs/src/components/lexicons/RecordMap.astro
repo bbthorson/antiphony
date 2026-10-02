@@ -1,0 +1,85 @@
+---
+/** How the records point at each other, drawn with boxes and arrows. */
+---
+
+<div class="not-content ap-record-map" role="img" aria-label="A reply audio.post points back at the prompt audio.post through reply.root and reply.parent. Each post embeds an embed.audio, whose view takes its transcript from the separate audio.transcript record at read time.">
+	<div class="line">
+		<div class="node call">audio.post <span>· prompt</span></div>
+	</div>
+	<div class="ref"><span class="up" aria-hidden="true">↑</span>reply.root · reply.parent (StrongRef)</div>
+	<div class="line">
+		<div class="node response">audio.post <span>· reply</span></div>
+		<span class="edge">embed →</span>
+		<div class="node plain">embed.audio</div>
+		<span class="edge">⇠ #view.transcript, at read time</span>
+		<div class="node dashed">audio.transcript</div>
+	</div>
+</div>
+
+<style>
+	.ap-record-map {
+		display: flex;
+		flex-direction: column;
+		padding: 28px;
+		overflow-x: auto;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+	}
+
+	.line {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.node {
+		padding: 12px 16px;
+		border-radius: var(--ap-radius-md);
+		border: 1px solid var(--ap-border-default);
+		background: var(--ap-surface-base);
+		color: var(--ap-text-primary);
+		white-space: nowrap;
+	}
+
+	.node.call {
+		border-color: var(--ap-call);
+		background: var(--ap-call-subtle);
+	}
+	.node.call span {
+		color: var(--ap-call-ink);
+	}
+
+	.node.response {
+		border-color: var(--ap-response);
+		background: var(--ap-response-subtle);
+	}
+	.node.response span {
+		color: var(--ap-response-ink);
+	}
+
+	.node.dashed {
+		border-style: dashed;
+	}
+
+	.ref {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 0 8px 40px;
+		white-space: nowrap;
+		color: var(--ap-text-muted);
+	}
+
+	.up {
+		font-size: 14px;
+		color: var(--ap-response-ink);
+	}
+
+	.edge {
+		white-space: nowrap;
+		color: var(--ap-text-muted);
+	}
+</style>

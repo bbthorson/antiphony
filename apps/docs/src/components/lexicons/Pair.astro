@@ -1,0 +1,50 @@
+---
+/**
+ * Two short entries side by side, one per voice: an indigo rule over the
+ * first, a coral rule over the second.
+ */
+---
+
+<div class="ap-pair">
+	<div class="item call"><slot name="call" /></div>
+	<div class="item response"><slot name="response" /></div>
+</div>
+
+<style>
+	.ap-pair {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 40px;
+	}
+
+	.item {
+		flex: 1 1 340px;
+		min-width: 0;
+		/* Beat Starlight's sibling spacing so both rules sit level. */
+		margin-top: 0;
+		padding-top: 16px;
+		border-top: 2px solid var(--ap-call);
+	}
+
+	.item.response {
+		border-top-color: var(--ap-response);
+	}
+
+	.item > :global(:first-child) {
+		margin-top: 0;
+	}
+
+	/* The NSID that names each entry. */
+	.item :global(.ap-pair-name) {
+		margin-bottom: 10px;
+		font-family: var(--ap-font-mono);
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--ap-text-primary);
+	}
+
+	.item :global(.ap-pair-name + *) {
+		margin-top: 0;
+	}
+</style>

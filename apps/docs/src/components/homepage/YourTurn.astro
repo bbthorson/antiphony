@@ -1,0 +1,389 @@
+---
+/**
+ * The thread ends on an open coral ring: the reply that is the reader's to
+ * make. They can make it. "Record one" takes up to five seconds from the mic,
+ * draws it live, then lays it on the thread as a reply card using the same
+ * waveform helper @antiphony/capture-kit ships. Nothing leaves the browser.
+ */
+---
+
+<section class="your-turn" data-your-turn>
+	<div class="mark" aria-hidden="true"><span class="line"></span><span class="ring"></span></div>
+	<div class="body">
+		<div class="prompt">
+			<span class="intro" data-intro>The next reply is yours.</span>
+			<button type="button" class="record" data-record hidden>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<rect x="9" y="2" width="6" height="12" rx="3"></rect>
+					<path d="M5 10a7 7 0 0 0 14 0M12 17v5"></path>
+				</svg>
+				<span data-record-label>Record one</span>
+			</button>
+		</div>
+
+		<div class="live" data-live hidden></div>
+
+		<div class="card" data-reply hidden>
+			<div class="head">
+				<span class="avatar" aria-hidden="true">Y</span>
+				<span class="who">You <span class="meta" data-meta></span></span>
+				<span class="kind">Reply</span>
+			</div>
+			<div class="player">
+				<button type="button" class="play" aria-label="Play your reply" data-play-mine>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+				</button>
+				<div class="wave" data-wave></div>
+			</div>
+			<p class="note">Drawn in your browser. The audio never left it.</p>
+		</div>
+
+		<div class="links">
+			<a href="/self-hosting/quick-start/">Quick start</a>
+			<a href="https://github.com/bbthorson/antiphony" target="_blank" rel="noopener noreferrer">GitHub</a>
+		</div>
+	</div>
+</section>
+
+<script>
+	import { computeWaveform } from '@antiphony/capture-kit/waveform';
+	import { pickMimeType } from '@antiphony/capture-kit/mime';
+
+	const MAX_MS = 5000;
+	const LIVE_BARS = 40;
+
+	const root = document.querySelector<HTMLElement>('[data-your-turn]');
+	const recordBtn = root?.querySelector<HTMLButtonElement>('[data-record]');
+	const label = root?.querySelector<HTMLElement>('[data-record-label]');
+	const intro = root?.querySelector<HTMLElement>('[data-intro]');
+	const live = root?.querySelector<HTMLElement>('[data-live]');
+	const reply = root?.querySelector<HTMLElement>('[data-reply]');
+	const meta = root?.querySelector<HTMLElement>('[data-meta]');
+	const wave = root?.querySelector<HTMLElement>('[data-wave]');
+	const playBtn = root?.querySelector<HTMLButtonElement>('[data-play-mine]');
+
+	const bars = (peaks: number[]) =>
+		peaks.map((p) => {
+			const bar = document.createElement('span');
+			bar.style.height = `${Math.max(6, p)}%`;
+			return bar;
+		});
+
+	let recorder: MediaRecorder | null = null;
+	let audio: HTMLAudioElement | null = null;
+
+	if (
+		root && recordBtn && label && intro && live && reply && meta && wave && playBtn &&
+		'MediaRecorder' in window && navigator.mediaDevices?.getUserMedia
+	) {
+		recordBtn.hidden = false;
+
+		recordBtn.addEventListener('click', async () => {
+			if (recorder?.state === 'recording') {
+				recorder.stop();
+				return;
+			}
+
+			let stream: MediaStream;
+			try {
+				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			} catch {
+				intro.textContent = 'No mic access, so no reply this time.';
+				recordBtn.hidden = true;
+				return;
+			}
+
+			// Live bars from an analyser while recording.
+			const ctx = new AudioContext();
+			const analyser = ctx.createAnalyser();
+			analyser.fftSize = 512;
+			ctx.createMediaStreamSource(stream).connect(analyser);
+			const buf = new Uint8Array(analyser.fftSize);
+			const peaks: number[] = [];
+			let lastSample = 0;
+			let raf = 0;
+			const sample = (t: number) => {
+				if (t - lastSample > 110) {
+					lastSample = t;
+					analyser.getByteTimeDomainData(buf);
+					let m = 0;
+					for (const x of buf) m = Math.max(m, Math.abs(x - 128));
+					peaks.push(Math.min(100, Math.max(6, (m / 128) * 220)));
+					live.replaceChildren(...bars(peaks.slice(-LIVE_BARS)));
+				}
+				raf = requestAnimationFrame(sample);
+			};
+			raf = requestAnimationFrame(sample);
+
+			// pickMimeType falls back to webm even where it isn't supported;
+			// let the browser choose in that case.
+			const picked = pickMimeType();
+			const mimeType = MediaRecorder.isTypeSupported(picked) ? picked : '';
+			recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+			const chunks: Blob[] = [];
+			const started = performance.now();
+			recorder.ondataavailable = (e) => chunks.push(e.data);
+			recorder.onstop = async () => {
+				cancelAnimationFrame(raf);
+				clearTimeout(limit);
+				stream.getTracks().forEach((t) => t.stop());
+				void ctx.close();
+				const blob = new Blob(chunks, { type: recorder?.mimeType || mimeType });
+				const seconds = Math.max(1, Math.round((performance.now() - started) / 1000));
+
+				let final: number[];
+				try {
+					final = await computeWaveform(blob, LIVE_BARS);
+				} catch {
+					final = peaks;
+				}
+				wave.replaceChildren(...bars(final));
+				meta.textContent = `0:0${Math.min(seconds, 9)} · reply to Antiphony`;
+				if (audio) URL.revokeObjectURL(audio.src);
+				audio = new Audio(URL.createObjectURL(blob));
+
+				root.classList.remove('recording');
+				root.classList.add('answered');
+				live.hidden = true;
+				reply.hidden = false;
+				intro.textContent = 'You answered.';
+				label.textContent = 'Record again';
+			};
+
+			const limit = setTimeout(() => recorder?.stop(), MAX_MS);
+			recorder.start();
+			root.classList.add('recording');
+			live.replaceChildren(...bars([6]));
+			live.hidden = false;
+			label.textContent = 'Stop';
+		});
+
+		playBtn.addEventListener('click', () => {
+			if (!audio) return;
+			audio.currentTime = 0;
+			void audio.play();
+		});
+	}
+</script>
+
+<style>
+	.your-turn {
+		display: grid;
+		grid-template-columns: 40px minmax(0, 1fr);
+		grid-template-areas: 'rm r';
+	}
+
+	@media (min-width: 55rem) {
+		.your-turn {
+			grid-template-columns: minmax(0, 5fr) 72px minmax(0, 6.5fr);
+			grid-template-areas: '. rm r';
+		}
+	}
+
+	.mark {
+		grid-area: rm;
+		position: relative;
+		display: flex;
+		justify-content: center;
+	}
+
+	/* Dashed and coral while the reply is still open; settles once it's made. */
+	.line {
+		position: absolute;
+		top: -96px;
+		height: 96px;
+		left: 50%;
+		border-left: 1px dashed var(--ap-response);
+	}
+
+	.ring {
+		position: relative;
+		width: 14px;
+		height: 14px;
+		margin-top: 7px;
+		box-sizing: border-box;
+		border-radius: var(--ap-radius-full);
+		border: 3px dashed var(--ap-response);
+		background: var(--ap-surface-base);
+	}
+
+	.answered .line {
+		border-left-color: var(--ap-border-default);
+	}
+
+	.answered .ring {
+		border-style: solid;
+		background: var(--ap-response);
+	}
+
+	.body {
+		grid-area: r;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.prompt {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 14px;
+		min-height: 28px;
+	}
+
+	.intro {
+		font-family: var(--ap-font-display);
+		font-size: 22px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--ap-text-primary);
+	}
+
+	.record {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px;
+		border-radius: var(--ap-radius-full);
+		border: 1px solid var(--ap-response);
+		background: transparent;
+		color: var(--ap-text-primary);
+		font: inherit;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.record[hidden] {
+		display: none;
+	}
+
+	.recording .record {
+		background: var(--ap-response);
+		color: var(--ap-on-response);
+	}
+
+	.live,
+	.wave {
+		height: 32px;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.live {
+		width: min(100%, 30rem);
+	}
+
+	.wave {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.live[hidden],
+	.card[hidden] {
+		display: none;
+	}
+
+	.live :global(span),
+	.wave :global(span) {
+		flex: 1;
+		min-width: 2px;
+		border-radius: 2px;
+		background: var(--ap-response);
+	}
+
+	.card {
+		width: min(100%, 30rem);
+		box-sizing: border-box;
+		padding: 16px 18px;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: 14px;
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 12px;
+	}
+
+	.avatar {
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+		color: var(--ap-on-response);
+		font-size: 13px;
+		font-weight: 700;
+	}
+
+	.who {
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.meta {
+		font-weight: 400;
+		color: var(--ap-text-muted);
+	}
+
+	.kind {
+		margin-left: auto;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-response-ink);
+	}
+
+	.player {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.play {
+		width: 34px;
+		height: 34px;
+		flex: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: 0;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+		color: var(--ap-on-response);
+		cursor: pointer;
+	}
+
+	.note {
+		margin: 12px 0 0;
+		font-size: 12px;
+		line-height: 1.6;
+		color: var(--ap-text-muted);
+	}
+
+	.links {
+		display: flex;
+		gap: 16px;
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	.links a {
+		color: var(--ap-call-ink);
+		text-underline-offset: 0.15em;
+	}
+
+	.links a:hover {
+		color: var(--ap-response-ink);
+	}
+</style>

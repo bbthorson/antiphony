@@ -1,0 +1,48 @@
+---
+/**
+ * Spec on the left, a sticky example on the right. FieldTable rows inside
+ * the spec light up the matching lines of the example beside them.
+ */
+---
+
+<div class="ap-split" data-split>
+	<div class="spec"><slot /></div>
+	<div class="example"><slot name="example" /></div>
+</div>
+
+<style>
+	.ap-split {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 40px;
+	}
+
+	.spec,
+	.example {
+		margin-top: 0;
+	}
+
+	.spec {
+		flex: 1 1 380px;
+		min-width: 0;
+	}
+
+	.spec > :global(:first-child) {
+		margin-top: 0;
+	}
+
+	.example {
+		flex: 1 1 340px;
+		min-width: 0;
+		position: sticky;
+		top: calc(var(--sl-nav-height) + 24px);
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.example > :global(*) {
+		margin-top: 0 !important;
+	}
+</style>

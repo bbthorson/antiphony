@@ -1,0 +1,165 @@
+---
+import CodeLines from '../CodeLines.astro';
+import { pretty } from '../../lib/code';
+
+const tabs = [
+	{
+		id: 'lexicon',
+		label: 'Lexicon record',
+		file: 'dev.antiphony.audio.post',
+		code: pretty({
+			$type: 'dev.antiphony.audio.post',
+			text: 'First-job advice?',
+			embed: {
+				$type: 'dev.antiphony.embed.audio',
+				audio: {
+					$type: 'blob',
+					ref: { $link: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku' },
+					mimeType: 'audio/mp4',
+					size: 672310,
+				},
+				durationMs: 42000,
+				waveform: [12, 28, 45, 60, 75, 90, 85, 60, 40],
+			},
+			createdAt: '2026-09-24T18:00:00.000Z',
+		}),
+	},
+	{
+		id: 'rest',
+		label: 'REST API',
+		file: 'POST /api/v1/posts',
+		code: `// Your server creates the post on behalf of the user who recorded it.
+const res = await fetch("https://api.antiphony.dev/api/v1/posts", {
+  method: "POST",
+  headers: {
+    "Authorization": \`Bearer \${serviceToken}\`,
+    "X-Antiphony-Acting-Actor": "did:plc:alice12345",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "First-job advice?",
+    embed: { $type: "dev.antiphony.embed.audio", audio, durationMs: 42000, waveform },
+    processing: { transcribe: true }
+  })
+});
+const { data } = await res.json();`,
+	},
+	{
+		id: 'capture',
+		label: 'Capture kit',
+		file: '@antiphony/capture-kit',
+		code: `import { useAudioRecorder } from '@antiphony/capture-kit';
+
+export function VoicePrompt() {
+  const { status, start, stop } = useAudioRecorder();
+
+  return (
+    <button onClick={status === 'recording' ? stop : start}>
+      {status === 'recording' ? 'Stop' : 'Record'}
+    </button>
+  );
+}`,
+	},
+];
+---
+
+<div class="code-tabs" data-code-tabs>
+	<div class="bar">
+		<div class="tabs" role="tablist">
+			{tabs.map((t, i) => (
+				<button type="button" role="tab" id={`tab-${t.id}`} aria-selected={i === 0 ? 'true' : 'false'} aria-controls={`panel-${t.id}`} data-tab={t.id}>
+					{t.label}
+				</button>
+			))}
+		</div>
+		{tabs.map((t, i) => (
+			<span class="file" data-file={t.id} hidden={i !== 0}>{t.file}</span>
+		))}
+	</div>
+	{tabs.map((t, i) => (
+		<div role="tabpanel" id={`panel-${t.id}`} aria-labelledby={`tab-${t.id}`} data-panel={t.id} hidden={i !== 0}>
+			<CodeLines code={t.code} />
+		</div>
+	))}
+</div>
+
+<script>
+	document.querySelectorAll<HTMLElement>('[data-code-tabs]').forEach((root) => {
+		const tabs = root.querySelectorAll<HTMLButtonElement>('[data-tab]');
+		tabs.forEach((tab) => {
+			tab.addEventListener('click', () => {
+				const id = tab.dataset.tab;
+				tabs.forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+				root.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== id));
+				root.querySelectorAll<HTMLElement>('[data-file]').forEach((f) => (f.hidden = f.dataset.file !== id));
+			});
+		});
+	});
+</script>
+
+<style>
+	.code-tabs {
+		overflow: hidden;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: 14px;
+	}
+
+	.bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: stretch;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 0 16px;
+		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	.tabs {
+		display: flex;
+		gap: 20px;
+	}
+
+	[role='tab'] {
+		padding: 12px 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		font-size: 13px;
+		font-weight: 500;
+		white-space: nowrap;
+		color: var(--ap-text-muted);
+		box-shadow: inset 0 -2px 0 transparent;
+		cursor: pointer;
+	}
+
+	[role='tab'][aria-selected='true'] {
+		font-weight: 600;
+		color: var(--ap-text-primary);
+		box-shadow: inset 0 -2px 0 var(--ap-call);
+	}
+
+	.file {
+		display: flex;
+		align-items: center;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		color: var(--ap-text-muted);
+	}
+
+	.file[hidden],
+	[role='tabpanel'][hidden] {
+		display: none;
+	}
+
+	[role='tabpanel'] :global(.ap-code) {
+		padding: 16px 0;
+		font-size: 12.5px;
+		line-height: 1.7;
+	}
+
+	[role='tabpanel'] :global(.ap-line) {
+		padding: 0 18px;
+		min-height: 1.7em;
+	}
+</style>

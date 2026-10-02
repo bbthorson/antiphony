@@ -1,0 +1,133 @@
+---
+/**
+ * A code example card. With several variants it gets a segmented switch
+ * (Prompt / Reply, You write / You read); a FieldTable row can also switch
+ * it by naming a variant.
+ */
+import CodeLines from '../CodeLines.astro';
+
+interface Variant {
+	id: string;
+	label: string;
+	/** Which voice colours the switch when this variant is on. */
+	voice?: 'call' | 'response';
+	code: string;
+}
+
+interface Props {
+	title?: string;
+	/** The coral "example" dot before the title. */
+	dot?: boolean;
+	code?: string;
+	variants?: Variant[];
+}
+
+const { title = 'Example', dot = true, code } = Astro.props;
+const variants: Variant[] = Astro.props.variants ?? (code !== undefined ? [{ id: 'main', label: '', code }] : []);
+const switchable = variants.length > 1;
+---
+
+<div class="not-content ap-example" data-example>
+	<div class:list={['head', { switchable }]}>
+		<span class="title">{dot && <span class="dot" aria-hidden="true"></span>}{title}</span>
+		{switchable && (
+			<div class="switch" role="group" aria-label={`${title} variant`}>
+				{variants.map((v, i) => (
+					<button type="button" class={`voice-${v.voice ?? 'call'}`} aria-pressed={i === 0 ? 'true' : 'false'} data-variant-btn={v.id}>
+						{v.label}
+					</button>
+				))}
+			</div>
+		)}
+	</div>
+	{variants.map((v, i) => (
+		<div data-variant={v.id} hidden={i !== 0}>
+			<CodeLines code={v.code} />
+		</div>
+	))}
+</div>
+
+<script>
+	document.querySelectorAll<HTMLElement>('[data-example]').forEach((ex) => {
+		ex.querySelectorAll<HTMLButtonElement>('[data-variant-btn]').forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const id = btn.dataset.variantBtn;
+				ex.querySelectorAll<HTMLButtonElement>('[data-variant-btn]').forEach((b) =>
+					b.setAttribute('aria-pressed', String(b === btn)),
+				);
+				ex.querySelectorAll<HTMLElement>('[data-variant]').forEach((p) => (p.hidden = p.dataset.variant !== id));
+			});
+		});
+	});
+</script>
+
+<style>
+	.ap-example {
+		overflow: hidden;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 12px 14px;
+		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	.head.switchable {
+		padding: 8px 8px 8px 14px;
+	}
+
+	.title {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+	}
+
+	.dot {
+		width: 6px;
+		height: 6px;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+	}
+
+	.switch {
+		display: flex;
+		gap: 4px;
+	}
+
+	.switch button {
+		border: 0;
+		border-radius: 6px;
+		padding: 5px 10px;
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		background: transparent;
+		color: var(--ap-text-secondary);
+	}
+
+	.switch .voice-call[aria-pressed='true'] {
+		background: var(--ap-call);
+		color: var(--ap-on-call);
+	}
+
+	.switch .voice-response[aria-pressed='true'] {
+		background: var(--ap-response);
+		color: var(--ap-on-response);
+	}
+
+	[data-variant][hidden] {
+		display: none;
+	}
+</style>

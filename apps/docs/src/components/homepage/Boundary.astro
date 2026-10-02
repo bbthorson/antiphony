@@ -1,0 +1,85 @@
+---
+/** Antiphony's side and your app's side, row against row. */
+const rows = [
+	{ a: 'Lexicons.', ad: 'dev.antiphony.* records for posts, replies and transcripts.', b: 'Accounts.', bd: 'Profiles, sign-in, sessions and OAuth.' },
+	{ a: 'REST API.', ad: 'Audio upload, post and reply creation, playback URLs.', b: 'Product.', bd: 'UI, feeds, ranking, moderation and community rules.' },
+	{ a: 'Processing.', ad: 'Transcription, denoising, trimming, waveforms and mp3 renditions, each opt-in.', b: 'Teams and billing.', bd: 'Workspaces, roles, permissions and subscriptions.' },
+	{ a: 'Tenancy.', ad: 'Every post is scoped to the app that created it (originAppId).', b: 'Connectors.', bd: 'Telephony, broadcast feeds and your own webhooks.' },
+];
+---
+
+<div class="boundary">
+	<div class="head ours">Antiphony</div>
+	<div class="head yours">Your app</div>
+	{rows.map((r) => (
+		<>
+			<div class="cell ours"><strong>{r.a}</strong> {r.ad}</div>
+			<div class="cell yours"><strong>{r.b}</strong> {r.bd}</div>
+		</>
+	))}
+</div>
+
+<style>
+	.boundary {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		border-top: 2px solid var(--ap-call);
+	}
+
+	.head {
+		padding: 14px 0;
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.head.ours {
+		color: var(--ap-call-ink);
+	}
+
+	.head.yours {
+		color: var(--ap-response-ink);
+	}
+
+	.cell {
+		padding: 14px 0;
+		border-top: 1px solid var(--ap-border-default);
+		font-size: 14px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+	}
+
+	strong {
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	/* Stacked on narrow screens: all of Antiphony's rows, then all of yours. */
+	.head.yours {
+		order: 1;
+		box-shadow: inset 0 2px 0 var(--ap-response);
+	}
+	.cell.yours {
+		order: 2;
+	}
+
+	@media (min-width: 55rem) {
+		.boundary {
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		}
+		.head.yours,
+		.cell.yours {
+			order: 0;
+			padding-left: 20px;
+			border-left: 1px solid var(--ap-border-default);
+		}
+		.head.yours {
+			margin-top: -2px;
+		}
+		.cell.ours,
+		.head.ours {
+			padding-right: 20px;
+		}
+	}
+</style>

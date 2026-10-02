@@ -1,0 +1,368 @@
+---
+/**
+ * Alice's prompt and Bob's reply as two plain cards: the prompt on the left,
+ * the reply answering from the right. Playing Alice's card cues Bob's when
+ * hers finishes, which is the whole product in five seconds.
+ */
+const posts = [
+	{
+		type: 'call',
+		initial: 'A',
+		name: 'Alice',
+		handle: '@alice.bsky.social',
+		kind: 'Prompt',
+		text: 'First-job advice?',
+		seconds: 3,
+		peaks: [12, 28, 45, 60, 75, 90, 85, 60, 40, 55, 70, 80, 65, 45, 30, 50, 75, 95, 80, 60, 45, 30, 20],
+		transcript: '“What’s the best advice you got in your first year of work?”',
+	},
+	{
+		type: 'response',
+		initial: 'B',
+		name: 'Bob',
+		handle: '@bob.audio.social',
+		kind: 'Reply',
+		text: '',
+		seconds: 4,
+		peaks: [18, 35, 50, 70, 88, 92, 75, 55, 65, 80, 85, 70, 50, 40, 60, 82, 90, 75, 50, 35, 25],
+		transcript: '“Write down why you made a decision, not just what you decided. Six months later you won’t remember.”',
+	},
+] as const;
+---
+
+<div class="posts">
+	{posts.map((p) => (
+		<div class:list={['post', p.type]}>
+			{p.type === 'response' && (
+				<div class="ref"><span class="ref-dot" aria-hidden="true"></span>reply.parent → at://…/3k6w</div>
+			)}
+			<div class="card">
+				<div class="head">
+					<span class="avatar" aria-hidden="true">{p.initial}</span>
+					<span class="who">{p.name} <span class="handle">{p.handle}</span></span>
+					<span class="kind">{p.kind}</span>
+				</div>
+				{p.text && <p class="text">{p.text}</p>}
+				<div class="player">
+					<button type="button" class="play" aria-label={`Play ${p.kind.toLowerCase()}`} aria-pressed="false" data-play={p.type}>
+						<svg class="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+						<svg class="icon-pause" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+					</button>
+					<div class="wave" data-wave={p.type}>
+						{p.peaks.map((h) => <span style={`height:${h}%`}></span>)}
+					</div>
+					<span class="time" data-time={p.type}>0:00 / 0:0{p.seconds}</span>
+				</div>
+				<p class="transcript"><span class="transcript-label">Transcript</span>{p.transcript}</p>
+			</div>
+		</div>
+	))}
+</div>
+
+<script>
+	// The cards "speak" when played: a wordless, voice-like murmur made with
+	// Web Audio, no audio files. Alice's phrase rises at the end like a
+	// question; Bob's falls like an answer.
+
+	type Voice = {
+		syllables: number;
+		seconds: number;
+		/** Pitch in Hz at the start and end of the phrase. */
+		from: number;
+		to: number;
+	};
+
+	const VOICES: Record<'call' | 'response', Voice> = {
+		call: { syllables: 7, seconds: 2.4, from: 210, to: 320 },
+		response: { syllables: 10, seconds: 3.2, from: 150, to: 105 },
+	};
+
+	let ctx: AudioContext | null = null;
+	let current: { stop: () => void } | null = null;
+
+	function speak(voice: Voice, onEnd: () => void) {
+		ctx ??= new AudioContext();
+		const t0 = ctx.currentTime + 0.05;
+		const osc = ctx.createOscillator();
+		const filter = ctx.createBiquadFilter();
+		const gain = ctx.createGain();
+
+		osc.type = 'triangle';
+		filter.type = 'lowpass';
+		filter.frequency.value = 900;
+		gain.gain.value = 0;
+
+		// Intonation: glide from `from` to `to`, wobbling a little per syllable.
+		const steps = voice.syllables * 4;
+		const curve = new Float32Array(steps);
+		for (let i = 0; i < steps; i++) {
+			const t = i / (steps - 1);
+			curve[i] = (voice.from + (voice.to - voice.from) * t * t) * (1 + 0.06 * Math.sin(i * 1.7));
+		}
+		osc.frequency.setValueCurveAtTime(curve, t0, voice.seconds);
+
+		// Syllables: a soft swell and fall for each one.
+		const per = voice.seconds / voice.syllables;
+		for (let i = 0; i < voice.syllables; i++) {
+			const at = t0 + i * per;
+			gain.gain.setValueAtTime(0, at);
+			gain.gain.linearRampToValueAtTime(0.12, at + per * 0.3);
+			gain.gain.linearRampToValueAtTime(0.02, at + per * 0.85);
+		}
+		gain.gain.linearRampToValueAtTime(0, t0 + voice.seconds);
+
+		osc.connect(filter).connect(gain).connect(ctx.destination);
+		osc.start(t0);
+		osc.stop(t0 + voice.seconds + 0.05);
+
+		let stopped = false;
+		osc.onended = () => {
+			if (!stopped) onEnd();
+		};
+		return {
+			stop() {
+				stopped = true;
+				osc.stop();
+			},
+		};
+	}
+
+	function setupCard(type: 'call' | 'response', next?: () => void) {
+		const btn = document.querySelector<HTMLButtonElement>(`[data-play="${type}"]`);
+		const wave = document.querySelector(`[data-wave="${type}"]`);
+		const time = document.querySelector(`[data-time="${type}"]`);
+		if (!btn || !wave || !time) return () => {};
+
+		const voice = VOICES[type];
+		const bars = wave.querySelectorAll('span');
+		const total = Math.ceil(voice.seconds);
+		let raf = 0;
+
+		const render = (progress: number) => {
+			const lit = Math.round(progress * bars.length);
+			bars.forEach((bar, i) => bar.classList.toggle('played', i < lit));
+			const sec = Math.min(total, Math.floor(progress * voice.seconds));
+			time.textContent = `0:0${sec} / 0:0${total}`;
+		};
+
+		const setPlaying = (on: boolean) => btn.setAttribute('aria-pressed', String(on));
+
+		const stop = () => {
+			cancelAnimationFrame(raf);
+			setPlaying(false);
+		};
+
+		const play = (thenNext: boolean) => {
+			current?.stop();
+			setPlaying(true);
+			const started = performance.now();
+			const tick = () => {
+				const progress = Math.min(1, (performance.now() - started) / (voice.seconds * 1000));
+				render(progress);
+				if (progress < 1) raf = requestAnimationFrame(tick);
+			};
+			tick();
+			const handle = speak(voice, () => {
+				stop();
+				current = null;
+				if (thenNext) setTimeout(() => next?.(), 350);
+			});
+			current = {
+				stop() {
+					handle.stop();
+					stop();
+				},
+			};
+		};
+
+		btn.addEventListener('click', () => {
+			if (btn.getAttribute('aria-pressed') === 'true') {
+				current?.stop();
+				current = null;
+				return;
+			}
+			play(true);
+		});
+
+		render(0);
+		return () => play(false);
+	}
+
+	const playReply = setupCard('response');
+	setupCard('call', playReply);
+</script>
+
+<style>
+	.posts {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.post {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		--voice: var(--ap-call);
+		--on-voice: var(--ap-on-call);
+		--voice-ink: var(--ap-call-ink);
+	}
+
+	.post.response {
+		align-items: flex-end;
+		--voice: var(--ap-response);
+		--on-voice: var(--ap-on-response);
+		--voice-ink: var(--ap-response-ink);
+	}
+
+	.ref {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 4px;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		color: var(--ap-text-muted);
+	}
+
+	.ref-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: var(--ap-radius-full);
+		background: var(--ap-response);
+	}
+
+	.card {
+		width: min(100%, 30rem);
+		box-sizing: border-box;
+		padding: 16px 18px;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: 14px;
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 12px;
+	}
+
+	.avatar {
+		width: 28px;
+		height: 28px;
+		flex: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--ap-radius-full);
+		background: var(--voice);
+		color: var(--on-voice);
+		font-size: 13px;
+		font-weight: 700;
+	}
+
+	.who {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--ap-text-primary);
+	}
+
+	.handle {
+		font-weight: 400;
+		color: var(--ap-text-muted);
+	}
+
+	.kind {
+		margin-left: auto;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--voice-ink);
+	}
+
+	.text {
+		margin: 0 0 12px;
+		font-size: 16px;
+		font-weight: 500;
+		color: var(--ap-text-primary);
+	}
+
+	.player {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.play {
+		width: 34px;
+		height: 34px;
+		flex: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: 0;
+		border-radius: var(--ap-radius-full);
+		background: var(--voice);
+		color: var(--on-voice);
+		cursor: pointer;
+	}
+
+	.icon-pause,
+	.play[aria-pressed='true'] .icon-play {
+		display: none;
+	}
+
+	.play[aria-pressed='true'] .icon-pause {
+		display: block;
+	}
+
+	.wave {
+		flex: 1;
+		min-width: 0;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.wave span {
+		flex: 1;
+		min-width: 2px;
+		border-radius: 2px;
+		background: var(--ap-audio-waveform-unplayed);
+	}
+
+	.wave span.played {
+		background: var(--voice);
+	}
+
+	.time {
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+		color: var(--ap-text-muted);
+		white-space: nowrap;
+	}
+
+	.transcript {
+		margin: 12px 0 0;
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--ap-text-secondary);
+	}
+
+	.transcript-label {
+		margin-right: 6px;
+		font-family: var(--ap-font-mono);
+		font-size: 10px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+	}
+</style>

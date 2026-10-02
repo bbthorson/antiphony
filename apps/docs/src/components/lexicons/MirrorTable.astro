@@ -1,0 +1,73 @@
+---
+/** Antiphony records beside the app.bsky.* shapes they mirror. */
+const rows = [
+	['audio.post', 'app.bsky.feed.post'],
+	['embed.audio', 'app.bsky.embed.video'],
+	['embed.recordWithAudio', 'app.bsky.embed.recordWithMedia'],
+	['actor.profile', 'app.bsky.actor.profile'],
+];
+---
+
+<div class="not-content ap-mirrors">
+	<div class="row head">
+		<span class="ours">Antiphony</span>
+		<span class="theirs">Mirrors</span>
+	</div>
+	{rows.map(([a, b]) => (
+		<div class="row">
+			<span class="a">{a}</span>
+			<span class="b">{b}</span>
+		</div>
+	))}
+</div>
+
+<style>
+	.ap-mirrors {
+		overflow: hidden;
+		background: var(--ap-surface-elevated);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+	}
+
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	}
+
+	.row + .row {
+		border-top: 1px solid var(--ap-border-subtle);
+	}
+
+	.row > span {
+		padding: 10px 14px;
+		overflow-wrap: anywhere;
+	}
+
+	.row > span + span {
+		border-left: 1px solid var(--ap-border-subtle);
+	}
+
+	.head {
+		font-size: 11px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.ours {
+		color: var(--ap-call-ink);
+	}
+
+	.theirs {
+		color: var(--ap-response-ink);
+	}
+
+	.a {
+		color: var(--ap-text-primary);
+	}
+
+	.b {
+		color: var(--ap-text-secondary);
+	}
+</style>

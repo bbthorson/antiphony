@@ -1,0 +1,72 @@
+---
+/**
+ * Light / Dark as a two-button segment, replacing Starlight's three-way
+ * select. It writes the same `starlight-theme` key Starlight's ThemeProvider
+ * reads, so a choice survives navigation. With nothing stored, the page
+ * follows the system setting and the matching button shows as pressed.
+ */
+---
+
+<div class="ap-theme-toggle" role="group" aria-label="Color theme">
+	<button type="button" data-theme-choice="light">Light</button>
+	<button type="button" data-theme-choice="dark">Dark</button>
+</div>
+
+<script>
+	function sync() {
+		const current = document.documentElement.dataset.theme;
+		document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]').forEach((btn) => {
+			btn.setAttribute('aria-pressed', String(btn.dataset.themeChoice === current));
+		});
+	}
+
+	document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const theme = btn.dataset.themeChoice === 'dark' ? 'dark' : 'light';
+			document.documentElement.dataset.theme = theme;
+			try {
+				localStorage.setItem('starlight-theme', theme);
+			} catch {
+				// Storage can be unavailable (private mode); the choice still applies to this page.
+			}
+			sync();
+		});
+	});
+
+	sync();
+</script>
+
+<style>
+	.ap-theme-toggle {
+		display: inline-flex;
+		flex: none;
+		border: 1px solid var(--ap-border-default);
+		border-radius: var(--ap-radius-md);
+		overflow: hidden;
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+	}
+
+	button {
+		border: 0;
+		padding: 6px 10px;
+		font: inherit;
+		line-height: 1.4;
+		cursor: pointer;
+		background: transparent;
+		color: var(--ap-text-secondary);
+		transition: background var(--ap-transition-fast), color var(--ap-transition-fast);
+	}
+
+	button:hover {
+		color: var(--ap-text-primary);
+	}
+
+	/* Keyed off the resolved theme rather than aria-pressed, so the right
+	   segment is lit before any script runs. */
+	:global(:root[data-theme='light']) [data-theme-choice='light'],
+	:global(:root[data-theme='dark']) [data-theme-choice='dark'] {
+		background: var(--ap-call);
+		color: var(--ap-on-call);
+	}
+</style>

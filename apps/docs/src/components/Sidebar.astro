@@ -1,40 +1,29 @@
 ---
+/**
+ * The docs sidebar. Groups and links come from astro.config.mjs as usual;
+ * under the current page it lists that page's H2s, so the questions a page
+ * answers sit in the sidebar where Starlight's "On this page" used to be.
+ */
 import MobileMenuFooter from '@astrojs/starlight/components/MobileMenuFooter.astro';
 import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro';
-import SidebarSublist from '@astrojs/starlight/components/SidebarSublist.astro';
+import SidebarGroup from './SidebarGroup.astro';
+import { primaryNav, isActive } from '../lib/nav';
 
-const { sidebar } = Astro.locals.starlightRoute;
+const { sidebar, headings } = Astro.locals.starlightRoute;
 const currentPath = Astro.url.pathname;
-
-const primaryNav = [
-	{ label: 'Lexicons', href: '/lexicons/overview/' },
-	{ label: 'Guides', href: '/self-hosting/quick-start/' },
-	{ label: 'Capture Kit', href: '/build-your-own/capture-kit/' },
-	{ label: 'Architecture', href: '/introduction/architecture/' },
-	{ label: 'API Reference', href: '/api/overview/' },
-];
-
-function isActive(href: string): boolean {
-	return currentPath.startsWith(href.replace(/\/$/, ''));
-}
+const questions = headings.filter((h) => h.depth === 2);
 ---
 
 <div class="mobile-primary-section print:hidden">
-	<div class="primary-section-title">Primary Navigation</div>
-	<div class="primary-nav-list">
-		{primaryNav.map((item) => (
-			<a
-				href={item.href}
-				class:list={['primary-nav-item', { active: isActive(item.href) }]}
-			>
-				<span class="nav-label">{item.label}</span>
-			</a>
-		))}
-	</div>
+	{primaryNav.map((item) => (
+		<a href={item.href} class:list={['primary-nav-item', { active: isActive(item.href, currentPath) }]}>
+			{item.label}
+		</a>
+	))}
 </div>
 
 <SidebarPersister>
-	<SidebarSublist sublist={sidebar} />
+	<SidebarGroup entries={sidebar} questions={questions} />
 </SidebarPersister>
 
 <div class="md:sl-hidden">
@@ -43,56 +32,31 @@ function isActive(href: string): boolean {
 
 <style>
 	.mobile-primary-section {
-		display: block;
-		padding-bottom: var(--ap-space-3);
-		margin-bottom: var(--ap-space-3);
+		display: flex;
+		flex-direction: column;
+		padding-bottom: 12px;
+		margin-bottom: 20px;
 		border-bottom: 1px solid var(--ap-border-subtle);
 	}
 
-	@media (min-width: 64rem) {
+	@media (min-width: 72rem) {
 		.mobile-primary-section {
 			display: none;
 		}
 	}
 
-	.primary-section-title {
-		font-size: var(--ap-font-xs);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--ap-text-muted);
-		margin-bottom: var(--ap-space-2);
-		padding-inline: var(--ap-space-2);
-	}
-
-	.primary-nav-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--ap-space-1);
-	}
-
 	.primary-nav-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: var(--ap-space-2) var(--ap-space-3);
-		border-radius: var(--ap-radius-md);
-		font-size: var(--ap-font-sm);
+		padding: 6px 12px;
+		font-size: 14px;
 		font-weight: 500;
-		color: var(--ap-text-primary);
+		color: var(--ap-text-secondary);
 		text-decoration: none;
-		transition: all var(--ap-transition-fast);
-	}
-
-	.primary-nav-item:hover {
-		background: var(--ap-call-subtle);
-		color: var(--ap-call);
+		box-shadow: inset 2px 0 0 transparent;
 	}
 
 	.primary-nav-item.active {
-		background: var(--ap-call-subtle);
-		color: var(--ap-call);
+		color: var(--ap-text-primary);
 		font-weight: 600;
+		box-shadow: inset 2px 0 0 var(--ap-call);
 	}
-
 </style>
