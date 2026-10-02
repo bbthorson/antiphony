@@ -82,7 +82,7 @@ h6,
 	--ap-response-ink: var(--ap-response-700);
 	--ap-num: var(--ap-call-800);
 	/* Text on a solid indigo fill, in both themes. */
-	--ap-on-call: #ffffff;
+	--ap-on-call: var(--ap-neutral-50);
 	/* Text on a solid coral fill: ink, since white on coral fails AA. */
 	--ap-on-response: var(--ap-neutral-900);
 }
