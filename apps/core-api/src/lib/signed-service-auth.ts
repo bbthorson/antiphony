@@ -433,7 +433,7 @@ export async function verifySignedServiceAuth(
     }
 
     const signingInput = new TextEncoder().encode(`${headerSeg}.${payloadSeg}`);
-    let verified = false;
+    let verified: boolean;
     try {
         verified = await crypto.subtle.verify(
             { name: 'ECDSA', hash: 'SHA-256' },

@@ -73,11 +73,11 @@
     "react": "^19.2.8"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.7",
-    "eslint": "^9.16.0",
+    "eslint": "^10.11.0",
     "jsdom": "^30.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
