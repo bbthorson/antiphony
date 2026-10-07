@@ -1,6 +1,7 @@
 # atproto spaces in Antiphony — implementation plan
 
-**Status:** plan, 2026-09-24. Nothing here is built. Supersedes "Decision 2 —
+**Status:** plan, 2026-09-24; builds on `@atproto/space` and `@atproto/syntax` since
+2026-10-07 (see that update). Nothing here is built. Supersedes "Decision 2 —
 spaces is not adopted now" in [`atproto-authority-model.md`](./atproto-authority-model.md)
 (2026-08-21): Brad decided on 2026-09-22 to adopt spaces now, and to prove it on
 Bardcast first. That spec is being edited in parallel for the DID-method work,
@@ -57,6 +58,51 @@ each phase starts.
 Sources: the alpha announcement (atproto.com/blog/atproto-spaces-alpha), the
 2026-09-18 spec-delta summary tracked in the `ezpds` project, and the
 `rsky-space-host` crate docs. Proposal 0016 is the design lineage.
+
+## Update 2026-10-07 — build on the atproto libraries
+
+Decided by Brad: use Bluesky's own spaces code rather than hand-rolling the protocol. Two
+packages, both alpha, **pinned to an exact version** and upgraded deliberately:
+
+- **`@atproto/space`** `0.0.0-spaces-alpha-20261001173819`, the protocol primitives:
+  space tokens (`createSpaceToken`, `parseSpaceToken`, `verifySpaceToken`, the `delegation`,
+  `credential` and `clientAttestation` types), HTTP message signatures (`createSpaceSig`,
+  `verifySpaceSignature`), space repo commits (`RepoCommit` over an `LtHash` set hash,
+  `verifyCommit`) and sync (`serializeRepo`, `verifyRepoCar`). It is not a host: there is no
+  server, store or policy engine in it.
+- **`@atproto/syntax`** at the same alpha, for space URIs: `AtUri.makeSpace(spaceDid,
+  spaceType, skey, authorDid?, collection?, rkey?)`, `AtUri#isSpace`, `#spaceDid`,
+  `#spaceType`, and `SpaceRef` for a space itself (`at://{spaceDid}/space/{type}/{skey}`).
+
+**Why pin exactly.** The alpha already broke once: between the 2026-08-18 and 2026-10-01
+builds, credentials moved from DPoP binding to HTTP message signatures over the token and an
+audience DID (atproto #5569). A caret range on a `0.0.0-…` prerelease would take the next
+break silently.
+
+**What that changes per phase:**
+
+| Phase | What the libraries cover | What stays Antiphony's |
+| :--- | :--- | :--- |
+| 1 — data model and URIs | Building, parsing and validating space URIs (`AtUri.makeSpace`, `SpaceRef.parse`). The hand-written builder and parser below become thin wrappers over them, with the flat shape unchanged. | Placement on the post row, the tenant check in the parser, the `@antiphony/shared` schema. |
+| 2 — tenant API and enforcement | Nothing. | All of it: the spaces API, prompts in a space, replies inheriting, and **signed playback** (below). |
+| 3 — protocol surface | Most of it: issuing and verifying credentials, verifying request signatures, the space repo commit and its sync format. | Routing, storage, `checkUserAccess` calls, and holding the space signing key (open question 1). |
+
+Phase 3 gets much smaller, but it stays after Phase 2: no app other than the tenant needs to
+read a space yet.
+
+**Who can play a recording.** Today nobody needs a DID or any credential to play one:
+`GET /api/v1/audio` is an anonymous proxy, and since 0.5.0 its URLs are stable and unsigned
+(`apps/core-api/src/lib/audio-url.ts`). The gate is Phase 2's signed playback. A tenant asks
+for a short-lived URL after making its own access decision; for Bardcast that means checking
+the player's session DID against the space's membership (the campaign's party, or the player
+themselves for their own space). Phase 3 credentials don't replace this for playback: a
+browser's `<audio src>` can't attach an HTTP message signature, so signed URLs stay the way
+audio is played.
+
+**Dependencies.** `@atproto/space` depends on `zod` 3 while Antiphony is on `zod` 4, so both
+copies end up in the Worker bundle. That's acceptable; never pass a schema across the boundary.
+Check both packages run under the Workers runtime (`@noble/hashes`, `structured-headers`) in
+Phase 1 before relying on them.
 
 ## Shape of the change
 
@@ -206,6 +252,11 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
    the tenant's DID. That is the same shape as the lower-priority operational
    key in the did:plc plan, and it should be designed together with it. It does
    not block Phases 1, 2 or 4.
+   *Narrowed 2026-10-07 by `@atproto/space`:* credentials are signed with the
+   authority's `#atproto_space` key when its DID document publishes one, and its
+   `#atproto` key otherwise. So Antiphony never needs the tenant's account key: the
+   tenant publishes a dedicated `#atproto_space` key, next to the
+   `#atproto_space_host` entry it already adds, and Antiphony holds that one.
 2. **"Upgrade to your own DID" versus a sealed author segment — settled.** A
    player's minted DID goes into the author segment of every spaced record they
    write, and is sealed once replied to. That is safe only because the paid
