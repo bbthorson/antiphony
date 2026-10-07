@@ -296,7 +296,7 @@ hold custody of more than one authority.
 | A solo user's own post | the user's DID | the user | the user. Brad's stated lean ("their URI should be their handle, I think") and the reason D3 mints user DIDs; to confirm before it's built. |
 | Bardcast campaign content (replies; and Bardcast's own seat, action, state-event and chapter records) | Bardcast's DID, campaign `skey` | the player's DID segment | the campaign. |
 | A Bardcast character (profile, sheet versions, voice profile) | the player's DID | the player | the player, portable off Bardcast. Not Antiphony posts: Bardcast records in the player's own repo (D6). |
-| A Bardcast character-creation recording | **open** (D6) | the player | open (D6). |
+| A Bardcast character-creation recording | Bardcast's DID, the player's private space (`skey` = the player's DID) | the player's DID segment | Bardcast, in a space only the player can read (D6). |
 
 A DID may be an authority only if its document names Antiphony as the custody host. That is
 the same custody check tenants pass today, applied per DID. It's why Model B's reason 2
@@ -354,7 +354,8 @@ follow from it, and one is open.
   space isn't settled here or in Bardcast: today they live in Bardcast's state (its `Store`),
   and the projection to records hasn't been built. [`spaces.md`](./spaces.md) Phase 4 covers the
   posts.
-- **Open: where character-creation recordings go.** Players build a character by answering
+- **Where character-creation recordings go. Decided 2026-10-07: a private space per player
+  (option 1 below).** Players build a character by answering
   questions out loud, outside any campaign. Those answers are Antiphony audio posts, and they're
   the first samples for the player's voice clone. They don't fit any D2 row:
   - **Not "a solo user's own post".** That row's authority is the user's DID, and a DID may be an
@@ -378,8 +379,20 @@ follow from it, and one is open.
   3. **The solo-user row as written.** Needs each player to add Antiphony as a space host to
      their DID document. Not realistic for Bluesky users.
 
-  Leaning: option 1. Decide before the first kept creation recording; like everything here, it's
-  free to change until then.
+  **Decided: option 1.** The details:
+
+  - **One space per player, not per character.** Space type `{bardcast root}.space.player` (the
+    root is still the placeholder `game.bardcast`), `skey` the player's DID (record-key syntax
+    allows the colons). Every character the player makes records into the same space.
+  - **Created when the player starts making their first character**, not at sign-up: a player who
+    only listens never gets one. Bardcast calls `PUT /api/v1/spaces/{spaceType}/{skey}` then, and
+    reuses the space after.
+  - **Policy:** `readPolicy` and `writePolicy` `managing-app`; Bardcast answers yes for that player
+    only. The narrator's questions are prompts in the space, and the player's answers are replies,
+    so they inherit it.
+  - **What leaves with the player** is what's in their own repo: the profile, the sheet versions and
+    the voice profile. The raw recordings stay in the space, kept by Bardcast.
+  - Like everything here, free to change until the first kept recording.
 
 ## Honest tradeoffs / where B hurts (ranked)
 

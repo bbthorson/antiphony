@@ -188,10 +188,12 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
   passes the campaign's space; player replies inherit it from the parent with no
   change on Bardcast's side. `postIdFromUri` (last segment) already works for
   space URIs.
-- **A second space type may follow:** character-creation recordings happen outside any
-  campaign, and the leaning option is a private space per player
-  ([`atproto-authority-model.md` D6](./atproto-authority-model.md#d6--bardcast-characters-2026-10-07)).
-  Nothing in Phases 1–3 assumes one space type per tenant.
+- **A second space type: a private space per player** for character-creation recordings, which
+  happen outside any campaign (decided 2026-10-07,
+  [`atproto-authority-model.md` D6](./atproto-authority-model.md#d6--bardcast-characters-2026-10-07)).
+  Type `game.bardcast.space.player`, `skey` the player's DID, `managing-app` policies, created
+  when the player starts their first character. Nothing in Phases 1–3 assumes one space type per
+  tenant.
 - **Tenancy first:** Bardcast is not a tenant in production yet (only Vox Pop is
   pinned in `ANTIPHONY_APP_DIDS`). That onboarding is item #1 in the authority
   thread, which Brad parked. Phase 4 cannot run against production until it is
