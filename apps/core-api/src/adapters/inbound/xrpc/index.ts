@@ -257,7 +257,7 @@ export function xrpcRoute(): Hono {
             // uri is built here rather than re-read so a create still costs one
             // write and no extra read.
             return c.json({
-                uri: buildPostUri(getAppDid(originAppId), created.id),
+                uri: buildPostUri(getAppDid(originAppId), created.id, created.space),
                 cid: created.cid,
             });
         },

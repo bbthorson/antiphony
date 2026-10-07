@@ -1,7 +1,8 @@
 # atproto spaces in Antiphony — implementation plan
 
 **Status:** plan, 2026-09-24; builds on `@atproto/space` and `@atproto/syntax` since
-2026-10-07 (see that update). Nothing here is built. Supersedes "Decision 2 —
+2026-10-07 (see that update). **Phase 1 is built** (2026-10-07, see "Phase 1 — as built");
+Phases 2–4 are not. Supersedes "Decision 2 —
 spaces is not adopted now" in [`atproto-authority-model.md`](./atproto-authority-model.md)
 (2026-08-21): Brad decided on 2026-09-22 to adopt spaces now, and to prove it on
 Bardcast first. That spec is being edited in parallel for the DID-method work,
@@ -101,8 +102,28 @@ audio is played.
 
 **Dependencies.** `@atproto/space` depends on `zod` 3 while Antiphony is on `zod` 4, so both
 copies end up in the Worker bundle. That's acceptable; never pass a schema across the boundary.
-Check both packages run under the Workers runtime (`@noble/hashes`, `structured-headers`) in
-Phase 1 before relying on them.
+
+**Checked on Workers, 2026-10-07.** A probe Worker under core-api's own settings
+(`compatibility_date` 2025-11-01, `nodejs_compat`) minted and verified a space credential,
+signed and verified a request (`createSpaceSigHeaders` / `verifySpaceSignature`), signed and
+verified a space repo commit, and round-tripped a space URI with a DID as its `skey`. Two
+findings for whoever adds `@atproto/space` (Phase 3):
+
+- **It can't be installed as published without `overrides`.** Its `@atproto/*` dependencies
+  are declared `^0.0.0-spaces-alpha-…`, and a caret range on a `0.0.0` prerelease also
+  matches the plain `0.0.0` release. `@atproto/lex-data@0.0.0` and `@atproto/lex-cbor@0.0.0`
+  exist, and `lex-data@0.0.0` was published with a raw `"@atproto/syntax": "workspace:*"`
+  dependency, so npm 10 and 11 die silently mid-resolve and pnpm reports
+  `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`. Add root `overrides` pinning `@atproto/lex-data`,
+  `@atproto/lex-cbor`, `@atproto/car`, `@atproto/crypto`, `@atproto/common` and
+  `@atproto/syntax` to the same exact alpha.
+- **It needs `nodejs_compat`**: `multiformats`' sha2 imports Node's `crypto`. core-api already
+  has the flag.
+
+`@atproto/space` is not a dependency yet: nothing calls it before Phase 3, and `knip` rejects
+an unused dependency. `@atproto/syntax` is, at the exact alpha, in both `packages/core` and
+`apps/core-api` (one version, replacing `^0.7.6`; core-api only used its TID, record-key and
+DID validators, which the alpha keeps). Its own dependencies don't hit the `0.0.0` trap.
 
 ## Shape of the change
 
@@ -185,6 +206,46 @@ Each phase ships on its own and leaves the service working.
 - **Tests:** a flat round trip is unchanged; a spaced round trip; a reply to a
   spaced parent lands in the same space; a request naming a different space is
   rejected; a spaced URI from another tenant is rejected.
+
+### Phase 1 — as built (2026-10-07)
+
+What landed, and where it differs from the plan above:
+
+- **Migration `0002_spaces.sql`.** The `spaces` table as planned, keyed by
+  `(origin_app_id, space_type, skey)`, with both policies (defaulting to the protocol's
+  `member-list`, checked against the three known values) and a **nullable**
+  `managing_app_endpoint`: the tenant is its own managing app and tenant reads need no
+  callback, so only Phase 3 needs it set. On `posts`, `space_type`, `skey` and
+  `author_segment` are **generated columns** promoted from `record -> 'space'`, like 0001's
+  query facets, with the all-or-none check. Beyond the plan: a **foreign key** to `spaces`
+  (a placed post's space must exist in the same tenant; a space holding posts can't be
+  deleted) and a partial index for listing a space's posts.
+- **Placement is one object on the record**: `space: { type, skey, authorSegment }`
+  (`SpacePlacementSchema` in `@antiphony/shared`, now **0.8.0**), storage-layer and out of the
+  CID. One object rather than three optional fields makes all-or-none structural in Zod too.
+  Shared keeps light syntax checks so it stays dependency-free; core validates every part with
+  `@atproto/syntax` before minting a URI.
+- **URIs.** `buildRecordUri({ authority, collection, rkey, space? })` is the one builder;
+  `buildPostUri(appDid, rkey, space?)` wraps it, so every caller passes the record's own
+  placement (hydration, transcript subjects, XRPC `createPost`). Flat URIs are still built by
+  hand, byte-identical; space URIs come from `AtUri.makeSpace`. `parsePostUri` returns the id
+  and placement, refuses another tenant's authority as before, and refuses a space URI this
+  service wouldn't have minted (it must round-trip). `parsePostId` wraps it.
+- **Placement through `createPost`.** A prompt can name `space: { type, skey }`; the author
+  segment is the author's DID, or the tenant's app DID when they have none. A reply always
+  lands in its parent's space; naming any other space is a 400. A parent URI whose placement
+  doesn't match where the parent actually lives is treated as a missing parent (404).
+- **`packages/core` moved to `moduleResolution: bundler`** (with `module: esnext`), matching
+  the root and core-api. The old `node` resolution can't read `@atproto/syntax`'s `exports`
+  map. Nothing consumes core's `dist`; every consumer reads its source.
+- **Not yet (Phase 2):** no route accepts `space`, so nothing outside tests can place a post,
+  and spaces exist only by SQL. A service call naming a space that doesn't exist fails at save
+  on the foreign key (a 500) until Phase 2 checks it first. Playback is still anonymous.
+- **Tests:** `packages/core/services/audio-posts.spaces.test.ts` (URI shapes and round trips,
+  a DID as `skey`, cross-tenant and malformed URIs, placement through create, reply
+  inheritance and its refusals, hydration), `apps/core-api/src/adapters/outbound/postgres/spaces.test.ts`
+  (placement round trip, the generated columns, the foreign key, the all-or-none check, policy
+  values, deletion), and `SpacePlacementSchema` cases in `@antiphony/shared`.
 
 ### Phase 2 — the tenant API and enforcement (Antiphony)
 

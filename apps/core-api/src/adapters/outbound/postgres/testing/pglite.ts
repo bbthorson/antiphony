@@ -65,7 +65,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
             return res.rows;
         },
         async truncate(): Promise<void> {
-            await pg.exec('truncate posts, audio_transcripts, idempotency_keys, rate_limits');
+            await pg.exec('truncate posts, spaces, audio_transcripts, idempotency_keys, rate_limits');
         },
         async close(): Promise<void> {
             await pg.close();

@@ -39,9 +39,11 @@ The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, 
 ## The records this models
 
 - **`dev.antiphony.audio.post`** — the single canonical content record. A post without a `reply` is a prompt; with a `reply` it's a reply.
-- **`dev.antiphony.embed.audio`** — the audio attachment (stored record + hydrated view with a signed playback URL).
+- **`dev.antiphony.embed.audio`** — the audio attachment (stored record + hydrated view with a playback URL through the core's audio proxy).
 - **`dev.antiphony.audio.transcript`** — platform-enrichment transcript, lifted into the embed view at read time.
 - **`dev.antiphony.actor.profile`** — the portable actor-profile shape. Lexicon-only: the core never stores it; the calling app owns profile data.
+
+A stored post may also carry a **space placement** (`SpacePlacementSchema`: space type, space key and author segment), when it lives in an atproto space rather than flat. It is storage-layer, like `originAppId`: not in the lexicon, not in the record CID, and visible only through the post's `at://` URI. See [`specs/spaces.md`](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md).
 
 See the [lexicon reference](https://docs.antiphony.dev/lexicons/overview/) for the full contract.
 

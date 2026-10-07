@@ -252,6 +252,7 @@ const CASES: ParityCase[] = [
             threadParticipants: STORAGE_FIELDS,
             rootAuthorId: STORAGE_FIELDS,
             processing: STORAGE_FIELDS,
+            space: STORAGE_FIELDS,
         },
     },
     { lexicon: 'dev.antiphony.audio.post#replyRef', schema: ReplyRefSchema },
