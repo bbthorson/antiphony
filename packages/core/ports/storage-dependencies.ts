@@ -48,6 +48,25 @@ export interface BlobRead {
     totalSize?: number;
     /** Content type recorded at upload, if the backend kept it. */
     mimeType?: string;
+    /** String metadata recorded at upload (see `BlobUploadOptions.metadata`). */
+    metadata?: Record<string, string>;
+}
+
+/** What a store knows about an object without reading its bytes. */
+export interface BlobStat {
+    size?: number;
+    mimeType?: string;
+    metadata?: Record<string, string>;
+}
+
+export interface BlobUploadOptions {
+    /**
+     * String metadata to store with the object and hand back on every read and
+     * stat. Antiphony records a blob's space here (`antiphony-space`), which is
+     * how the audio proxy knows, from the object it was already fetching,
+     * whether a request must be signed (specs/spaces.md, Phase 2).
+     */
+    metadata?: Record<string, string>;
 }
 
 export interface BlobStore {
@@ -56,7 +75,7 @@ export interface BlobStore {
      * stored object (provider-specific). Callers persist it as-is and use
      * `extractObjectPath` to recover the path later.
      */
-    upload(bytes: Uint8Array, destinationPath: string, mimeType: string): Promise<string>;
+    upload(bytes: Uint8Array, destinationPath: string, mimeType: string, options?: BlobUploadOptions): Promise<string>;
 
     /**
      * Open an object for streaming, optionally a byte range. Returns null when
@@ -77,6 +96,9 @@ export interface BlobStore {
      * should use `openStream` instead.
      */
     download(objectPath: string): Promise<Uint8Array | null>;
+
+    /** An object's size, type and metadata without its bytes, or null when absent. */
+    stat(objectPath: string): Promise<BlobStat | null>;
 
     /**
      * Extract the storage object path from a full provider URL. Returns null

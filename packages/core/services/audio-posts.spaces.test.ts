@@ -8,7 +8,8 @@ import {
     type CreateAudioPostInput,
 } from './audio-posts';
 import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
-import type { AudioPostRecord, SpacePlacement, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type { SpaceKey, SpacePlacement } from 'shared/types/spaces';
 
 /**
  * atproto spaces, Phase 1 (specs/spaces.md): space-aware post URIs, and
@@ -69,12 +70,30 @@ describe('space post URIs', () => {
     });
 });
 
-/** In-memory dependencies that actually store posts, so replies can find their parents. */
-function makeDeps(): AudioPostDependencies & { posts: Map<string, AudioPostRecord> } {
+/** In-memory dependencies that store posts, spaces and blob placements. */
+function makeDeps(): AudioPostDependencies & {
+    posts: Map<string, AudioPostRecord>;
+    spaces: Set<string>;
+    blobs: Map<string, SpaceKey | null>;
+} {
     let counter = 0;
     const posts = new Map<string, AudioPostRecord>();
+    const spaces = new Set<string>();
+    const blobs = new Map<string, SpaceKey | null>();
+    const keyOf = (originAppId: string, k: SpaceKey) => `${originAppId}/${k.type}/${k.skey}`;
     return {
         posts,
+        spaces,
+        blobs,
+        getSpace: vi.fn(async (originAppId: string, k: SpaceKey) =>
+            spaces.has(keyOf(originAppId, k))
+                ? ({ originAppId, ...k, readPolicy: 'managing-app', writePolicy: 'managing-app', createdAt: new Date(), updatedAt: new Date() } as const)
+                : null,
+        ),
+        getBlobSpace: vi.fn(async (originAppId: string, cid: string) => {
+            const key = `${originAppId}/${cid}`;
+            return blobs.has(key) ? { space: blobs.get(key) ?? null } : null;
+        }),
         newPostId: vi.fn(() => `3kpost${++counter}aaaaa`),
         getAppDid: vi.fn(appDidFor),
         savePost: vi.fn(async (r: AudioPostRecord) => { posts.set(`${r.originAppId}/${r.id}`, r); }),
@@ -86,7 +105,11 @@ function makeDeps(): AudioPostDependencies & { posts: Map<string, AudioPostRecor
         resolveAudioUrl: vi.fn(async () => 'https://audio.example/x'),
         cidForRecord: vi.fn(async () => 'bafyreitestcid'),
         now: vi.fn(() => new Date('2026-10-07T00:00:00Z')),
-    } as AudioPostDependencies & { posts: Map<string, AudioPostRecord> };
+    } as unknown as AudioPostDependencies & {
+        posts: Map<string, AudioPostRecord>;
+        spaces: Set<string>;
+        blobs: Map<string, SpaceKey | null>;
+    };
 }
 
 const input = (over: Partial<CreateAudioPostInput> = {}): CreateAudioPostInput => ({
@@ -101,6 +124,7 @@ describe('createPost in a space', () => {
     let svc: AudioPostService;
     beforeEach(() => {
         deps = makeDeps();
+        deps.spaces.add(`bardcast/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
         svc = new AudioPostService(deps);
     });
 
@@ -194,5 +218,72 @@ describe('createPost in a space', () => {
         const expected = buildPostUri(APP, prompt.id, CAMPAIGN);
         expect(view?.uri).toBe(expected);
         expect(deps.getTranscriptsBySubjectUris).toHaveBeenCalledWith([expected]);
+    });
+
+    it("refuses a prompt in a space the tenant doesn't have", async () => {
+        await expect(svc.createPost(input({ space: { type: CAMPAIGN.type, skey: '3knosuch2space' } }))).rejects.toMatchObject({ status: 404 });
+        // Another tenant's space by the same key isn't this tenant's.
+        deps.spaces.add(`vox-pop/${CAMPAIGN.type}/3kother2space`);
+        await expect(svc.createPost(input({ space: { type: CAMPAIGN.type, skey: '3kother2space' } }))).rejects.toMatchObject({ status: 404 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+});
+
+describe('audio placement (Phase 2)', () => {
+    let deps: ReturnType<typeof makeDeps>;
+    let svc: AudioPostService;
+    const IN_CAMPAIGN = { type: CAMPAIGN.type, skey: CAMPAIGN.skey };
+    const embed = (cid: string) => ({
+        $type: 'dev.antiphony.embed.audio' as const,
+        audio: { $type: 'blob' as const, ref: { $link: cid }, mimeType: 'audio/webm', size: 10 },
+    });
+    beforeEach(() => {
+        deps = makeDeps();
+        deps.spaces.add(`bardcast/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
+        deps.blobs.set('bardcast/bafkprivate', IN_CAMPAIGN);
+        deps.blobs.set('bardcast/bafkpublic', null);
+        deps.blobs.set('bardcast/bafkelsewhere', { type: CAMPAIGN.type, skey: '3kanother2xyz' });
+        svc = new AudioPostService(deps);
+    });
+
+    it('accepts audio uploaded into the post’s own space', async () => {
+        const post = await svc.createPost(input({ space: IN_CAMPAIGN, embed: embed('bafkprivate') }));
+        expect(post.space?.skey).toBe(CAMPAIGN.skey);
+    });
+
+    it('accepts public audio on a flat post, and unknown audio as before', async () => {
+        await expect(svc.createPost(input({ embed: embed('bafkpublic') }))).resolves.toBeDefined();
+        await expect(svc.createPost(input({ embed: embed('bafkunstored') }))).resolves.toBeDefined();
+    });
+
+    it('refuses public, missing or other-space audio on a post in a space', async () => {
+        for (const cid of ['bafkpublic', 'bafkunstored', 'bafkelsewhere']) {
+            await expect(svc.createPost(input({ space: IN_CAMPAIGN, embed: embed(cid) }))).rejects.toMatchObject({ status: 400 });
+        }
+    });
+
+    it('refuses private audio on a flat post, so it can never be served unsigned', async () => {
+        await expect(svc.createPost(input({ embed: embed('bafkprivate') }))).rejects.toMatchObject({ status: 400 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('checks a reply’s audio against its parent’s space', async () => {
+        const prompt = await svc.createPost(input({ space: IN_CAMPAIGN }));
+        const ref = { uri: buildPostUri(APP, prompt.id, prompt.space), cid: prompt.cid };
+        await expect(
+            svc.createPost(input({ authorId: 'p2', text: 'x', reply: { root: ref, parent: ref }, embed: embed('bafkpublic') })),
+        ).rejects.toMatchObject({ status: 400 });
+        await expect(
+            svc.createPost(input({ authorId: 'p2', text: 'x', reply: { root: ref, parent: ref }, embed: embed('bafkprivate') })),
+        ).resolves.toMatchObject({ space: { skey: CAMPAIGN.skey } });
+    });
+
+    it('asks for a signed URL when hydrating audio in a space', async () => {
+        const post = await svc.createPost(input({ space: IN_CAMPAIGN, embed: embed('bafkprivate') }));
+        await svc.hydrateAudioPosts([post], null);
+        expect(deps.resolveAudioUrl).toHaveBeenCalledWith('bardcast', 'bafkprivate', IN_CAMPAIGN);
+        const flat = await svc.createPost(input({ embed: embed('bafkpublic') }));
+        await svc.hydrateAudioPosts([flat], null);
+        expect(deps.resolveAudioUrl).toHaveBeenLastCalledWith('bardcast', 'bafkpublic', undefined);
     });
 });

@@ -5,10 +5,10 @@ import {
     type AudioEmbed,
     type AudioEmbedView,
     type ReplyRef,
-    type SpacePlacement,
     type TranscriptEnrichmentRecord,
     type ViewerState,
 } from 'shared/types/audio';
+import type { SpacePlacement } from 'shared/types/spaces';
 import { EMBED_NSID } from 'shared/nsid';
 import {
     toProcessingView,
@@ -275,6 +275,8 @@ export class AudioPostService {
             ? await this.resolveReplyBranch(input.originAppId, input.authorId, input.reply)
             : undefined;
         const space = this.placementFor(input, branch?.space);
+        if (space && !input.reply) await this.assertSpaceExists(input.originAppId, space);
+        if (input.embed) await this.assertAudioPlacement(input.originAppId, input.embed.audio.ref.$link, space);
 
         const createdAt = this.deps.now();
         // Replies carry no title (record invariant); only prompts do.
@@ -410,6 +412,42 @@ export class AudioPostService {
         const placement = { ...input.space, authorSegment: this.authorSegment(input) };
         assertValidPlacement(placement);
         return placement;
+    }
+
+    /** A prompt's space must exist for this tenant. (A reply's exists: its parent is in it.) */
+    private async assertSpaceExists(originAppId: string, space: SpacePlacement): Promise<void> {
+        const found = await this.deps.getSpace(originAppId, { type: space.type, skey: space.skey });
+        if (!found) throw new NotFoundError('Space not found');
+    }
+
+    /**
+     * The audio must live where the post does: uploaded into the post's space
+     * for a post in a space, public for a flat post. Otherwise a private post's
+     * audio would be publicly playable, or a public post's unplayable. Audio
+     * that isn't stored at all is left to fail as it always has (at playback),
+     * so flat posts behave exactly as before Phase 2.
+     */
+    private async assertAudioPlacement(
+        originAppId: string,
+        blobCid: string,
+        space: SpacePlacement | undefined,
+    ): Promise<void> {
+        const stored = await this.deps.getBlobSpace(originAppId, blobCid);
+        if (!stored) {
+            if (space) throw new ValidationError('Audio not found: upload it into the space first');
+            return;
+        }
+        const where = stored.space;
+        if (space && (where?.type !== space.type || where?.skey !== space.skey)) {
+            throw new ValidationError(
+                where
+                    ? 'This audio was uploaded into a different space'
+                    : 'This audio was uploaded as public; upload it into the space to post it there',
+            );
+        }
+        if (!space && where) {
+            throw new ValidationError('This audio was uploaded into a space; a public post can\'t use it');
+        }
     }
 
     private authorSegment(input: CreateAudioPostInput): string {
@@ -585,7 +623,11 @@ export class AudioPostService {
                 },
                 proc,
             );
-            const playbackUrl = await this.deps.resolveAudioUrl(record.originAppId, resolved.blobCid);
+            const playbackUrl = await this.deps.resolveAudioUrl(
+                record.originAppId,
+                resolved.blobCid,
+                record.space ? { type: record.space.type, skey: record.space.skey } : undefined,
+            );
             if (playbackUrl) {
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',

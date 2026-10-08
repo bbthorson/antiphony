@@ -238,9 +238,10 @@ What landed, and where it differs from the plan above:
 - **`packages/core` moved to `moduleResolution: bundler`** (with `module: esnext`), matching
   the root and core-api. The old `node` resolution can't read `@atproto/syntax`'s `exports`
   map. Nothing consumes core's `dist`; every consumer reads its source.
-- **Not yet (Phase 2):** no route accepts `space`, so nothing outside tests can place a post,
-  and spaces exist only by SQL. A service call naming a space that doesn't exist fails at save
-  on the foreign key (a 500) until Phase 2 checks it first. Playback is still anonymous.
+- **Not yet (Phase 2, since built):** no route accepts `space`, so nothing outside tests can
+  place a post, and spaces exist only by SQL. A service call naming a space that doesn't exist
+  fails at save on the foreign key (a 500) until Phase 2 checks it first. Playback is still
+  anonymous.
 - **Tests:** `packages/core/services/audio-posts.spaces.test.ts` (URI shapes and round trips,
   a DID as `skey`, cross-tenant and malformed URIs, placement through create, reply
   inheritance and its refusals, hydration), `apps/core-api/src/adapters/outbound/postgres/spaces.test.ts`
@@ -269,6 +270,57 @@ What landed, and where it differs from the plan above:
   blob's visibility without a per-request join is open question 3.
 - **Webhooks and enrichment** already go only to the owning tenant, so they need
   no change.
+
+### Phase 2 — as built (2026-10-08)
+
+API contract 0.7.0 (`CHANGELOG.md`).
+
+- **Spaces API.** `PUT`/`GET /api/v1/spaces/{spaceType}/{skey}` (`adapters/inbound/rest/spaces.ts`),
+  behind a service token alone: managing the tenant's own spaces needs no acting actor.
+  `PUT` replaces the policies (an omitted one goes back to `member-list`) and is idempotent.
+  `SpaceService` (`packages/core/services/spaces.ts`) validates the type and key with
+  `@atproto/syntax` and builds the space's own URI with `SpaceRef`; the Postgres adapter is
+  one upsert. Another tenant's space reads as 404. XRPC mirrors are still to come.
+- **Upload into a space.** `POST /api/v1/audio/upload` takes optional `spaceType` + `skey`
+  form fields. The space must exist (404). The object's custom metadata then carries
+  `antiphony-space: {type}/{skey}` (`apps/core-api/src/lib/blob-space.ts`); its path is
+  unchanged. **The first upload wins:** a CID already stored is never rewritten, so
+  re-uploading the same bytes can neither expose private audio nor hide public audio. The
+  response's `space` says where the blob actually lives. A marker that can't be read is
+  treated as private (fail closed).
+- **Posts.** `POST /api/v1/posts` and XRPC `createPost` take `space: { type, skey }` on a
+  prompt; the space must exist for the tenant (404, where Phase 1 failed on the foreign
+  key with a 500). The audio must match the post (400 otherwise): a post in a space needs
+  audio stored in that same space, and a flat post can't use audio stored in one. Audio the
+  store has never seen is allowed on a flat post, as before. Derived blobs from processing
+  inherit the post's space.
+- **Signed playback.** Audio in a space plays only from the proxy URL plus `exp` (Unix
+  seconds) and `sig`, an HMAC-SHA256 over `antiphony-playback-v1\n{objectPath}\n{exp}`
+  keyed by `ANTIPHONY_PLAYBACK_SECRET` (`apps/core-api/src/lib/playback-signature.ts`),
+  valid for an hour. Hydration (`AudioEmbedView.url`) and `getPlaybackUrl` mint it; the
+  tenant decides who sees the view, which is the managing app's decision. Every spaced
+  post is signed, whatever its space's read policy, including `public`: one rule, and
+  a public space costs only a URL that expires. `format` is not signed, so a holder of
+  the URL can append `format=mp3`.
+- **The proxy.** Unsigned (or expired, or tampered) requests for private audio get 404, the
+  same as missing audio. The canonical read already carries the metadata, so that check
+  costs nothing; for `format`, the proxy stats the canonical blob first, before any
+  rendition read or transcode, because a rendition object has no marker of its own. That's
+  one extra R2 `head` on an unsigned rendition request, public ones included. Private
+  responses are `Cache-Control: private, max-age={seconds left on the signature}`; public
+  ones stay `public, immutable`.
+- **Fails closed without a secret.** The secret is optional (32 characters minimum when
+  set). Without it `PUT /spaces` is a 503 (`SPACES_UNAVAILABLE`), so a deployment can't
+  store private audio it couldn't serve, and if it's removed later, spaced audio gets no
+  URL rather than an unsigned one.
+- **Not yet.** Read policies other than "the tenant decides" are stored but not enforced
+  by Antiphony: that's Phase 3, along with the protocol surface. A signed URL can't be
+  revoked before it expires. Rotating the secret invalidates every outstanding URL.
+- **Tests:** `rest/spaces.test.ts`, the private-audio suite in `rest/audio.test.ts`,
+  "into a space" in `rest/audio-upload.test.ts`, the signed `getPlaybackUrl` cases in
+  `xrpc/index.test.ts`, `lib/playback-signature.test.ts`, the metadata cases in
+  `r2/blob-store.test.ts`, the adapter and signing cases in `postgres/spaces.test.ts`,
+  and "audio placement (Phase 2)" in `packages/core/services/audio-posts.spaces.test.ts`.
 
 ### Phase 3 — protocol surface (Antiphony, deferred)
 
@@ -333,6 +385,12 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
    it" on upload and on post create; or put spaced blobs under a separate path
    prefix at upload time, which means the upload has to know its space. The
    second is simpler to enforce and costs an upload-API change.
+   *Settled 2026-10-08 (Phase 2):* the upload names its space, as the second
+   choice has it, but the mark goes in the object's R2 custom metadata, not in
+   its path, so renditions, processing and the transcode container are
+   untouched. One CID is one object, so it has one visibility: the first upload
+   decides it, and post creation refuses a post whose audio lives somewhere
+   else. See "Phase 2 — as built".
 4. **Protocol churn.** The 2026-09-18 policy split shows how quickly the names
    move. Phase 1 models the concepts (space triple, two policies), not wire
    names, so a rename lands in Phase 3's adapter only.

@@ -34,7 +34,7 @@ The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, 
 | `@antiphony/shared/errors` | Shared error types and helpers. |
 | `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers). |
 | `@antiphony/shared/observability` | Logging/error-reporting helpers (`./observability/report-error` for just the reporter). |
-| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `processing`, `records`, `url`. |
+| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `processing`, `records`, `spaces`, `url`. |
 
 ## The records this models
 
@@ -43,7 +43,7 @@ The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, 
 - **`dev.antiphony.audio.transcript`** — platform-enrichment transcript, lifted into the embed view at read time.
 - **`dev.antiphony.actor.profile`** — the portable actor-profile shape. Lexicon-only: the core never stores it; the calling app owns profile data.
 
-A stored post may also carry a **space placement** (`SpacePlacementSchema`: space type, space key and author segment), when it lives in an atproto space rather than flat. It is storage-layer, like `originAppId`: not in the lexicon, not in the record CID, and visible only through the post's `at://` URI. See [`specs/spaces.md`](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md).
+A stored post may also carry a **space placement** (`SpacePlacementSchema` in `types/spaces`: space type, space key and author segment), when it lives in an atproto space rather than flat. It is storage-layer, like `originAppId`: not in the lexicon, not in the record CID, and visible only through the post's `at://` URI. See [`specs/spaces.md`](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md).
 
 See the [lexicon reference](https://docs.antiphony.dev/lexicons/overview/) for the full contract.
 

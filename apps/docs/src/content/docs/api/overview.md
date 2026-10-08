@@ -16,7 +16,8 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), and `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment). One record type; `reply` presence is prompt-vs-reply.
-- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), and resolve a stored ref to a short-lived signed playback URL.
+- **`/spaces`** — Create, replace and read your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
+- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and play it back through the audio proxy.
 
 `GET /api/v1/posts` is one endpoint with two slices: by default the **viewer's own** posts (optionally filtered by `kind`), and with `?rootAuthor=<id>` the replies whose thread root that id authored — "replies addressed to X", the raw feed you'd compose an inbox from. That's [queries, not bespoke views](/explanation/api-design-principles/#2-queries-not-bespoke-views) in practice.
 
@@ -52,11 +53,22 @@ Your app's tenancy (`originAppId`) is derived from the token — Antiphony never
 
 The acting-actor header is the optional axis: required on writes and viewer-scoped reads, omitted for an anonymous, tenancy-scoped read. A request with no service token gets a `401` on every data route — "public" means "no viewer," not "no tenant."
 
-The sole anonymous exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted content-addressed `blobs/` paths resolved to audio bytes or derived renditions (e.g. mp3).
+The sole anonymous exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted content-addressed `blobs/` paths resolved to audio bytes or derived renditions (e.g. mp3). Audio in a space also needs a signature in the URL (below).
 
-:::note[Audio visibility is public by design]
-All audio blobs stored in Antiphony are content-addressed and public by CID across tenants, including blobs uploaded before being attached to a post. Anonymous callers can trigger on-demand transcodes through the audio proxy. Byte range requests adhere to RFC 7233: requesting an offset beyond the total file size returns `416 Range Not Satisfiable` with a `Content-Range: bytes */<totalSize>` header.
+:::note[Audio is public unless it's in a space]
+Audio uploaded outside a space is content-addressed and public by CID, including blobs uploaded before being attached to a post. Anonymous callers can trigger on-demand transcodes of public audio through the audio proxy. Byte range requests adhere to RFC 7233: requesting an offset beyond the total file size returns `416 Range Not Satisfiable` with a `Content-Range: bytes */<totalSize>` header.
 :::
+
+## Private audio in a space
+
+A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority. Posts in a space have space URIs (`at://{appDid}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
+
+1. **Create the space** — `PUT /api/v1/spaces/{spaceType}/{skey}` with `{ readPolicy?, writePolicy? }` (both default to `member-list`). Idempotent; the body replaces the policies. A DID is a valid `skey`, which is how you'd key a per-user space.
+2. **Upload into it** — add `spaceType` and `skey` fields to the `POST /api/v1/audio/upload` form. The response's `space` says where the blob lives. **The first upload of a given set of bytes decides this** and it never changes after, so re-uploading identical bytes can't make private audio public, or the reverse.
+3. **Post into it** — `POST /api/v1/posts` with `space: { type, skey }` on a prompt. The audio must live in the same space, and a flat post can't use audio that lives in one (`400` either way). Replies inherit their parent's space.
+4. **Play it** — post views carry a signed `embed.audio.url`, and `dev.antiphony.audio.getPlaybackUrl` signs on request. Fetch a fresh one rather than storing it. Without a valid signature the proxy answers `404`, as it does for audio that doesn't exist. You may append `format=mp3`. Responses are `Cache-Control: private` and never cached past the signature.
+
+A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` (see [configuration](/self-hosting/configuration/#core-variables)).
 
 ## Envelope
 
@@ -104,7 +116,8 @@ The `dev.antiphony.embed.audio` lexicon permits `audio/*` up to 100 MB. That's t
 | Operation | Actor Limit | Aggregate IP Limit |
 |---|---|---|
 | Writes (`POST`/`PATCH /posts`) | 10 per 15 min | 120 per 15 min |
-| Reads (`GET /posts`, `/posts/{id}`, `/posts/{id}/replies`, `/audio`) | 60 per min | 600 per min |
+| Reads (`GET /posts`, `/posts/{id}`, `/posts/{id}/replies`, `/spaces/…`, `/audio`) | 60 per min | 600 per min |
+| Space writes (`PUT /spaces/…`) | 20 per min | 600 per min |
 | Uploads (`POST /audio/upload`) | 20 per hour | 120 per 15 min |
 
 The write limit is tight enough to hit while developing — back off rather than retrying immediately.

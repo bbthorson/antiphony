@@ -232,7 +232,9 @@
 	// one until `/health` reports `backend`.
 
 	// Non-secret configuration. Everything else — SYSTEM_AUTH_TOKEN,
-	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY, DATABASE_URL — is a Worker
+	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY, DATABASE_URL, and the optional
+	// ANTIPHONY_PLAYBACK_SECRET (signs playback URLs for audio in a space;
+	// without it the deployment refuses to create spaces) — is a Worker
 	// SECRET, set with `wrangler secret put`, and must never appear in this
 	// file.
 	//

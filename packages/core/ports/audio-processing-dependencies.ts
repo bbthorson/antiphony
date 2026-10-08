@@ -1,5 +1,6 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
+import type { SpaceKey } from 'shared/types/spaces';
 
 /**
  * Data/storage port the `AudioProcessingService` uses to run one post's audio
@@ -34,8 +35,11 @@ export interface AudioProcessingDependencies {
      * Store derived (e.g. denoised) audio bytes as their own content-addressed
      * blob and return its CID. Same content-addressing as upload, so an
      * identical derivation is idempotent (re-storing lands on the same object).
+     *
+     * `space` is the source post's space: a derivation of private audio is
+     * stored as private to the same space, so its playback is signed too.
      */
-    writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string): Promise<string>;
+    writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string, space?: SpaceKey): Promise<string>;
 
     /** Persist a transcript enrichment record (last-write-wins by subject uri). */
     saveTranscript(record: TranscriptEnrichmentRecord): Promise<void>;

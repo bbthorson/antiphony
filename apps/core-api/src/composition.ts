@@ -1,4 +1,5 @@
 import { AudioPostService } from '@antiphony/core/services/audio-posts';
+import { SpaceService } from '@antiphony/core/services/spaces';
 import { makeStorageService, type StorageService } from '@antiphony/core/services/storage';
 import type { AudioPostDependencies } from '@antiphony/core/ports/audio-posts-dependencies';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
@@ -18,6 +19,7 @@ import type { RenditionServicePort } from './ports/rendition-service.js';
 import { logger } from './lib/logger.js';
 import { neonSqlClient } from './adapters/outbound/postgres/client.js';
 import { postgresAudioPostDependencies } from './adapters/outbound/postgres/audio-posts-dependencies.js';
+import { postgresSpaceDependencies } from './adapters/outbound/postgres/space-dependencies.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
 import { postgresRateLimitStore } from './adapters/outbound/postgres/rate-limit-store.js';
 import { postgresIdempotencyStore } from './adapters/outbound/postgres/idempotency-store.js';
@@ -67,6 +69,8 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
 
 export interface Services {
     audioPostService: AudioPostService;
+    /** A tenant's atproto spaces (specs/spaces.md). */
+    spaceService: SpaceService;
     storage: StorageService;
     audioPostDeps: AudioPostDependencies;
     audioProcessingDeps: AudioProcessingDependencies;
@@ -219,10 +223,11 @@ export function createServices(env: RuntimeEnv): Services {
         );
     }
 
-    const audioPostDeps = postgresAudioPostDependencies(sql);
+    const audioPostDeps = postgresAudioPostDependencies(sql, storage);
 
     return {
         audioPostService: new AudioPostService(audioPostDeps),
+        spaceService: new SpaceService(postgresSpaceDependencies(sql)),
         storage,
         audioPostDeps,
         audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),

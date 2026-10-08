@@ -23,9 +23,12 @@ const audioPostService = {
     setProcessing: vi.fn(),
 };
 
+const getBlobSpace = vi.fn();
+
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
+        audioPostDeps: { getBlobSpace },
     // The rate-limit middleware resolves its store from here now, rather
     // than defaulting to the Firestore binding. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
@@ -321,6 +324,33 @@ describe('dev.antiphony.audio.getPlaybackUrl', () => {
         });
 
         expect(res.status).toBe(400);
+    });
+
+    it('signs the url for audio stored in a space', async () => {
+        process.env.ANTIPHONY_PLAYBACK_SECRET = 'test-playback-secret-0123456789abcdef';
+        getBlobSpace.mockResolvedValueOnce({ space: { type: 'game.bardcast.space.campaign', skey: 'thornwood' } });
+        try {
+            const res = await app().request('/xrpc/dev.antiphony.audio.getPlaybackUrl?cid=bafyaudio', {
+                headers: anonHeaders(),
+            });
+
+            expect(res.status).toBe(200);
+            const { url } = await res.json();
+            expect(url).toMatch(/&exp=\d+&sig=[A-Za-z0-9_-]+$/);
+        } finally {
+            delete process.env.ANTIPHONY_PLAYBACK_SECRET;
+        }
+    });
+
+    it('refuses private audio rather than handing out an unsigned url, when it cannot sign', async () => {
+        getBlobSpace.mockResolvedValueOnce({ space: { type: 'game.bardcast.space.campaign', skey: 'thornwood' } });
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getPlaybackUrl?cid=bafyaudio', {
+            headers: anonHeaders(),
+        });
+
+        expect(res.status).toBe(404);
+        expect((await res.json()).error).toBe('RecordNotFound');
     });
 });
 

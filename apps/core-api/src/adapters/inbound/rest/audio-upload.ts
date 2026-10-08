@@ -1,11 +1,13 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
+import { SpaceKeySchema, type SpaceKey } from 'shared/types/spaces';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
+import { blobSpaceMetadata, blobSpaceOf } from '../../../lib/blob-space.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
@@ -23,6 +25,19 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * The client passes that blob ref verbatim as the post embed's `audio`
  * field. Identical bytes re-uploaded land on the same object (content
  * addressing gives dedup for free).
+ *
+ * ## Uploading into a space
+ *
+ * Optional `spaceType` + `skey` fields name one of the tenant's spaces
+ * (specs/spaces.md). The blob is then **private**: its object carries the
+ * space in R2 custom metadata (lib/blob-space.ts), and the proxy plays it only
+ * through a signed, expiring URL. The path stays `blobs/{originAppId}/{cid}`,
+ * so renditions and processing need nothing new.
+ *
+ * **The first upload wins.** The same bytes are the same object, so a second
+ * upload never rewrites it, and never changes its visibility either way. The
+ * response's `space` says where the blob actually lives; a post placed in a
+ * space refuses audio that doesn't live in that same space.
  */
 
 const ALLOWED_TYPES = new Set([
@@ -54,6 +69,11 @@ const UploadResponseSchema = z.object({
         description:
             'Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed\'s `audio`.',
     }),
+    space: SpaceKeySchema.optional().openapi({
+        description:
+            'The space the blob is stored in, when it is private. Absent ⇒ public. The first upload of the same ' +
+            'bytes decides this, so it can differ from the space this request named.',
+    }),
 });
 
 // The body is multipart/form-data parsed manually in the handler (Web
@@ -69,7 +89,9 @@ const uploadRoute = createRoute({
     description:
         'Authenticated multipart/form-data upload with a single `file` field (max 25MB; ' +
         'types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns ' +
-        'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post.',
+        'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post. ' +
+        'Optional `spaceType` + `skey` fields store it privately in one of the tenant\'s spaces; the first ' +
+        'upload of the same bytes decides where they live, and the response\'s `space` says which.',
     middleware: [
         requireAuth(),
         rateLimit(RATE_LIMITS.writeAggregate),
@@ -93,8 +115,9 @@ const uploadRoute = createRoute({
     ] as const,
     responses: {
         200: jsonResponse(UploadResponseSchema, 'Stored audio blob ref'),
-        400: errorResponse('Missing/oversized file or unsupported audio type'),
+        400: errorResponse('Missing/oversized file, unsupported audio type, or an invalid space'),
         401: errorResponse('Not authenticated'),
+        404: errorResponse('Space not found'),
     },
 });
 
@@ -124,14 +147,51 @@ app.openapi(uploadRoute, async (c) => {
         return c.json(errorEnvelope(c, `Unsupported audio type: ${mimeType}`), 400);
     }
 
+    const originAppId = getOriginAppId(c);
+    const services = servicesFor(c.env);
+
+    // Both or neither: half a space names nothing.
+    const spaceType = formData.get('spaceType');
+    const skey = formData.get('skey');
+    let requested: SpaceKey | undefined;
+    if (spaceType !== null || skey !== null) {
+        const parsed = SpaceKeySchema.safeParse({ type: spaceType, skey });
+        if (!parsed.success) {
+            return c.json(
+                errorEnvelope(c, 'Invalid space: send both "spaceType" and "skey"', { issues: parsed.error.issues }),
+                400,
+            );
+        }
+        // Throws 404 for a space this tenant doesn't have.
+        await services.spaceService.getSpace(originAppId, parsed.data);
+        requested = parsed.data;
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const cid = await cidForBytes(buffer);
-    const path = blobObjectPath(getOriginAppId(c), cid);
+    const path = blobObjectPath(originAppId, cid);
     if (!path) {
         // Only reachable with a misconfigured origin app id — surface loudly.
         return c.json(errorEnvelope(c, 'Blob path could not be derived'), 400);
     }
-    await servicesFor(c.env).storage.uploadFile(buffer, path, mimeType);
+
+    // First upload wins: an object already there keeps its bytes and its
+    // visibility. Two concurrent first uploads race to the same bytes, and the
+    // later marker wins; both callers then see `space` on a re-read, and a
+    // post's placement check refuses the mismatch either way.
+    const existing = await services.storage.stat(path);
+    let space: SpaceKey | null;
+    if (existing) {
+        space = blobSpaceOf(existing.metadata);
+    } else {
+        await services.storage.uploadFile(
+            buffer,
+            path,
+            mimeType,
+            requested ? { metadata: blobSpaceMetadata(requested) } : undefined,
+        );
+        space = requested ?? null;
+    }
 
     return c.json({
         success: true as const,
@@ -142,6 +202,7 @@ app.openapi(uploadRoute, async (c) => {
                 mimeType,
                 size: buffer.byteLength,
             },
+            ...(space ? { space: { type: space.type, skey: space.skey } } : {}),
         },
     }, 200);
 });

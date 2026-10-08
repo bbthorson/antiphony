@@ -8,7 +8,7 @@ import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { getAppDid } from '../../../lib/app-did.js';
-import { audioPlaybackUrl } from '../../../lib/audio-url.js';
+import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
 import { xrpcError, xrpcErrorHandler } from './errors.js';
 
@@ -198,7 +198,20 @@ export function xrpcRoute(): Hono {
             // Tenancy-scoped by construction: the blob path is built from the
             // credential's `originAppId`, so a cid from another tenant resolves
             // to a path this caller's app never wrote.
-            const url = audioPlaybackUrl(getOriginAppId(c), parsed.value.cid);
+            const originAppId = getOriginAppId(c);
+            const { cid } = parsed.value;
+            // Audio stored in a space plays only from a signed, expiring URL
+            // (specs/spaces.md). The caller is the tenant, which is the space's
+            // managing app: deciding who may listen is its job, and asking here
+            // is that decision. A blob that isn't stored at all gets the plain
+            // URL, as before; the proxy 404s it.
+            const stored = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostDeps.getBlobSpace(
+                originAppId,
+                cid,
+            );
+            const url = stored?.space
+                ? await signedAudioPlaybackUrl(originAppId, cid)
+                : audioPlaybackUrl(originAppId, cid);
             if (!url) {
                 return c.json(
                     xrpcError('RecordNotFound', `No playable audio for cid: ${parsed.value.cid}`),
@@ -230,7 +243,7 @@ export function xrpcRoute(): Hono {
                 );
             }
 
-            const { text, title, embed, reply, langs, selfLabels, processing } = validation.data;
+            const { text, title, embed, reply, langs, selfLabels, processing, space } = validation.data;
             const originAppId = getOriginAppId(c);
             const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
@@ -245,6 +258,7 @@ export function xrpcRoute(): Hono {
                 langs,
                 selfLabels,
                 processing: initialProcessing,
+                space,
             });
 
             if (hasPendingStage(initialProcessing)) {

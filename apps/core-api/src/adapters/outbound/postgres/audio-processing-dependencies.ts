@@ -2,6 +2,7 @@ import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
 import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
+import { blobSpaceMetadata } from '../../../lib/blob-space.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import { newTid } from '../../../lib/tid.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
@@ -36,7 +37,7 @@ export function postgresAudioProcessingDependencies(
     sql: SqlClient,
     StorageService: StorageService,
 ): AudioProcessingDependencies {
-    const posts = postgresAudioPostDependencies(sql);
+    const posts = postgresAudioPostDependencies(sql, StorageService);
     const now = (): Date => new Date();
 
     return {
@@ -52,12 +53,16 @@ export function postgresAudioProcessingDependencies(
             return StorageService.download(path);
         },
 
-        async writeDerivedBlob(originAppId, bytes, mimeType) {
+        async writeDerivedBlob(originAppId, bytes, mimeType, space) {
             const buf = Buffer.from(bytes);
             const cid = await cidForBytes(buf);
             const path = blobObjectPath(originAppId, cid);
             if (!path) throw new Error('derived blob path could not be derived');
-            await StorageService.uploadFile(buf, path, mimeType);
+            // Derived from audio in a space ⇒ private to the same space, so it plays
+            // signed too. First write wins, as for uploads (lib/blob-space.ts): an
+            // identical derivation already stored keeps the visibility it has.
+            if (await StorageService.stat(path)) return cid;
+            await StorageService.uploadFile(buf, path, mimeType, space ? { metadata: blobSpaceMetadata(space) } : undefined);
             return cid;
         },
 

@@ -409,6 +409,7 @@ export class AudioProcessingService {
                         originAppId,
                         cleaned.bytes,
                         cleaned.mimeType,
+                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     variantChanged = true;
@@ -454,6 +455,7 @@ export class AudioProcessingService {
                         originAppId,
                         trimmed.bytes,
                         trimmed.mimeType,
+                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
                     );
                     working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
                     variantChanged = true;

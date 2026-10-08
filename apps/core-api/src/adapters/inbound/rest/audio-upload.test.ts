@@ -9,9 +9,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 
 const uploadFile = vi.fn();
+const stat = vi.fn();
+const getSpace = vi.fn();
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
-        storage: { uploadFile },
+        storage: { uploadFile, stat },
+        spaceService: { getSpace },
     // The rate-limit middleware resolves its store from here now, rather
     // than defaulting to the Firestore binding. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
@@ -143,5 +146,66 @@ describe('POST /api/v1/audio/upload', () => {
         }
 
         expect(await upload()).toBe(await upload());
+    });
+
+    describe('into a space', () => {
+        const SPACE = { type: 'game.bardcast.space.campaign', skey: 'thornwood' };
+        function spaced(fields: Record<string, string>, bytes = new Uint8Array([7, 7, 7])): FormData {
+            const fd = makeFormData(new File([bytes], 'a.m4a', { type: 'audio/m4a' }));
+            for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+            return fd;
+        }
+        const post = (body: FormData) =>
+            app().request('/api/v1/audio/upload', { method: 'POST', headers: AUTH, body });
+
+        it('stores the space on the object and says so', async () => {
+            getSpace.mockResolvedValue({});
+            stat.mockResolvedValue(null);
+
+            const res = await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey }));
+
+            expect(res.status).toBe(200);
+            expect((await res.json()).data.space).toEqual(SPACE);
+            expect(getSpace).toHaveBeenCalledWith('antiphony', SPACE);
+            expect(uploadFile.mock.calls[0][3]).toEqual({
+                metadata: { 'antiphony-space': 'game.bardcast.space.campaign/thornwood' },
+            });
+        });
+
+        it('never rewrites bytes already stored, so a public blob stays public', async () => {
+            getSpace.mockResolvedValue({});
+            stat.mockResolvedValue({ size: 3 });
+
+            const res = await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey }));
+
+            expect(res.status).toBe(200);
+            expect((await res.json()).data.space).toBeUndefined();
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
+
+        it('and a private blob stays private, even uploaded flat', async () => {
+            stat.mockResolvedValue({ metadata: { 'antiphony-space': 'game.bardcast.space.campaign/thornwood' } });
+
+            const res = await post(spaced({}));
+
+            expect((await res.json()).data.space).toEqual(SPACE);
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
+
+        it('400s half a space', async () => {
+            const res = await post(spaced({ spaceType: SPACE.type }));
+            expect(res.status).toBe(400);
+            expect(getSpace).not.toHaveBeenCalled();
+        });
+
+        it("404s a space the tenant doesn't have, storing nothing", async () => {
+            const { NotFoundError } = await import('shared/errors');
+            getSpace.mockRejectedValue(new NotFoundError('Space not found'));
+
+            const res = await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey }));
+
+            expect(res.status).toBe(404);
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
     });
 });

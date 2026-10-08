@@ -8,7 +8,7 @@
  */
 export const OPENAPI_INFO = {
     title: 'Antiphony Core API',
-    version: '0.6.0',
+    version: '0.7.0',
     description: [
         'Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.',
         '',
@@ -17,7 +17,7 @@ export const OPENAPI_INFO = {
         'The **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.',
         '',
         '- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.',
-        '- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store.',
+        '- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.',
         '',
         '## Envelope',
         '',
@@ -38,5 +38,6 @@ export const OPENAPI_INFO = {
  */
 export const OPENAPI_TAGS = [
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
+    { name: 'Spaces', description: "A tenant's atproto spaces — create or replace one, read one. Posts and audio placed in a space are private: their audio plays through signed, expiring URLs." },
     { name: 'Audio', description: 'Audio storage primitives — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint.' },
 ] as const;

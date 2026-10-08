@@ -54,7 +54,7 @@ describe('postgresAudioPostDependencies', () => {
 
     beforeAll(async () => {
         db = await createTestDatabase();
-        deps = postgresAudioPostDependencies(db);
+        deps = postgresAudioPostDependencies(db, { stat: async () => null });
     });
     afterAll(async () => db.close());
     beforeEach(async () => db.truncate());

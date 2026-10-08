@@ -1,5 +1,6 @@
-import { publicBaseUrl } from './app-config.js';
+import { playbackSecret, publicBaseUrl } from './app-config.js';
 import { blobObjectPath } from './blob-path.js';
+import { PLAYBACK_URL_TTL_SECONDS, signPlayback } from './playback-signature.js';
 
 /**
  * Build the playback URL for a stored blob — the value that lands in
@@ -44,3 +45,27 @@ export function audioPlaybackUrl(originAppId: string, blobCid: string): string |
     if (!base) return null;
     return `${base}/api/v1/audio?url=${encodeURIComponent(objectPath)}`;
 }
+
+/**
+ * The playback URL for audio in a space: the same proxy URL plus `exp` and
+ * `sig` (lib/playback-signature.ts), valid for `PLAYBACK_URL_TTL_SECONDS`.
+ *
+ * Null when it can't be produced, including when the deployment has no
+ * `ANTIPHONY_PLAYBACK_SECRET`. That is the fail-closed answer: the caller omits
+ * the embed, exactly as for an unset base URL, rather than ever handing out an
+ * unsigned link to private audio.
+ */
+export async function signedAudioPlaybackUrl(
+    originAppId: string,
+    blobCid: string,
+    nowMs: number = Date.now(),
+): Promise<string | null> {
+    const unsigned = audioPlaybackUrl(originAppId, blobCid);
+    const objectPath = blobObjectPath(originAppId, blobCid);
+    const secret = playbackSecret();
+    if (!unsigned || !objectPath || !secret) return null;
+    const exp = Math.floor(nowMs / 1000) + PLAYBACK_URL_TTL_SECONDS;
+    const sig = await signPlayback(objectPath, exp, secret);
+    return `${unsigned}&exp=${exp}&sig=${sig}`;
+}
+

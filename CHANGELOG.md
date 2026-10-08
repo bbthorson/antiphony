@@ -8,6 +8,49 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] — 2026-10-08
+
+atproto **spaces**, Phase 2 ([`specs/spaces.md`](./specs/spaces.md)): a tenant
+can create spaces, upload audio and post into them, and that audio plays only
+from signed, expiring URLs. **Minor**: everything is additive for a caller that
+never names a space, with one behaviour change on the audio proxy, below.
+
+### Added
+
+- **`PUT /api/v1/spaces/{spaceType}/{skey}`** creates a space, or replaces its
+  `readPolicy` / `writePolicy` (each `public`, `member-list` or `managing-app`;
+  default `member-list`) and optional `managingAppEndpoint`. **`GET`** reads one.
+  Service token only; the space's authority is always the caller's app DID, and
+  the response's `uri` is `at://{appDid}/space/{type}/{skey}`. A deployment
+  without `ANTIPHONY_PLAYBACK_SECRET` answers `503` (`SPACES_UNAVAILABLE`).
+- **`POST /api/v1/audio/upload`** takes optional `spaceType` + `skey` form
+  fields to store the blob privately in a space (`404` if the tenant has no such
+  space), and answers with `space` when the blob is private. The first upload of
+  a CID decides its visibility; later uploads of the same bytes never change it.
+- **`space: { type, skey }`** on `POST /api/v1/posts` and XRPC
+  `dev.antiphony.audio.createPost` (lexicon: `dev.antiphony.audio.defs#spaceKey`)
+  places a prompt in a space. `404` for an unknown space; `400` when the audio is
+  not stored in that same space, or when a flat post names audio that is.
+- **Signed playback.** A spaced post's `embed.audio.url`, and
+  `dev.antiphony.audio.getPlaybackUrl` for a private blob, carry `exp` + `sig`
+  and expire after an hour. Re-fetch rather than store them.
+- **`ANTIPHONY_PLAYBACK_SECRET`** (optional Worker secret, 32+ characters): the
+  HMAC key for those signatures. A shorter value fails startup.
+- `@antiphony/shared` 0.9.0: `SpaceKeySchema`, `SpacePolicySchema`,
+  `SpaceRecordSchema`, `SpaceViewSchema`, `PutSpaceRequestSchema`, and `space`
+  on `CreateAudioPostRequestSchema`.
+
+### Changed
+
+- **`GET /api/v1/audio`** answers `404` for private audio without a valid
+  signature, and serves it with `Cache-Control: private, max-age=<seconds left>`
+  rather than `public, immutable`. Public audio is unchanged, except that an
+  unsigned `format=` request now costs one extra storage `head` on the canonical
+  blob, checked before any rendition is read or transcoded.
+- `dev.antiphony.audio.getPlaybackUrl` no longer promises a stable, unsigned
+  URL for every blob: private ones are signed and time-limited, and a deployment
+  that can't sign answers `RecordNotFound` for them.
+
 ## [0.6.0] — 2026-09-06
 
 URL fields in the contract are restricted to the `http` and `https` schemes.

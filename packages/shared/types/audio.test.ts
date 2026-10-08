@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { SpacePlacementSchema } from './spaces';
 import {
     StrongRefSchema,
     ReplyRefSchema,
@@ -6,7 +7,6 @@ import {
     AudioEmbedViewSchema,
     TimedTranscriptSchema,
     AudioPostRecordSchema,
-    SpacePlacementSchema,
     TranscriptEnrichmentRecordSchema,
     ActorProfileRecordSchema,
     AudioPostViewSchema,

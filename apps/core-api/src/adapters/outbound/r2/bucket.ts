@@ -18,6 +18,8 @@
 
 export interface R2PutOptions {
     httpMetadata?: { contentType?: string };
+    /** Arbitrary string metadata stored with the object; returned on get and head. */
+    customMetadata?: Record<string, string>;
 }
 
 export interface R2GetOptions {
@@ -29,6 +31,7 @@ export interface R2ObjectMeta {
     /** Size of the whole object, not of a requested range. */
     size: number;
     httpMetadata?: { contentType?: string };
+    customMetadata?: Record<string, string>;
 }
 
 export interface R2ObjectBodyLike extends R2ObjectMeta {

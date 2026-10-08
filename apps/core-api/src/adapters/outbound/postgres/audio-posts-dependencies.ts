@@ -7,8 +7,12 @@ import type { ProcessingState } from 'shared/types/processing';
 import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
+import type { StorageService } from '@antiphony/core/services/storage';
+import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
+import { blobObjectPath } from '../../../lib/blob-path.js';
+import { blobSpaceOf } from '../../../lib/blob-space.js';
+import { postgresSpaceDependencies } from './space-dependencies.js';
 import { newTid } from '../../../lib/tid.js';
-import { audioPlaybackUrl } from '../../../lib/audio-url.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
 import { hydrateRows, splitRecord, type PostRow } from './record-mapping.js';
 import type {
@@ -78,7 +82,15 @@ function bind(template: string, firstParam: number): string {
         .replaceAll('$LIMIT', `$${firstParam + 1}`);
 }
 
-export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependencies {
+/**
+ * `storage` is how a post's audio placement is read (the blob's own metadata,
+ * lib/blob-space.ts); only `stat` is used.
+ */
+export function postgresAudioPostDependencies(
+    sql: SqlClient,
+    storage: Pick<StorageService, 'stat'>,
+): AudioPostDependencies {
+    const spaces = postgresSpaceDependencies(sql);
     return {
         // Unchanged from the Firestore binding: a TID is the `rkey` in
         // at://{appDid}/{collection}/{rkey}, so it must be an honest AT-Proto
@@ -246,11 +258,24 @@ export function postgresAudioPostDependencies(sql: SqlClient): AudioPostDependen
             return map;
         },
 
-                resolveAudioUrl(originAppId: string, blobCid: string): Promise<string | null> {
+        resolveAudioUrl(originAppId, blobCid, space): Promise<string | null> {
             // No storage call: the proxy URL is derived from the tenancy + CID,
-            // so hydrating a post no longer costs a signing round trip per
-            // audio embed.
+            // so hydrating a post costs no round trip per audio embed. Audio in a
+            // space gets a signed, expiring URL instead (lib/playback-signature.ts),
+            // or none at all if this deployment can't sign.
+            if (space) return signedAudioPlaybackUrl(originAppId, blobCid);
             return Promise.resolve(audioPlaybackUrl(originAppId, blobCid));
+        },
+
+        getSpace(originAppId, key) {
+            return spaces.getSpace(originAppId, key);
+        },
+
+        async getBlobSpace(originAppId, blobCid) {
+            const path = blobObjectPath(originAppId, blobCid);
+            if (!path) return null;
+            const stat = await storage.stat(path);
+            return stat ? { space: blobSpaceOf(stat.metadata) } : null;
         },
 
         cidForRecord,

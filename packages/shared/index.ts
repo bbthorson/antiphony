@@ -2,6 +2,7 @@ export * from './api-codecs';
 export * from './types/records';
 export * from './types/audio';
 export * from './types/processing';
+export * from './types/spaces';
 export * from './types/blob';
 export * from './types/url';
 export * from './nsid';

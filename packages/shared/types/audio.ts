@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SpacePlacementSchema } from './spaces';
 import { BlobRefSchema } from './blob';
 import { TimestampSchema } from './records';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
@@ -40,38 +41,6 @@ export const ReplyRefSchema = z.object({
 });
 export type ReplyRef = z.infer<typeof ReplyRefSchema>;
 
-/**
- * Where a post lives, when it lives in an atproto **space** (specs/spaces.md).
- * Absent ⇒ the post is flat and public: `at://{appDid}/{collection}/{rkey}`.
- * Present ⇒ `at://{appDid}/space/{type}/{skey}/{authorSegment}/{collection}/{rkey}`,
- * and its visibility is the space's read policy, not a field on the post.
- *
- * Storage-layer, like `originAppId`: NOT in the lexicon and NOT in the record
- * CID. Placement is location, which atproto carries in the URI. Fixed at
- * creation, because a reply's StrongRef seals its parent's URI.
- *
- * These checks are deliberately light so this package stays dependency-free;
- * `@antiphony/core` validates each part with `@atproto/syntax` before a URI is
- * built.
- */
-export const SpacePlacementSchema = z.object({
-    /** The space type, an NSID, e.g. `game.bardcast.space.campaign`. */
-    type: z.string().min(3).max(317).regex(/^[a-zA-Z][a-zA-Z0-9.-]*\.[a-zA-Z][a-zA-Z0-9]*$/, 'Must be an NSID'),
-    /** The space key, in atproto record-key syntax. A DID is a valid skey. */
-    skey: z
-        .string()
-        .min(1)
-        .max(512)
-        .regex(/^[A-Za-z0-9._:~-]+$/, 'Must be a record key')
-        .refine((k) => k !== '.' && k !== '..', 'Must be a record key'),
-    /**
-     * The DID in the URI's author segment: the acting actor's DID, or the
-     * tenant's app DID when the actor has none. Sealed once the post is replied
-     * to; `authorId` / `authorDid` stay facets beside it.
-     */
-    authorSegment: z.string().max(2048).regex(/^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$/, 'Must be a DID'),
-});
-export type SpacePlacement = z.infer<typeof SpacePlacementSchema>;
 
 // #endregion
 
