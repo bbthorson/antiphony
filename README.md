@@ -9,7 +9,7 @@ REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs
 
 ## Status
 
-- **Pre-1.0.** The API contract is at `0.x` (currently `0.6.0`, the
+- **Pre-1.0.** The API contract is at `0.x` (currently `0.7.0`, the
   `info.version` in [`apps/core-api/openapi.json`](apps/core-api/openapi.json)),
   served under the `/api/v1/` URL major. While `0.x`, a **breaking** contract
   change bumps the minor and an additive change or fix bumps the patch — see
@@ -114,10 +114,10 @@ publishing to npm, so no one needs npm credentials locally.
 
 ```bash
 # 1. bump the version in the target package.json, land it on master
-#    packages/shared/package.json -> "version": "0.7.0"
+#    packages/shared/package.json -> "version": "0.8.0"
 #    or packages/capture-kit/package.json -> "version": "0.1.0"
 # 2. tag the merge commit and push the tag
-git tag shared-v0.7.0 && git push origin shared-v0.7.0
+git tag shared-v0.8.0 && git push origin shared-v0.8.0
 # or
 git tag capture-kit-v0.1.0 && git push origin capture-kit-v0.1.0
 ```
@@ -125,7 +125,7 @@ git tag capture-kit-v0.1.0 && git push origin capture-kit-v0.1.0
 The workflow re-runs typecheck, lint, knip, test, and build, then asserts the tag
 matches the selected package's `package.json` and that the version is unclaimed on
 the registry, before publishing. A version with a prerelease identifier
-(`shared-v0.7.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
+(`shared-v0.8.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
 
 `workflow_dispatch` runs the same pipeline with a `package` choice (`shared` or
 `capture-kit`) and a `dry_run` input (default on) to validate a release without publishing.

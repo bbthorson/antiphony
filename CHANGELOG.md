@@ -8,32 +8,46 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.7.0] — Unreleased
 
-Not yet versioned: whether this is `0.6.1` or `0.7.0` is the maintainer's call
-(see the note under **Changed** — the request-field bounds tighten validation,
+Ships with **`@antiphony/shared` 0.8.0** (the package axis; independent of this
+contract number). **Minor, not patch**: two changes below tighten validation,
 which [`specs/api-versioning.md`](./specs/api-versioning.md) counts as
-breaking). `OPENAPI_INFO.version` still reads `0.6.0`.
+breaking while `0.x`.
 
-### Changed
+### Changed — BREAKING
+
+- **Timestamps accept only strings and `Date`s.** `TimestampSchema` in
+  `@antiphony/shared` (behind `createdAt` on posts and transcripts, and
+  `updatedAt` / `leaseUntil` on processing state) no longer accepts the legacy
+  Firestore shapes — a `{ seconds, nanoseconds }` object or an object with a
+  `toDate()` method — or an epoch-millisecond number. Nothing in Antiphony has
+  produced any of them since the move to Postgres: records are stored as JSON
+  (ISO-8601 strings) and the wire has always carried ISO strings. In
+  `openapi.json`, `createdAt` is now `anyOf: [string, string(date-time)]`.
+
+  **Migration:** a consumer parsing Antiphony responses needs no change. A
+  consumer that builds records itself and passes an epoch number or a Firestore
+  `Timestamp` must pass `new Date(…)` or an ISO string instead.
 
 - **Request string bounds on `POST /api/v1/posts`** (and the same shapes
   wherever they appear in the document): `StrongRef.uri` is capped at 512
   characters and `StrongRef.cid` at 128; each `langs` entry at 35; `selfLabels`
   at 10 entries of up to 128 characters. JSON bodies on `POST` / `PATCH
-  /api/v1/posts` are capped at 256 KB (`413`). These tighten validation, so a
-  request that parsed before can now fail; real values sit far below every cap.
+  /api/v1/posts` are capped at 256 KB (`413`). A request that parsed before can
+  now fail; real values sit far below every cap.
+
+### Changed
+
 - **Out-of-range byte requests on `GET /api/v1/audio`** answer `416 Range Not
   Satisfiable` with `Content-Range: bytes */<size>` (RFC 7233) rather than a
   `206` with an inconsistent `Content-Range`.
 - **OpenAPI document regenerated under zod 4 and `@hono/zod-openapi` 1.x.**
-  Runtime validation is unchanged; what consumers of `openapi.json` see is:
+  Runtime validation is unchanged by the migration itself; what consumers of
+  `openapi.json` see is:
   - parameter `description`s are now emitted on the parameter object as well as
     its schema;
-  - the timestamp union on `createdAt` documents its object members
-    explicitly — a `{ seconds, nanoseconds }` object and a `{ toDate }` object —
-    instead of an empty schema, and its ISO-string member carries
-    `format: date-time`;
+  - the ISO-string member of the timestamp union carries `format: date-time`;
   - URL fields built on `httpsUrl()` (`embed.url`, `rssFeed`) no longer carry
     `format: uri`; the scheme `pattern` is what documents them.
 
