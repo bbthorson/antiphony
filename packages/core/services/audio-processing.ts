@@ -134,7 +134,7 @@ export const PROCESSING_LEASE_MS = 20 * 60 * 1000;
 const UNNAMED_DENOISER = 'unnamed';
 
 /**
- * AudioProcessingService — runs one post's opted-in audio processing (B5).
+ * AudioProcessingService — runs one post's opted-in audio processing (see specs/enrichment-pipeline.md).
  *
  * Order matters: **denoise first, then transcribe**, so the transcript is
  * produced from the cleaned audio when denoise was requested. Each stage

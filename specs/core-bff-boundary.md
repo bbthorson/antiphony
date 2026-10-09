@@ -58,8 +58,7 @@ fields; the BFF never sends core a profile.
 - `GET /api/v1/audio`, `POST /api/v1/audio/upload`
 - ~~`POST /api/v1/system/rate-limit`~~ — **removed 2026-08-16.** Listed here as a
   service-to-service helper so the BFF could rate-limit without touching Firestore;
-  Stream 4 F7 **G2** moved the check endpoint onto the Vox Pop BFF, which serves it
-  itself (`packages/bff-client/rate-limit.ts` resolves only `VOXPOP_API_BASE_URL`),
+  the Vox Pop BFF then moved the check endpoint onto itself and serves it there,
   leaving this one caller-less. Deleted with the block below.
   **Note the distinction:** the *route* is gone, but `checkRateLimit()` — the function
   behind it — is still what every `rateLimit(...)` middleware in core calls in-process.
@@ -96,11 +95,11 @@ now genuinely deleted from [`app.ts`](../apps/core-api/src/app.ts) and the tree.
 - `POST /api/v1/system/atproto` (signin), `/system/atproto-state/*`, `/system/atproto-session/*`
   — server-side backing for the OAuth ceremony; the BFF holds its own OAuth state/session.
 
-Vox Pop ported its own copies and cut over: `specs/archive/stream4-f7-execution.md`
-there records **A1** (#722 — atproto state + session stores), **A2** (bluesky-identity
-+ signin, with `apps/web` repointed), and **G1** (`system-auth-mint.ts` ported verbatim
-and mounted on the BFF). The `CORE_API_BASE_URL` fallback that G1 left behind — the one
-live path back to core — was **retired in E2**; nothing in that repo resolves it today.
+Vox Pop ported its own copies and cut over, in three steps recorded in that repo:
+the atproto OAuth state and session stores; bluesky-identity and signin; and
+session-cookie minting, ported verbatim and mounted on its BFF. A `CORE_API_BASE_URL`
+fallback left behind by the last step — the one live path back to core — was then
+retired; nothing in that repo resolves it today.
 Vox Pop has since moved past the surface entirely, verifying Ed25519 session JWTs
 against its own JWKS.
 

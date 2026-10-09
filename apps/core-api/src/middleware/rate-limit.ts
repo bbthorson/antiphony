@@ -34,7 +34,7 @@ import type { RateLimitStore } from '../ports/rate-limit-store.js';
  * `checkRateLimit(key, options, requestId?)` is the callable core the
  * middleware wraps. It was also exposed over HTTP at
  * `POST /api/v1/system/rate-limit/check` so a sibling service could share these
- * buckets; that route is gone (the Vox Pop BFF serves its own — Stream 4 F7 G2)
+ * buckets; that route is gone (the consuming BFF now runs its own rate limiting)
  * and nothing external shares them any more, which is what made moving them off
  * Firestore a purely internal decision. They are on Postgres now, and on the
  * Durable Object wherever that binding is attached.

@@ -28,7 +28,7 @@ This spec is that adoption. Confirmed as the direction 2026-08-15.
 
 ## What we are plugging into — it is most of the way there already
 
-Antiphony's B5 pipeline (`specs/enrichment-pipeline.md`) already has everything
+Antiphony's enrichment pipeline (`specs/enrichment-pipeline.md`) already has everything
 this needs except a place to put the output:
 
 | Piece | Where |

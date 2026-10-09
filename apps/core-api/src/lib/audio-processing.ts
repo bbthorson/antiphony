@@ -30,7 +30,7 @@ import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
 import { logger } from './logger.js';
 
 /**
- * Composition + dispatch seam for audio processing (B5).
+ * Composition + dispatch seam for audio processing.
  *
  * Resolved per-request off env (like `getOriginAppId`) so tests and per-env
  * config take effect without a module-load singleton:

@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from '../../outbound/postgres/t
 import { createFakeBucket } from '../../outbound/r2/testing/fake-bucket.js';
 
 /**
- * End-to-end integration test for B5 audio processing: drives the REAL
+ * End-to-end integration test for audio processing: drives the REAL
  * create → dispatch (inline stub) → hydrate pipeline through the actual
  * services and the Postgres + R2 bindings. No service-layer mock — this proves
  * the wiring the unit tests cannot:
@@ -139,7 +139,7 @@ async function getPost(postId: string) {
     return ((await res.json()) as { data: { embed?: Record<string, unknown> } }).data;
 }
 
-describe('POST /api/v1/posts — audio processing (B5)', () => {
+describe('POST /api/v1/posts — audio processing', () => {
     // Provider selection is env-driven, so env is test state. `ELEVENLABS_API_KEY`
     // must be cleared alongside the stub flag: the "no provider ⇒ skipped" test
     // below runs with the stub OFF, so a real key in the developer's shell would

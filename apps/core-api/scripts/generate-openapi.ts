@@ -12,9 +12,8 @@
  * standing up core-api.
  *
  * Only routes registered via `app.openapi(createRoute(...), handler)`
- * appear in the document. As of the toolchain pilot the `/users/*`
- * family is instrumented; subsequent PRs will add the remaining
- * namespaces per `specs/drafts/openapi-generation.md`.
+ * appear in the document — today `/api/v1/posts*` and `/api/v1/audio*`.
+ * See apps/core-api/README.md § The public contract.
  */
 import { build } from 'esbuild';
 import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
@@ -97,11 +96,11 @@ const pathCount = Object.keys(document.paths ?? {}).length;
 console.log(`Wrote ${outputPath} (${pathCount} paths)`);
 
 // 3. Derive the public-surface snapshot — the SET of public endpoints
-//    (path + method), nothing else. This is the Plan A (A5) contract guard:
+//    (path + method), nothing else. This is the public-surface contract guard:
 //    `openapi-surface.test.ts` rebuilds the surface from the live routes and
 //    fails if it drifts from this committed snapshot, so adding / removing /
 //    renaming a public endpoint is a deliberate, reviewed act. It does NOT
-//    capture field-level contract detail within an endpoint (that's Plan D).
+//    capture field-level contract detail within an endpoint.
 const surfacePath = resolve(projectRoot, 'openapi.surface.json');
 const surface = {
     $comment:
