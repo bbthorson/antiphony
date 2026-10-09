@@ -4,25 +4,13 @@ import { describe, it, expect, vi } from 'vitest';
  * The composition root, stubbed — which is what these suites want and what they
  * were reaching for all along.
  *
- * This file used to mock `lib/firebase-admin.js` instead, and the reason is
- * worth keeping because it describes a trap that outlived Firestore. The
- * CORS/CORP assertions below request `/api/v1/audio`, and that route carries
- * `rateLimit(RATE_LIMITS.read)` — middleware that runs BEFORE the handler and
- * asks the rate-limit store. Unmocked, the request therefore waited on a live
- * store, and in CI it never got one: firebase-admin sat in Application Default
- * Credentials resolution until vitest gave up at 5s. That is what "Test timed
- * out in 5000ms" on `answers a cross-origin request without any CORS headers`
- * was — a credential lookup, not anything about CORS.
- *
- * It was worse on a developer machine, where it did NOT fail: gcloud ADC is
- * usually present, so the test quietly authenticated and transacted against a
- * real `rate_limits` collection. Passing locally and hanging in CI is the same
- * bug wearing two faces.
- *
- * The store is Postgres now, so the failure mode would be an HTTPS call to a
- * hostname that does not resolve rather than a credential hunt — different
- * dependency, same hang. Mocking the composition root cuts it off at the seam
- * both bindings come through, which is also how `adapters/inbound/rest/
+ * The trap this avoids: the CORS/CORP assertions below request `/api/v1/audio`,
+ * and that route carries `rateLimit(RATE_LIMITS.read)` — middleware that runs
+ * BEFORE the handler and asks the rate-limit store. Unmocked, the request would
+ * wait on a live store (an HTTPS call to a database host that does not resolve
+ * in CI) until vitest times out, which reads as a CORS failure when it is not.
+ * Mocking the composition root cuts it off at the seam every binding comes
+ * through, which is also how `adapters/inbound/rest/
  * audio.test.ts` does it. These suites assert the HTTP surface — headers, the
  * OpenAPI document, the shape of `/health` — and none of that needs a store.
  */

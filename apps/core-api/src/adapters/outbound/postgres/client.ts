@@ -7,15 +7,15 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * ## Why the HTTP driver
  *
  * Every statement the bindings issue is a single parameterised query — that is
- * the whole design of migrations/0001_initial_schema.sql, where each Firestore transaction collapsed
- * into one upsert or one conditional `UPDATE … RETURNING`. The HTTP driver's
+ * the whole design of migrations/0001_initial_schema.sql, where every
+ * read-modify-write is one upsert or one conditional `UPDATE … RETURNING`. The HTTP driver's
  * one real limitation is that it cannot hold an interactive transaction open,
  * and nothing here needs one. (It stopped being able to bind at all once the
  * `/system/atproto-*` deletion took `users`/`handles` with it — the handle swap
  * was the last operation that genuinely wanted one.)
  *
- * It is also the driver that works everywhere this code runs during the
- * migration: a Node script, Cloud Run, and a Worker all have `fetch`.
+ * It is also the driver that works everywhere this code runs: a Worker and a
+ * Node script (migrations, tests) both have `fetch`.
  *
  * ## Why NOT Hyperdrive — and what it would cost to have it
  *

@@ -4,18 +4,8 @@ import { createServices, readRuntimeEnv, servicesFor } from './composition.js';
 /**
  * The composition root.
  *
- * This used to be two files. `composition.test.ts` imported `native.js` to
- * install the Firestore/GCS arm for its whole module graph, and this file
- * existed precisely because that import could not be undone within one vitest
- * module registry — so the with-fallback and without-fallback states needed
- * separate files to be asserted honestly.
- *
- * There is one state now. The fallback arm and `native.js` are gone, so the
- * suites merged back together and the property under test simplified: a
- * missing binding is an ERROR, always, everywhere. That was already true on a
- * Worker (no Application Default Credentials, so the fallback could not have
- * reached Firestore anyway); it is now true under Node too, because there is
- * nothing else left to reach.
+ * The property under test: a missing binding is an ERROR, always, everywhere.
+ * There is no fallback backend to reach.
  */
 
 const DB = 'postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/antiphony';

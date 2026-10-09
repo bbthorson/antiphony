@@ -16,9 +16,9 @@ import {
  *     Off by one in either direction is invisible until someone is either
  *     refused a request they paid for or granted one they should not have been.
  *   - **The failure classification.** `unavailable` feeds the caller's circuit
- *     breaker and fails OPEN; `over` fails closed. The Firestore binding had to
- *     fold per-bucket contention into `over` so a caller hammering one bucket
- *     could not trip the breaker for everybody. That branch does not exist
+ *     breaker and fails OPEN; `over` fails closed. A binding that can see
+ *     per-bucket contention must fold it into `over` so a caller hammering one
+ *     bucket cannot trip the breaker for everybody. That branch does not exist
  *     here — input gating means a bucket cannot contend with itself — so
  *     everything reaching the catch is genuinely systemic.
  */

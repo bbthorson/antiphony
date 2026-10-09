@@ -102,8 +102,7 @@ describe('postgresAudioProcessingDependencies', () => {
 
         it('refuses a post belonging to another tenant', async () => {
             // The port documents this ("the post is gone or belongs to another
-            // tenant") but the Firestore binding ignores originAppId entirely.
-            // This binding implements the contract.
+            // tenant"), and this binding implements it.
             await posts.savePost(withProcessing('aaaaaaaaaaaa5'));
             await expect(
                 deps.claimProcessingLease('other-app', 'aaaaaaaaaaaa5', future()),
@@ -206,8 +205,7 @@ describe('postgresAudioProcessingDependencies', () => {
         });
 
         it('throws for a post that is gone', async () => {
-            // Firestore's `update()` rejects on a missing document; preserved,
-            // because a silent no-op would settle a stage in memory while
+            // Rejects on a missing post, because a silent no-op would settle a stage in memory while
             // nothing was written.
             await expect(
                 deps.patchProcessingState(TENANT, 'nonexistent1', { transcribe: 'ready' }),
@@ -231,9 +229,7 @@ describe('postgresAudioProcessingDependencies', () => {
         });
 
         it('is last-write-wins per subject uri — now enforced by the store', async () => {
-            // The port documents this; Firestore could only hope for it (its
-            // read path concedes "last write wins if a post somehow has
-            // multiple transcripts"). The unique index on the generated
+            // The port documents this. The unique index on the generated
             // subject_uri column makes it true.
             const uri = 'at://did:web:example.com/c/post1';
             await deps.saveTranscript(transcript('t000000000001', uri, 'first'));

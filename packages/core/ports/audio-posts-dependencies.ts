@@ -5,8 +5,8 @@ import type { ProcessingState } from 'shared/types/processing';
  * AudioPostDependencies is the portable interface the `AudioPostService`
  * (Antiphony `dev.antiphony.audio.post` model) uses to reach the data store
  * and the audio blob store. Lives in `packages/core/` alongside the service;
- * the Firestore-backed binding lives in
- * `apps/core-api/src/adapters/outbound/firebase/audio-posts-dependencies.ts`.
+ * the Postgres binding lives in
+ * `apps/core-api/src/adapters/outbound/postgres/audio-posts-dependencies.ts`.
  *
  * **Tenancy:** every read takes `originAppId` — the multi-tenant isolation
  * key. The binding scopes all queries by it so one origin app can never read

@@ -8,9 +8,8 @@ import type { SqlClient } from '../../../ports/sql-client.js';
 /**
  * Postgres-backed `IdempotencyStore`.
  *
- * `claim` is the interesting one: the Firestore binding runs a transaction with
- * four branches (absent / expired / processing / completed), and all four
- * collapse into one statement here.
+ * `claim` is the interesting one: it has four cases (absent / expired /
+ * processing / completed), and all four collapse into one statement here.
  *
  * ## How the single statement covers all four cases
  *

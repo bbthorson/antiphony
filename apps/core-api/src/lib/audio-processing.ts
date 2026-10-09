@@ -171,23 +171,17 @@ export function resolveNotifier(): ProcessingNotifierPort {
 /**
  * The durable dispatcher for this runtime, if it has one.
  *
- * Installed rather than imported, for the same reason the Firebase bindings are
- * (see `composition.ts` § Why the Firebase half is injected): the Cloud Tasks
- * adapter reaches `google-auth-library`, which a Worker bundle cannot carry —
- * and would have no use for, since a Worker has no Application Default
- * Credentials to authenticate an enqueue with.
+ * Installed rather than imported (worker.ts installs the Cloudflare Queues
+ * resolver at module load), so this seam does not depend on any one queue
+ * vendor's adapter.
  *
  * Returns `undefined` when this deployment has no durable dispatch configured.
  * The resolver owns its OWN misconfiguration reporting: whether a partial
  * config counts as an opt-out or an outage is a property of the queue being
- * configured, not of this seam, and the two adapters answer it differently —
- * Cloud Tasks reads four env vars that can disagree, a Queues binding is simply
- * present or absent.
+ * configured, not of this seam. (A Queues binding is simply present or absent.)
  *
  * Takes `env` because a Worker's bindings arrive on the invocation, not at
- * module load, so `PROCESSING_QUEUE` cannot be closed over. The Cloud Tasks
- * resolver ignores the argument and reads `process.env`, which is the shape of
- * the whole runtime split.
+ * module load, so `PROCESSING_QUEUE` cannot be closed over.
  */
 export type DurableDispatcherResolver = (
     env?: Record<string, unknown>,

@@ -9,11 +9,10 @@ import type { SqlClient } from '../../../ports/sql-client.js';
 /**
  * Postgres-backed `RateLimitStore`.
  *
- * The Firestore binding needs a transaction: read the bucket, decide, write it
- * back. This is one statement, and the difference is not cosmetic — a
- * read-then-write has a window in which a concurrent request can interleave,
- * which is exactly the contention the Firestore binding must detect and fold
- * into `over`. **That failure mode does not exist here**, which is why
+ * One statement rather than read-decide-write, and the difference is not
+ * cosmetic — a read-then-write has a window in which a concurrent request can
+ * interleave, and a binding built that way must detect the contention and fold
+ * it into `over`. **That failure mode does not exist here**, which is why
  * `RateLimitOutcome` models three states rather than an error taxonomy (see
  * ports/rate-limit-store.ts).
  *
@@ -40,7 +39,7 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * reads it on this path.
  */
 
-/** Grace after a window closes before the row is sweep-eligible. Matches the Firestore TTL buffer. */
+/** Grace after a window closes before the row is sweep-eligible. */
 const TTL_BUFFER_MS = 60 * 60 * 1000;
 
 const HIT = `

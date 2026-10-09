@@ -12,7 +12,7 @@ import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-c
  * with HMAC-SHA256 over the raw body (`specs/enrichment-webhooks.md`).
  *
  * **Best-effort, and safe to drop.** The authoritative state is already in
- * Firestore before `AudioProcessingService.settle` calls this; a failed POST is
+ * Postgres before `AudioProcessingService.settle` calls this; a failed POST is
  * a latency regression the sweep/next-GET backstops, never lost truth. So this
  * bounds itself (a short timeout, a couple of quick retries) and, on final
  * failure, logs and RESOLVES — the service also guards, but the adapter should

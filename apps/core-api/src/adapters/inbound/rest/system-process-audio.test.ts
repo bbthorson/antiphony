@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Queue worker route (step 8).
  *
- * The subject here is the STATUS CODE, because to Cloud Tasks a status code is
- * not a description of what happened — it is an instruction about whether to
+ * The subject here is the STATUS CODE, because to a retrying caller a status
+ * code is not a description of what happened — it is an instruction about whether to
  * run the work again. Getting it backwards re-bills ElevenLabs for a stage that
- * already failed, or abandons a post over a Firestore blip. Neither is visible
+ * already failed, or abandons a post over a database blip. Neither is visible
  * from inside the process; both are permanent.
  */
 
@@ -77,9 +77,9 @@ describe('POST /system/process-audio', () => {
 
     it('returns 503 when the pass throws, so the queue retries', async () => {
         // The ONLY retryable case. An error escaping `process()` came from
-        // outside a stage's own try/catch — Firestore unreachable, storage down
+        // outside a stage's own try/catch — database unreachable, storage down
         // — so nothing was recorded and a retry is what recovers it.
-        process_.mockRejectedValue(new Error('firestore down'));
+        process_.mockRejectedValue(new Error('database down'));
 
         expect((await post({ originAppId: 'vox-pop', postId: 'p1' })).status).toBe(503);
     });

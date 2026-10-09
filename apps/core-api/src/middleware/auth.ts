@@ -32,8 +32,7 @@ import { logger } from '../lib/logger.js';
  * `X-Antiphony-Acting-Actor-Did`) and trusted within the app's tenancy.
  *
  * Antiphony is headless — every caller is an application (a BFF), so it
- * verifies no end-user identity tokens. The inherited Firebase ID-token /
- * session-cookie fallback was removed (see core-surface.md, "Auth:
+ * verifies no end-user identity tokens (see specs/core-surface.md, "Auth:
  * service-token only").
  *
  * ## Context shape

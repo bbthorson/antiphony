@@ -4,20 +4,15 @@ import { postgresAudioPostDependencies } from './audio-posts-dependencies.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import type { AudioPostRecord } from 'shared/types/audio';
 
-// `getAppDid` reads the boot-validated pin snapshot, and `StorageService` is the
-// blob store — neither is under test here, and both would otherwise drag the
-// Firebase bootstrap into a Postgres suite.
+// `getAppDid` reads the boot-validated pin snapshot, which is not under test.
 vi.mock('../../../lib/app-did.js', () => ({
     getAppDid: () => 'did:web:example.com',
-}));
-vi.mock('../firebase/core-services-firebase.js', () => ({
-    StorageService: { getSignedUrl: async () => 'https://signed.example/audio' },
 }));
 
 /**
  * Postgres `AudioPostDependencies` against real Postgres 18 (PGlite).
  *
- * Weighted toward the three things that changed in the port — keyset
+ * Weighted toward the three design points of the binding — keyset
  * pagination, the un-chunked transcript lookup, and the record/processing
  * column split — plus the CID round-trip the schema's § Open calls for.
  */
@@ -109,8 +104,8 @@ describe('postgresAudioPostDependencies', () => {
         });
 
         it('does not clobber processing state when re-saving a record without it', async () => {
-            // The hazard the upsert's `coalesce` guards. Firestore's whole-doc
-            // `set` would have wiped the worker's column here.
+            // The hazard the upsert's `coalesce` guards: a whole-record write
+            // would wipe the worker's column here.
             await deps.savePost(
                 post({ processing: { transcribe: 'ready', updatedAt: new Date() } }),
             );
@@ -122,7 +117,7 @@ describe('postgresAudioPostDependencies', () => {
 
         it('rejects a record whose kind contradicts its reply fields', async () => {
             // The Zod refine is mirrored by a CHECK constraint, so the database
-            // refuses what the schema refuses. Firestore could not express this.
+            // refuses what the schema refuses.
             await expect(
                 deps.savePost({ ...post(), kind: 'reply' } as AudioPostRecord),
             ).rejects.toThrow();
@@ -157,8 +152,7 @@ describe('postgresAudioPostDependencies', () => {
         });
 
         it('ignores a cursor pointing at a row that does not exist', async () => {
-            // Matches Firestore's `snap.exists ? startAfter(snap) : q`. Without
-            // the `not exists` arm the row-comparison against an empty subquery
+            // A stale cursor starts the page over. Without the `not exists` arm the row-comparison against an empty subquery
             // is NULL and the page comes back silently empty.
             const page = await deps.queryByAuthor('vox-pop', 'user-1', {
                 cursorId: 'zzzzzzzzzzzzz',
@@ -219,9 +213,8 @@ describe('postgresAudioPostDependencies', () => {
             );
         }
 
-        it('batches well past the old 30-item Firestore `in` cap in one statement', async () => {
-            // FIRESTORE_IN_LIMIT chunked at 30 and fanned out with Promise.all.
-            // 75 here would have been three round trips; `= any($1)` is one.
+        it('batches 75 uris in one statement', async () => {
+            // `= any($1)` has no item cap, so there is no chunking or fan-out.
             const uris: string[] = [];
             for (let i = 0; i < 75; i++) {
                 const uri = `at://did:web:example.com/c/post${i}`;

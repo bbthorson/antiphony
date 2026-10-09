@@ -22,8 +22,7 @@ import type { RateLimitStore } from '../ports/rate-limit-store.js';
  *   - `unavailable` — the store is systemically unwell. Fail **OPEN** after the
  *     breaker trips: a storage outage must not take the whole API down.
  *   - `over` — refuse. A binding must report per-bucket contention as `over`
- *     rather than `unavailable` (the Firestore one did, and the port requires
- *     it of any successor), so a caller hammering one bucket cannot trip the
+ *     rather than `unavailable` (the port requires it), so a caller hammering one bucket cannot trip the
  *     breaker and fail-open the limiter for everyone.
  *
  * IP extraction is `extractClientIp` (lib/client-ip.ts), which indexes in from
@@ -35,9 +34,8 @@ import type { RateLimitStore } from '../ports/rate-limit-store.js';
  * middleware wraps. It was also exposed over HTTP at
  * `POST /api/v1/system/rate-limit/check` so a sibling service could share these
  * buckets; that route is gone (the consuming BFF now runs its own rate limiting)
- * and nothing external shares them any more, which is what made moving them off
- * Firestore a purely internal decision. They are on Postgres now, and on the
- * Durable Object wherever that binding is attached.
+ * and nothing external shares them any more, so the store is a purely internal
+ * choice: Postgres, or the Durable Object wherever that binding is attached.
  */
 
 export interface RateLimitOptions {
@@ -158,15 +156,10 @@ export interface CheckRateLimitResult {
  * @param options — limit + windowMs.
  * @param requestId — optional, threaded into log lines so the caller's
  *                    requestId correlates with core-api logs.
- * @param store — REQUIRED, and deliberately has no default. It used to default
- *                to the Firestore store, and the middleware below never passed
- *                anything — so the Postgres binding from #86 could not be
- *                reached in production by any configuration, and the import put
- *                `firebase-admin` on the module graph of every rate-limited
- *                route. Both problems are gone with that store, but the
- *                required parameter stays: a default here is what made a
- *                binding unreachable by configuration, and that trap does not
- *                depend on which store fills it.
+ * @param store — REQUIRED, and deliberately has no default. A default store
+ *                here once made the configured binding unreachable in
+ *                production (the middleware never passed one), so the caller
+ *                must always say which store it means.
  */
 export async function checkRateLimit(
     key: string,

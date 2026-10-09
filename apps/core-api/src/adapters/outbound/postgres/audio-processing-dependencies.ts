@@ -12,24 +12,21 @@ import type { StorageService } from '@antiphony/core/services/storage';
 /**
  * Postgres-backed `AudioProcessingDependencies`.
  *
- * The lease is the whole story here. The Firestore binding needs a transaction
- * for both claim and release, because each is a read of the current lease
- * followed by a conditional write, and the port's own doc explains at length
- * why a non-atomic version reintroduces the race it exists to close.
+ * The lease is the whole story here. Claim and release are each logically a
+ * read of the current lease followed by a conditional write, and the port's own
+ * doc explains at length why a non-atomic version reintroduces the race it
+ * exists to close.
  *
- * Both become single statements — the condition moves into the `WHERE` clause
+ * Both are single statements — the condition moves into the `WHERE` clause
  * and `RETURNING` reports whether it matched. There is no window to interleave
  * in, so there is nothing to serialise.
  *
- * ## Tenancy: a contract the Firestore binding did not keep
+ * ## Tenancy
  *
  * `claimProcessingLease`'s port doc says it returns false when "the post is
- * gone **or belongs to another tenant**". The Firestore binding takes
- * `_originAppId` and ignores it — every lease operation there is cross-tenant.
- * It has never mattered (the only caller threads the job's own tenant through),
- * but the contract says otherwise and a store that enforces it is strictly
- * safer. These bindings scope every statement by `origin_app_id`, which can
- * only reject a call that was already wrong.
+ * gone **or belongs to another tenant**". These bindings scope every statement
+ * by `origin_app_id`, which enforces that contract and can only reject a call
+ * that was already wrong.
  */
 
 export function postgresAudioProcessingDependencies(
@@ -62,8 +59,7 @@ export function postgresAudioProcessingDependencies(
         },
 
         async saveTranscript(record: TranscriptEnrichmentRecord): Promise<void> {
-            // Last-write-wins by subject uri — which the port documents and
-            // Firestore could only hope for. `subject_uri` is a generated
+            // Last-write-wins by subject uri, as the port documents. `subject_uri` is a generated
             // column with a UNIQUE index (migrations/0001_initial_schema.sql), so the contract is
             // now enforced by the store: a second transcript for a post
             // REPLACES the first instead of quietly coexisting with it.
@@ -86,9 +82,8 @@ export function postgresAudioProcessingDependencies(
             patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
         ): Promise<void> {
             // A jsonb merge (`||`) touches only the keys in the patch, leaving
-            // sibling stages alone — the same effect as Firestore's dotted
-            // field paths, and driven off the patch's own keys for the same
-            // reason: an allowlist that falls behind the schema drops writes
+            // sibling stages alone, and is driven off the patch's own keys
+            // because an allowlist that falls behind the schema drops writes
             // SILENTLY, which for a stage's output means the state reads
             // `ready` while the artifact went nowhere.
             const { leaseUntil, ...rest } = patch as Record<string, unknown>;
@@ -112,8 +107,7 @@ export function postgresAudioProcessingDependencies(
                 [postId, originAppId, JSON.stringify(merge), leaseUntil ?? null],
             );
 
-            // Firestore's `update()` rejects on a missing document. Preserved:
-            // a patch aimed at a post that is gone means the caller's view of
+            // Reject a patch to a missing post: a patch aimed at a post that is gone means the caller's view of
             // the world is wrong, and a silent no-op would settle a stage in
             // memory while nothing was written.
             if (rows.length === 0) {
@@ -133,9 +127,8 @@ export function postgresAudioProcessingDependencies(
             // "processing was requested" — so a no-op job would permanently
             // change how that post renders.
             //
-            // `lease_until <= now()` is strictly-expired, matching the
-            // Firestore binding's strictly-greater held check: a lease expiring
-            // exactly now is expired and claimable.
+            // `lease_until <= now()`: a lease expiring exactly now is expired
+            // and claimable.
             const rows = await sql.query<{ id: string }>(
                 `
                 update posts
@@ -171,9 +164,8 @@ export function postgresAudioProcessingDependencies(
             );
         },
 
-        // Firestore minted these from `collection().doc().id`. A TID is the
-        // better fit now that the store has no opinion: time-sortable, and the
-        // same key format every other record here uses.
+        // A TID: time-sortable, and the same key format every other record
+        // here uses.
         newTranscriptId(): string {
             return newTid();
         },

@@ -93,10 +93,9 @@ export function app(): OpenAPIHono {
             ok: true,
             sha: process.env.COMMIT_SHA ?? 'dev',
             deployedAt: process.env.BUILD_TIME ?? null,
-            // Which bindings are actually wired. The Firestore -> Neon cutover
-            // is a configuration change, so "which store is this revision
-            // talking to" stops being answerable from the commit alone — and
-            // that is precisely the question during a migration.
+            // Which bindings are actually wired. The store is configuration,
+            // not code, so "which store is this revision talking to" is not
+            // answerable from the commit alone.
             backend: services.backend,
             // Whether those bindings HAVE anything, which is a different
             // question and the one that went unanswered for 20 minutes while
