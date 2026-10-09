@@ -239,7 +239,7 @@
                                   },
                                   "url": {
                                     "type": "string",
-                                    "pattern": "^https?:\\/\\//i"
+                                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                                   },
                                   "durationMs": {
                                     "type": "integer",
@@ -1024,7 +1024,7 @@
                             },
                             "url": {
                               "type": "string",
-                              "pattern": "^https?:\\/\\//i"
+                              "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                             },
                             "durationMs": {
                               "type": "integer",
@@ -1423,7 +1423,7 @@
                             },
                             "url": {
                               "type": "string",
-                              "pattern": "^https?:\\/\\//i"
+                              "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                             },
                             "durationMs": {
                               "type": "integer",
@@ -1955,7 +1955,7 @@
                                   },
                                   "url": {
                                     "type": "string",
-                                    "pattern": "^https?:\\/\\//i"
+                                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                                   },
                                   "durationMs": {
                                     "type": "integer",
