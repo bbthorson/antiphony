@@ -10,6 +10,16 @@
     "directory": "packages/shared"
   },
   "bugs": "https://github.com/bbthorson/antiphony/issues",
+  "keywords": [
+    "antiphony",
+    "atproto",
+    "at-protocol",
+    "lexicon",
+    "audio",
+    "zod",
+    "schema",
+    "openapi"
+  ],
   "type": "module",
   "sideEffects": false,
   "main": "./dist/cjs/index.cjs",
