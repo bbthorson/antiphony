@@ -8,7 +8,7 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.7.0] — Unreleased
+## [0.7.0] — 2026-10-09
 
 Ships with **`@antiphony/shared` 0.8.0** (the package axis; independent of this
 contract number). **Minor, not patch**: two changes below tighten validation,
