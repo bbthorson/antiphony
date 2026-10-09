@@ -188,33 +188,7 @@
                                   "createdAt": {
                                     "anyOf": [
                                       {
-                                        "type": "object",
-                                        "properties": {
-                                          "seconds": {
-                                            "type": "number"
-                                          },
-                                          "nanoseconds": {
-                                            "type": "number"
-                                          }
-                                        },
-                                        "required": [
-                                          "seconds",
-                                          "nanoseconds"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "toDate": {
-                                            "nullable": true
-                                          }
-                                        }
-                                      },
-                                      {
                                         "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
                                       },
                                       {
                                         "type": "string",
@@ -973,33 +947,7 @@
                             "createdAt": {
                               "anyOf": [
                                 {
-                                  "type": "object",
-                                  "properties": {
-                                    "seconds": {
-                                      "type": "number"
-                                    },
-                                    "nanoseconds": {
-                                      "type": "number"
-                                    }
-                                  },
-                                  "required": [
-                                    "seconds",
-                                    "nanoseconds"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "toDate": {
-                                      "nullable": true
-                                    }
-                                  }
-                                },
-                                {
                                   "type": "string"
-                                },
-                                {
-                                  "type": "number"
                                 },
                                 {
                                   "type": "string",
@@ -1372,33 +1320,7 @@
                             "createdAt": {
                               "anyOf": [
                                 {
-                                  "type": "object",
-                                  "properties": {
-                                    "seconds": {
-                                      "type": "number"
-                                    },
-                                    "nanoseconds": {
-                                      "type": "number"
-                                    }
-                                  },
-                                  "required": [
-                                    "seconds",
-                                    "nanoseconds"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "toDate": {
-                                      "nullable": true
-                                    }
-                                  }
-                                },
-                                {
                                   "type": "string"
-                                },
-                                {
-                                  "type": "number"
                                 },
                                 {
                                   "type": "string",
@@ -1904,33 +1826,7 @@
                                   "createdAt": {
                                     "anyOf": [
                                       {
-                                        "type": "object",
-                                        "properties": {
-                                          "seconds": {
-                                            "type": "number"
-                                          },
-                                          "nanoseconds": {
-                                            "type": "number"
-                                          }
-                                        },
-                                        "required": [
-                                          "seconds",
-                                          "nanoseconds"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "toDate": {
-                                            "nullable": true
-                                          }
-                                        }
-                                      },
-                                      {
                                         "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
                                       },
                                       {
                                         "type": "string",
