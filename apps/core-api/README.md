@@ -11,11 +11,11 @@
 The public `/api/v1/*` surface is deliberately small — **two resource groups**:
 
 - **Posts** (`dev.antiphony.audio.post`) — create, read, list, and threaded replies, with hydrated audio and lifted transcript. A prompt and a reply are the *same* record type, distinguished by the `reply` field, not separate resources.
-- **Audio** — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint.
+- **Audio** — the playback proxy (`GET /api/v1/audio`, which streams the bytes with range support rather than redirecting to a signed URL) and the service-token-gated upload endpoint.
 
 Plus opt-in **audio enrichment** — denoise, trim, transcribe, and waveform — requested on create/patch and run out of band behind a durable queue. See [`../../specs/enrichment-pipeline.md`](../../specs/enrichment-pipeline.md).
 
-Internal `/api/v1/system/*` routes (the enrichment worker, identity plumbing, rate-limit checks) are system-auth'd and stay out of the public contract.
+One internal route sits outside the public contract: `POST /api/v1/system/process-audio`, a system-auth'd manual re-drive that pushes one post through the enrichment pipeline by hand. It is the only `/api/v1/system/*` route; production processing runs off the Cloudflare Queues consumer in `src/worker.ts`, not through it.
 
 ## Intentionally NOT here
 
@@ -75,7 +75,7 @@ same PR. See [`../../specs/core-surface.md`](../../specs/core-surface.md) for wh
 
 For detailed instructions on setting up your local environment, running the full stack, running tests, and contributing guidelines, please refer to:
 
-👉 **[CONTRIBUTING.md](./CONTRIBUTING.md)**
+👉 **[CONTRIBUTING.md](../../CONTRIBUTING.md)**
 
 ## Verification
 
