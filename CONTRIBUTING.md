@@ -37,6 +37,9 @@ DATABASE_URL="postgresql://…@ep-….neon.tech/neondb?sslmode=require"
 ANTIPHONY_APP_TOKENS="local:a-local-dev-token-at-least-32-chars-long"
 ANTIPHONY_APP_DIDS="local:did:web:your-domain.example"
 ANTIPHONY_PUBLIC_BASE_URL="http://localhost:8787"
+# Optional: signs playback URLs for audio in a space. Without it, creating a
+# space is a 503. At least 32 characters: `openssl rand -base64 48`.
+ANTIPHONY_PLAYBACK_SECRET="a-local-playback-secret-at-least-32-chars"
 ```
 
 Then:

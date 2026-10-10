@@ -5,8 +5,10 @@
     "GET /api/v1/posts",
     "GET /api/v1/posts/{postId}",
     "GET /api/v1/posts/{postId}/replies",
+    "GET /api/v1/spaces/{spaceType}/{skey}",
     "PATCH /api/v1/posts/{postId}",
     "POST /api/v1/audio/upload",
-    "POST /api/v1/posts"
+    "POST /api/v1/posts",
+    "PUT /api/v1/spaces/{spaceType}/{skey}"
   ]
 }

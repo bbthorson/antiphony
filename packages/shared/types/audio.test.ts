@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { SpacePlacementSchema } from './spaces';
 import {
     StrongRefSchema,
     ReplyRefSchema,
@@ -156,6 +157,32 @@ describe('AudioPostRecord (single collection; reply-presence discriminator)', ()
         const { originAppId, ...noTenancy } = base;
         void originAppId;
         expect(() => AudioPostRecordSchema.parse({ ...noTenancy, kind: 'prompt' })).toThrow();
+    });
+});
+
+describe('SpacePlacement (atproto spaces; storage-layer, out of the CID)', () => {
+    const placement = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc', authorSegment: 'did:plc:abc123' };
+    const prompt = {
+        id: 'p1', cid: 'bafyreiaaa', originAppId: 'bardcast', authorId: 'dm', kind: 'prompt',
+        text: 'the scene', createdAt: new Date('2026-10-07T00:00:00Z'),
+    };
+
+    it('accepts a placement, including a DID as the space key', () => {
+        expect(SpacePlacementSchema.safeParse(placement).success).toBe(true);
+        expect(SpacePlacementSchema.safeParse({ ...placement, skey: 'did:plc:abc123' }).success).toBe(true);
+    });
+
+    it('rejects a placement whose parts are not atproto syntax', () => {
+        expect(SpacePlacementSchema.safeParse({ ...placement, type: 'campaign' }).success).toBe(false);
+        expect(SpacePlacementSchema.safeParse({ ...placement, skey: 'has space' }).success).toBe(false);
+        expect(SpacePlacementSchema.safeParse({ ...placement, skey: '..' }).success).toBe(false);
+        expect(SpacePlacementSchema.safeParse({ ...placement, authorSegment: 'alice' }).success).toBe(false);
+        expect(SpacePlacementSchema.safeParse({ type: placement.type, skey: placement.skey }).success).toBe(false);
+    });
+
+    it('is optional on a post record: flat posts carry none', () => {
+        expect(AudioPostRecordSchema.safeParse(prompt).success).toBe(true);
+        expect(AudioPostRecordSchema.parse({ ...prompt, space: placement }).space).toEqual(placement);
     });
 });
 

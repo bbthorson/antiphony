@@ -294,8 +294,9 @@ hold custody of more than one authority.
 | An audience reply (Vox Pop, phone or SMS) | the app's DID | opaque `authorId` facet | the app. The app can leave Antiphony; the replier can't take it. |
 | A post published under an org | the org's own DID | the creator | the org, including after the creator leaves. |
 | A solo user's own post | the user's DID | the user | the user. Brad's stated lean ("their URI should be their handle, I think") and the reason D3 mints user DIDs; to confirm before it's built. |
-| Bardcast campaign content | Bardcast's DID, campaign `skey` | the player's DID segment | the campaign. |
-| A Bardcast character (profile, voice) | the player's DID | the player | the player, portable off Bardcast. |
+| Bardcast campaign content (replies; and Bardcast's own seat, action, state-event and chapter records) | Bardcast's DID, campaign `skey` | the player's DID segment | the campaign. |
+| A Bardcast character (profile, sheet versions, voice profile) | the player's DID | the player | the player, portable off Bardcast. Not Antiphony posts: Bardcast records in the player's own repo (D6). |
+| A Bardcast character-creation recording | Bardcast's DID, the player's private space (`skey` = the player's DID) | the player's DID segment | Bardcast, in a space only the player can read (D6). |
 
 A DID may be an authority only if its document names Antiphony as the custody host. That is
 the same custody check tenants pass today, applied per DID. It's why Model B's reason 2
@@ -333,6 +334,65 @@ phone number and linked DID against a random uid, and only the uid ever reaches 
 An export carries opaque ids. This is option 2 of
 [#121](https://github.com/bbthorson/antiphony/issues/121), and it is what "the app can
 leave with its corpus" promised, no more: an export doesn't attribute itself.
+
+### D6 — Bardcast characters (2026-10-07)
+
+Bardcast changed its character model (bardcast `docs/character-creation.md`). Two rows of D2
+follow from it, and one is open.
+
+- **A character's sheet is the player's now, alongside the profile and voice profile.** Players
+  make characters outside any campaign and own them. The sheet is a chain of immutable versions,
+  each pointing at the last with a `prev` StrongRef, because AT Protocol repos don't keep record
+  history. None of these are Antiphony posts: they're Bardcast records in the player's own repo
+  on their own PDS, written by Bardcast with the player's OAuth session. Antiphony holds none of
+  them, so the custody check doesn't apply. They're public, like any repo record.
+- **A campaign space holds more than replies.** Next to the reply posts, Bardcast keeps its own
+  records there under the same authority: a **seat** per character (branched from the player's
+  sheet and reset to the table's level), an append-only **action log** (hit points, conditions and
+  items are derived from it), state events and chapters. All are kept by the campaign, per the D2
+  row. Antiphony stores only the posts. Which repo host holds Bardcast's own records in the
+  space isn't settled here or in Bardcast: today they live in Bardcast's state (its `Store`),
+  and the projection to records hasn't been built. [`spaces.md`](./spaces.md) Phase 4 covers the
+  posts.
+- **Where character-creation recordings go. Decided 2026-10-07: a private space per player
+  (option 1 below).** Players build a character by answering
+  questions out loud, outside any campaign. Those answers are Antiphony audio posts, and they're
+  the first samples for the player's voice clone. They don't fit any D2 row:
+  - **Not "a solo user's own post".** That row's authority is the user's DID, and a DID may be an
+    authority only if its document names Antiphony as custody host. A Bardcast player's DID is
+    their own Bluesky DID, pointing at their PDS. Few players would add an
+    `#atproto_space_host` entry.
+  - **Not public.** A repo record is readable by anyone, and these are raw voice recordings used
+    for cloning. Their audience is the player and Bardcast.
+  - **Not campaign content.** There's no campaign yet.
+
+  Options:
+
+  1. **A private space per player** under Bardcast's DID (a second space type, e.g.
+     `game.bardcast.space.player`, `skey` the player's DID, author segment the player's DID),
+     with `managing-app` policy answering "only this player and Bardcast". Custody passes,
+     visibility is right, and it reuses the campaign-space machinery. Bardcast keeps the raw
+     audio; what travels with the player is the profile, sheet and voice profile.
+  2. **Bardcast's DID as authority, no space**, the player's DID as a facet (the audience-reply
+     shape). The simplest, but visibility then rests on tenancy scoping alone rather than a
+     space's access control.
+  3. **The solo-user row as written.** Needs each player to add Antiphony as a space host to
+     their DID document. Not realistic for Bluesky users.
+
+  **Decided: option 1.** The details:
+
+  - **One space per player, not per character.** Space type `{bardcast root}.space.player` (the
+    root is still the placeholder `game.bardcast`), `skey` the player's DID (record-key syntax
+    allows the colons). Every character the player makes records into the same space.
+  - **Created when the player starts making their first character**, not at sign-up: a player who
+    only listens never gets one. Bardcast calls `PUT /api/v1/spaces/{spaceType}/{skey}` then, and
+    reuses the space after.
+  - **Policy:** `readPolicy` and `writePolicy` `managing-app`; Bardcast answers yes for that player
+    only. The narrator's questions are prompts in the space, and the player's answers are replies,
+    so they inherit it.
+  - **What leaves with the player** is what's in their own repo: the profile, the sheet versions and
+    the voice profile. The raw recordings stay in the space, kept by Bardcast.
+  - Like everything here, free to change until the first kept recording.
 
 ## Honest tradeoffs / where B hurts (ranked)
 

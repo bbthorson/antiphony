@@ -49,6 +49,11 @@
                             "type": "ref",
                             "ref": "dev.antiphony.audio.defs#processingRequest",
                             "description": "Opt-in audio processing for this post's audio. Runs asynchronously; the post is created either way."
+                        },
+                        "space": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#spaceKey",
+                            "description": "Place a prompt in one of the tenant's spaces; the returned `uri` is then a space URI and its audio plays only through signed URLs. The audio must have been uploaded into the same space. A reply inherits its parent's space and must not name another."
                         }
                     }
                 }
@@ -76,6 +81,10 @@
                 {
                     "name": "InvalidRequest",
                     "description": "The payload failed validation — an empty post, or a reply carrying a title."
+                },
+                {
+                    "name": "RecordNotFound",
+                    "description": "The named space does not exist for this tenant, or a reply's parent was not found."
                 },
                 {
                     "name": "Conflict",

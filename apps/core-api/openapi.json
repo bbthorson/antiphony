@@ -2,13 +2,17 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.7.0",
-    "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
+    "version": "0.8.0",
+    "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
     {
       "name": "Posts",
       "description": "Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript."
+    },
+    {
+      "name": "Spaces",
+      "description": "A tenant's atproto spaces — create or replace one, read one. Posts and audio placed in a space are private: their audio plays through signed, expiring URLs."
     },
     {
       "name": "Audio",
@@ -639,6 +643,27 @@
                         "type": "boolean"
                       }
                     }
+                  },
+                  "space": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 317,
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                      },
+                      "skey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9._:~-]+$"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "skey"
+                    ]
                   }
                 }
               }
@@ -2097,16 +2122,71 @@
         }
       }
     },
-    "/api/v1/audio/upload": {
-      "post": {
+    "/api/v1/spaces/{spaceType}/{skey}": {
+      "put": {
         "tags": [
-          "Audio"
+          "Spaces"
         ],
-        "summary": "Upload audio (authenticated)",
-        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post.",
+        "summary": "Create or replace a space",
+        "description": "Creates the space `at://{appDid}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: an omitted policy goes back to `member-list`). Idempotent. Posts and audio uploaded into a space are private: their audio plays only through signed, expiring URLs. A deployment without a playback secret refuses to create spaces (503) rather than store audio it could not keep private.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The space type, an NSID (e.g. `game.bardcast.space.campaign`)"
+            },
+            "required": true,
+            "description": "The space type, an NSID (e.g. `game.bardcast.space.campaign`)",
+            "name": "spaceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The space key, in record-key syntax. A DID is a valid skey."
+            },
+            "required": true,
+            "description": "The space key, in record-key syntax. A DID is a valid skey.",
+            "name": "skey",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "readPolicy": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "member-list",
+                      "managing-app"
+                    ],
+                    "default": "member-list"
+                  },
+                  "writePolicy": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "member-list",
+                      "managing-app"
+                    ],
+                    "default": "member-list"
+                  },
+                  "managingAppEndpoint": {
+                    "type": "string",
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Stored audio blob ref",
+            "description": "The space as stored",
             "content": {
               "application/json": {
                 "schema": {
@@ -2121,46 +2201,57 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "blob": {
-                          "type": "object",
-                          "properties": {
-                            "$type": {
-                              "type": "string",
-                              "enum": [
-                                "blob"
-                              ]
-                            },
-                            "ref": {
-                              "type": "object",
-                              "properties": {
-                                "$link": {
-                                  "type": "string",
-                                  "minLength": 1
-                                }
-                              },
-                              "required": [
-                                "$link"
-                              ]
-                            },
-                            "mimeType": {
-                              "type": "string"
-                            },
-                            "size": {
-                              "type": "integer",
-                              "minimum": 0
-                            }
-                          },
-                          "required": [
-                            "$type",
-                            "ref",
-                            "mimeType",
-                            "size"
-                          ],
-                          "description": "Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed's `audio`."
+                        "type": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 317,
+                          "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                        },
+                        "skey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9._:~-]+$"
+                        },
+                        "uri": {
+                          "type": "string",
+                          "pattern": "^at:\\/\\/.+\\/space\\/.+\\/.+$"
+                        },
+                        "readPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "public",
+                            "member-list",
+                            "managing-app"
+                          ]
+                        },
+                        "writePolicy": {
+                          "type": "string",
+                          "enum": [
+                            "public",
+                            "member-list",
+                            "managing-app"
+                          ]
+                        },
+                        "managingAppEndpoint": {
+                          "type": "string",
+                          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
                         }
                       },
                       "required": [
-                        "blob"
+                        "type",
+                        "skey",
+                        "uri",
+                        "readPolicy",
+                        "writePolicy",
+                        "createdAt",
+                        "updatedAt"
                       ]
                     }
                   },
@@ -2173,7 +2264,7 @@
             }
           },
           "400": {
-            "description": "Missing/oversized file or unsupported audio type",
+            "description": "Invalid space type, key or policies",
             "content": {
               "application/json": {
                 "schema": {
@@ -2263,6 +2354,537 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "This deployment has no playback secret, so it cannot keep space audio private",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Spaces"
+        ],
+        "summary": "Get a space",
+        "description": "Returns one of the calling tenant's spaces. Another tenant's space reads as 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The space type, an NSID (e.g. `game.bardcast.space.campaign`)"
+            },
+            "required": true,
+            "description": "The space type, an NSID (e.g. `game.bardcast.space.campaign`)",
+            "name": "spaceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The space key, in record-key syntax. A DID is a valid skey."
+            },
+            "required": true,
+            "description": "The space key, in record-key syntax. A DID is a valid skey.",
+            "name": "skey",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 317,
+                          "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                        },
+                        "skey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9._:~-]+$"
+                        },
+                        "uri": {
+                          "type": "string",
+                          "pattern": "^at:\\/\\/.+\\/space\\/.+\\/.+$"
+                        },
+                        "readPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "public",
+                            "member-list",
+                            "managing-app"
+                          ]
+                        },
+                        "writePolicy": {
+                          "type": "string",
+                          "enum": [
+                            "public",
+                            "member-list",
+                            "managing-app"
+                          ]
+                        },
+                        "managingAppEndpoint": {
+                          "type": "string",
+                          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "skey",
+                        "uri",
+                        "readPolicy",
+                        "writePolicy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid space type or key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audio/upload": {
+      "post": {
+        "tags": [
+          "Audio"
+        ],
+        "summary": "Upload audio (authenticated)",
+        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post. Optional `spaceType` + `skey` fields store it privately in one of the tenant's spaces; the first upload of the same bytes decides where they live, and the response's `space` says which.",
+        "responses": {
+          "200": {
+            "description": "Stored audio blob ref",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "blob": {
+                          "type": "object",
+                          "properties": {
+                            "$type": {
+                              "type": "string",
+                              "enum": [
+                                "blob"
+                              ]
+                            },
+                            "ref": {
+                              "type": "object",
+                              "properties": {
+                                "$link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "$link"
+                              ]
+                            },
+                            "mimeType": {
+                              "type": "string"
+                            },
+                            "size": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "$type",
+                            "ref",
+                            "mimeType",
+                            "size"
+                          ],
+                          "description": "Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed's `audio`."
+                        },
+                        "space": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 317,
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                            },
+                            "skey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[A-Za-z0-9._:~-]+$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "skey"
+                          ],
+                          "description": "The space the blob is stored in, when it is private. Absent ⇒ public. The first upload of the same bytes decides this, so it can differ from the space this request named."
+                        }
+                      },
+                      "required": [
+                        "blob"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/oversized file, unsupported audio type, or an invalid space",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Space not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -2273,7 +2895,7 @@
           "Audio"
         ],
         "summary": "Stream stored audio",
-        "description": "Validates the requested object path against the served namespace (content-addressed `blobs/` paths) then STREAMS the bytes. Anonymous — public audio playback for embeds and public pages.\n\nAccepts either a full provider URL or a bare object path. Supports a single `Range` header (`bytes=start-end`) and answers 206; an unparseable or multi-range header is ignored and the whole object is served. Responses are `immutable` — the bytes behind a content address never change.\n\n**Changed in 0.5.0:** this used to 302-redirect to a short-lived signed URL. It now returns the audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.\n\nPass `format` to receive a derived rendition (e.g. `mp3` for telephony playback, which cannot decode webm/opus) instead of the canonical bytes. The canonical audio is never re-encoded.",
+        "description": "Validates the requested object path against the served namespace (content-addressed `blobs/` paths) then STREAMS the bytes. Anonymous — public audio playback for embeds and public pages.\n\n**Private audio (0.8.0):** audio uploaded into a space plays only from a signed URL (`exp` + `sig`), as handed out on post views and by `getPlaybackUrl`, valid for an hour. Without a valid signature it reads as 404. Its responses are `Cache-Control: private` and never cached past the signature.\n\nAccepts either a full provider URL or a bare object path. Supports a single `Range` header (`bytes=start-end`) and answers 206; an unparseable or multi-range header is ignored and the whole object is served. Public responses are `immutable` — the bytes behind a content address never change.\n\n**Changed in 0.5.0:** this used to 302-redirect to a short-lived signed URL. It now returns the audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.\n\nPass `format` to receive a derived rendition (e.g. `mp3` for telephony playback, which cannot decode webm/opus) instead of the canonical bytes. The canonical audio is never re-encoded.",
         "parameters": [
           {
             "schema": {
@@ -2295,6 +2917,26 @@
             "required": false,
             "description": "Optional. Serve a derived rendition of the audio instead of the canonical bytes. One of: mp3. Omitted, the stored audio is served as-is.\n\nRead-path only: the canonical blob is never re-encoded, because its CID is what every record, blob ref, and dedup guarantee rides on.",
             "name": "format",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "With `sig`: when a signed playback URL expires, in Unix seconds. Required for audio in a space; mint the URL through a post view or `dev.antiphony.audio.getPlaybackUrl`, never by hand."
+            },
+            "required": false,
+            "description": "With `sig`: when a signed playback URL expires, in Unix seconds. Required for audio in a space; mint the URL through a post view or `dev.antiphony.audio.getPlaybackUrl`, never by hand.",
+            "name": "exp",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "With `exp`: the playback signature. `format` is not covered, so it may be appended."
+            },
+            "required": false,
+            "description": "With `exp`: the playback signature. `format` is not covered, so it may be appended.",
+            "name": "sig",
             "in": "query"
           }
         ],
@@ -2414,7 +3056,7 @@
             }
           },
           "404": {
-            "description": "Backing object not found, or no rendition in the requested format",
+            "description": "Backing object not found, no rendition in the requested format, or private audio without a valid signature",
             "content": {
               "application/json": {
                 "schema": {

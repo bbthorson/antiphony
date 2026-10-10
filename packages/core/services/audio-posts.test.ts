@@ -36,6 +36,10 @@ function makeDeps(overrides: Partial<AudioPostDependencies> = {}): AudioPostDepe
         resolveAudioUrl: vi.fn(async (originAppId: string, blobCid: string) => `proxy::${originAppId}::${blobCid}`),
         cidForRecord: vi.fn(async () => 'bafyreitestcid'),
         now: vi.fn(() => new Date('2026-06-26T00:00:00Z')),
+        // Spaces (Phase 2): none exist, and no blob is stored, so flat posts
+        // behave exactly as they did before spaces.
+        getSpace: vi.fn(async () => null),
+        getBlobSpace: vi.fn(async () => null),
         ...overrides,
         // expose saved for assertions without widening the interface
         ...({ __saved: saved } as object),

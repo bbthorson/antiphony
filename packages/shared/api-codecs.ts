@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
 import { ProcessingRequestSchema } from './types/processing';
+import { SpaceKeySchema, SpacePolicySchema } from './types/spaces';
+import { httpsUrl } from './types/url';
 
 /**
  * Create-request codec for the canonical Antiphony `dev.antiphony.audio.post`
@@ -30,6 +32,14 @@ export const CreateAudioPostRequestSchema = z.object({
    * `types/processing.ts`.
    */
   processing: ProcessingRequestSchema.optional(),
+  /**
+   * The space to create this post in (specs/spaces.md). It must exist for the
+   * calling tenant (`PUT /api/v1/spaces/{type}/{skey}`), and the audio must have
+   * been uploaded into the same space. A reply is always created in its
+   * parent's space: name it or omit it, but naming another is refused. Absent ⇒
+   * a flat, public post.
+   */
+  space: SpaceKeySchema.optional(),
 })
   // A reply is a caption on someone else's prompt — it carries no title.
   .refine((d) => !(d.reply && d.title), {
@@ -58,3 +68,20 @@ export const PatchAudioPostRequestSchema = z.object({
   processing: ProcessingRequestSchema,
 });
 export type PatchAudioPostRequest = z.infer<typeof PatchAudioPostRequestSchema>;
+
+/**
+ * `PUT /api/v1/spaces/{type}/{skey}` — create or replace a space's policies.
+ * The space's authority is always the calling tenant's own DID. Replacement,
+ * not a merge: an omitted policy is reset to the protocol default
+ * (`member-list`), so the same request always leaves the same space.
+ */
+export const PutSpaceRequestSchema = z.object({
+  readPolicy: SpacePolicySchema.default('member-list'),
+  writePolicy: SpacePolicySchema.default('member-list'),
+  /**
+   * Where `checkUserAccess` is called for `managing-app` policies, for apps
+   * other than the tenant. Not needed while the tenant is the only reader.
+   */
+  managingAppEndpoint: httpsUrl().optional(),
+});
+export type PutSpaceRequest = z.infer<typeof PutSpaceRequestSchema>;

@@ -3,6 +3,9 @@ import type { Context } from 'hono';
 import { rateLimit, RATE_LIMITS } from '../../../middleware/rate-limit.js';
 import { servicesFor } from '../../../composition.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
+import { playbackSecret } from '../../../lib/app-config.js';
+import { blobSpaceOf } from '../../../lib/blob-space.js';
+import { PLAYBACK_URL_TTL_SECONDS, verifyPlayback } from '../../../lib/playback-signature.js';
 import { errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 import {
     asRenditionFormat,
@@ -18,8 +21,18 @@ import {
  *
  * Audio proxy. Validates the referenced object path is one we serve —
  * the content-addressed blob namespace (`blobs/{originAppId}/{cid}`, see
- * lib/blob-path.ts) — and returns a 302 redirect to a time-limited signed
- * URL (1-hour expiry default, cached to the client for 50 min).
+ * lib/blob-path.ts) — and streams the bytes.
+ *
+ * ## Private audio (specs/spaces.md, Phase 2)
+ *
+ * Audio uploaded into a space carries that space in its object metadata
+ * (lib/blob-space.ts), and plays only with a valid `exp` + `sig`
+ * (lib/playback-signature.ts). Without one, private audio reads as 404, the
+ * same answer as audio that doesn't exist, so the proxy never confirms that a
+ * private blob is there. A rendition is checked against its CANONICAL blob,
+ * before any rendition read or transcode, because a rendition object carries no
+ * marker of its own. Private responses are `Cache-Control: private` and never
+ * outlive the signature; public ones stay `immutable`.
  */
 
 const prefixedPath = (p: string): boolean => p.startsWith('blobs/');
@@ -122,6 +135,22 @@ const QuerySchema = z.object({
                 'record, blob ref, and dedup guarantee rides on.',
             example: 'mp3',
         }),
+    exp: z
+        .string()
+        .optional()
+        .openapi({
+            param: { name: 'exp', in: 'query', required: false },
+            description:
+                'With `sig`: when a signed playback URL expires, in Unix seconds. Required for audio in a space; ' +
+                'mint the URL through a post view or `dev.antiphony.audio.getPlaybackUrl`, never by hand.',
+        }),
+    sig: z
+        .string()
+        .optional()
+        .openapi({
+            param: { name: 'sig', in: 'query', required: false },
+            description: 'With `exp`: the playback signature. `format` is not covered, so it may be appended.',
+        }),
 });
 
 const proxyRoute = createRoute({
@@ -132,9 +161,12 @@ const proxyRoute = createRoute({
     description:
         'Validates the requested object path against the served namespace (content-addressed `blobs/` paths) ' +
         'then STREAMS the bytes. Anonymous — public audio playback for embeds and public pages.\n\n' +
+        '**Private audio (0.8.0):** audio uploaded into a space plays only from a signed URL (`exp` + `sig`), ' +
+        'as handed out on post views and by `getPlaybackUrl`, valid for an hour. Without a valid signature it ' +
+        'reads as 404. Its responses are `Cache-Control: private` and never cached past the signature.\n\n' +
         'Accepts either a full provider URL or a bare object path. Supports a single `Range` header ' +
         '(`bytes=start-end`) and answers 206; an unparseable or multi-range header is ignored and the ' +
-        'whole object is served. Responses are `immutable` — the bytes behind a content address never change.\n\n' +
+        'whole object is served. Public responses are `immutable` — the bytes behind a content address never change.\n\n' +
         '**Changed in 0.5.0:** this used to 302-redirect to a short-lived signed URL. It now returns the ' +
         'audio directly. Clients using `<audio src>` need no change; anything asserting on the redirect does.\n\n' +
         'Pass `format` to receive a derived rendition (e.g. `mp3` for telephony playback, which cannot ' +
@@ -161,12 +193,12 @@ const proxyRoute = createRoute({
         },
         400: errorResponse('Missing or malformed `url`, or an unsupported `format`'),
         403: errorResponse('Object path outside the served allowlist'),
-        404: errorResponse('Backing object not found, or no rendition in the requested format'),
+        404: errorResponse('Backing object not found, no rendition in the requested format, or private audio without a valid signature'),
     },
 });
 
 app.openapi(proxyRoute, async (c) => {
-    const { url: audioUrl, format: requestedFormat } = c.req.valid('query');
+    const { url: audioUrl, format: requestedFormat, exp, sig } = c.req.valid('query');
     if (!audioUrl) {
         return c.json(errorEnvelope(c, 'Missing "url" query parameter'), 400);
     }
@@ -218,6 +250,20 @@ app.openapi(proxyRoute, async (c) => {
         return c.json(errorEnvelope(c, 'Forbidden path'), 403);
     }
 
+    // Signed ⇒ Antiphony minted this URL for this canonical blob, so it plays
+    // whatever the blob's visibility. Unsigned (or expired) ⇒ public audio only.
+    const signed = await verifyPlayback({ objectPath, exp, sig, secret: playbackSecret() });
+    const notFound = () =>
+        c.json(errorEnvelope(c, format ? `No ${format} rendition available for this audio` : 'Audio not found'), 404);
+
+    // A rendition carries no marker, so ask the canonical blob — BEFORE the
+    // rendition read, and before a miss can start a transcode of private audio.
+    // No canonical blob means nothing to derive from, so nothing to serve.
+    if (format && !signed) {
+        const canonical = await services.storage.stat(objectPath);
+        if (!canonical || blobSpaceOf(canonical.metadata)) return notFound();
+    }
+
     let read = await services.storage.openStream(servePath, range ?? undefined);
 
     if (!read && format && services.renditionService) {
@@ -237,20 +283,25 @@ app.openapi(proxyRoute, async (c) => {
         }
     }
 
-    if (!read) {
-        return c.json(
-            errorEnvelope(
-                c,
-                format ? `No ${format} rendition available for this audio` : 'Audio not found',
-            ),
-            404,
-        );
+    if (!read) return notFound();
+
+    // The canonical object's own metadata says whether it's private, so this
+    // costs no extra read. Same 404 as a missing blob: don't confirm it exists.
+    if (!format && !signed && blobSpaceOf(read.metadata)) {
+        await read.body.cancel().catch(() => undefined);
+        return notFound();
     }
 
-    // Content-addressed: the bytes behind a CID never change, so this is as
-    // cacheable as anything gets. The old signed-URL indirection could not say
-    // this — it was `private, max-age=3000` purely because the URL expired.
-    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    if (signed) {
+        // Private audio, or at least a private URL: cached by this listener only,
+        // and never past the signature (a revoked listener's copy expires with it).
+        const remaining = Math.max(0, Math.min(PLAYBACK_URL_TTL_SECONDS, Number(exp) - Math.floor(Date.now() / 1000)));
+        c.header('Cache-Control', `private, max-age=${remaining}`);
+    } else {
+        // Content-addressed: the bytes behind a CID never change, so this is as
+        // cacheable as anything gets.
+        c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    }
     c.header('Accept-Ranges', 'bytes');
     // A rendition's type comes from the FORMAT, not from what the store
     // happens to report. The store's answer is whatever was set when the

@@ -409,6 +409,7 @@ export class AudioProcessingService {
                         originAppId,
                         cleaned.bytes,
                         cleaned.mimeType,
+                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     variantChanged = true;
@@ -454,6 +455,7 @@ export class AudioProcessingService {
                         originAppId,
                         trimmed.bytes,
                         trimmed.mimeType,
+                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
                     );
                     working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
                     variantChanged = true;
@@ -544,7 +546,7 @@ export class AudioProcessingService {
                     });
                     await this.deps.saveTranscript({
                         id: this.deps.newTranscriptId(),
-                        subject: { uri: buildPostUri(this.deps.getAppDid(originAppId), post.id), cid: post.cid },
+                        subject: { uri: buildPostUri(this.deps.getAppDid(originAppId), post.id, post.space), cid: post.cid },
                         transcript: result.transcript,
                         lang: result.lang,
                         model: result.model,

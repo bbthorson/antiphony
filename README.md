@@ -9,7 +9,7 @@ REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs
 
 ## Status
 
-- **Pre-1.0.** The API contract is at `0.x` (currently `0.7.0`, the
+- **Pre-1.0.** The API contract is at `0.x` (currently `0.8.0`, the
   `info.version` in [`apps/core-api/openapi.json`](apps/core-api/openapi.json)),
   served under the `/api/v1/` URL major. While `0.x`, a **breaking** contract
   change bumps the minor and an additive change or fix bumps the patch — see

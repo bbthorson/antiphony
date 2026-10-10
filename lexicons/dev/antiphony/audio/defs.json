@@ -109,6 +109,24 @@
                 }
             }
         },
+        "spaceKey": {
+            "type": "object",
+            "description": "One of the tenant's atproto spaces, by type and key. Its authority is always the tenant's own DID, so it is not named here.",
+            "required": ["type", "skey"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "format": "nsid",
+                    "description": "The space type, e.g. game.bardcast.space.campaign."
+                },
+                "skey": {
+                    "type": "string",
+                    "format": "record-key",
+                    "maxLength": 512,
+                    "description": "The space key, in record-key syntax. A DID is a valid skey."
+                }
+            }
+        },
         "processingRequest": {
             "type": "object",
             "description": "An opt-in request for asynchronous audio processing. Every stage is off by default; only `true` asks for work. A stage this deployment has no provider for settles as `skipped` on the view rather than failing the request.",

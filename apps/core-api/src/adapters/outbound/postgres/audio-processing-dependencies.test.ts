@@ -11,6 +11,7 @@ vi.mock('../../../lib/app-did.js', () => ({
 const storage = {
     uploadFile: async () => 'r2://test/x',
     openStream: async () => null,
+    stat: async () => null,
     download: async () => null,
     extractObjectPath: () => null,
 };
@@ -50,7 +51,7 @@ describe('postgresAudioProcessingDependencies', () => {
     beforeAll(async () => {
         db = await createTestDatabase();
         deps = postgresAudioProcessingDependencies(db, storage);
-        posts = postgresAudioPostDependencies(db);
+        posts = postgresAudioPostDependencies(db, storage);
     });
     afterAll(async () => db.close());
     beforeEach(async () => db.truncate());

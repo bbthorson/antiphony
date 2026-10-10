@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SpacePlacementSchema } from './spaces';
 import { BlobRefSchema } from './blob';
 import { TimestampSchema } from './records';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
@@ -39,6 +40,7 @@ export const ReplyRefSchema = z.object({
     parent: StrongRefSchema,
 });
 export type ReplyRef = z.infer<typeof ReplyRefSchema>;
+
 
 // #endregion
 
@@ -190,6 +192,12 @@ export const AudioPostRecordSchema = z.object({
      * CID. See `types/processing.ts`.
      */
     processing: ProcessingStateSchema.optional(),
+    /**
+     * The post's space, when it has one (see `SpacePlacementSchema`). A reply
+     * always shares its parent's space. Storage-layer, NOT in the lexicon or
+     * the record CID.
+     */
+    space: SpacePlacementSchema.optional(),
 
     // --- Lexicon fields (public contract) ---
     /** User-authored text (bsky-semantic). May be empty for pure-audio posts. NEVER the transcript. */

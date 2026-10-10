@@ -33,6 +33,23 @@ describe('r2BlobStore', () => {
         });
     });
 
+    describe('metadata (a blob in a space)', () => {
+        const META = { 'antiphony-space': 'game.bardcast.space.campaign/thornwood' };
+
+        it('stores it, and returns it on stat and on read', async () => {
+            await store.upload(new Uint8Array([1, 2, 3]), PATH, 'audio/webm', { metadata: META });
+            expect(await store.stat(PATH)).toEqual({ size: 3, mimeType: 'audio/webm', metadata: META });
+            const read = await store.openStream(PATH);
+            expect(read?.metadata).toEqual(META);
+        });
+
+        it('stats a public blob with no metadata, and a missing one as null', async () => {
+            await store.upload(new Uint8Array([1]), PATH, 'audio/webm');
+            expect((await store.stat(PATH))?.metadata).toBeUndefined();
+            expect(await store.stat('blobs/vox-pop/missing')).toBeNull();
+        });
+    });
+
     describe('openStream', () => {
         beforeEach(async () => {
             await store.upload(new Uint8Array([10, 20, 30, 40, 50]), PATH, 'audio/webm');

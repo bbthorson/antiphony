@@ -5,7 +5,7 @@
     "defs": {
         "main": {
             "type": "query",
-            "description": "Returns the playback URL for one blob within the caller's tenancy. The URL addresses this service's audio proxy, is stable, and carries no credential — so a response referencing it stays cacheable. It is NOT a direct storage URL and NOT time-limited.",
+            "description": "Returns the playback URL for one blob within the caller's tenancy. The URL addresses this service's audio proxy and is NOT a direct storage URL. For public audio it is stable and carries no credential, so a response referencing it stays cacheable. For audio stored in a space it is signed (`exp` + `sig` query parameters) and expires after an hour: ask again rather than storing it.",
             "parameters": {
                 "type": "params",
                 "required": ["cid"],
@@ -34,7 +34,7 @@
             "errors": [
                 {
                     "name": "RecordNotFound",
-                    "description": "The CID does not form an addressable object for this tenancy."
+                    "description": "The CID does not form an addressable object for this tenancy, or the audio is private and this deployment cannot sign playback URLs."
                 }
             ]
         }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { signPlayback } from '../../../lib/playback-signature.js';
 
 /**
  * Tests for `GET /api/v1/audio?url=...`.
@@ -12,6 +13,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // through, so the route sees these and reaches no store.
 const extractObjectPath = vi.fn();
 const openStream = vi.fn();
+/** The canonical blob's metadata, asked for before serving a rendition unsigned. */
+const stat = vi.fn();
 
 /**
  * `undefined` by default, so the existing cases describe a deployment with no
@@ -25,6 +28,7 @@ vi.mock('../../../composition.js', () => ({
         storage: {
             extractObjectPath: (url: string) => extractObjectPath(url),
             openStream: (path: string, range?: unknown) => openStream(path, range),
+            stat: (path: string) => stat(path),
         },
     // The rate-limit middleware resolves its store from here. Under limit on
     // every hit: these suites assert route behaviour, not rate-limit policy
@@ -233,6 +237,8 @@ describe('GET /api/v1/audio?format= — derived renditions', () => {
         // counts leak between cases without this.
         vi.resetAllMocks();
         extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        // The canonical blob exists and is public.
+        stat.mockResolvedValue({});
     });
 
     it('serves the derived object, not the canonical one', async () => {
@@ -328,6 +334,7 @@ describe('GET /api/v1/audio?format= — transcode on miss', () => {
     beforeEach(() => {
         vi.resetAllMocks();
         extractObjectPath.mockReturnValue('blobs/app-1/bafyreicid');
+        stat.mockResolvedValue({});
         renditionService = { ensure: (r: unknown) => ensure(r) };
     });
 
@@ -406,5 +413,98 @@ describe('GET /api/v1/audio?format= — transcode on miss', () => {
 
         expect(res.status).toBe(404);
         expect(ensure).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /api/v1/audio — private audio in a space', () => {
+    const SECRET = 'test-playback-secret-0123456789abcdef';
+    const PATH = 'blobs/app-1/bafyreicid';
+    const PRIVATE = { 'antiphony-space': 'game.bardcast.space.campaign/thornwood' };
+    const now = () => Math.floor(Date.now() / 1000);
+    const signed = async (exp = now() + 3600, path = PATH) =>
+        `/api/v1/audio?url=${encodeURIComponent(PATH)}&exp=${exp}&sig=${await signPlayback(path, exp, SECRET)}`;
+
+    beforeEach(() => {
+        vi.resetAllMocks();
+        extractObjectPath.mockReturnValue(null);
+        process.env.ANTIPHONY_PLAYBACK_SECRET = SECRET;
+    });
+    afterEach(() => {
+        delete process.env.ANTIPHONY_PLAYBACK_SECRET;
+        renditionService = undefined;
+    });
+
+    it('404s private audio without a signature, as if it did not exist, and drops the stream', async () => {
+        const cancel = vi.fn(async () => undefined);
+        const r = read([1, 2, 3], { metadata: PRIVATE });
+        openStream.mockResolvedValue({ ...r, body: { cancel } });
+
+        const res = await app().request(`/api/v1/audio?url=${encodeURIComponent(PATH)}`);
+
+        expect(res.status).toBe(404);
+        expect((await res.json()).error.message).toBe('Audio not found');
+        expect(cancel).toHaveBeenCalled();
+    });
+
+    it('serves it with a valid signature, privately and never past the signature', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3], { metadata: PRIVATE }));
+
+        const res = await app().request(await signed(now() + 600));
+
+        expect(res.status).toBe(200);
+        const cache = res.headers.get('cache-control')!;
+        expect(cache).toMatch(/^private, max-age=\d+$/);
+        expect(Number(cache.split('=')[1])).toBeLessThanOrEqual(600);
+        expect(cache).not.toContain('immutable');
+    });
+
+    it('refuses an expired, tampered, or other-object signature', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3], { metadata: PRIVATE }));
+        const good = await signed();
+
+        expect((await app().request(await signed(now() - 1))).status).toBe(404);
+        expect((await app().request(good.replace(/sig=./, 'sig=A'))).status).toBe(404);
+        expect((await app().request(await signed(now() + 600, 'blobs/app-1/other'))).status).toBe(404);
+    });
+
+    it('refuses everything private when the deployment has no secret', async () => {
+        const url = await signed();
+        delete process.env.ANTIPHONY_PLAYBACK_SECRET;
+        openStream.mockResolvedValue(read([1, 2, 3], { metadata: PRIVATE }));
+
+        expect((await app().request(url)).status).toBe(404);
+    });
+
+    it('checks the canonical blob before reading or building a rendition', async () => {
+        const ensure = vi.fn();
+        renditionService = { ensure };
+        stat.mockResolvedValue({ metadata: PRIVATE });
+
+        const res = await app().request(`/api/v1/audio?url=${encodeURIComponent(PATH)}&format=mp3`);
+
+        expect(res.status).toBe(404);
+        expect(stat).toHaveBeenCalledWith(PATH);
+        expect(openStream).not.toHaveBeenCalled();
+        expect(ensure).not.toHaveBeenCalled();
+    });
+
+    it('lets a signed URL ask for a rendition without asking the canonical blob', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3], { mimeType: 'audio/mpeg' }));
+
+        const res = await app().request(`${await signed()}&format=mp3`);
+
+        expect(res.status).toBe(200);
+        expect(stat).not.toHaveBeenCalled();
+        expect(openStream).toHaveBeenCalledWith('renditions/app-1/bafyreicid.mp3', undefined);
+        expect(res.headers.get('cache-control')).toMatch(/^private/);
+    });
+
+    it('leaves public audio public and immutable', async () => {
+        openStream.mockResolvedValue(read([1, 2, 3]));
+
+        const res = await app().request(`/api/v1/audio?url=${encodeURIComponent(PATH)}`);
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     });
 });

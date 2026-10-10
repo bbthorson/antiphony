@@ -31,6 +31,7 @@ import type {
 interface StoredObject {
     bytes: Uint8Array;
     contentType?: string;
+    customMetadata?: Record<string, string>;
 }
 
 export interface FakeBucket extends R2BucketLike {
@@ -48,6 +49,7 @@ export function createFakeBucket(): FakeBucket {
             objects.set(key, {
                 bytes: toBytes(value),
                 contentType: options?.httpMetadata?.contentType,
+                ...(options?.customMetadata ? { customMetadata: { ...options.customMetadata } } : {}),
             });
             return { key };
         },
@@ -58,6 +60,7 @@ export function createFakeBucket(): FakeBucket {
             return {
                 size: stored.bytes.byteLength,
                 httpMetadata: { contentType: stored.contentType },
+                ...(stored.customMetadata ? { customMetadata: stored.customMetadata } : {}),
             };
         },
 
@@ -77,6 +80,7 @@ export function createFakeBucket(): FakeBucket {
                 // through unnoticed.
                 size: total,
                 httpMetadata: { contentType: stored.contentType },
+                ...(stored.customMetadata ? { customMetadata: stored.customMetadata } : {}),
             };
 
             if (offset >= total) {

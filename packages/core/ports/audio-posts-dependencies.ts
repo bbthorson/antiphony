@@ -1,5 +1,6 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
+import type { SpaceKey, SpaceRecord } from 'shared/types/spaces';
 
 /**
  * AudioPostDependencies is the portable interface the `AudioPostService`
@@ -114,8 +115,26 @@ export interface AudioPostDependencies {
      * cosmetic — nothing signs anything here any more, and a method still
      * called `sign*` would have kept implying an expiry that callers might
      * reasonably cache around.
+     *
+     * **`space`** is the post's space, when it has one. Audio in a space is
+     * served only with a short-lived signed URL (specs/spaces.md, Phase 2), so
+     * with `space` set this returns a signed URL, or null when the deployment
+     * can't sign (no playback secret): fail closed, never an unsigned link to
+     * private audio.
      */
-    resolveAudioUrl(originAppId: string, blobCid: string): Promise<string | null>;
+    resolveAudioUrl(originAppId: string, blobCid: string, space?: SpaceKey): Promise<string | null>;
+
+    /** The tenant's space, or null if it has none by that key. */
+    getSpace(originAppId: string, key: SpaceKey): Promise<SpaceRecord | null>;
+
+    /**
+     * Where a stored blob lives: `{ space: null }` for public audio, `{ space }`
+     * for audio uploaded into a space, `null` when no such blob is stored. Read
+     * from the blob's own storage metadata, set when its bytes were first
+     * uploaded (the first upload wins; re-uploading identical bytes never moves
+     * them).
+     */
+    getBlobSpace(originAppId: string, blobCid: string): Promise<{ space: SpaceKey | null } | null>;
 
     /**
      * Compute the content CID for a canonical lexicon record — DAG-CBOR

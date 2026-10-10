@@ -1,6 +1,7 @@
 import type {
     BlobRange,
     BlobRead,
+    BlobStat,
     BlobStore,
 } from '@antiphony/core/ports/storage-dependencies';
 import type { R2BucketLike } from './bucket.js';
@@ -53,9 +54,10 @@ export function r2BlobStore(config: R2BlobStoreConfig): BlobStore {
     const { bucket, bucketName } = config;
 
     return {
-        async upload(bytes, destinationPath, mimeType) {
+        async upload(bytes, destinationPath, mimeType, options) {
             await bucket.put(destinationPath, toArrayBuffer(bytes), {
                 httpMetadata: { contentType: mimeType },
+                ...(options?.metadata ? { customMetadata: options.metadata } : {}),
             });
             return `r2://${bucketName}/${destinationPath}`;
         },
@@ -76,6 +78,7 @@ export function r2BlobStore(config: R2BlobStoreConfig): BlobStore {
                     size: 0,
                     totalSize: object.size,
                     mimeType: object.httpMetadata?.contentType,
+                    ...(object.customMetadata ? { metadata: object.customMetadata } : {}),
                 };
             }
             return {
@@ -87,6 +90,17 @@ export function r2BlobStore(config: R2BlobStoreConfig): BlobStore {
                 size: rangeLength(object.size, range),
                 totalSize: object.size,
                 mimeType: object.httpMetadata?.contentType,
+                ...(object.customMetadata ? { metadata: object.customMetadata } : {}),
+            };
+        },
+
+        async stat(objectPath: string): Promise<BlobStat | null> {
+            const meta = await bucket.head(objectPath);
+            if (!meta) return null;
+            return {
+                size: meta.size,
+                mimeType: meta.httpMetadata?.contentType,
+                ...(meta.customMetadata ? { metadata: meta.customMetadata } : {}),
             };
         },
 

@@ -90,6 +90,16 @@ export function assertRequiredConfig(env: NodeJS.ProcessEnv = process.env): void
         );
     }
 
+    // A playback secret short enough to guess would make every "private" space
+    // URL forgeable. Refuse to start rather than sign with it.
+    const secret = env.ANTIPHONY_PLAYBACK_SECRET?.trim();
+    if (secret && secret.length < PLAYBACK_SECRET_MIN_LENGTH) {
+        throw new Error(
+            `[app-config] ANTIPHONY_PLAYBACK_SECRET must be at least ${PLAYBACK_SECRET_MIN_LENGTH} characters. ` +
+                'It signs playback URLs for audio in a space; generate one with `openssl rand -base64 48`.',
+        );
+    }
+
     // Security/operational guards: processing stubs and inline processing are for
     // dev and test environments only. A production deployment must never run stubs
     // or run background processing inline synchronously on the request isolate.
@@ -121,6 +131,24 @@ export function publicBaseUrl(): string | undefined {
     const raw = process.env.ANTIPHONY_PUBLIC_BASE_URL?.trim();
     return raw ? raw.replace(/\/+$/, '') : undefined;
 }
+
+/**
+ * The secret that signs playback URLs for audio in a space
+ * (`ANTIPHONY_PLAYBACK_SECRET`, a Worker secret; lib/playback-signature.ts).
+ *
+ * Optional: a deployment that never uses spaces needs no secret, and flat audio
+ * never touches it. Without it the deployment refuses to create a space (503),
+ * so it can never store private audio it couldn't serve. `assertRequiredConfig()`
+ * rejects a value too short to be a real key.
+ *
+ * Read lazily, like `publicBaseUrl()`.
+ */
+export function playbackSecret(): string | undefined {
+    return process.env.ANTIPHONY_PLAYBACK_SECRET?.trim() || undefined;
+}
+
+/** Minimum length for `ANTIPHONY_PLAYBACK_SECRET`: 32 characters, as for service tokens. */
+export const PLAYBACK_SECRET_MIN_LENGTH = 32;
 
 /**
  * Antiphony's own DID — the only `aud` accepted on a signed service-auth token

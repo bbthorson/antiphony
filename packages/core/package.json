@@ -9,7 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@antiphony/shared": "*"
+    "@antiphony/shared": "*",
+    "@atproto/syntax": "0.0.0-spaces-alpha-20261001173819"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
