@@ -16,6 +16,7 @@ When a spec's status changes, update its Status line and this table together.
 | :--- | :--- | :--- |
 | [`api-versioning.md`](api-versioning.md) | Two version axes: the `/api/v1/` URL major and the `0.x` contract version in `OPENAPI_INFO`; what counts as breaking before 1.0. | implemented |
 | [`atproto-authority-model.md`](atproto-authority-model.md) | App-as-repo-owner (Model B): records are authored under a pinned tenant app DID. The 2026-09-24 update (spaces, minted DIDs, attribution) is still to be built. | partial |
+| [`assess-stage.md`](assess-stage.md) | A fifth, derived enrichment stage: typed judgements (speech quality, whether a reply answers its prompt) from Clef on Workers AI, stored as an assessment record. | proposal |
 | [`core-bff-boundary.md`](core-bff-boundary.md) | What belongs in the core versus a consuming app's BFF, the join contract between them, and where each removed route went. | implemented |
 | [`core-surface.md`](core-surface.md) | The public API is posts and audio only; author identity is carried as opaque references, never hydrated profiles. | implemented |
 | [`did-plc-and-multi-did-tenancy.md`](did-plc-and-multi-did-tenancy.md) | `did:plc` tenant DIDs and more than one DID per tenant. Phase 1 (the pin validator accepts `did:plc`) is built; later phases are proposal. | partial |
