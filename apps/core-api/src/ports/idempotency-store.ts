@@ -17,8 +17,7 @@
  * method rather than a `get` plus a `put` the caller composes. Two concurrent
  * requests carrying the same key must not both see "absent" and both proceed;
  * the check and the registration are one operation or the guarantee is void.
- * Firestore does it in a transaction; Postgres does it as
- * `INSERT … ON CONFLICT DO NOTHING RETURNING`.
+ * Postgres does it as a single `INSERT … ON CONFLICT … RETURNING`.
  *
  * ## Expiry is the store's business, not the caller's
  *

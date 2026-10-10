@@ -1,8 +1,11 @@
 # Antiphony service-to-service auth
 
-**Status:** v1, implemented. This is the contract connecting services (BFFs)
-build against — e.g. the Vox Pop BFF's Antiphony client ("F1" in that repo's
-forward plan).
+**Status:** bearer service-token auth — v1, **implemented and enforced** on every
+data route. Signed service auth (`X-Antiphony-Service-Auth`) — **verifier
+implemented, observation only**: it is checked and logged when present but never
+changes a response (see [below](#signed-service-auth-x-antiphony-service-auth--observation-only)).
+This is the contract a connecting application's backend (BFF) builds its
+Antiphony client against.
 
 ## Model
 
@@ -33,17 +36,18 @@ request is tenancy-scoped but viewer-less (public projection, `canReply: false`)
 
 `originAppId` is **derived from the credential**, never from the request body.
 A request authenticated as app `voxpop` can only read and write
-`voxpop`-tenancy records and blobs. The `ANTIPHONY_ORIGIN_APP_ID` env var is
-the tenancy only for an anonymous read (`optionalAuth` with no service token) —
-a self-hoster's single-tenant default.
+`voxpop`-tenancy records and blobs. There is no deploy-level default tenancy:
+every data route requires a service token, so tenancy is never inferred (the
+former `ANTIPHONY_ORIGIN_APP_ID` fallback is gone).
 
 ### Error semantics
 
 | Condition | Response |
 | :--- | :--- |
-| Unknown/malformed bearer token on a `requireAuth` route | `401` `{ success:false, error:{ message: 'Invalid service token' } }` |
-| Unknown/malformed bearer token on an `optionalAuth` route | treated as anonymous (no error) — a stale credential must not block a public read |
-| Service token on a `requireAuth` route with no `X-Antiphony-Acting-Actor` | `401`, message names the missing header |
+| No bearer token on any data route | `401` `Authentication required` |
+| Unknown/malformed bearer token on any data route | `401` `Invalid service token` |
+| Service token on a `requireAuth` route (writes, viewer-scoped lists, upload) with no `X-Antiphony-Acting-Actor` | `401`, message names the missing header |
+| Service token on a `requireServiceToken` route (single-post and replies reads) with no acting actor | allowed — an anonymous, viewer-less read |
 | Service token shorter than 32 chars in config | entry refused at startup (fail-closed for that app), logged |
 
 ## Configuration
@@ -57,7 +61,8 @@ ANTIPHONY_APP_TOKENS="voxpop:<64-char-random>,bardcast:<64-char-random>"
 - Tokens must be ≥32 chars (generate with `openssl rand -hex 32`); shorter
   entries are ignored with an error log — fail-closed, never fail-open.
 - Comparison is constant-time.
-- Source from Secret Manager in production (mounted by `.github/workflows/deploy.yml`), `.env` locally.
+- A Worker secret in production (`wrangler secret put ANTIPHONY_APP_TOKENS`; see
+  `deploy/README.md`), `apps/core-api/.dev.vars` locally.
 - Rotation: add the new token alongside the old (an app id MAY appear twice
   during rotation), flip the caller, remove the old entry.
 
@@ -74,8 +79,9 @@ bearer token on `/api/v1/posts*` and `/api/v1/audio*`:
 - **Service-token match** (constant-time, against `ANTIPHONY_APP_TOKENS`):
   sets `originAppId` from the matched app, `viewerUid` from
   `X-Antiphony-Acting-Actor` (or `null`), `actingActorDid` from its header.
-- **No match**: `requireAuth` returns `401`; `optionalAuth` proceeds as an
-  anonymous read (tenancy = `ANTIPHONY_ORIGIN_APP_ID`).
+- **No match**: `401` on every data route — both `requireAuth` and
+  `requireServiceToken` (`apps/core-api/src/middleware/auth.ts`). The audio
+  playback proxy (`GET /api/v1/audio`) is the one anonymous route.
 
 The inherited Firebase ID-token / session-cookie fallback was removed:
 Antiphony is headless, so every caller is an application that presents a
@@ -88,10 +94,12 @@ specific Firebase project. The reference app is itself just another caller.
 token above is still the only credential. This section describes a header that
 rides alongside it and currently changes nothing about any response.
 
-Vox Pop's app DID (`did:web:did.voxpop.audio`) publishes a P-256 `Multikey`
-`verificationMethod`, and its BFF signs a short-lived ES256 JWT into
-`X-Antiphony-Service-Auth` on every upstream call (issue #116; the signer is
-`apps/vox-pop-api/src/lib/antiphony-service-auth.ts` in that repo).
+A tenant opts in by publishing a P-256 `Multikey` `verificationMethod` in its
+app DID document and having its BFF sign a short-lived ES256 JWT into
+`X-Antiphony-Service-Auth` on every upstream call (issue #116). The verifier is
+in
+`apps/core-api/src/lib/signed-service-auth.ts` and the observation hook in
+`apps/core-api/src/middleware/auth.ts`.
 
 ### The token
 
@@ -155,8 +163,8 @@ snapshotted the DID document, so the key is a field read on something in memory.
 ### Configuration
 
 `ANTIPHONY_SERVICE_DID` — Antiphony's own DID, the only accepted `aud`. Defaults
-to `did:web:<host of ANTIPHONY_PUBLIC_BASE_URL>`, which is derived the same way
-Vox Pop derives its copy, so the two cannot drift by editing one config. Note
+to `did:web:<host of ANTIPHONY_PUBLIC_BASE_URL>`. A signing BFF should derive
+its `aud` the same way, so the two cannot drift by editing one config. Note
 that this identifier does not currently resolve — we publish no DID document —
 which #115 should settle.
 

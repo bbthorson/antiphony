@@ -1,0 +1,20 @@
+name: Feature request
+description: Propose a change to the API contract, the lexicons, or a published package.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case first, before the proposed shape.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: If it touches the contract or a lexicon, say whether it is additive or breaking (see specs/api-versioning.md).
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -5,21 +5,10 @@ import type { RateLimitOutcome, RateLimitStore } from '../ports/rate-limit-store
 /**
  * Circuit-breaker + fail-open POLICY, exercised against a fake store.
  *
- * This suite exists because the `RateLimitStore` seam made it possible. Before
- * the extraction the policy and the Firestore transaction were one function, so
- * reaching the branches below meant mocking `firebase-admin` and throwing
- * objects shaped like gRPC status errors — which tested the mock's fidelity as
- * much as the policy. Here the store is three lines and each branch is reached
- * by returning a value.
- *
- * It used to say the sibling `rate-limit.test.ts` covered the middleware end to
- * end against the Firestore binding, and that the two did not overlap. That
- * file went with the binding: once there was no Firestore store, everything it
- * could still assert was the policy — i.e. this file, reached the long way
- * round through a fake transaction. So this is now the only home for the
- * policy, which is why the cooldown case below moved in rather than being
- * deleted with it. The middleware's own wrapper is covered next door, in
- * `rate-limit-exemption.test.ts`.
+ * The `RateLimitStore` seam keeps the policy independent of any backend: the
+ * store here is three lines and each branch is reached by returning a value.
+ * This is the only home for the policy; the middleware's own wrapper is covered
+ * next door, in `rate-limit-exemption.test.ts`.
  */
 
 function fakeStore(outcomes: RateLimitOutcome[]): RateLimitStore & { calls: number } {
@@ -129,13 +118,10 @@ describe('rate-limit policy (circuit breaker + fail-open)', () => {
     });
 
     it('does NOT open the circuit when a store reports contention as `over`', async () => {
-        // The load-bearing asymmetry. A Firestore binding maps per-bucket
-        // transaction contention to `over`, not `unavailable`, precisely so one
+        // The load-bearing asymmetry. A binding that can see per-bucket
+        // contention must map it to `over`, not `unavailable`, precisely so one
         // caller hammering their own bucket cannot trip the breaker and
         // fail-open the limiter for everyone else.
-        //
-        // Before the port, provoking this meant throwing a fake gRPC ABORTED
-        // through a mocked Admin SDK. Now it is the return value.
         const store = fakeStore(['over']);
         for (let n = 0; n < 10; n++) {
             await checkRateLimit('hot-bucket', WINDOW, undefined, store);

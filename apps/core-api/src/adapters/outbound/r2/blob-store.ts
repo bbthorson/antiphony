@@ -8,12 +8,10 @@ import type { R2BucketLike } from './bucket.js';
 /**
  * R2-backed `BlobStore`.
  *
- * Markedly simpler than the Firebase binding, and the reason is worth naming:
- * every method here is one binding call with no credential in sight. R2 access
+ * Every method here is one binding call with no credential in sight. R2 access
  * from a Worker is authorised by the binding itself, so there is no service
- * account to mount, no signing, and no key to rotate. The Firebase binding's
- * `getSignedUrl` — the one method that needed credentials — has no counterpart
- * because the proxy streams instead (ports/storage-dependencies.ts).
+ * account to mount, no signing, and no key to rotate. There is no signed-URL
+ * method because the audio proxy streams instead (ports/storage-dependencies.ts).
  *
  * ## URL shape
  *
@@ -21,10 +19,9 @@ import type { R2BucketLike } from './bucket.js';
  *
  * A pseudo-scheme rather than a public https URL, deliberately. The stored
  * value is an OPAQUE handle that only `extractObjectPath` reads back — nothing
- * fetches it — and the Firebase binding's habit of returning a real
- * `storage.googleapis.com` URL was actively misleading, because that URL 403s
- * without a signature. An unfetchable string that does not look fetchable is
- * more honest than one that does.
+ * fetches it. A real-looking https URL that 403s without a signature would be
+ * actively misleading; an unfetchable string that does not look fetchable is
+ * more honest.
  *
  * It also keeps the object path recoverable without knowing a public hostname,
  * which the Worker may not have configured.
@@ -40,12 +37,14 @@ export interface R2BlobStoreConfig {
 const R2_URL = /^r2:\/\/([^/]+)\/(.+)$/;
 
 /**
- * GCS URL shapes the Firebase binding used to emit.
+ * Google Cloud Storage URL shapes an earlier storage backend returned from
+ * `upload`.
  *
- * Recognised here because records written before the migration carry them, and
- * `extractObjectPath` is what turns a stored URL back into a path. Dropping
- * these would make every pre-migration post's audio unresolvable — a data
- * migration rewrites the objects, not the URLs already inside records.
+ * Still recognised because callers may hold URLs in these shapes and pass them
+ * to the audio proxy (`GET /api/v1/audio?url=…`); `extractObjectPath` turns them
+ * back into an object path, which the proxy then resolves in R2 like any other.
+ * Removing them would turn those callers' audio into 400s, so they stay until
+ * no caller sends them.
  */
 const LEGACY_GCS = /^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+)$/;
 const LEGACY_FIREBASE = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/([^?]+)/;

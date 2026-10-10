@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/bbthorson/antiphony/security/advisories/new
+    about: Please report vulnerabilities privately — see SECURITY.md. Do not open a public issue.
+  - name: Documentation
+    url: https://docs.antiphony.dev
+    about: API reference, lexicons, and the self-hosting guide.

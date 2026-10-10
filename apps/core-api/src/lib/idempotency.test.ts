@@ -16,18 +16,9 @@ import type { IdempotencyStore, IdempotencyClaim } from '../ports/idempotency-st
  * *same* raw `Idempotency-Key` must get independent records, so user A's cached
  * response is never returned to user B.
  *
- * ## These tests used to mock Firestore to observe the id
- *
- * The derivation was asserted by mocking `lib/firebase-admin.js` and capturing
- * the string passed to `collection().doc()` — reaching through the store to see
- * a value the store is merely handed. That worked, but it read the id out of
- * the wrong layer, and it needed `native.js` imported for the whole module
- * graph just to have a store composed at all.
- *
- * Both functions take an optional `store`, which is the seam this actually
- * wants: a fake `IdempotencyStore` records the ids it is given directly. No
- * composition root, no Firestore, and the assertions now name the thing under
- * test. `adapters/outbound/postgres/idempotency-store.test.ts` owns the
+ * Both functions take an optional `store`: a fake `IdempotencyStore` records
+ * the ids it is given directly, so the assertions name the thing under test
+ * without a composition root or a database. `adapters/outbound/postgres/idempotency-store.test.ts` owns the
  * storage side, including `claim`'s atomicity.
  */
 
@@ -119,11 +110,9 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
     });
 
     it('produces a path-safe id when the key contains "/" or ".."', async () => {
-        // A client-supplied key can contain anything. Firestore read `/` as a
-        // path separator and `.`/`..` as reserved ids; Postgres has no such
-        // rule, but the id is still a primary key built from hostile input, so
-        // hashing to fixed-length hex stays the point — bounded and flat
-        // regardless of what arrives.
+        // A client-supplied key can contain anything, and the id is a primary
+        // key built from hostile input, so hashing to fixed-length hex is the
+        // point — bounded and flat regardless of what arrives.
         const raw = 'some/evil/../key';
         const { store, claimed } = recordingStore();
         await checkIdempotency(makeCtx(raw), 'user-slash', store);

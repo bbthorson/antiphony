@@ -38,11 +38,8 @@ import { R2_BUCKET_NAME } from './lib/app-config.js';
  * deployment actually supplied are enough to build a working graph, and it
  * fails loudly here — at graph construction — rather than per request.
  *
- * The Firestore/GCS arm and the `src/native.ts` entry that installed it are
- * gone. They survived the cutover only to keep the pre-migration data readable;
- * the records migration turned out to be a no-op (specs/archive/cloudflare-migration.md
- * § Step 2 — nothing had ever been written through `/api/v1/posts`) and blobs
- * moved by Super Slurper, so nothing reads Firestore now.
+ * Postgres + R2 is the only backend. (An earlier storage backend was removed
+ * after its data moved; see specs/archive/cloudflare-migration.md.)
  *
  * ## Why a factory rather than module singletons
  *
@@ -90,10 +87,9 @@ export interface Services {
     /**
      * Which backend got wired — for `/health` and for log context.
      *
-     * Only one value is possible now that the Firestore arm is gone. It stays a
-     * field rather than becoming a literal at the call site because `/health`
-     * publishes it, and "which store is this deployment on" is the question the
-     * migration made worth asking out loud.
+     * Only one value is possible today. It stays a field rather than a literal
+     * at the call site because `/health` publishes it, so an operator can see
+     * which store a deployment is wired to.
      */
     backend: 'postgres';
 }

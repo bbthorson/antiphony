@@ -4,7 +4,7 @@ import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
 import type { WaveformPort } from '@antiphony/core/ports/audio-waveform';
 
 /**
- * Processing providers (B5).
+ * Processing providers.
  *
  * Sub-PR 1 ships only STUB providers, wired solely when
  * `ANTIPHONY_PROCESSING_STUB=true` (dev / tests) so the full create → process

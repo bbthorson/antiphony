@@ -16,7 +16,7 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), and `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment). One record type; `reply` presence is prompt-vs-reply.
-- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), and resolve a stored ref to a short-lived signed playback URL.
+- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), and stream stored audio back (`GET /api/v1/audio`, with range support and optional mp3 renditions) from a stable, non-expiring URL.
 
 `GET /api/v1/posts` is one endpoint with two slices: by default the **viewer's own** posts (optionally filtered by `kind`), and with `?rootAuthor=<id>` the replies whose thread root that id authored — "replies addressed to X", the raw feed you'd compose an inbox from. That's [queries, not bespoke views](/explanation/api-design-principles/#2-queries-not-bespoke-views) in practice.
 

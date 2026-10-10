@@ -2,7 +2,7 @@
 
 **Status:** decided 2026-06-27; ✅ **the docs site shipped** against this definition
 (`docs.antiphony.dev`, Cloudflare Pages). The boundary table below is the durable
-content; the Stream-3/4 execution notes near the end are historical.
+content; the execution notes near the end are historical.
 
 The Antiphony docs site (`docs.antiphony.dev`) documents the **protocol + infra** —
 not any product built on top of it (Vox Pop, Bardcast). This note draws the line so
@@ -42,11 +42,11 @@ it as an opaque scoping/filter key."* Nothing more.
 
 ## Codebase implication — ✅ done
 
-The `Organizations`, `prompts`, and `replies` resources (the **Stream-4 carve-out**) have
+The `Organizations`, `prompts`, and `replies` resources (the app-layer carve-out) have
 been **removed from `apps/core-api`** and live in the Vox Pop app layer. Core's public
 surface is now `posts` + `audio` only; there is no longer anything to "not present as core."
 
-## Also for Stream 3 — ✅ done
+## Docs site launch — ✅ done
 
 All shipped:
 

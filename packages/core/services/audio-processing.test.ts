@@ -873,12 +873,12 @@ describe('AudioProcessingService.process', () => {
             // expiry, the post would be unprocessable for the full TTL over a
             // fault that has already passed.
             const { deps } = makeDeps(pendingPost(), {
-                getPostById: vi.fn(async () => { throw new Error('firestore down'); }),
+                getPostById: vi.fn(async () => { throw new Error('database down'); }),
             });
 
             await expect(
                 new AudioProcessingService(deps, p).process('vox-pop', 'p1'),
-            ).rejects.toThrow('firestore down');
+            ).rejects.toThrow('database down');
 
             expect(deps.releaseProcessingLease).toHaveBeenCalledWith('vox-pop', 'p1', claimedLease());
         });

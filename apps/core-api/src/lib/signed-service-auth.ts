@@ -332,7 +332,7 @@ function parseClaims(raw: unknown): SignedServiceAuthClaims | null {
  * ## Why values must go
  *
  * They carry end-user identifiers. A real captured line read
- * `?rootAuthor=<firebase uid>&limit=20`, and Cloudflare had already redacted
+ * `?rootAuthor=<end-user id>&limit=20`, and Cloudflare had already redacted
  * that same value out of the `url` field it records — so logging it here
  * defeated a protection that was already in place. An auth log is the last
  * place a user id should be introduced.

@@ -137,7 +137,7 @@ describe('AudioProcessingService — stage-settled notifications', () => {
 
         const ran = await new AudioProcessingService(deps, providers(), logger, notifier).process('vox-pop', 'p1');
 
-        // The stage still settled in Firestore, the pass still succeeded, and the
+        // The stage still settled in the store, the pass still succeeded, and the
         // failure was logged rather than thrown.
         expect(ran).toBe(true);
         expect(patches).toContainEqual({ transcribe: 'ready' });

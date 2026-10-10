@@ -66,8 +66,8 @@ export function splitRecord(record: AudioPostRecord): SplitRecord {
 /**
  * Put a row back together and validate it.
  *
- * Returns null on a record that fails validation, matching the Firestore
- * binding: a single corrupt row must not fail a whole list query. The caller
+ * Returns null on a record that fails validation: a single corrupt row must
+ * not fail a whole list query. The caller
  * logs and skips.
  */
 export function hydrateRow(row: PostRow): AudioPostRecord | null {

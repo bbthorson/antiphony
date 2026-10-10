@@ -26,14 +26,9 @@ import type { IdempotencyStore } from '../ports/idempotency-store.js';
  *
  * ## The store comes from the composition root, not from a default argument
  *
- * It used to default to the Firestore store, and no caller ever passed
- * anything else — so the Postgres binding that landed in #86 was unreachable in
- * production no matter how the deployment was configured, and the import made
- * `firebase-admin` reachable from every write route. Resolving it per request
- * off `c.env` fixed both. The Firestore store is gone now, but the resolution
- * stays as it is: a default store is what made a binding unreachable by
- * configuration, and nothing about that depends on which store it defaulted
- * to.
+ * It is resolved per request off `c.env`. A default store here once made the
+ * configured binding unreachable in production (no caller ever passed one), so
+ * there is deliberately no default.
  */
 
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -54,10 +49,8 @@ function readKey(c: Context): string | null {
 /**
  * Build a per-tenant, per-user doc ID from the raw client key.
  *
- * The key is client-supplied, so it can contain anything. Firestore made that
- * acutely dangerous — `/` was a path separator and `.`/`..` were reserved doc
- * ids — and Postgres has no such rule, but the id is still a primary key built
- * from hostile input. Hashing to fixed-length hex keeps it bounded and flat
+ * The key is client-supplied, so it can contain anything, and the id is a
+ * primary key built from hostile input. Hashing to fixed-length hex keeps it bounded and flat
  * regardless of what arrives, and SHA-256 keeps it collision-resistant.
  *
  * The `originAppId` and `uid` prefixes namespace it per-tenant and per-caller

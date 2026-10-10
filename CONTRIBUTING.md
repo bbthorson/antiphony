@@ -25,8 +25,9 @@ npm install
 DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
 
-Schema changes are a numbered chain under `migrations/`; see `db/README.md` for
-how to add one, and why you must never edit a file that has been applied.
+Schema changes are a numbered chain under `apps/core-api/migrations/`; see
+[`apps/core-api/db/README.md`](apps/core-api/db/README.md) for how to add one,
+and why you must never edit a file that has been applied.
 
 core-api runs on the Workers runtime, so its config is not shell environment —
 it goes in `apps/core-api/.dev.vars` (gitignored):
@@ -57,12 +58,14 @@ is no localhost shortcut. See the
 ### Project Structure
 
 ```
-apps/core-api/        — Hono REST API (this app), on Cloudflare Workers
+apps/core-api/        — Hono REST + XRPC API, on Cloudflare Workers
 apps/audio-rendition/ — ffmpeg container on Cloud Run; the trim/waveform/mp3 backend
 apps/docs/            — Astro/Starlight docs site (docs.antiphony.dev)
 apps/reference/       — Minimal reference client that drives the public contract
+packages/capture-kit/ — Published headless browser audio primitives
 packages/core/        — Portable domain services + ports (no vendor SDK imports)
 packages/shared/      — Published contract: Zod schemas, codecs, NSIDs
+packages/tokens/      — Design tokens for the docs site and reference client
 lexicons/dev/antiphony/ — AT Protocol lexicon definitions (source of truth)
 ```
 
@@ -94,5 +97,8 @@ lexicons/dev/antiphony/ — AT Protocol lexicon definitions (source of truth)
 ## Reporting Issues
 
 Use [GitHub Issues](https://github.com/bbthorson/antiphony/issues) for bugs and
-feature requests. For security vulnerabilities, please email the maintainer
-instead of opening a public issue.
+feature requests. **Do not open a public issue for a security vulnerability** —
+see [SECURITY.md](SECURITY.md) for private reporting.
+
+Participation in this project is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md).

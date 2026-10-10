@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in the API, a published package, or the docs does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security vulnerabilities do **not** belong here — see [SECURITY.md](https://github.com/bbthorson/antiphony/blob/master/SECURITY.md).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - API (api.antiphony.dev or self-hosted core-api)
+        - "@antiphony/shared"
+        - "@antiphony/capture-kit"
+        - Lexicons
+        - audio-rendition
+        - Docs site
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include the request and response (with tokens redacted) or the error output.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version, `info.version` from `/openapi.json`, or a commit SHA for a self-hosted deployment.

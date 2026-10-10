@@ -57,7 +57,7 @@ export interface CreateAudioPostInput {
     /** Author self-label values. */
     selfLabels?: string[];
     /**
-     * Resolved initial per-stage processing status (B5), when the app opted
+     * Resolved initial per-stage processing status, when the app opted
      * into processing. The caller (route) resolves the request against the
      * deployment's capabilities into `pending`/`skipped`; the service just
      * stamps `updatedAt` and stores it. Absent ⇒ no processing.
@@ -199,7 +199,7 @@ export class AudioPostService {
             }),
         );
 
-        // Initial processing state (B5) — the caller already resolved the
+        // Initial processing state — the caller already resolved the
         // request against deployment capabilities into per-stage
         // pending/skipped; we just stamp the clock. Storage-layer, not in the
         // CID above.

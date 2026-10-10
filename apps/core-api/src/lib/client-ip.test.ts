@@ -4,11 +4,11 @@ import { extractClientIp } from './client-ip.js';
 /**
  * Tests for the X-Forwarded-For client-IP extraction (H5 fix).
  *
- * The block below exercises the DEFAULT hop count of 2 — the Firebase App
- * Hosting shape `<client>, <GCLB 35.219.x>, <GFE 192.178.13.x>`, where the
- * client is two hops in from the right. That is no longer this deployment's
- * topology (see the Cloudflare block at the bottom), but it remains what an
- * unset `TRUSTED_PROXY_HOPS` selects, so it is still the behaviour to pin.
+ * The block below exercises the DEFAULT hop count of 2 — a two-proxy chain
+ * `<client>, <GCLB 35.219.x>, <GFE 192.178.13.x>`, where the client is two hops
+ * in from the right. The hosted deployment reads `CF-Connecting-IP` instead
+ * (see the Cloudflare block at the bottom), but 2 is what an unset
+ * `TRUSTED_PROXY_HOPS` selects, so it is still the behaviour to pin.
  */
 const GCLB = '35.219.200.199'; // stable Google Cloud LB hop (2nd from right)
 const GFE = '192.178.13.5'; // Google Front End hop (rightmost)

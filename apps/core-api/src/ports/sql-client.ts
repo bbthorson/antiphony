@@ -9,8 +9,8 @@
  * ## Why one method
  *
  * Everything the bindings do is a single parameterised statement — that is the
- * whole design of migrations/0001_initial_schema.sql, where each Firestore transaction collapsed to
- * one upsert or one conditional UPDATE ... RETURNING. There is no interactive
+ * whole design of migrations/0001_initial_schema.sql, where every
+ * read-modify-write is one upsert or one conditional UPDATE ... RETURNING. There is no interactive
  * transaction left to model, which is also what makes
  * `@neondatabase/serverless` over HTTP viable (its batch-only transaction
  * support would otherwise bind).

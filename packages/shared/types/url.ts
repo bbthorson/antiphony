@@ -56,12 +56,17 @@ import { z } from 'zod';
  * sneaking a scheme past the anchor. It is a normalisation, not a loosening:
  * bare `.url()` accepted padded input too, it just kept the padding.
  *
- * One fidelity note on that generated `pattern`: JSON Schema has no way to
- * express a case-insensitive regex, so `openapi.json` documents
- * `^https?:\/\/` without the `i` flag. `HTTPS://x` therefore passes here and
- * fails a strict reading of the document. Real URLs carry a lowercase scheme,
- * and the alternative — dropping `i` — would reject input for cosmetics, so the
- * runtime stays the more permissive of the two on that one axis.
+ * ## Why the scheme is spelled `[Hh][Tt][Tt][Pp][Ss]?` and not `/…/i`
+ *
+ * The runtime check is case-insensitive on the scheme (`HTTPS://x` is a valid
+ * URL and passes), but the regex carries no `i` flag. JSON Schema `pattern` has
+ * no flag syntax, and with `/^https?:\/\//i` the OpenAPI generator serialized
+ * the flag INTO the pattern string (`"^https?:\\/\\//i"`) — a pattern that
+ * demands a literal `/i` after the scheme and so rejects every real URL for a
+ * consumer validating against `openapi.json`. Spelling the case-insensitivity
+ * out as character classes accepts exactly the same strings at runtime and
+ * emits a pattern that means the same thing everywhere.
+ * `apps/core-api/src/openapi-patterns.test.ts` fails if a flag leaks again.
  *
  * Usage:
  *
@@ -78,7 +83,7 @@ export function httpsUrl() {
             // what makes it safe. Every other call site is a bug.
             // eslint-disable-next-line antiphony/no-bare-zod-url
             .url()
-            .regex(/^https?:\/\//i, { message: 'URL must use the http or https scheme' })
+            .regex(/^[Hh][Tt][Tt][Pp][Ss]?:\/\//, { message: 'URL must use the http or https scheme' })
     );
 }
 

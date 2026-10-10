@@ -3,8 +3,8 @@ import type { ProcessingState } from 'shared/types/processing';
 
 /**
  * Data/storage port the `AudioProcessingService` uses to run one post's audio
- * processing. The Firebase-backed binding lives in
- * `apps/core-api/src/adapters/outbound/firebase/audio-processing-dependencies.ts`.
+ * processing. The Postgres binding lives in
+ * `apps/core-api/src/adapters/outbound/postgres/audio-processing-dependencies.ts`.
  *
  * Kept separate from `AudioPostDependencies` (which serves the read/write
  * post surface) so the processing worker's needs — reading blob bytes,
@@ -55,8 +55,8 @@ export interface AudioProcessingDependencies {
      * true when the claim succeeded and the caller may proceed.
      *
      * **Must be atomic** — a read-then-write implementation reintroduces
-     * exactly the race it exists to close. The Firebase binding does it in a
-     * transaction.
+     * exactly the race it exists to close. The Postgres binding does it in a
+     * single conditional `UPDATE … RETURNING`.
      *
      * Returns false in three cases, deliberately not distinguished:
      *   - another runner holds an unexpired lease,

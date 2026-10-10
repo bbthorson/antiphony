@@ -1,43 +1,31 @@
 /**
  * Number of trusted reverse-proxy hops the platform appends to the RIGHT of
- * `X-Forwarded-For`. THIS IS TOPOLOGY-DEPENDENT — it must be re-measured
- * whenever the edge in front of this service changes. It has now been wrong
- * twice, both times silently, and both times the symptom was one shared
- * rate-limit bucket rather than an error.
+ * `X-Forwarded-For`. Used only on the XFF path — the hosted deployment is a
+ * Cloudflare Worker and reads `CF-Connecting-IP` instead (`CLIENT_IP_SOURCE`,
+ * below), so this matters to a self-hoster who fronts the API with a proxy
+ * that does send XFF.
  *
- * ── Current: Cloudflare → Google frontend → Cloud Run — 1 hop ────────────────
- * Measured 2026-08-09, immediately after the App Hosting → Cloud Run cutover,
- * by hitting the same anonymous route through both paths and comparing the
- * chain length the `rate-limit.ts` warn reports:
- *
- *     via api.antiphony.dev  ->  <client-ip>, <cloudflare-egress-ip>   (2 entries)
- *     direct to *.run.app    ->  <client-ip>                           (1 entry)
- *
- * Cloudflare adds exactly one entry over the direct path, so the client is ONE
- * hop in from the right. Note the direct `*.run.app` URL is publicly reachable
- * and bypasses Cloudflare entirely; such a request yields a 1-entry chain,
- * `idx` of -1, and therefore 'unknown' — unbucketed, but fail-safe rather than
+ * THIS IS TOPOLOGY-DEPENDENT — measure it for the proxy chain actually in
+ * front of the service. Getting it wrong is silent: the symptom is one shared
+ * rate-limit bucket, not an error. Each proxy you trust adds one entry, so with
+ * N trusted hops the client address is N entries in from the right; anything
+ * further left is client-supplied and spoofable. A chain too short for the
+ * configured count yields 'unknown' — unbucketed, but fail-safe rather than
  * spoofable.
  *
- * ── Previous: Firebase App Hosting — 2 hops ─────────────────────────────────
- * Retired 2026-08-09. Kept because the default below is still 2, and because
- * it is the shape `client-ip.test.ts` asserts against:
+ * Example (a CDN in front of a load balancer — 2 hops):
  *
- *     <client-ip>, <GCLB-ip 35.219.x>, <GFE-ip 192.178.13.x>           (3 entries)
+ *     <client-ip>, <cdn-ip>, <load-balancer-ip>           (3 entries)
  *
- * That earlier calibration also started as an off-by-one — 1 hop bucketed every
- * caller on the stable `35.219.x` GCLB address, i.e. one shared rate-limit
- * bucket for the entire internet, which is how it was caught the first time.
+ * An off-by-one in the other direction is worse than it looks: one hop too few
+ * buckets every caller on a stable proxy address, i.e. one shared rate-limit
+ * bucket for the entire internet.
  *
- * Set via `TRUSTED_PROXY_HOPS` in deploy/cloudrun.env.yaml, so a topology change
- * is correctable without a code deploy. The default stays 2 rather than tracking
- * whatever this deployment happens to run: self-hosters on App Hosting are the
- * ones relying on the fallback, and the hosted deploy sets the value explicitly.
- *
- * The detector is the `warn` in `rate-limit.ts`: if the platform changes its hop
- * count, the entry this indexes to falls outside the chain and extraction
- * collapses to 'unknown' despite an XFF header being present. That is exactly
- * what fired after the cutover. Falls back to 2 when unset or non-numeric.
+ * Set via `TRUSTED_PROXY_HOPS`, so a topology change is correctable without a
+ * code deploy. Falls back to 2 when unset or non-numeric. The detector is the
+ * `warn` in `rate-limit.ts`: if the hop count is wrong, the entry this indexes
+ * to falls outside the chain and extraction collapses to 'unknown' despite an
+ * XFF header being present.
  */
 function trustedProxyHops(): number {
     const raw = Number(process.env.TRUSTED_PROXY_HOPS);
@@ -50,13 +38,9 @@ function trustedProxyHops(): number {
  * `'cf'` reads `CF-Connecting-IP`; anything else keeps the XFF path, so an unset
  * or typo'd value fails to the stricter behavior rather than the looser one.
  *
- * ── Why this exists: the THIRD silent collapse ───────────────────────────────
- * The `TRUSTED_PROXY_HOPS` note above says the hop count "has now been wrong
- * twice, both times silently, and both times the symptom was one shared
- * rate-limit bucket rather than an error." This is the third, and it is not a
- * hop count at all: this service became a **Cloudflare Worker**, and the
- * Cloudflare edge does not send `X-Forwarded-For` to a Worker. There is no
- * chain, so no offset can be right.
+ * ── Why this exists ───────────────────────────────────────────────────────────
+ * The Cloudflare edge does not send `X-Forwarded-For` to a Worker. There is no
+ * chain, so no hop count can be right.
  *
  * `extractClientIp` returned 'unknown' for every request on the service, and
  * 'unknown' is a real bucket, so `write` (10 per 15 min) applied to the whole
@@ -65,11 +49,8 @@ function trustedProxyHops(): number {
  * first attempt of a session, because a handful of ordinary reads had already
  * spent the shared bucket.
  *
- * Note what did NOT fire: the `warn` in `rate-limit.ts` that the block above
- * nominates as "the detector" is guarded on `ip === 'unknown' && xff`, i.e. on
- * a chain that is present but unresolvable. With XFF absent entirely the alarm
- * built for exactly this failure could not ring. That guard is dropped in this
- * change.
+ * The `warn` in `rate-limit.ts` was once guarded on `ip === 'unknown' && xff`,
+ * so with XFF absent entirely it could not fire; that guard has been dropped.
  *
  * Read per-request, not at module scope: on workerd a Worker's `vars` reach
  * `process.env` through a polyfill tied to request context, and whether a

@@ -58,17 +58,13 @@ export { RateLimiter } from './adapters/outbound/durable-objects/rate-limiter.js
  * The only entry point. Route wiring, middleware order, and the OpenAPI
  * document all live in `app.ts`; this file is the runtime seam.
  *
- * It had a counterpart, `src/index.ts`, for the Node/Cloud Run runtime, plus a
- * `native.ts` that installed the two dependencies a Worker cannot carry —
- * `firebase-admin` and `google-auth-library`. All three are gone, and with them
- * the reason this file had to be careful about what it imported. What survives
- * is the property that made the split work: bindings are mandatory in
- * `composition.ts`, so a misconfigured deployment fails loudly at its first
- * request instead of quietly talking to the wrong store.
+ * Bindings are mandatory in `composition.ts`, so a misconfigured deployment
+ * fails loudly at its first request instead of quietly talking to the wrong
+ * store.
  *
  * ## Three handlers
  *
- *   - `fetch`     — the HTTP surface, unchanged from Cloud Run.
+ *   - `fetch`     — the HTTP surface (`app.ts`).
  *   - `scheduled` — the cron. Drives `antiphony_sweep_expired()`, which has had
  *                   no caller since it shipped with the schema.
  *   - `queue`     — the audio-processing consumer, replacing the Cloud Tasks
@@ -189,9 +185,8 @@ export default {
 
         const { sql, backend } = servicesFor(bindings);
         if (!sql) {
-            // Firestore has native TTL, so there is nothing to sweep. Logged
-            // rather than silent: on a Worker this means the database binding
-            // is missing, which is a misconfiguration wearing a no-op's face.
+            // Logged rather than silent: this means the database binding is
+            // missing, which is a misconfiguration wearing a no-op's face.
             logger.warn({ backend }, '[sweep] no SQL backend bound — nothing to sweep');
             return;
         }

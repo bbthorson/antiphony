@@ -143,7 +143,7 @@ function runFfmpeg(inputPath: string, outputPath: string, args: readonly string[
  * Assert an `ffmpeg` binary exists on PATH, for the startup probe.
  *
  * The dependency is invisible: `runFfmpeg` spawns a bare `ffmpeg` and nothing
- * in `package.json` declares one. In the Firebase Function this began as, that
+ * in `package.json` declares one. In the serverless function this began as, that
  * resolved only because Google's Node runtime image happened to ship the binary;
  * `node:22-slim` does not.
  *
