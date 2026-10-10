@@ -161,7 +161,7 @@ const proxyRoute = createRoute({
     description:
         'Validates the requested object path against the served namespace (content-addressed `blobs/` paths) ' +
         'then STREAMS the bytes. Anonymous — public audio playback for embeds and public pages.\n\n' +
-        '**Private audio (0.7.0):** audio uploaded into a space plays only from a signed URL (`exp` + `sig`), ' +
+        '**Private audio (0.8.0):** audio uploaded into a space plays only from a signed URL (`exp` + `sig`), ' +
         'as handed out on post views and by `getPlaybackUrl`, valid for an hour. Without a valid signature it ' +
         'reads as 404. Its responses are `Cache-Control: private` and never cached past the signature.\n\n' +
         'Accepts either a full provider URL or a bare object path. Supports a single `Range` header ' +

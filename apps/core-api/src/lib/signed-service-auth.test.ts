@@ -210,7 +210,7 @@ describe('requestOperation', () => {
 
 describe('redactOperationForLog — the mismatch detail must not leak user ids', () => {
     it('keeps parameter names and elides every value', () => {
-        // The real line that prompted this: a Firebase uid in an auth log,
+        // The real line that prompted this: an end-user id in an auth log,
         // which Cloudflare had already redacted out of the url it records.
         expect(redactOperationForLog('GET /api/v1/posts?rootAuthor=sLhaGagvW5NEw6Vc4BMtdyuBlTb2&limit=20')).toBe(
             'GET /api/v1/posts?rootAuthor=<redacted>&limit=<redacted>',

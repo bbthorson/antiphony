@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TimestampSchema } from './records';
 
 /**
- * Audio hygiene / enrichment processing (B5).
+ * Audio hygiene / enrichment processing.
  *
  * Antiphony can, when the calling app opts in, run audio processing on a
  * post's audio. Four stages, classified on two axes (see

@@ -94,10 +94,9 @@ export function app(): OpenAPIHono {
             ok: true,
             sha: process.env.COMMIT_SHA ?? 'dev',
             deployedAt: process.env.BUILD_TIME ?? null,
-            // Which bindings are actually wired. The Firestore -> Neon cutover
-            // is a configuration change, so "which store is this revision
-            // talking to" stops being answerable from the commit alone — and
-            // that is precisely the question during a migration.
+            // Which bindings are actually wired. The store is configuration,
+            // not code, so "which store is this revision talking to" is not
+            // answerable from the commit alone.
             backend: services.backend,
             // Whether those bindings HAVE anything, which is a different
             // question and the one that went unanswered for 20 minutes while
@@ -135,12 +134,13 @@ export function app(): OpenAPIHono {
     // precedence — Hono dispatches by registration order.
     a.route('/api/v1/audio/upload', audioUploadRoute);
     a.route('/api/v1/audio', audioRoute);
-    // The queue/Cloud Tasks callback — the only remaining `/system/*` route.
+    // Manual re-drive of one post's processing — the only remaining `/system/*`
+    // route. Production processing runs off the Queues consumer in worker.ts.
     //
     // Six others were removed in the dead-route sweep: the OAuth state and
     // session stores, DID→uid signin, bluesky-identity, session-cookie minting,
-    // and the rate-limit check. Every one had been re-homed in the Vox Pop BFF
-    // (Stream 4 F7 A1/A2/G1/G2) and had no caller left. See
+    // and the rate-limit check. Every one had been re-implemented in the
+    // consuming app's own backend and had no caller left. See
     // specs/core-bff-boundary.md § Surface disposition.
     a.route('/api/v1/system/process-audio', systemProcessAudioRoute);
 

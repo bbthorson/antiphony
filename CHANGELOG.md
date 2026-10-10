@@ -8,7 +8,7 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.7.0] — 2026-10-08
+## [0.8.0] — 2026-10-10
 
 atproto **spaces**, Phase 2 ([`specs/spaces.md`](./specs/spaces.md)): a tenant
 can create spaces, upload audio and post into them, and that audio plays only
@@ -50,6 +50,58 @@ never names a space, with one behaviour change on the audio proxy, below.
 - `dev.antiphony.audio.getPlaybackUrl` no longer promises a stable, unsigned
   URL for every blob: private ones are signed and time-limited, and a deployment
   that can't sign answers `RecordNotFound` for them.
+## [0.7.0] — 2026-10-09
+
+Ships with **`@antiphony/shared` 0.8.0** (the package axis; independent of this
+contract number). **Minor, not patch**: two changes below tighten validation,
+which [`specs/api-versioning.md`](./specs/api-versioning.md) counts as
+breaking while `0.x`.
+
+### Changed — BREAKING
+
+- **Timestamps accept only strings and `Date`s.** `TimestampSchema` in
+  `@antiphony/shared` (behind `createdAt` on posts and transcripts, and
+  `updatedAt` / `leaseUntil` on processing state) no longer accepts the legacy
+  Firestore shapes — a `{ seconds, nanoseconds }` object or an object with a
+  `toDate()` method — or an epoch-millisecond number. Nothing in Antiphony has
+  produced any of them since the move to Postgres: records are stored as JSON
+  (ISO-8601 strings) and the wire has always carried ISO strings. In
+  `openapi.json`, `createdAt` is now `anyOf: [string, string(date-time)]`.
+
+  **Migration:** a consumer parsing Antiphony responses needs no change. A
+  consumer that builds records itself and passes an epoch number or a Firestore
+  `Timestamp` must pass `new Date(…)` or an ISO string instead.
+
+- **Request string bounds on `POST /api/v1/posts`** (and the same shapes
+  wherever they appear in the document): `StrongRef.uri` is capped at 512
+  characters and `StrongRef.cid` at 128; each `langs` entry at 35; `selfLabels`
+  at 10 entries of up to 128 characters. JSON bodies on `POST` / `PATCH
+  /api/v1/posts` are capped at 256 KB (`413`). A request that parsed before can
+  now fail; real values sit far below every cap.
+
+### Changed
+
+- **Out-of-range byte requests on `GET /api/v1/audio`** answer `416 Range Not
+  Satisfiable` with `Content-Range: bytes */<size>` (RFC 7233) rather than a
+  `206` with an inconsistent `Content-Range`.
+- **OpenAPI document regenerated under zod 4 and `@hono/zod-openapi` 1.x.**
+  Runtime validation is unchanged by the migration itself; what consumers of
+  `openapi.json` see is:
+  - parameter `description`s are now emitted on the parameter object as well as
+    its schema;
+  - the ISO-string member of the timestamp union carries `format: date-time`;
+  - URL fields built on `httpsUrl()` (`embed.url`, `rssFeed`) no longer carry
+    `format: uri`; the scheme `pattern` is what documents them.
+
+### Fixed
+
+- **The URL `pattern` in `openapi.json` was invalid.** After the zod 4
+  migration, `httpsUrl()`'s case-insensitive regex was serialized with its flag
+  inside the pattern (`"^https?:\\/\\//i"`), which demands a literal `/i`
+  after the scheme and rejects every real URL for a consumer validating against
+  the document. The pattern is now `^[Hh][Tt][Tt][Pp][Ss]?:\/\/` — the same
+  strings are accepted at runtime as before — and a test fails if any pattern in
+  the document carries a regex flag again.
 
 ## [0.6.0] — 2026-09-06
 
@@ -193,8 +245,6 @@ change, which a client asserting on either will observe.
   audio hydrates with no `embed`. Unset logs an error per hydration and degrades
   to "no audio" rather than failing the request.
 
-## [Unreleased]
-
 ### Removed
 
 - **Six `/api/v1/system/*` endpoints**, all of them dead code with no caller:
@@ -203,10 +253,10 @@ change, which a client asserting on either will observe.
   `GET|PUT|DELETE /system/atproto-session/{key}`, and
   `POST /system/rate-limit/check`.
 
-  Each had been re-homed in the Vox Pop BFF (its Stream 4 F7 A1/A2/G1/G2), and the
-  `CORE_API_BASE_URL` fallback that was the last live path back here was retired on
-  that side in E2. `POST /api/v1/system/process-audio` — the queue callback — is
-  unaffected and remains the only `/system/*` route.
+  Each had been re-implemented in the one consuming app's own backend, which had
+  also retired its last fallback path to these routes, so nothing called them.
+  `POST /api/v1/system/process-audio` — a system-auth'd manual re-drive of the
+  processing pipeline — is unaffected and remains the only `/system/*` route.
 
   Removed with them: `UserService`, the `UserDependencies` port and its Firebase
   binding, `getAdminAuth()`, and the last Firebase Auth usage in the service
@@ -215,13 +265,13 @@ change, which a client asserting on either will observe.
   `atproto_oauth_states` collections have no writer. Authorship remains the opaque
   `authorId` / `authorDid` facets on a post, unchanged.
 
-  **The contract version does not move.** These routes were deliberately plain-Hono
+  **Not a contract change on its own.** These routes were deliberately plain-Hono
   and never appeared in the OpenAPI document, so `openapi.json` and
-  `openapi.surface.json` are byte-identical across the change and no OpenAPI consumer
-  observes anything. Recorded here anyway because endpoints were removed from the
-  running service, which is notable to an operator even when it is invisible to the
-  documented surface. See [`specs/core-bff-boundary.md`](./specs/core-bff-boundary.md)
-  § Surface disposition.
+  `openapi.surface.json` were byte-identical across the removal. It landed
+  between `0.4.0` and `0.5.0` and shipped with `0.5.0`; it is recorded because
+  endpoints were removed from the running service, which matters to an operator
+  even when it is invisible to the documented surface. See
+  [`specs/core-bff-boundary.md`](./specs/core-bff-boundary.md) § Surface disposition.
 
 ## [0.4.0] — 2026-07-18
 
@@ -350,8 +400,8 @@ Breaking only for paths/exports that nothing on the current surface produces.
   The Vox Pop-era `audio/`, `prompts/`, and `replies/` prefixes — and the
   Firestore `prompts`-existence check on `replies/` paths — are gone; those
   layouts were never written by this service.
-- **`@antiphony/shared` profile leftovers** (published as **0.4.0** — the trim
-  scoped in `specs/core-bff-boundary.md`, "What B3 executes" item 3):
+- **`@antiphony/shared` profile leftovers** (published as **0.4.0** — the
+  profile/identity trim scoped in `specs/core-bff-boundary.md`):
   `UserRecordSchema`/`UserRecord`, `UpdateProfileRequestSchema` (its
   `PATCH /users/me` endpoint was removed in 0.2.0), and the `httpsUrl` helper
   they used. `COLLECTIONS` no longer maps `dev.antiphony.actor.profile` to a

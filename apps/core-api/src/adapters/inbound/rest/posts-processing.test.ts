@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from '../../outbound/postgres/t
 import { createFakeBucket } from '../../outbound/r2/testing/fake-bucket.js';
 
 /**
- * End-to-end integration test for B5 audio processing: drives the REAL
+ * End-to-end integration test for audio processing: drives the REAL
  * create → dispatch (inline stub) → hydrate pipeline through the actual
  * services and the Postgres + R2 bindings. No service-layer mock — this proves
  * the wiring the unit tests cannot:
@@ -13,15 +13,9 @@ import { createFakeBucket } from '../../outbound/r2/testing/fake-bucket.js';
  *   - hydration surfaces per-stage status and swaps playback to the denoised
  *     variant.
  *
- * ## It used to run against a hand-written in-memory Firestore
+ * ## It runs against a real database
  *
- * ~130 lines of it: a `Map` of documents, dotted-path `set` semantics, and a
- * `FieldValue.delete()` sentinel check that imported the real `firebase-admin`
- * purely to recognise the sentinel. That fake WAS the risk — it encoded one
- * reading of Firestore's update semantics, and the pipeline was only ever as
- * correct as that reading.
- *
- * It now runs on PGlite (real PostgreSQL 18, in-process) applying the shipped
+ * PGlite (real PostgreSQL 18, in-process) applying the shipped
  * `migrations/0001_initial_schema.sql`, and the in-memory `R2BucketLike` the R2 binding suites
  * already use. Nothing here is a stand-in for the store any more: the SQL runs
  * against a real planner, and the only fakes left are the two things this test
@@ -139,7 +133,7 @@ async function getPost(postId: string) {
     return ((await res.json()) as { data: { embed?: Record<string, unknown> } }).data;
 }
 
-describe('POST /api/v1/posts — audio processing (B5)', () => {
+describe('POST /api/v1/posts — audio processing', () => {
     // Provider selection is env-driven, so env is test state. `ELEVENLABS_API_KEY`
     // must be cleared alongside the stub flag: the "no provider ⇒ skipped" test
     // below runs with the stub OFF, so a real key in the developer's shell would

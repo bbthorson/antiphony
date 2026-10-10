@@ -12,17 +12,14 @@
  * ## The three-state outcome, and why it is not an error taxonomy
  *
  * The obvious port shape is `hit(): Promise<boolean>` plus exceptions, letting the
- * caller classify failures. That was rejected: the classification the Firestore
- * implementation performs is *gRPC status codes* (`ABORTED` = 10,
- * `FAILED_PRECONDITION` = 9 ⇒ per-bucket contention, fail closed; everything else
- * ⇒ systemic, fail open), and those codes are meaningless to any other backend.
+ * caller classify failures. That was rejected: failure classification is
+ * backend-specific (a transactional store reports per-bucket contention through
+ * its own error codes), and those codes are meaningless to any other backend.
  *
- * More decisively, **the Postgres binding cannot have that failure at all.** Its
- * check is a single upsert (`INSERT … ON CONFLICT DO UPDATE`), which has no
- * read-then-write window to abort in. The contention branch the Firestore
- * implementation must handle simply does not exist there, so an abstraction
- * modelling it would be one binding's implementation detail promoted to a
- * contract that another binding can only ever leave unused.
+ * More decisively, **the Postgres binding cannot have a contention failure at
+ * all.** Its check is a single upsert (`INSERT … ON CONFLICT DO UPDATE`), which
+ * has no read-then-write window to abort in, so an abstraction modelling
+ * contention would be one hypothetical binding's detail promoted to a contract.
  *
  * So the port answers the narrowest question that is true for every backend:
  *
@@ -30,11 +27,11 @@
  *   - `under`     — it has not. Proceed.
  *   - `unavailable` — the store could not answer. **The caller decides.**
  *
- * Each binding maps its own failures onto those three. Firestore folds
- * per-bucket contention into `over` (a bucket too contended to read is, by
- * definition, being hammered — which is what the limiter exists to catch) and
- * everything else into `unavailable`. A future Postgres binding has no
- * contention case and maps connection/query failure to `unavailable`.
+ * Each binding maps its own failures onto those three. A binding that can see
+ * per-bucket contention must fold it into `over` (a bucket too contended to read
+ * is, by definition, being hammered — which is what the limiter exists to
+ * catch), never `unavailable`. Postgres and the Durable Object have no
+ * contention case and map backend failure to `unavailable`.
  *
  * ## What deliberately stays OUT of the port
  *
@@ -43,8 +40,8 @@
  * deployment, not about the store, and identical whichever store is wired.
  * Keeping them above the seam means the policy is unit-testable with no backend
  * at all, and a new binding inherits it rather than reimplementing it. This is
- * the part most at risk of being quietly lost in a port, because in the
- * Firestore implementation the policy and the storage were one function.
+ * the part most at risk of being quietly lost in a port, because it is easy to
+ * fold policy and storage into one function.
  */
 
 export interface RateLimitWindow {
@@ -77,7 +74,7 @@ export interface RateLimitStore {
      *
      * A bucket whose window has closed resets rather than accumulating, so
      * `key` never needs explicit clearing. Expiry cleanup is the binding's
-     * concern (Firestore TTL; a sweep on Postgres — see migrations/0001_initial_schema.sql).
+     * concern (a sweep on Postgres — see migrations/0001_initial_schema.sql).
      *
      * Must not throw for an unreachable backend — return `'unavailable'`.
      * Throwing is reserved for programmer error (a malformed key, a missing

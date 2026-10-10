@@ -12,13 +12,13 @@ import type { ProcessingStage, ProcessingStageStatus } from 'shared/types/proces
  * dispatcher — inline, Cloud Tasks, future Cloudflare — inherits it, exactly as
  * the lease does; the hazard-and-signal belongs to `process()`, not a transport.
  *
- * **Firebase-free, like every other port here.** The concrete HTTP + HMAC
+ * **Vendor-free, like every other port here.** The concrete HTTP + HMAC
  * adapter lives in `apps/core-api/src/adapters/outbound/webhook/`; a deployment
  * with no notifier wired passes a noop and nothing changes.
  *
  * **An accelerator, never a source of truth.** The authoritative record of
- * enrichment state is the post's `processing` map, already committed to
- * Firestore before any notify fires. A dropped notification is a LATENCY
+ * enrichment state is the post's `processing` map, already committed to the
+ * store before any notify fires. A dropped notification is a LATENCY
  * regression (the BFF learns later, via its next GET or the sweep), never a
  * correctness bug — which is what justifies best-effort delivery: the service
  * logs and swallows a failed `notify` rather than failing the stage. An
@@ -56,7 +56,7 @@ export interface ProcessingNotifierPort {
     /**
      * Announce that a stage settled. Best-effort by contract: resolves on
      * delivery, may reject on transport failure, and the caller logs-and-swallows
-     * either way. Never call before the settling Firestore write has committed —
+     * either way. Never call before the settling store write has committed —
      * ordering the write first means a crash between them loses a notification,
      * not a result.
      */

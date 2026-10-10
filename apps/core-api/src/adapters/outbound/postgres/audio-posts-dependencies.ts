@@ -24,16 +24,14 @@ import type {
 /**
  * Postgres-backed `AudioPostDependencies`.
  *
- * A near-mechanical port of the Firestore binding — same tenancy rules, same
- * validate-and-skip on a bad row, same defaults. Three things genuinely
- * changed, and each is a place the Firestore version was working around its
- * store rather than expressing intent:
+ * Every query is scoped by tenant (`origin_app_id`), and a row that fails
+ * validation is logged and skipped. Three design points:
  *
- * 1. **Cursor pagination is keyset**, not `startAfter(snapshot)`.
- * 2. **The transcript batch lookup is one statement**, not 30-item chunks
- *    fanned out with `Promise.all` (`FIRESTORE_IN_LIMIT` is gone).
- * 3. **`savePost` is one upsert** rather than a whole-document `set`, so a save
- *    cannot clobber a concurrently-written `processing` column.
+ * 1. **Cursor pagination is keyset**, resolved in the same statement.
+ * 2. **The transcript batch lookup is one statement** (`= any($1)`), with no
+ *    chunking.
+ * 3. **`savePost` is one upsert**, so a save cannot clobber a
+ *    concurrently-written `processing` column.
  */
 
 const SELECT_COLS = 'record, processing, lease_until';
@@ -41,13 +39,11 @@ const SELECT_COLS = 'record, processing, lease_until';
 /**
  * Keyset pagination.
  *
- * The Firestore binding fetched the cursor document, then passed the snapshot
- * to `startAfter`. Here the cursor resolves inside the same statement as a CTE,
- * so paginating costs one round trip rather than two — which matters more on
- * Neon-over-HTTP than it did on Firestore.
+ * The cursor resolves inside the same statement as a CTE, so paginating costs
+ * one round trip rather than two — which matters on Neon-over-HTTP.
  *
- * **A cursor pointing at a row that does not exist is IGNORED**, matching
- * `startAfterCursor`'s `snap.exists ? … : q`. That is the reason for the
+ * **A cursor pointing at a row that does not exist is IGNORED** (the page
+ * starts over from the top). That is the reason for the
  * `not exists` arm: without it, `(created_at, id) < (select … )` against an
  * empty subquery yields NULL, which filters out every row — turning a stale
  * cursor from "start over" into "silently empty page".
@@ -92,7 +88,7 @@ export function postgresAudioPostDependencies(
 ): AudioPostDependencies {
     const spaces = postgresSpaceDependencies(sql);
     return {
-        // Unchanged from the Firestore binding: a TID is the `rkey` in
+        // A TID is the `rkey` in
         // at://{appDid}/{collection}/{rkey}, so it must be an honest AT-Proto
         // record key regardless of what stores it.
         newPostId(): string {
@@ -107,10 +103,7 @@ export function postgresAudioPostDependencies(
             const split = splitRecord(record);
             // `processing` and `lease_until` are only overwritten when the
             // record being saved actually carries processing state. A create
-            // without it must not null out a column the processing worker owns
-            // — the Firestore binding's whole-document `set` had exactly that
-            // hazard, and only avoided it because callers always passed the
-            // full record.
+            // without it must not null out a column the processing worker owns.
             await sql.query(
                 `
                 insert into posts (id, origin_app_id, record, processing, lease_until, created_at)
@@ -236,9 +229,8 @@ export function postgresAudioPostDependencies(
             const unique = Array.from(new Set(uris.filter((u) => u?.trim())));
             if (unique.length === 0) return map;
 
-            // One statement. The Firestore binding chunked at 30 (`in` query
-            // cap) and fanned out with Promise.all; `= any($1)` has no such
-            // limit, so the chunking, the fan-out, and the constant are gone.
+            // One statement: `= any($1)` has no item cap, so no chunking or
+            // fan-out is needed.
             const rows = await sql.query<{ record: unknown }>(
                 `select record from audio_transcripts where subject_uri = any($1)`,
                 [unique],

@@ -6,8 +6,8 @@ import type { IdempotencyStore } from '../../../ports/idempotency-store.js';
 /**
  * Postgres `IdempotencyStore` against real Postgres 18 (PGlite, in-process).
  *
- * The four-branch Firestore transaction collapses to one upsert here, and the
- * mechanism it leans on — a skipped `DO UPDATE` returning no row — is subtle
+ * The four claim cases (absent / expired / processing / completed) collapse to
+ * one upsert here, and the mechanism it leans on — a skipped `DO UPDATE` returning no row — is subtle
  * enough that it is the thing most worth pinning with real SQL. A mock would
  * have happily confirmed whatever behaviour I assumed.
  */

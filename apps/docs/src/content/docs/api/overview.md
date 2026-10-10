@@ -17,7 +17,7 @@ The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), and `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment). One record type; `reply` presence is prompt-vs-reply.
 - **`/spaces`** — Create, replace and read your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
-- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and play it back through the audio proxy.
+- **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and stream stored audio back (`GET /api/v1/audio`, with range support and optional mp3 renditions): from a stable, non-expiring URL for public audio, and a signed one that expires in an hour for audio in a space.
 
 `GET /api/v1/posts` is one endpoint with two slices: by default the **viewer's own** posts (optionally filtered by `kind`), and with `?rootAuthor=<id>` the replies whose thread root that id authored — "replies addressed to X", the raw feed you'd compose an inbox from. That's [queries, not bespoke views](/explanation/api-design-principles/#2-queries-not-bespoke-views) in practice.
 

@@ -27,23 +27,23 @@
     "@atproto/syntax": "0.0.0-spaces-alpha-20261001173819",
     "@hono/zod-openapi": "^1.6.3",
     "@ipld/dag-cbor": "^10.0.2",
-    "@neondatabase/serverless": "^1.1.0",
-    "hono": "^4.13.10",
+    "@neondatabase/serverless": "^1.2.0",
+    "hono": "^4.13.12",
     "multiformats": "^14.0.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.4",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
-    "globals": "^17.12.0",
+    "globals": "^17.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.70.1",
-    "vitest": "^5.0.1",
-    "wrangler": "^4.140.0"
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.146.0"
   },
   "engines": {
     "node": ">=22"

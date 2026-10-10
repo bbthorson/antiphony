@@ -10,6 +10,16 @@
     "directory": "packages/shared"
   },
   "bugs": "https://github.com/bbthorson/antiphony/issues",
+  "keywords": [
+    "antiphony",
+    "atproto",
+    "at-protocol",
+    "lexicon",
+    "audio",
+    "zod",
+    "schema",
+    "openapi"
+  ],
   "type": "module",
   "sideEffects": false,
   "main": "./dist/cjs/index.cjs",
@@ -144,9 +154,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "tsup": "^8.5.1",
-    "typescript-eslint": "^8.70.1",
+    "typescript-eslint": "^8.71.0",
     "typescript": "^5.7.2",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "zod": "^4.6.5"
   }
 }

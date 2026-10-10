@@ -122,10 +122,10 @@ describe('r2BlobStore', () => {
             expect(store.extractObjectPath(`r2://${BUCKET}/${PATH}`)).toBe(PATH);
         });
 
-        it('still recognises legacy GCS URLs stored in existing records', () => {
-            // A data migration moves objects; it does not rewrite the URLs
-            // already inside published records. Dropping these would make
-            // every pre-migration post's audio unresolvable.
+        it('still recognises legacy GCS URLs a caller may pass to the proxy', () => {
+            // An earlier storage backend returned URLs in these shapes, and
+            // callers may still hold them. Dropping these would turn that
+            // audio into 400s.
             expect(
                 store.extractObjectPath(
                     'https://storage.googleapis.com/antiphony-core.firebasestorage.app/blobs/vox-pop/bafkreiaudio',

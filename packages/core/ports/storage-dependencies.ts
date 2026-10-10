@@ -1,7 +1,7 @@
 /**
  * `BlobStore` is the portable interface for audio (and generic binary) storage.
- * Bindings live in `apps/core-api/src/adapters/outbound/` — Firebase Storage
- * today, R2 alongside it. Alternative backends (S3-compatible, local
+ * Bindings live in `apps/core-api/src/adapters/outbound/` — R2 today.
+ * Alternative backends (S3-compatible, local
  * filesystem) plug in by implementing this interface.
  *
  * ## Bytes are `Uint8Array`, not `Buffer`

@@ -33,25 +33,15 @@ import { constantTimeEqual } from '../lib/constant-time.js';
  *     that an ordinary application MUST NOT be able to reach, so sharing
  *     the app credential would silently widen every tenant's authority.
  *
- * Why shared secret rather than e.g. Cloud Run identity tokens:
+ * Why a shared secret: it works the same on every runtime, needs no identity
+ * provider, and is not insecure for a small set of trusted callers. Moving to
+ * signed identity tokens would mean every caller moving in lockstep; this
+ * middleware is the swap point if that is ever taken up. Rotation: update the
+ * Worker secret and re-deploy.
  *
- *   - Originally: both deployments were Firebase App Hosting backends, and
- *     App Hosting's wrapper did not surface a clean service-account-to-
- *     service-account flow at the HTTP layer the way Cloud Run does.
- *   - THAT REASON EXPIRED at the 2026-08-09 Cloud Run migration. This side
- *     now runs on Cloud Run and can both mint and verify metadata-server ID
- *     tokens, so the constraint that chose a shared secret is gone. What
- *     remains is that the callers — Cloud Tasks and each tenant's BFF — would
- *     all have to move in lockstep, which is a bigger change than this
- *     middleware.
- *   - Shared secret still works and is not insecure; it is simply no longer
- *     the only option. Rotation: change the secret in Secret Manager +
- *     re-deploy. This middleware remains the swap point if ID tokens are
- *     ever taken up.
- *
- * Configuration: set `SYSTEM_AUTH_TOKEN` in core-api's env (Secret
- * Manager, mounted by the deploy workflow's `--set-secrets` in prod;
- * `.env` for local dev). If the
+ * Configuration: set `SYSTEM_AUTH_TOKEN` as a Worker secret in production
+ * (`wrangler secret put`; see deploy/README.md) and in `.dev.vars` for local
+ * dev. If the
  * env var is unset, all system-auth requests get 503 — fail-closed,
  * never silently downgrade to "all requests allowed". Surrounding whitespace
  * on the stored value is ignored, so a secret piped in with a trailing

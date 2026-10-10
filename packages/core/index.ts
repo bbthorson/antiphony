@@ -1,11 +1,12 @@
 // @antiphony/core — the open-core tier.
 //
 // Core defines the portable domain services + ports (interfaces); the
-// Firebase-backed bindings live in `apps/core-api/src/adapters/outbound/`.
+// concrete bindings (Postgres, R2, …) live in `apps/core-api/src/adapters/outbound/`.
 //
 // Guardrails:
-//   - MUST NOT add runtime dependencies on `firebase` or `firebase-admin`.
-//     Core defines the portable interfaces; Firebase-backed implementations
+//   - MUST NOT add runtime dependencies on a vendor SDK (the ESLint config
+//     bans the one that used to be here, firebase).
+//     Core defines the portable interfaces; vendor-backed implementations
 //     live in the outbound adapters, never here.
 //   - When a service needs a backend, it brings its `...Dependencies` port
 //     interface with it; the concrete binding stays in the adapter layer.

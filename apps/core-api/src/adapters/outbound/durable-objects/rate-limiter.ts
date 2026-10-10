@@ -34,11 +34,6 @@ import type {
  * concurrent requests both read an under-limit count and both proceed. Each
  * binding has had to earn that differently:
  *
- *   - **Firestore** — a transaction, plus a whole contention branch, because a
- *     read-then-write has an interleaving window. Per-bucket contention had to
- *     be folded into `over` rather than `unavailable`, or a caller hammering
- *     one bucket could trip the circuit breaker and fail-open the limiter for
- *     everybody.
  *   - **Postgres** — one upsert. The interleaving window closes, and the
  *     contention branch stops existing.
  *   - **Here** — nothing at all. A Durable Object serializes requests to one

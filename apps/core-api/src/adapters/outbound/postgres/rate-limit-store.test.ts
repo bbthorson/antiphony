@@ -6,9 +6,8 @@ import type { RateLimitStore } from '../../../ports/rate-limit-store.js';
 /**
  * Postgres `RateLimitStore` against real Postgres 18 (PGlite, in-process).
  *
- * The Firestore binding's suite has to simulate gRPC transaction conflicts to
- * reach its interesting branches. This one does not have those branches — the
- * whole check is one upsert — so what is worth testing here is different: that
+ * There are no transaction-conflict branches to simulate — the whole check is
+ * one upsert — so what is worth testing here is that
  * the window arithmetic is right, that the counter is atomic, and that the
  * limit boundary is where the contract says it is.
  */

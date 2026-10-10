@@ -273,7 +273,7 @@ What landed, and where it differs from the plan above:
 
 ### Phase 2 — as built (2026-10-08)
 
-API contract 0.7.0 (`CHANGELOG.md`).
+API contract 0.8.0 (`CHANGELOG.md`).
 
 - **Spaces API.** `PUT`/`GET /api/v1/spaces/{spaceType}/{skey}` (`adapters/inbound/rest/spaces.ts`),
   behind a service token alone: managing the tenant's own spaces needs no acting actor.

@@ -186,7 +186,7 @@ describe('worker scheduled — the TTL sweep', () => {
     });
 
     it('no-ops when no SQL backend is bound', async () => {
-        services = { backend: 'firebase' };
+        services = { backend: 'postgres' };
         const worker = await freshWorker();
 
         await expect(worker.scheduled(cron, {}, ctx)).resolves.toBeUndefined();

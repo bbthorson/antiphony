@@ -2,7 +2,7 @@
   "name": "antiphony",
   "version": "0.1.0",
   "private": true,
-  "description": "Antiphony \u2014 standalone call-and-response audio infrastructure (open core extracted from Vox Pop).",
+  "description": "Antiphony \u2014 open, AT-Protocol-shaped call-and-response audio infrastructure: a headless API for storing, serving and enriching audio posts.",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -17,36 +17,36 @@
     "test": "npm run test --workspaces --if-present && npm run test:eslint-rules && npm run test:lexicons && npm run test:dependency-ranges && npm run test:design-tokens",
     "//test:design-tokens": "Asserts that all CSS and Astro source files strictly use design system tokens (--ap-*) with zero un-tokenized raw color codes leaking into production.",
     "test:design-tokens": "node scripts/check-design-tokens.mjs",
-    "//test:eslint-rules": "The custom ESLint rules in eslint-rules/ carry RuleTester suites that use node:test, not vitest, so `--workspaces` never reached them \u2014 they sat unrun since they were written. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources themselves and exits non-zero.",
+    "//test:eslint-rules": "The custom ESLint rules' RuleTester suites use node:test, not vitest, so `--workspaces` never reaches them. The glob is quoted because bare `node --test eslint-rules/` also picks up the rule sources and exits non-zero.",
     "test:eslint-rules": "node --test \"eslint-rules/*.test.mjs\"",
-    "//test:lexicons": "Validates lexicons/ against upstream's own encoding of the Lexicon spec (@atproto/lex-document), so a spec change upstream lands as a CI failure rather than a federation-time surprise. Lives at the root, not in a workspace, because lexicons/ is repo-level and belongs to no package. Refs into app.bsky.*/com.atproto.* are reported but NOT resolved \u2014 resolving them means vendoring ~20 third-party documents and putting a network fetch or CID-pinned manifest in the CI path (see specs/xrpc-and-atproto-lex-strategy.md \u00a77). The Zod-vs-lexicon parity oracle is separate, in @antiphony/shared's vitest suite.",
+    "//test:lexicons": "Validates lexicons/ against upstream's encoding of the Lexicon spec (@atproto/lex-document), so an upstream spec change fails CI. Refs into app.bsky.*/com.atproto.* are reported, not resolved (see specs/xrpc-and-atproto-lex-strategy.md \u00a77). Lives at the root because lexicons/ belongs to no workspace.",
     "test:lexicons": "node scripts/validate-lexicons.mjs",
-    "//test:dependency-ranges": "Asserts every declared range is satisfied by the version package-lock.json resolves. NOT redundant with `npm ci`, which was checked before this was written: npm compares package.json against the manifest MIRROR the lockfile keeps of each workspace, not against the resolved tree, so `npm install` can bless a mirror while leaving a nested resolution that violates the range beside it. Replaying this repo's own case — 0e9d332 with apps/docs typescript moved to `^5.7.2` — gives `declared ^5.7.2 / installed 7.0.2` with BOTH `npm install` and `npm ci` exiting 0. The simple shape (range bumped, lockfile untouched) npm does catch, with EUSAGE, and needs no guard. Lives at the root next to validate-lexicons.mjs for the same reason: it is about repo-level files and belongs to no workspace.",
+    "//test:dependency-ranges": "Asserts every declared range is satisfied by the version package-lock.json resolves. Not redundant with `npm ci`: npm checks package.json against the lockfile's per-workspace manifest mirror, not the resolved tree, so a nested resolution can violate a declared range while `npm install` and `npm ci` both exit 0.",
     "test:dependency-ranges": "node scripts/check-dependency-ranges.mjs",
-    "//knip": "`--treat-config-hints-as-errors` is load-bearing now that this runs in CI, and it is not a style preference. Knip splits its output: findings (dead exports, unlisted binaries) exit 1, but CONFIGURATION HINTS — an `entry` pattern matching no files, a redundant `ignore` — exit 0. Both of the config problems this script was turned into a gate to catch were hints: `apps/core-api`'s entry still naming `src/native.ts`, deleted with Firebase in 1b023cd, and a redundant `eslint-rules/**` ignore. Without this flag CI would print them and pass, so the config would rot exactly the way it had already rotted, just with a green check over it. Verified both ways: a bogus entry pattern exits 0 without the flag and 1 with it.",
+    "//knip": "`--treat-config-hints-as-errors` is load-bearing: knip exits 0 on configuration hints (an `entry` pattern matching nothing, a redundant `ignore`), so without it config rot passes CI.",
     "knip": "knip --treat-config-hints-as-errors"
   },
-  "//allowScripts": "npm 12 does not run a dependency's install script unless it is listed here; npm 10 and 11 ignore this field and run them all. Two are load-bearing: esbuild fetches its platform binary (core-api cannot bundle without it) and sharp backs Astro's image service in the docs build. fsevents (macOS-only) is here because it already ran under npm 10 \u2014 this file records the trust that exists rather than making a new decision. Two entries have left with the dependency that pulled them: ffmpeg-static, when the trim and waveform stages moved to apps/audio-rendition and took ffmpeg from its container image instead; and @firebase/util + protobufjs, when firebase-admin and google-auth-library were removed. Neither package is in the lockfile any more, so listing them granted trust to nothing. Entries are unpinned by name on purpose: `npm install-scripts approve --allow-scripts-pin` writes `pkg@version` instead, which re-blocks on every version bump. Add entries with `npm install-scripts approve <pkg>` on npm 12+. Known and deliberate: npm 12 blocks workerd's postinstall, which is harmless \u2014 the binary arrives through the platform-specific optional dependency, and `wrangler deploy` was verified working on a clean npm 12 install.",
+  "//allowScripts": "npm 12+ runs a dependency's install script only if it is listed here (npm 10/11 ignore this field). esbuild fetches its platform binary (core-api cannot bundle without it); sharp backs Astro's image service in the docs build; fsevents is macOS-only. Entries are unpinned by name so a version bump does not re-block them. Add one with `npm install-scripts approve <pkg>`. npm 12 blocking workerd's postinstall is harmless: its binary arrives through a platform-specific optional dependency.",
   "allowScripts": {
     "esbuild": true,
     "fsevents": true,
     "sharp": true
   },
-  "//devDependencies.semver": "Declared because `scripts/check-dependency-ranges.mjs` imports it, and it was reachable only as a TRANSITIVE dependency before that — the same latent shape as the wrangler note below, found the same way. A transitively-hoisted import works until the package that actually declares it drops it or nests it, and then the failure lands on whoever next runs `npm test`. `npm run knip` reports an unlisted dependency if this is ever removed while the script still imports it.",
-  "//devDependencies.wrangler": "Declared HERE, not inherited from apps/core-api, even though core-api is the workspace people think of as the Worker. `deploy-docs.yml` runs `npx wrangler deploy` FROM THE REPO ROOT against the root `wrangler.jsonc` (the assets-only Worker serving apps/docs/dist), and until now the root declared no wrangler at all — that command worked only because core-api's devDependency hoists into the root `node_modules/.bin`. The failure mode if it ever stopped hoisting is not a clean error: `npx` DOWNLOADS on a miss, so the docs deploy would quietly run whatever wrangler is newest on the registry instead of the pinned one, on the deploy path, with no signal. Keep this in step with the range in apps/core-api/package.json; `npm run knip` reports the root command as an unlisted binary if this is ever removed, which is how it was found.",
+  "//devDependencies.semver": "Declared because scripts/check-dependency-ranges.mjs imports it; relying on a transitive hoist breaks when the declaring package drops it. knip reports it as unlisted if removed.",
+  "//devDependencies.wrangler": "Declared at the root because deploy-docs.yml runs `npx wrangler deploy` from the repo root. Without it the command relies on core-api's copy hoisting, and on a miss `npx` silently downloads the newest wrangler onto the deploy path. Keep in step with apps/core-api/package.json.",
   "//devDependencies.zod": "Declared at the root to force npm to hoist a single instance of zod across the monorepo. Without this, packages/shared and apps/core-api receive separate nested copies of zod in their node_modules, breaking @hono/zod-openapi's prototype schema extension.",
   "devDependencies": {
-    "@atproto/lex-document": "^0.1.11",
+    "@atproto/lex-document": "^0.1.12",
     "eslint": "^10.11.0",
-    "knip": "^6.38.0",
+    "knip": "^6.39.0",
     "semver": "^7.8.5",
     "typescript": "^5.7.2",
-    "wrangler": "^4.140.0",
+    "wrangler": "^4.146.0",
     "zod": "^4.6.5"
   },
-  "//packageManager": "Declares the npm this repo is verified against, and is now the single source for it: every workflow reads this field and installs it explicitly, because actions/setup-node does NOT switch npm on it (corepack-aware tools do; it is not one). Bump it here and CI, all three deploys, and the release follow. Until they did, they all ran npm 10.9.8 while this said 12.0.2 -- a major apart, and the two install different trees from the same lockfile because npm 12 honours `allowScripts` and npm 10 ignores it. The Dockerfile does not rely on resolution at all \u2014 it installs this exact npm explicitly, which is the point: production once built on a buildpack's own npm (Firebase App Hosting, long since replaced), and an unreviewed bump to it broke prod. It is safe to land only because `allowScripts` above landed with it: pinning to npm 12 without that list would block the install scripts this repo depends on. Full suite, core-api bundle, and docs build all verified green on 12.0.2.",
+  "//packageManager": "The single source for the npm version: every workflow reads this field and installs it explicitly, because actions/setup-node does not switch npm on it. apps/audio-rendition/Dockerfile pins the same version by hand \u2014 keep the two in step. npm 10 and 12 install different trees from the same lockfile (12 honours `allowScripts`), so bump it deliberately.",
   "packageManager": "npm@12.0.2",
-  "//engines": "NOT `>=22`, which is what this said until jsdom 30 arrived. That bump (#138) declares `node: ^22.22.2 || ^24.15.0 || >=26.0.0`, so `>=22` had become a claim the tree could not honour: it permits Node 22.0.0, on which a dependency refuses to install. `.nvmrc` (22.23.2) and CI were always fine — the DECLARATION was the stale part, and npm only warns about `engines` unless `engine-strict` is set, so the gap surfaces as a confusing install on someone else's machine rather than as an error here. Keep this at or above the highest floor any dependency asks for; `npm ls` warnings after a bump are where the next one shows up.",
+  "//engines": "Keep at or above the highest Node floor any dependency declares (jsdom 30 requires ^22.22.2). npm only warns on `engines` without engine-strict, so a stale floor shows up as a confusing install elsewhere; check `npm ls` warnings after a bump.",
   "engines": {
     "node": ">=22.22.2"
   },

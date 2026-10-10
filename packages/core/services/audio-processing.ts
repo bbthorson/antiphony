@@ -134,7 +134,7 @@ export const PROCESSING_LEASE_MS = 20 * 60 * 1000;
 const UNNAMED_DENOISER = 'unnamed';
 
 /**
- * AudioProcessingService — runs one post's opted-in audio processing (B5).
+ * AudioProcessingService — runs one post's opted-in audio processing (see specs/enrichment-pipeline.md).
  *
  * Order matters: **denoise first, then transcribe**, so the transcript is
  * produced from the cleaned audio when denoise was requested. Each stage
@@ -180,7 +180,7 @@ export class AudioProcessingService {
      * `skipped`). Every terminal `patchProcessingState` in `runStages` goes
      * through here so the fire point is single and inherited by every dispatcher.
      *
-     * **Write first, notify second.** The Firestore write is the authoritative
+     * **Write first, notify second.** The store write is the authoritative
      * settle; the webhook is a latency accelerator over it. Ordering the write
      * first means a crash between them loses a NOTIFICATION, not a result — the
      * sweep/next-GET backstops the drop (see `specs/enrichment-webhooks.md`).

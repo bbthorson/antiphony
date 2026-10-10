@@ -80,6 +80,7 @@ describe('httpsUrl()', () => {
             'https://example.com/feed.xml',
             // Scheme casing is not part of the rule.
             'HTTPS://ok.example/a.webm',
+            'hTtP://ok.example/a.webm',
         ];
 
         it.each(ok)('%s', (input) => {
@@ -108,5 +109,14 @@ describe('httpsUrl()', () => {
             url: 'https://ok.example/a.webm',
             extra: 'x',
         }).success).toBe(true);
+    });
+
+    it('carries no regex flags, so its OpenAPI `pattern` means what the runtime does', () => {
+        // JSON Schema `pattern` has no flag syntax; a flagged regex was once
+        // serialized as `"^https?:\\/\\//i"`, which rejects every real URL.
+        const checks = (schema as unknown as { def: { checks?: Array<{ _zod: { def: { pattern?: RegExp } } }> } }).def.checks ?? [];
+        const patterns = checks.map((c) => c._zod.def.pattern).filter((p): p is RegExp => p instanceof RegExp);
+        expect(patterns.length).toBeGreaterThan(0);
+        for (const p of patterns) expect(p.flags).toBe('');
     });
 });

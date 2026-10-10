@@ -4,7 +4,7 @@ import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 
 /**
- * Pure unit tests for AudioPostService — no Firebase. A hand-rolled
+ * Pure unit tests for AudioPostService — no database. A hand-rolled
  * in-memory `AudioPostDependencies` exercises the create/hydrate logic:
  * kind derivation, transcript lift, signed-URL resolution, viewer state,
  * batching (one transcript round per call), and origin-app scoping.

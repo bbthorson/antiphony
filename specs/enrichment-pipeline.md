@@ -1,8 +1,8 @@
-# Enrichment pipeline (B5)
+# Enrichment pipeline
 
 **Status:** ✅ implemented and deployed 2026-07-19 (proposed 2026-07-18). See
 [`enrichment-pipeline-plan.md`](./archive/enrichment-pipeline-plan.md) for the execution
-record and per-step deviations. Extended the B5 processing scaffold already in
+record and per-step deviations. Extended the processing scaffold already in
 the tree (`packages/core/services/audio-processing.ts`, `packages/shared/types/processing.ts`,
 the `processing` opt-in on `POST /api/v1/posts` + `PATCH /api/v1/posts/{postId}`) from two
 stages to four, and settled stage ordering, the derived-artifact recompute rule, and the
@@ -161,10 +161,7 @@ decision cheaply. This section exists so the pipeline does not quietly foreclose
   knows a stage is billable. **Deliberately deferred** — the service has a single
   operator (its author) for the foreseeable term, so there is nothing to meter. Revisit
   before a second tenant is onboarded, not before the stage ships.
-- **Cloud Tasks worker.** Still the outstanding piece from the original B5 scope
-  (`ANTIPHONY_PROCESSING_INLINE` is dev/test only). Recompute makes the durable path
-  more load-bearing: a recompute triggered by a later PATCH is exactly the work that
-  should not run inline in a request. If the Cloudflare move is likely, this is the
-  piece most worth building against a thin queue abstraction rather than Cloud Tasks
-  directly — it is the one new component whose vendor coupling would otherwise be
-  written from scratch on the losing side.
+- **Durable worker — ✅ resolved.** Once the outstanding piece of the original
+  scope, it now exists: processing is dispatched onto a Cloudflare Queue and
+  consumed by the `queue` handler in `apps/core-api/src/worker.ts`, behind the
+  `processing-dispatch` port. `ANTIPHONY_PROCESSING_INLINE` remains dev/test only.

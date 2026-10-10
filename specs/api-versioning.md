@@ -31,8 +31,8 @@ literal to drift.
 
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
-divergence. For example, `@antiphony/shared` (at `0.7.0`) and `@antiphony/capture-kit`
-(at `0.1.0`) track their own release lines while the contract sits at `0.6.0` and
+divergence. For example, `@antiphony/shared` (at `0.9.0`) and `@antiphony/capture-kit`
+(at `0.1.0`) track their own release lines while the contract sits at `0.8.0` and
 internal packages sit at `0.1.0`. That is correct: a package bump for an export
 or dependency change is a different event from a breaking *contract* change.
 
@@ -62,6 +62,8 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.5.0` | `GET /api/v1/audio` streams bytes instead of 302-ing to a signed URL. |
 | `0.5.1` | `GET /api/v1/audio` takes an optional `format` for derived renditions. Additive, so patch. |
 | `0.6.0` | URL fields (`embed.audio#view.url`, `actor.profile.rssFeed`) restricted to the `http`/`https` schemes. A tightening, so minor. |
+| `0.7.0` | Request string/body bounds on `POST`/`PATCH /api/v1/posts`, and timestamps narrowed to strings (no legacy object or epoch-number forms). Both tightenings, so minor. |
+| `0.8.0` | atproto spaces: the spaces API, uploads and posts into a space, and signed, expiring playback for that audio. Additive, but the audio proxy now refuses unsigned private audio, so minor. |
 
 ### Next: the enrichment pipeline
 

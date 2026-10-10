@@ -29,8 +29,7 @@ vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
         audioPostDeps: { getBlobSpace },
-    // The rate-limit middleware resolves its store from here now, rather
-    // than defaulting to the Firestore binding. Under limit on every hit:
+    // The rate-limit middleware resolves its store from here. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
     // middleware/rate-limit.test.ts).
     rateLimitStore: { hit: async () => 'under' as const },
@@ -156,7 +155,7 @@ describe('error dialect', () => {
 
     it('maps an unknown throw to InternalServerError without leaking internals', async () => {
         vi.mocked(audioPostService.getPostView).mockRejectedValueOnce(
-            new Error('firestore exploded: connection string postgres://user:pw@host'),
+            new Error('database exploded: connection string postgres://user:pw@host'),
         );
 
         const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1', {

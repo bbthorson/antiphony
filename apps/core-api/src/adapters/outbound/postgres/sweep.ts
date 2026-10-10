@@ -2,8 +2,8 @@ import type { SqlClient } from '../../../ports/sql-client.js';
 import type { Logger } from '@antiphony/core/ports/logger';
 
 /**
- * Drive `antiphony_sweep_expired()` — the TTL reclamation that replaces
- * Firestore's native TTL on `idempotency_keys` and `rate_limits`.
+ * Drive `antiphony_sweep_expired()` — TTL reclamation for expired rows in
+ * `idempotency_keys` and `rate_limits`.
  *
  * ## Why the query is one statement with no arguments
  *
@@ -26,8 +26,8 @@ import type { Logger } from '@antiphony/core/ports/logger';
  * It is worth noting what this closes. Until the Worker's cron existed, this
  * function shipped with the schema and **nothing called it** — harmless at beta
  * volume, and the reason no interim Cloud Scheduler job was built, but a thing
- * that silently did not happen. See specs/archive/cloudflare-migration.md § Replacing
- * Firestore's native TTL.
+ * that silently did not happen. See specs/archive/cloudflare-migration.md for the
+ * history.
  */
 
 /** One row per table the function touched. */
