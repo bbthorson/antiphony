@@ -41,7 +41,7 @@
     "knip": "^6.39.0",
     "semver": "^7.8.5",
     "typescript": "^5.7.2",
-    "wrangler": "^4.146.0",
+    "wrangler": "^4.149.0",
     "zod": "^4.6.5"
   },
   "//packageManager": "The single source for the npm version: every workflow reads this field and installs it explicitly, because actions/setup-node does not switch npm on it. apps/audio-rendition/Dockerfile pins the same version by hand \u2014 keep the two in step. npm 10 and 12 install different trees from the same lockfile (12 honours `allowScripts`), so bump it deliberately.",
