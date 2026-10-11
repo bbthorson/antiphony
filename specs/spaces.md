@@ -358,6 +358,51 @@ read a space. Phases 1 and 2 give Bardcast everything it needs without it.
   thread, which Brad parked. Phase 4 cannot run against production until it is
   done. It can run against a local deploy.
 
+## Prior art: HappyView (checked 2026-10-11)
+
+[HappyView](https://happyview.dev) is a lexicon-driven atproto AppView (Rust, MIT), with an
+experimental spaces implementation that tracks Proposal 0016 closely: its changelog follows the
+same deltas this spec does (the `readPolicy` / `writePolicy` split, `putMember`, HTTP message
+signatures replacing DPoP). Read from its repo's docs (`packages/docs/content/docs/experimental/spaces/`)
+at commit `9eceb8b` (2026-10-10). It is not a runtime for Antiphony: it assumes end-user OAuth
+and records on each user's PDS, which is the opposite of Model B. It is the most complete
+reference for Phase 3. What it tells us:
+
+- **Wire names.** Protocol routes are `com.atproto.space.*` (`getSpaceCredential`,
+  `getDelegationToken`, `notifyWrite`, `listRepos`, `getBlob`, …); management routes are
+  `com.atproto.simplespace.*` (`createSpace`, `getSpace`, `putMember`, `checkUserAccess`, …).
+  HappyView first shipped `dev.happyview.space.*` and now carries those as deprecated aliases
+  until its v3. So Antiphony's spaces XRPC mirrors (Phase 2's "still to come") use the
+  `simplespace` names, not a new `dev.antiphony.space.*`. On the wire a policy is a `$type`
+  object (`com.atproto.simplespace.defs#memberListPolicy`, `#publicPolicy`,
+  `#managingAppPolicy` with `managingApp`), not the string `SpacePolicySchema` stores; that
+  mapping belongs in the Phase 3 adapter, per open question 4.
+- **Signing key (open question 1).** HappyView publishes an `#atproto_space` verification
+  method beside `#atproto_space_host` and signs credentials with it, which matches the
+  narrowed answer below.
+- **Authority: the opposite choice.** HappyView makes its own instance DID the authority of
+  every space it creates; the creating account is only the space's administrator. Decision 1
+  here (the tenant's DID is the authority) stands, for the exit-sovereignty reason it gives.
+- **`checkUserAccess` is signed as the authority.** HappyView allows a `managing-app` policy
+  only when the space's authority is HappyView's own DID, "because the app expects the
+  authority to sign the call". In our model that means Antiphony's outbound `checkUserAccess`
+  (Phase 3) carries service auth signed as the **tenant's** DID, so the key Antiphony holds for
+  the tenant must also sign service auth, not only credentials. Design it with open question 1.
+- **Concepts we don't model yet (Phase 3):** `appAccess` (`open`, or an `allowList` of OAuth
+  `client_id`s that may obtain credentials); credential revocation on loss of read
+  (`notifyCredentialRevoked`), which our signed playback URLs can't match within their hour;
+  `getBlob` gated by a space credential. That last one needs an HTTP message signature, which
+  `<audio src>` can't attach, so it confirms signed URLs for playback rather than replacing them.
+- **Space-type lexicons.** HappyView accepts a lexicon whose `defs.main.type` is `"space"`,
+  with `name`, `key` and `collections`, and copies `collections` into the space's
+  `allowedCollections` to reject writes to anything else. Bardcast's
+  `game.bardcast.space.campaign` could be described that way (listing
+  `dev.antiphony.audio.post`). It looks HappyView-specific rather than core Lexicon, and
+  `@atproto/lex-document` would likely reject it, so none goes in `lexicons/` until upstream
+  adopts it.
+- **Not for us:** its invites, spaces-as-members (delegation), and `read_self` member access
+  are HappyView extensions outside the protocol.
+
 ## Open questions
 
 1. **Who signs space credentials (Phase 3).** If a credential has to be signed
