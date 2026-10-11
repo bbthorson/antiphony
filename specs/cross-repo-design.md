@@ -56,12 +56,11 @@ and no caller in either app.
 
 **Revisit when** an atproto app that isn't a tenant needs to write through Antiphony.
 
-**Reconfirmed 2026-10-11 for Vox Pop and Bardcast: both stay on REST.** Most of what they
-call has no XRPC form (upload, spaces, reply listing, the audio proxy), so moving would leave
-each app on two surfaces with two error dialects for the same work. The protocol surface gets
-exercised where it matters, by the conformance harness (§4.3 step 4) with third-party readers,
-not by the tenants. Revisit if the apps start reading Antiphony records through generic atproto
-tooling, or if a tenant's records start living on its users' own PDSes.
+**Revised 2026-10-11: XRPC-first is the end state, switched at 1.0.** Every operation
+becomes a lexicon method, the apps move onto a client generated from the lexicons, and REST is
+deprecated once they have. Until 1.0 the apps stay on REST, because published lexicons can't
+take breaking changes and the contract still does. Design and open decisions:
+[`xrpc-surface.md`](./xrpc-surface.md).
 
 ## 3. Spaces across the apps
 

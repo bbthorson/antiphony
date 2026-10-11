@@ -1,7 +1,7 @@
 # XRPC Inbound Adapter & @atproto/lex Adoption Strategy
 
 **Status:** Phases 1 and 2 implemented: lexicon validation in CI, and an `/xrpc/*` adapter serving five `dev.antiphony.audio.*` methods (`getPost`, `getThread`, `createPost`, `reprocessPost`, `getPlaybackUrl`). Phase 3 proposed.  
-**Scope settled 2026-10-11** ([`cross-repo-design.md`](./cross-repo-design.md) §2): REST (`/api/v1/*`) is the tenant surface and stays the contract apps build on; XRPC is the protocol surface, for callers that are atproto services. It grows by protocol methods (`com.atproto.space.*`, `com.atproto.simplespace.*` in spaces Phase 3), not by mirroring REST routes. Antiphony is not going XRPC-only.  
+**Direction set 2026-10-11:** XRPC-first at 1.0, REST deprecated after the apps move. The full surface, rollout and open decisions are in [`xrpc-surface.md`](./xrpc-surface.md), which supersedes this document's route mapping (§4) and rollout (§7) for anything not yet built.  
 **Context:** Evaluation of upstream Lexicon tooling (Bluesky Protocol Services) and native XRPC service interfaces alongside Antiphony's REST API.  
 **Related Specs:** [`atproto-authority-model.md`](./atproto-authority-model.md), [`core-bff-boundary.md`](./core-bff-boundary.md), [`core-surface.md`](./core-surface.md).
 

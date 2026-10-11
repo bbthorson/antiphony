@@ -29,7 +29,8 @@ When a spec's status changes, update its Status line and this table together.
 | [`spaces.md`](spaces.md) | atproto spaces: data model and URIs (Phase 1) and the tenant API with signed playback (Phase 2) are built; the protocol surface (Phase 3) and Bardcast (Phase 4) are not. Revised 2026-10-11. | partial |
 | [`tenancy-stats.md`](tenancy-stats.md) | A read-only `GET /api/v1/stats` route for corpus-level questions about the calling tenancy. | proposal |
 | [`tenant-onboarding.md`](tenant-onboarding.md) | Runbook for connecting a new tenant: service token, app-DID pin, and verification. | implemented |
-| [`xrpc-and-atproto-lex-strategy.md`](xrpc-and-atproto-lex-strategy.md) | The `/xrpc` adapter (five `dev.antiphony.audio.*` methods) and upstream lexicon tooling as a CI oracle. REST stays the tenant surface; XRPC grows by protocol methods. | partial |
+| [`xrpc-and-atproto-lex-strategy.md`](xrpc-and-atproto-lex-strategy.md) | The `/xrpc` adapter (five `dev.antiphony.audio.*` methods) and upstream lexicon tooling as a CI oracle. XRPC-first at 1.0; see `xrpc-surface.md`. | partial |
+| [`xrpc-surface.md`](xrpc-surface.md) | XRPC as Antiphony's whole API at 1.0: the method inventory, auth tiers, errors, upload and playback, rollout, the open XRPC decisions (D-1 to D-14) and the wider strategy gaps. | proposal |
 
 ## Archive
 
