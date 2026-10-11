@@ -7,6 +7,14 @@ the authority sits where it does) and
 [`tenant-onboarding.md`](./tenant-onboarding.md) (today's runbook). Neither is
 changed here.
 
+**Revised 2026-10-11** ([`atproto-authority-model.md`](./atproto-authority-model.md) D3, D8):
+- **Antiphony mints for tenants and orgs, not end users.** Vox Pop and Bardcast both sign
+  people in with their own AT Protocol account, and a person's own DID is never an authority
+  for records Antiphony holds. The `user` role, user claims and "bring your DID at signup"
+  below are kept for the record but are not on the roadmap.
+- **A space record's `{authorDid}` segment is always the space authority's DID.** People are
+  `authorId` / `authorDid` facets. The table under "Which DID a write goes under" is updated.
+
 ## Decisions this builds on
 
 Settled by the project owner, 2026-09-24. This spec designs around them; it
@@ -167,12 +175,15 @@ The space URI is
 `at://{spaceDid}/space/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`.
 The rules, from the decisions:
 
-| Record | Space authority | `{authorDid}` |
-|---|---|---|
-| Tenant-published post | tenant DID | tenant DID, or the publishing user's DID |
-| **Org-published post** | **org DID** | the publishing member's DID, or the org DID |
-| Audience reply (e.g. an SMS replier) | the space it replies into | **tenant DID** (the tenant owns replies, decision 3) |
-| User post outside any org | tenant DID | user's DID |
+| Record | Authority | `{authorDid}` segment (in a space) | Person |
+|---|---|---|---|
+| Tenant-published post | tenant DID | tenant DID | facet |
+| **Org-published post** | **org DID** | org DID | the publishing member, as a facet |
+| Audience reply (e.g. an SMS replier) | the authority of the space it replies into | that same DID | the replier's opaque id, as a facet |
+| User post outside any org | tenant DID | tenant DID | facet |
+
+*Revised 2026-10-11:* the segment column used to allow the publishing user's DID, and put the
+tenant DID on replies in an org's space. Both now follow D8: the authority's DID, always.
 
 "Posts under the org stay with the org" puts the org DID in the **authority**
 position, so an org that leaves a tenant, or a member who leaves an org,
@@ -184,7 +195,7 @@ Three rules follow, all confirmed by the project owner on 2026-10-02:
 - **Replies follow the org's posts.** An audience reply to an org's post lives
   in the org's space, so if the org leaves the tenant, those replies leave with
   it. The phone↔user mapping behind each reply does **not** leave: it stays with
-  the tenant (decision 3). The reply's author segment is the tenant DID, so what
+  the tenant (decision 3). The reply's author segment is the org DID (D8), so what
   travels is the audio and the record, never the replier's identity.
 - **Org DIDs are minted lazily**, at the org's first kept post, not when the org
   is created. A DID outlives the org that held it: dissolving an org leaves its
@@ -195,11 +206,10 @@ Three rules follow, all confirmed by the project owner on 2026-10-02:
   holds the org DID's top rotation key on its behalf (§4), exactly as for users.
   The org can only take its posts elsewhere after the claim (§5).
 
-Whether the author segment carries a user's DID or the tenant's is the
-**reassignment rule** from the authority recommendation. A user DID in the URI
-is sealed; the tenant's DID plus an `authorId` facet stays reassignable. With
-claim-don't-switch (above), a minted user DID never needs reassigning, so
-putting it in the URI is safe from the moment it's minted.
+The author segment never carries a person's DID (D8): a person's DID in the URI would be
+sealed, readers would look for the record at that person's own host, and Antiphony couldn't
+sign their space commits. The authority's DID plus an `authorId` facet stays reassignable and
+verifiable.
 
 ## 4. Minting (Phase 3)
 
