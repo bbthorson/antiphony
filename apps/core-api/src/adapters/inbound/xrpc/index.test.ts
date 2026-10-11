@@ -470,6 +470,47 @@ describe('dev.antiphony.audio.createPost', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('dev.antiphony.audio.createPost — declared errors', () => {
+    /**
+     * Every refusal the domain can give a create, rendered by this adapter,
+     * must be an error the lexicon declares (or one every XRPC method may
+     * answer). A client generated from the lexicon has no case for anything
+     * else. A reply by a non-participant answered `Forbidden` for a while with
+     * no such error declared.
+     */
+    const ANY_METHOD = new Set(['AuthenticationRequired', 'RateLimitExceeded', 'InternalServerError']);
+
+    it('answers only errors the lexicon declares', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { ForbiddenError, NotFoundError, ValidationError, ServiceError } = await import('shared/errors');
+        const { REPLY_CID_MISMATCH } = await import('@antiphony/core/services/audio-posts');
+        const lexicon = JSON.parse(
+            readFileSync(new URL('../../../../../../lexicons/dev/antiphony/audio/createPost.json', import.meta.url), 'utf8'),
+        ) as { defs: { main: { errors: { name: string }[] } } };
+        const declared = new Set(lexicon.defs.main.errors.map((e) => e.name));
+
+        const refusals = [
+            new ValidationError("reply.root must name the thread's root post"),
+            new NotFoundError('Parent post not found'),
+            new ForbiddenError('Only the thread participants can reply here'),
+            new ServiceError("reply.parent.cid doesn't match", 400, undefined, REPLY_CID_MISMATCH),
+            new ServiceError('Idempotency conflict', 409),
+        ];
+        const undeclared: string[] = [];
+        for (const err of refusals) {
+            vi.mocked(audioPostService.createPost).mockRejectedValueOnce(err);
+            const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+                method: 'POST',
+                headers: authHeaders({ 'content-type': 'application/json' }),
+                body: JSON.stringify({ text: 'x' }),
+            });
+            const { error } = (await res.json()) as { error: string };
+            if (!declared.has(error) && !ANY_METHOD.has(error)) undeclared.push(`${err.status} → ${error}`);
+        }
+        expect(undeclared).toEqual([]);
+    });
+});
+
 describe('dev.antiphony.audio.reprocessPost', () => {
     it('sets processing and returns the re-hydrated view', async () => {
         vi.mocked(audioPostService.setProcessing).mockResolvedValueOnce(
