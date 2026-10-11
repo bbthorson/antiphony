@@ -5,6 +5,8 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         include: ['src/**/*.test.ts'],
+        // Boots and migrates one PGlite per run; the binding suites load its dump.
+        globalSetup: ['src/adapters/outbound/postgres/testing/pglite-global-setup.ts'],
         env: {
             ANTIPHONY_PDS_HOST: 'api.antiphony.dev',
             ANTIPHONY_PUBLIC_BASE_URL: 'https://api.antiphony.dev',
