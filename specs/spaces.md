@@ -1,12 +1,16 @@
 # atproto spaces in Antiphony — implementation plan
 
 **Status:** plan, 2026-09-24; builds on `@atproto/space` and `@atproto/syntax` since
-2026-10-07 (see that update). **Phase 1 is built** (2026-10-07, see "Phase 1 — as built");
-Phases 2–4 are not. Supersedes "Decision 2 —
-spaces is not adopted now" in [`atproto-authority-model.md`](./atproto-authority-model.md)
-(2026-08-21): Brad decided on 2026-09-22 to adopt spaces now, and to prove it on
-Bardcast first. That spec is being edited in parallel for the DID-method work,
-so this change lives here and the authority-model update can link to it.
+2026-10-07 (see that update). **Phases 1 and 2 are built** (2026-10-07 and 2026-10-08, see
+the "as built" sections); Phases 3 and 4 are not. Brad decided on 2026-09-22 to adopt spaces
+([`atproto-authority-model.md`](./atproto-authority-model.md) D1) and to prove them on
+Bardcast first.
+
+**Revised 2026-10-11** ([`atproto-authority-model.md`](./atproto-authority-model.md) D7–D8,
+[`cross-repo-design.md`](./cross-repo-design.md)): the author segment is always the
+authority's DID; a reply may be placed in a space when its parent isn't; Vox Pop prompts get
+reply spaces; spaces XRPC uses the protocol's own `com.atproto.simplespace.*` names in Phase 3
+rather than mirrors of the REST routes. The sections below say where they're superseded.
 
 **First consumer:** Bardcast. Each campaign is a semi-private space.
 
@@ -24,9 +28,9 @@ so this change lives here and the authority-model update can link to it.
    space to own their posts.
 3. **Vox Pop owns audience replies and holds the phone ↔ user-ID layer.**
    Antiphony still never sees a phone number.
-4. **DIDs are minted by default; owning your own DID is a paid upgrade** (which
-   also unlocks denoise), and the upgrade is a claim of the minted DID, not a
-   switch. See open question 2 for why that matters to the author segment.
+4. **DIDs are minted by default for tenants and orgs; owning your own DID is a paid
+   upgrade**, and the upgrade is a claim of the minted DID, not a switch
+   ([`atproto-authority-model.md`](./atproto-authority-model.md) D3).
 5. **The corpus is still wipeable.** Reply StrongRefs seal a parent's URI into
    the reply's CID at write time, so URI shape is free to change now and
    impossible to change later.
@@ -158,24 +162,29 @@ for re-homing.
 
 ### The author segment
 
-A space URI requires `{authorDid}`. The rule:
+A space URI requires an author segment. **Decided 2026-10-11
+([`atproto-authority-model.md`](./atproto-authority-model.md) D8): it is always the
+authority's DID.** The person who recorded the post is the `authorId` / `authorDid` facet,
+outside the CID and correctable. A space repo commit is the author's signed claim, and readers
+find an author's records through the author's DID, so only an authority whose key Antiphony
+holds can be served and verified in Phase 3.
 
-- **The acting actor has a DID:** it goes in the author segment. For Bardcast
-  this is always true, since characters are keyed on the player's DID.
-- **The acting actor has no DID:** the tenant's app DID goes there. This is
-  Model B preserved inside a space, and it keeps that author's identity a
-  reassignable facet.
-
-The segment is sealed the moment the record is replied to. `authorId` /
-`authorDid` stay facets beside it, unchanged.
+**As built, the code still follows the earlier rule** (the acting actor's DID when it has one,
+else the tenant's app DID). Switching it changes `createPost`'s placement and is a contract
+change; it lands before Bardcast keeps its first recording.
 
 ### Replies inherit the parent's space
 
-A reply is created in its parent's space, always. The request may not name a
-different one. Otherwise a public reply to a private post would publish part of
-a private conversation, and a spaced reply to a flat prompt would be invisible
-in its own thread. `resolveReplyBranch` already fetches the parent, so the
-placement comes free.
+A reply to a post in a space is created in that space, always; the request may
+not name a different one. Otherwise a public reply to a private post would
+publish part of a private conversation. `resolveReplyBranch` already fetches the
+parent, so the placement comes free.
+
+**Revised 2026-10-11 (not yet built):** a reply to a **flat** parent may name a
+space. Its placement must be at least as restrictive as its parent's, never less.
+Public viewers of such a thread see the prompt and no replies, which is what Vox
+Pop's per-prompt reply spaces want ([`cross-repo-design.md`](./cross-repo-design.md)
+§3.2–3.3). As built, a reply to a flat parent is always flat.
 
 ## Phases
 
@@ -252,8 +261,8 @@ What landed, and where it differs from the plan above:
 
 - **`PUT /api/v1/spaces/{spaceType}/{skey}`** creates or updates a space's
   policies. **`GET`** reads one. Both are scoped to the calling tenant, so the
-  authority is always the caller's own DID. XRPC mirrors come after, following
-  `specs/xrpc-and-atproto-lex-strategy.md`.
+  authority is always the caller's own DID. Third parties get the protocol's
+  `com.atproto.simplespace.*` methods in Phase 3; REST stays the tenant surface.
 - **`POST /posts` and XRPC `createPost`** accept `space: { type, skey }` on a
   prompt. The space must exist and belong to the tenant.
 - **Reads through the tenant need no callback.** Under `managing-app` the
@@ -280,7 +289,7 @@ API contract 0.8.0 (`CHANGELOG.md`).
   `PUT` replaces the policies (an omitted one goes back to `member-list`) and is idempotent.
   `SpaceService` (`packages/core/services/spaces.ts`) validates the type and key with
   `@atproto/syntax` and builds the space's own URI with `SpaceRef`; the Postgres adapter is
-  one upsert. Another tenant's space reads as 404. XRPC mirrors are still to come.
+  one upsert. Another tenant's space reads as 404.
 - **Upload into a space.** `POST /api/v1/audio/upload` takes optional `spaceType` + `skey`
   form fields. The space must exist (404). The object's custom metadata then carries
   `antiphony-space: {type}/{skey}` (`apps/core-api/src/lib/blob-space.ts`); its path is
@@ -372,7 +381,7 @@ reference for Phase 3. What it tells us:
   `getDelegationToken`, `notifyWrite`, `listRepos`, `getBlob`, …); management routes are
   `com.atproto.simplespace.*` (`createSpace`, `getSpace`, `putMember`, `checkUserAccess`, …).
   HappyView first shipped `dev.happyview.space.*` and now carries those as deprecated aliases
-  until its v3. So Antiphony's spaces XRPC mirrors (Phase 2's "still to come") use the
+  until its v3. So Antiphony's spaces XRPC (Phase 3) uses the
   `simplespace` names, not a new `dev.antiphony.space.*`. On the wire a policy is a `$type`
   object (`com.atproto.simplespace.defs#memberListPolicy`, `#publicPolicy`,
   `#managingAppPolicy` with `managingApp`), not the string `SpacePolicySchema` stores; that
@@ -415,16 +424,9 @@ reference for Phase 3. What it tells us:
    `#atproto` key otherwise. So Antiphony never needs the tenant's account key: the
    tenant publishes a dedicated `#atproto_space` key, next to the
    `#atproto_space_host` entry it already adds, and Antiphony holds that one.
-2. **"Upgrade to your own DID" versus a sealed author segment — settled.** A
-   player's minted DID goes into the author segment of every spaced record they
-   write, and is sealed once replied to. That is safe only because the paid
-   upgrade is a *claim* of the minted `did:plc` (the user takes its top rotation
-   key), never a switch to a different DID, so the DID string never changes.
-   Bringing an existing DID is supported at signup only, before anything is
-   written under a minted one.
-   Brad settled this on 2026-09-24; the mechanism is in
-   `specs/did-plc-and-multi-did-tenancy.md` (PR #159). If that ever changes to
-   a switch, spaced records written before it stay under the old DID for good.
+2. **"Upgrade to your own DID" versus a sealed author segment — dissolved
+   2026-10-11.** No person's DID goes in an author segment any more (D8), so a
+   DID upgrade can't strand a sealed segment.
 3. **Blob visibility in the proxy.** One blob CID can be referenced by a public
    post and a spaced one. Choices: derive "public if any flat record references
    it" on upload and on post create; or put spaced blobs under a separate path

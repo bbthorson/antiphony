@@ -1,23 +1,22 @@
 # Antiphony, Vox Pop and Bardcast: cross-repo design
 
-**Status:** proposal, 2026-10-11; Vox Pop's org decisions settled the same day (§3.3). Nothing here is built. It reviews how the three repos fit
-together and proposes changes in each. Read against `bbthorson/antiphony` (`3c5951d` plus
-the HappyView note in `spaces.md`), `bbthorson/vox-pop` (`920e7de`) and `bbthorson/bardcast`
-(`9d12198`).
+**Status:** decided 2026-10-11 (Brad); nothing here is built. It sets how Antiphony, Vox Pop
+and Bardcast fit together and what each repo changes. Read against `bbthorson/antiphony`,
+`bbthorson/vox-pop` (`920e7de`) and `bbthorson/bardcast` (`9d12198`).
 
 **The bet this serves.** Vox Pop and Bardcast are betting that AT Protocol takes off and that
 being native to it is what sets them apart. So where a choice is between "works today" and
 "is a correct atproto citizen when someone else's app shows up", this note leans to the
 second, as long as the first still works.
 
-## Decisions asked for
+## Decisions
 
-| # | Decision | Recommendation | Repo | Urgency |
+| # | Question | Decision | Repo | When |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | Is Antiphony XRPC-only? | No. REST is the tenant surface; XRPC is the protocol surface (§2). | antiphony | Low |
 | 2 | May a reply be placed in a space when its parent isn't? | Yes, when the space is at least as restrictive as the parent's placement (§3.2). | antiphony | Unblocks Vox Pop |
 | 3 | Do Vox Pop replies go into spaces? | **Decided 2026-10-11:** yes, one space per prompt, under the org's DID for org prompts, Vox Pop as managing app (§3.3). | vox-pop | Before replies are exported or federated |
-| 4 | Whose DID is a space record's author segment when Antiphony hosts it? | The authority's DID, with the person as a facet, until their own host can sign (§4.2). | antiphony, bardcast | **Before Bardcast keeps its first recording**: sealed into URIs |
+| 4 | Whose DID is a space record's author segment when Antiphony hosts it? | **Decided 2026-10-11 (option A):** the authority's DID, with the person as a facet (§4.2; authority model D8). | antiphony, bardcast | Implement before Bardcast keeps its first recording |
 | 5 | What moves into Antiphony as shared code? | A client package with the service-auth signer, a fake for tests, tenant DID tooling (§5). | all three | Medium |
 | 6 | What does Phase 3 contain, and when? | The ordered plan in §4.3; start the parts that don't touch the alpha now. | antiphony | Medium |
 
@@ -110,20 +109,23 @@ that touch Antiphony are below.
 
 ```
 org prompt:   at://{orgDid}/dev.antiphony.audio.post/{rkey}                      (public, no space)
-reply space:  at://{orgDid}/space/{voxPopRoot}.space.replies/{promptRkey}
-reply:        at://{orgDid}/space/{voxPopRoot}.space.replies/{promptRkey}/{orgDid}/dev.antiphony.audio.post/{rkey}
+reply space:  at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}
+reply:        at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}/{orgDid}/dev.antiphony.audio.post/{rkey}
 ```
 
 - **Prompts stay public, outside any space.** A prompt is like a tweet: the poster wants it
   seen and answered everywhere, so relays, AppViews, unfurls and the embed widget must all
   reach it. Replies from every surface converge in the prompt's reply space.
 - **Authority, by who posted the prompt:**
-  - **From an org account:** the **org's own DID**, minted by Antiphony (D3). The org owns the
+  - **From an org account:** the **org's own DID**, minted by Antiphony (D3) at the org's
+    first kept post (`did-plc-and-multi-did-tenancy.md`: minted lazily). The org owns the
     prompt and its reply space, so it keeps both when the creator leaves. The creator stays
     the prompt's author (`authorId` / `authorDid`, outside the CID): the newspaper model, with
     the article at the paper and the reporter in the byline.
-  - **Personally:** the creator's own DID, or Vox Pop's app DID until they have one (Vox Pop
-    open question). Same reply-space shape under that authority.
+  - **Personally:** **Vox Pop's app DID** (decided 2026-10-11). Every creator signs in with
+    their own AT Protocol account, but their DID names their own PDS, so it fails the custody
+    check; the creator is the author facet, and may also publish a copy to their own PDS.
+    Same reply-space shape under Vox Pop's DID.
   - Vox Pop keeps the map from reply ids to phone numbers and linked DIDs (D5) either way, so
     replies under an org's DID carry only opaque ids. This replaces D2's "audience reply →
     the app's DID" row for org prompts.
@@ -131,8 +133,8 @@ reply:        at://{orgDid}/space/{voxPopRoot}.space.replies/{promptRkey}/{orgDi
   matches a user with a DID. That person's DID stays in the `authorDid` facet, outside the CID, so
   attribution can be added or corrected later without rewriting anything (Antiphony D4). §4.2
   says why the segment shouldn't hold the person's DID.
-- **Space type:** an NSID under Vox Pop's root (still to choose; `com.voxpop` is the legacy
-  root). Sealed into every reply URI, so pick it before the first kept reply.
+- **Space type:** `audio.voxpop.space.replies` (decided 2026-10-11): the reverse of
+  `voxpop.audio`, the domain Vox Pop controls. It retires the legacy `com.voxpop` root.
 - **Key:** the prompt's rkey. One space per prompt rather than per creator or per org.
   - Nothing that can change is sealed into the URI. A per-org space would seal an org id into
     every reply, and a prompt can move between orgs.
@@ -189,8 +191,9 @@ and never stored. Three things to fix:
    space", but no service stores them there: they live in Bardcast's D1 database. Per §3.1,
    Bardcast is their repo host. That's a Phase 3 job, not one for now. Until then, the
    descriptions should say the records are *addressed* under the campaign's space.
-3. **The author segment** holds the player's DID today. See §4.2: this one is sealed into URIs
-   and should be settled before the first kept recording.
+3. **The author segment** holds the player's DID today. Decided 2026-10-11 (§4.2, option A):
+   Bardcast's DID goes there, with the player as a facet. Antiphony's `createPost` changes, and
+   Bardcast's docs and lexicon descriptions follow.
 
 Also: Bardcast pins `@antiphony/shared@^0.7.0` and keeps local copies of the space schemas,
 waiting for 0.9.0. npm stops at 0.8.0, so 0.9.0 needs publishing (§5).
@@ -240,10 +243,12 @@ that verifies if it holds a key for the author segment's DID.
 - **C. Have the player sign.** Each write would need the player's key, through their PDS. That
   isn't possible today, and it drops background writes.
 
-Choosing A changes Antiphony's current rule ("the acting actor's DID goes in the author
-segment", `spaces.md` "The author segment") to "the authority's DID goes there, and the person
-is a facet". It also revisits `spaces.md` open question 2. **Bardcast isn't in production, so
-this is free now and impossible later.** Brad's call.
+**Decided 2026-10-11: option A** ([`atproto-authority-model.md`](./atproto-authority-model.md)
+D8). Antiphony's rule changes from "the acting actor's DID goes in the author segment" to "the
+authority's DID goes there, and the person is a facet". It applies to every space record
+Antiphony holds, Vox Pop's included. The player's portable part is their character, in their
+own repo; the campaign recordings were always the campaign's (D2). The code change lands before
+Bardcast keeps its first recording.
 
 ### 4.3 The work, in order
 
@@ -283,8 +288,8 @@ phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess
 
 ## 6. Sequencing
 
-1. **Now, while URIs are free:** §4.2 decision; §3.2 rule change; Vox Pop's space-type NSID
-   root and org DID minting; Bardcast's CID fix with
+1. **Now, while URIs are free:** the §4.2 author-segment change in `createPost`; §3.2 rule
+   change; Bardcast's CID fix with
    Antiphony's parent-CID check; publish `@antiphony/shared` 0.9.0.
 2. **Next:** Vox Pop reply spaces (§3.3); `@antiphony/client` with the signer, then both apps
    move onto it; the Bardcast lexicon wording.
@@ -294,15 +299,12 @@ phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess
 
 ## Open questions
 
-1. **Vox Pop's NSID root** for the reply space type: still `com.voxpop`, or a root on
-   `voxpop.audio`? Sealed into reply URIs.
-2. **Who hosts Bardcast's app records** in the campaign space: Bardcast, or a general
+1. **Who hosts Bardcast's app records** in the campaign space: Bardcast, or a general
    app-record host in Antiphony (§4.3 step 9)?
-3. **What the protocol settles on for author segments** when a space repo is hosted away from
-   the author's own PDS. Recheck before choosing §4.2's option A, and recheck each time the
-   alpha moves.
-4. **Can a replier hear their own reply?** It's possible under `managing-app`, and it's Vox
+2. **What the protocol settles on for author segments** when a space repo is hosted away from
+   the author's own PDS. Option A holds up under today's alpha; recheck each time it moves.
+3. **Can a replier hear their own reply?** It's possible under `managing-app`, and it's Vox
    Pop's product decision.
-5. **Who owns a personal prompt before the creator has a DID:** Vox Pop's app DID, or a DID
-   Antiphony mints for them (D3 mints by default). Sealed into the prompt's URI and its reply
-   space.
+
+Settled 2026-10-11: Vox Pop's NSID root (`audio.voxpop`), the owner of personal prompts (Vox
+Pop's DID), and the author segment (option A).

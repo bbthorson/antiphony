@@ -1,7 +1,7 @@
 # XRPC Inbound Adapter & @atproto/lex Adoption Strategy
 
-**Status:** Phase 1 implemented (August 2026); Phases 2–3 proposed, gated on a
-concrete consumer. See §7.  
+**Status:** Phases 1 and 2 implemented: lexicon validation in CI, and an `/xrpc/*` adapter serving five `dev.antiphony.audio.*` methods (`getPost`, `getThread`, `createPost`, `reprocessPost`, `getPlaybackUrl`). Phase 3 proposed.  
+**Scope settled 2026-10-11** ([`cross-repo-design.md`](./cross-repo-design.md) §2): REST (`/api/v1/*`) is the tenant surface and stays the contract apps build on; XRPC is the protocol surface, for callers that are atproto services. It grows by protocol methods (`com.atproto.space.*`, `com.atproto.simplespace.*` in spaces Phase 3), not by mirroring REST routes. Antiphony is not going XRPC-only.  
 **Context:** Evaluation of upstream Lexicon tooling (Bluesky Protocol Services) and native XRPC service interfaces alongside Antiphony's REST API.  
 **Related Specs:** [`atproto-authority-model.md`](./atproto-authority-model.md), [`core-bff-boundary.md`](./core-bff-boundary.md), [`core-surface.md`](./core-surface.md).
 
@@ -270,7 +270,7 @@ Standard ATProto error symbols used:
    manifest in the CI path. Worth revisiting if a ref typo into a foreign
    authority ever reaches production; deliberately not paid for up front.
 
-2. **Phase 2: Inbound XRPC Router** — *gated on a concrete consumer; see below.*
+2. **Phase 2: Inbound XRPC Router** — ✅ **implemented** (`apps/core-api/src/adapters/inbound/xrpc/`). No tenant calls it yet; it is the surface other atproto services use.
    * Make the auth middleware envelope-aware (§5.3). Prerequisite, not follow-up.
    * Add `XRPC_NSID` to `packages/shared/nsid.ts` (§5.1).
    * Create `apps/core-api/src/adapters/inbound/xrpc/`.
