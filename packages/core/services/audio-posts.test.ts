@@ -110,9 +110,9 @@ describe('createPost', () => {
 
     it('derives kind=reply and drops any title when a reply ref is present', async () => {
         // Parent authority must be the tenant's own app DID (post is originAppId 'vox-pop').
-        const ref = { uri: buildPostUri(appDidFor('vox-pop'), 'root'), cid: 'root' };
+        const ref = { uri: buildPostUri(appDidFor('vox-pop'), 'root'), cid: 'bafyroot' };
         (deps.getPostById as ReturnType<typeof vi.fn>).mockResolvedValue({
-            id: 'root', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
+            id: 'root', cid: 'bafyroot', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
             text: 'the prompt', createdAt: new Date('2026-06-20T00:00:00Z'),
         } as AudioPostRecord);
         const rec = await svc.createPost(promptInput({
@@ -130,13 +130,14 @@ describe('reply gating (createPost, §6)', () => {
     beforeEach(() => { deps = makeDeps(); svc = new AudioPostService(deps); });
 
     const prompt = {
-        id: 'root', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
+        id: 'root', cid: 'bafyroot', originAppId: 'vox-pop', authorId: 'creator', kind: 'prompt',
         text: 'the prompt', createdAt: new Date('2026-06-20T00:00:00Z'),
     } as AudioPostRecord;
-    const rootRef = { uri: 'at://creator/dev.antiphony.audio.post/root', cid: 'root' };
+    const rootRef = { uri: buildPostUri(appDidFor('vox-pop'), 'root'), cid: 'bafyroot' };
 
+    /** A well-formed reply to `parent`: its StrongRefs name the stored records. */
     function replyTo(parent: AudioPostRecord, authorId: string): CreateAudioPostInput {
-        const parentRef = { uri: buildPostUri(appDidFor(parent.originAppId), parent.id), cid: parent.id };
+        const parentRef = { uri: buildPostUri(appDidFor(parent.originAppId), parent.id), cid: parent.cid };
         return promptInput({ authorId, text: 'a reply', reply: { root: rootRef, parent: parentRef } });
     }
 
@@ -162,7 +163,7 @@ describe('reply gating (createPost, §6)', () => {
 
     it('inherits rootAuthorId down the branch on a reply-to-reply (no extra read)', async () => {
         const parentReply = {
-            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            id: 'r1', cid: 'bafyr1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
             threadParticipants: ['creator', 'responder'], rootAuthorId: 'creator',
             text: 'a reply', reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
         } as AudioPostRecord;
@@ -191,7 +192,7 @@ describe('reply gating (createPost, §6)', () => {
         // rejects it BEFORE the lookup, so a forged cross-tenant StrongRef can't
         // open a branch inside this tenant.
         setParent(prompt);
-        const forged = { uri: buildPostUri('did:web:bardcast.com', prompt.id), cid: prompt.id };
+        const forged = { uri: buildPostUri('did:web:bardcast.com', prompt.id), cid: prompt.cid };
         const input = promptInput({ authorId: 'responder', text: 'a reply', reply: { root: rootRef, parent: forged } });
         await expect(svc.createPost(input)).rejects.toMatchObject({ status: 404 });
         expect(deps.getPostById).not.toHaveBeenCalled();
@@ -200,7 +201,7 @@ describe('reply gating (createPost, §6)', () => {
 
     it('lets a branch participant continue, inheriting the pair', async () => {
         const reply = {
-            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            id: 'r1', cid: 'bafyr1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
             threadParticipants: ['creator', 'responder'], rootAuthorId: 'creator', text: 'a reply',
             reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
         } as AudioPostRecord;
@@ -211,7 +212,7 @@ describe('reply gating (createPost, §6)', () => {
 
     it('403s when a non-participant replies to a reply, and saves nothing', async () => {
         const reply = {
-            id: 'r1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
+            id: 'r1', cid: 'bafyr1', originAppId: 'vox-pop', authorId: 'responder', kind: 'reply',
             threadParticipants: ['creator', 'responder'], text: 'a reply',
             reply: { root: rootRef, parent: rootRef }, createdAt: new Date(),
         } as AudioPostRecord;

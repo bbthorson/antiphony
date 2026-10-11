@@ -47,21 +47,24 @@ import { xrpcError, xrpcErrorHandler } from './errors.js';
  *
  * Adding or changing a method therefore means touching three things together —
  * the lexicon document, the Zod schema, and the handler. The tests fail if only
- * two of them move.
+ * two of them move: shared's lexicon-parity test compares every record, view
+ * and procedure input (and fails on a lexicon shape nobody compares), and
+ * `lexicon-params.test.ts` here compares each query's parameters with the
+ * schemas below.
  */
 
 /** Registered so `c.req.query()` parsing stays declarative and consistent. */
-const GetPostQuerySchema = z.object({
+export const GetPostQuerySchema = z.object({
     id: z.string().min(1),
 });
 
-const GetThreadQuerySchema = z.object({
+export const GetThreadQuerySchema = z.object({
     id: z.string().min(1),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.string().min(1).optional(),
 });
 
-const GetPlaybackUrlQuerySchema = z.object({
+export const GetPlaybackUrlQuerySchema = z.object({
     cid: z.string().min(1),
 });
 

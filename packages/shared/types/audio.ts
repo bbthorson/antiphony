@@ -194,7 +194,8 @@ export const AudioPostRecordSchema = z.object({
     processing: ProcessingStateSchema.optional(),
     /**
      * The post's space, when it has one (see `SpacePlacementSchema`). A reply
-     * always shares its parent's space. Storage-layer, NOT in the lexicon or
+     * to a post in a space shares that space; a reply to a flat post may be in
+     * one. Storage-layer, NOT in the lexicon or
      * the record CID.
      */
     space: SpacePlacementSchema.optional(),

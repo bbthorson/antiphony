@@ -171,6 +171,29 @@ jobs:
             - name: Assert the Worker bundle carries no Node-only dependency
               run: npm run check:worker-bundle -w @antiphony/core-api
 
+            # Schema before code: the Worker deployed below may read columns a
+            # pending migration adds (0002_spaces is the example that went in by
+            # hand). Ported from Vox Pop's deploy, which has done this since its
+            # Neon migration. It runs while the PREVIOUS Worker is still live, so
+            # a migration must be additive (expand now, contract in a later
+            # deploy); the runner refuses an edited, already-applied file.
+            #
+            # DATABASE_URL is a GitHub secret on the `production` environment,
+            # separate from the Worker's own `wrangler secret`. Missing it fails
+            # the deploy rather than shipping code ahead of its schema.
+            - name: Apply pending schema migrations
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "${DATABASE_URL:-}" ]; then
+                      echo "::error::DATABASE_URL is not set on the 'production' environment, so migrations cannot be applied."
+                      exit 1
+                  fi
+                  echo "Pending migrations:"
+                  npm run migrate -w @antiphony/core-api -- --dry-run
+                  npm run migrate -w @antiphony/core-api
+
             # The build time as a step OUTPUT rather than inline in the deploy
             # command, so the smoke test below can assert the exact value this
             # run stamped. Inline, nothing downstream could see it — which is

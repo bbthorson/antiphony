@@ -8,6 +8,63 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.1] — 2026-10-11
+
+A clarification and a fix; no request or response shape changes. **Patch.**
+
+### Fixed
+
+- **XRPC `dev.antiphony.audio.createPost` declares `Forbidden`.** A reply by
+  an actor who isn't a participant in the branch has always been refused with
+  `403` / `Forbidden`, but the lexicon's `errors` didn't list it, so a client
+  generated from the lexicon had no case for it.
+- **A create can no longer report a post it didn't store.** Post ids are unique
+  across tenants; when a new post's id was already held by another tenant's
+  post, the write was skipped and the create still answered `200` with the
+  id. It now fails with a `500`. Ids are TIDs, so this needed two tenants to
+  mint the same id in the same microsecond.
+
+## [0.9.0] — 2026-10-11
+
+The 2026-10-11 decisions that must land before anyone keeps a real post
+([`specs/atproto-authority-model.md`](./specs/atproto-authority-model.md) D7–D8,
+[`specs/cross-repo-design.md`](./specs/cross-repo-design.md) §3.2 and §3.4).
+A reply's StrongRefs and a space post's URI are sealed into every later reply's
+CID, so these change now, while the corpus is still wipeable. **Minor**: two of
+the three changes are breaking while `0.x`.
+
+Ships with **`@antiphony/shared` 0.9.0**, which was prepared for 0.8.0 and never
+published; it gains no new exports or schemas here, only corrected doc comments.
+
+### Changed — BREAKING
+
+- **The author segment of a space URI is the authority's DID** (D8), the
+  tenant's app DID, for every post placed in a space:
+  `at://{appDid}/space/{type}/{skey}/{appDid}/dev.antiphony.audio.post/{rkey}`.
+  It used to be the acting actor's DID when one was asserted
+  (`X-Antiphony-Acting-Actor-Did`). The person is the out-of-CID
+  `authorId` / `authorDid` facets, as on a flat post. A space post created
+  before this release keeps its old URI; a StrongRef naming it by the new shape
+  is a `404`, like any URI that doesn't name where a post lives.
+- **A reply's StrongRef CIDs are checked** on `POST /api/v1/posts` and XRPC
+  `dev.antiphony.audio.createPost`. `reply.parent.cid` must be the parent's
+  stored CID and `reply.root.cid` the thread root's, or the request is a `400`
+  with `code: REPLY_CID_MISMATCH` (XRPC: the new named error
+  `ReplyCidMismatch`). `reply.root.uri` must name the thread's root (the parent
+  itself when it's a prompt, else the parent's own `reply.root`), or it's a
+  plain `400`. Only the URI and the placement were checked before, so a
+  placeholder CID was sealed into the reply.
+
+### Added
+
+- **A reply to a flat post may name a space** (`space: { type, skey }`) on
+  `POST /api/v1/posts` and XRPC `createPost` (§3.2). As for a prompt, the space
+  must exist for the tenant (`404`) and the audio must be stored in that same
+  space (`400`). A reply's placement is at least as restrictive as its
+  parent's: a reply to a post in a space still lands in that space, naming any
+  other is a `400`, and replies further down the branch inherit it. Without a
+  `space`, a reply to a flat post stays flat.
+
 ## [0.8.0] — 2026-10-10
 
 atproto **spaces**, Phase 2 ([`specs/spaces.md`](./specs/spaces.md)): a tenant

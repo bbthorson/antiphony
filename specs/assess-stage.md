@@ -11,7 +11,7 @@ and reported through [`enrichment-webhooks.md`](./enrichment-webhooks.md).
 |---|---|
 | **Add** | A **derived** stage, `assess`, that answers a fixed set of typed questions about a post (is this speech, is it intelligible, does this reply answer its prompt) and stores the answers as a record. |
 | **Provider** | Cloudflare's Clef decision models on Workers AI, through the `AI` binding `core-api` already has. Phase 1 reads the transcript with `@cf/cloudflare/clef-flash`; Phase 2 adds `@cf/cloudflare/clef-omni` reading the audio itself. |
-| **Contract** | Additive: a new `processing.assess` opt-in key, a new `dev.antiphony.audio.assessment` record lifted into the post view, and `assess` added to the webhook `stage` values. Patch bump, `0.8.0` → `0.8.1`. |
+| **Contract** | Additive: a new `processing.assess` opt-in key, a new `dev.antiphony.audio.assessment` record lifted into the post view, and `assess` added to the webhook `stage` values. Patch bump, `0.9.1` → `0.9.2`. |
 | **Costs** | One port, one adapter, one record, one registry entry, the question-set definitions. No new service, no new vendor key, no new network hop past the binding. |
 | **Does not** | Let a tenant send its own questions per request, apply moderation labels, gate or reject posts, or replace any existing stage. |
 
@@ -355,7 +355,7 @@ chain. Out of scope; revisit after Phase 2 with numbers.
 
 ## 9. Contract and docs
 
-Additive throughout, so **patch: `0.8.0` → `0.8.1`**, per
+Additive throughout, so **patch: `0.9.1` → `0.9.2`**, per
 [`api-versioning.md`](./api-versioning.md) ("new optional stage keys … patch").
 
 - `CHANGELOG.md`: `processing.assess`, the `assessment` record and its view

@@ -31,4 +31,13 @@ describe('playback signatures', () => {
         const sig = await signPlayback(PATH, NOW + 60, SECRET);
         expect(await verifyPlayback({ ...base, exp: String(NOW + 60), sig, secret: undefined })).toBe(false);
     });
+
+    it('is valid through its expiry second, and not the second after', async () => {
+        const exp = NOW + 60;
+        const sig = await signPlayback(PATH, exp, SECRET);
+        const at = (nowSeconds: number) =>
+            verifyPlayback({ objectPath: PATH, exp: String(exp), sig, secret: SECRET, nowSeconds });
+        expect(await at(exp)).toBe(true);
+        expect(await at(exp + 1)).toBe(false);
+    });
 });

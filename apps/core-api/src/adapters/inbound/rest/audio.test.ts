@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { signPlayback } from '../../../lib/playback-signature.js';
+import { signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 
 /**
  * Tests for `GET /api/v1/audio?url=...`.
@@ -459,12 +460,34 @@ describe('GET /api/v1/audio — private audio in a space', () => {
     });
 
     it('refuses an expired, tampered, or other-object signature', async () => {
-        openStream.mockResolvedValue(read([1, 2, 3], { metadata: PRIVATE }));
+        // A fresh stream per request: one shared stream is consumed by the first
+        // request that serves it, so a regression that let a bad signature
+        // through would surface as a 500 rather than as the 200 it really is.
+        openStream.mockImplementation(async () => read([1, 2, 3], { metadata: PRIVATE }));
         const good = await signed();
 
         expect((await app().request(await signed(now() - 1))).status).toBe(404);
-        expect((await app().request(good.replace(/sig=./, 'sig=A'))).status).toBe(404);
+        // Flip the first character to a different one: always writing 'A' left the signature
+        // intact whenever it already began with 'A' (1 run in 64), which then served the audio.
+        const tampered = good.replace(/sig=(.)/, (_, c: string) => `sig=${c === 'A' ? 'B' : 'A'}`);
+        expect((await app().request(tampered)).status).toBe(404);
         expect((await app().request(await signed(now() + 600, 'blobs/app-1/other'))).status).toBe(404);
+    });
+
+    it('plays the URL hydration mints, and nothing once its signature is stripped', async () => {
+        // The minting side (lib/audio-url.ts) and the checking side (this
+        // route) each have their own tests, built from separately constructed
+        // inputs. This is the one that holds them to each other: a change to
+        // how either derives the signed path breaks it.
+        const minted = new URL((await signedAudioPlaybackUrl('app-1', 'bafyreicid'))!);
+        expect(minted.searchParams.get('url')).toBe(PATH);
+
+        openStream.mockImplementation(async () => read([1, 2, 3], { metadata: PRIVATE }));
+        expect((await app().request(`${minted.pathname}${minted.search}`)).status).toBe(200);
+
+        minted.searchParams.delete('sig');
+        minted.searchParams.delete('exp');
+        expect((await app().request(`${minted.pathname}${minted.search}`)).status).toBe(404);
     });
 
     it('refuses everything private when the deployment has no secret', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import {
@@ -16,6 +16,8 @@ import {
     ViewerStateSchema,
 } from './audio';
 import { ProcessingRequestSchema } from './processing';
+import { SpaceKeySchema } from './spaces';
+import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
 
 /**
  * Oracle tests: the `lexicons/dev/antiphony/*.json` documents are the contract,
@@ -71,26 +73,41 @@ interface LexiconDef {
     key?: string;
     /** Present on `type: "record"` defs — the object shape lives one level in. */
     record?: LexiconObject;
+    /** Present on `procedure` defs. */
+    input?: { schema?: LexiconObject | { type: 'ref' } };
+    /** Present on `query` and `procedure` defs. */
+    output?: { schema?: LexiconObject | { type: 'ref' } };
+    /** Present on `query` defs (`type: "params"`). */
+    parameters?: LexiconObject;
     required?: string[];
     properties?: Record<string, LexiconProperty>;
 }
 
 interface LexiconObject {
-    type: 'object';
+    type: 'object' | 'params';
     required?: string[];
     properties?: Record<string, LexiconProperty>;
 }
 
 interface LexiconProperty {
     type: string;
+    format?: string;
     maxLength?: number;
     minimum?: number;
     maximum?: number;
     items?: LexiconProperty;
 }
 
-/** The object shape of a def, whether it's a bare object or a record wrapper. */
-function objectOf(def: LexiconDef): LexiconObject {
+/** Which shape of a def a case compares: the def itself, or a method's input, output or parameters. */
+type DefPart = 'input' | 'output' | 'parameters';
+
+/** The object shape of a def: a bare object, a record's, or one part of a method. */
+function objectOf(def: LexiconDef, part?: DefPart): LexiconObject {
+    if (part) {
+        const shape = part === 'parameters' ? def.parameters : def[part]?.schema;
+        if (!shape || shape.type === 'ref') throw new Error(`def has no inline ${part} object`);
+        return shape as LexiconObject;
+    }
     if (def.type === 'record') {
         if (!def.record) throw new Error('record def has no `record` shape');
         return def.record;
@@ -192,11 +209,33 @@ function elementOf(schema: z.ZodTypeAny): z.ZodTypeAny | undefined {
     return undefined;
 }
 
+/**
+ * The Zod kind a lexicon type must map to, or undefined when the lexicon type
+ * has no single Zod counterpart to compare (`ref`, `union`, `blob`, `unknown`,
+ * `cid-link`, `bytes`: those are compared through their own cases, or not at
+ * all).
+ */
+const ZOD_KINDS_FOR: Record<string, string[]> = {
+    string: ['string', 'enum', 'literal', 'ZodString', 'ZodEnum', 'ZodLiteral'],
+    integer: ['number', 'int', 'ZodNumber'],
+    boolean: ['boolean', 'ZodBoolean'],
+    array: ['array', 'ZodArray'],
+    object: ['object', 'ZodObject'],
+};
+
+/** A schema's kind after unwrapping: Zod 4's `def.type`, or Zod 3's `typeName`. */
+function kindOf(schema: z.ZodTypeAny): string | undefined {
+    const def = getDef(unwrap(schema));
+    return (typeof def?.type === 'string' ? def.type : undefined) ?? def?.typeName;
+}
+
 // --- The cases --------------------------------------------------------------
 
 interface ParityCase {
     /** Human label + the `nsid#def` the Zod schema mirrors. */
     lexicon: string;
+    /** For a method def: which part the schema mirrors. */
+    part?: DefPart;
     schema: z.ZodTypeAny;
     /**
      * Zod properties with no lexicon counterpart, each with the reason it is
@@ -290,12 +329,28 @@ const CASES: ParityCase[] = [
         lexicon: 'dev.antiphony.audio.defs#processingRequest',
         schema: ProcessingRequestSchema,
     },
+    { lexicon: 'dev.antiphony.audio.defs#spaceKey', schema: SpaceKeySchema },
+
+    // Procedure inputs: the body each XRPC procedure validates with.
+    {
+        lexicon: 'dev.antiphony.audio.createPost#main',
+        part: 'input',
+        schema: CreateAudioPostRequestSchema,
+    },
+    {
+        lexicon: 'dev.antiphony.audio.reprocessPost#main',
+        part: 'input',
+        schema: PatchAudioPostRequestSchema,
+        unmodeled: {
+            id: 'REST carries the post id in the path; the XRPC handler extends this schema with it (apps/core-api/src/adapters/inbound/xrpc/index.ts, ReprocessBodySchema)',
+        },
+    },
 ];
 
-describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
+describe.each(CASES)('$lexicon $part ↔ Zod', (testCase) => {
     const [nsid, defName] = testCase.lexicon.split('#');
     const def = lexicon(nsid).defs[defName];
-    const object = objectOf(def);
+    const object = objectOf(def, testCase.part);
     const lexProps = object.properties ?? {};
     const lexRequired = new Set(object.required ?? []);
     const rename = testCase.rename ?? {};
@@ -356,6 +411,30 @@ describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
         expect(disagreements).toEqual([]);
     });
 
+    it('agrees on property types', () => {
+        const disagreements: string[] = [];
+        for (const [name, prop] of Object.entries(lexProps)) {
+            const zodProp = zodFor(name);
+            // A `datetime` string is parsed into a `Date` on the Zod side
+            // (TimestampSchema), which reads as a pipe, not a string.
+            const expected = prop.type === 'string' && prop.format === 'datetime'
+                ? [...ZOD_KINDS_FOR.string!, 'pipe', 'date', 'ZodEffects', 'ZodDate']
+                : ZOD_KINDS_FOR[prop.type];
+            if (!zodProp || !expected) continue;
+            const kind = kindOf(zodProp);
+            if (!kind || !expected.includes(kind)) {
+                disagreements.push(`${name}: lexicon ${prop.type}, Zod ${kind}`);
+            }
+            const items = prop.items;
+            const element = elementOf(zodProp);
+            const expectedItem = items && ZOD_KINDS_FOR[items.type];
+            if (expectedItem && element && !expectedItem.includes(kindOf(element) ?? '')) {
+                disagreements.push(`${name}[]: lexicon ${items.type}, Zod ${kindOf(element)}`);
+            }
+        }
+        expect(disagreements).toEqual([]);
+    });
+
     it('agrees on maxLength and integer bounds', () => {
         const disagreements: string[] = [];
         for (const [name, prop] of Object.entries(lexProps)) {
@@ -386,5 +465,62 @@ describe.each(CASES)('$lexicon ↔ Zod', (testCase) => {
             }
         }
         expect(disagreements).toEqual([]);
+    });
+});
+
+/**
+ * Every shape a lexicon in `lexicons/dev/antiphony/` defines is compared above,
+ * or listed here with the reason it is not. Without this, a lexicon or a part
+ * of one that no case names drifts silently: the parity cases only ever check
+ * what someone remembered to add.
+ *
+ * A method part whose schema is a `ref` (an output that is `defs#postView`, say)
+ * is compared through the def it names, so it is not listed.
+ */
+const PARAMS_ELSEWHERE =
+    'query parameters are validated by schemas in core-api, and compared there (apps/core-api/src/adapters/inbound/xrpc/lexicon-params.test.ts)';
+
+const NOT_COMPARED: Record<string, string> = {
+    'dev.antiphony.audio.createPost#main:output':
+        'the StrongRef `{ uri, cid }` the handler builds from the created record; no Zod schema (xrpc/index.test.ts asserts it)',
+    'dev.antiphony.audio.getPost#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getThread#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getPlaybackUrl#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getThread#main:output':
+        '`{ parent, replies, cursor }` assembled by the handler; parent and replies are defs#postView, compared above',
+    'dev.antiphony.audio.getPlaybackUrl#main:output': '`{ url }` built by the handler; no Zod schema',
+    'dev.antiphony.embed.recordWithAudio#main': 'no API path accepts or emits it yet, so no Zod schema exists to compare',
+    'dev.antiphony.embed.recordWithAudio#view': 'no API path accepts or emits it yet, so no Zod schema exists to compare',
+};
+
+describe('lexicon coverage', () => {
+    /** Every comparable shape: `nsid#def` for objects and records, `nsid#def:part` for methods. */
+    const shapes = globSync('lexicons/dev/antiphony/**/*.json', { cwd: REPO_ROOT }).flatMap((file) => {
+        const doc = JSON.parse(readFileSync(join(REPO_ROOT, file), 'utf8')) as LexiconDoc;
+        return Object.entries(doc.defs).flatMap(([name, def]) => {
+            const id = `${doc.id}#${name}`;
+            if (def.type === 'object' || def.type === 'record') return [id];
+            const parts: string[] = [];
+            if (def.parameters?.properties && Object.keys(def.parameters.properties).length > 0) parts.push(`${id}:parameters`);
+            for (const part of ['input', 'output'] as const) {
+                const shape = def[part]?.schema;
+                if (shape && shape.type !== 'ref') parts.push(`${id}:${part}`);
+            }
+            return parts;
+        });
+    });
+    const compared = new Set(CASES.map((c) => (c.part ? `${c.lexicon}:${c.part}` : c.lexicon)));
+
+    it('finds the lexicons', () => {
+        expect(shapes.length).toBeGreaterThan(10);
+    });
+
+    it('compares or explicitly exempts every shape a lexicon defines', () => {
+        expect(shapes.filter((s) => !compared.has(s) && !(s in NOT_COMPARED))).toEqual([]);
+    });
+
+    it('has no stale exemptions', () => {
+        const all = new Set(shapes);
+        expect(Object.keys(NOT_COMPARED).filter((s) => !all.has(s) || compared.has(s))).toEqual([]);
     });
 });
