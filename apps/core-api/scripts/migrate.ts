@@ -23,7 +23,8 @@ import { loadMigrations } from '../migrations/load.js';
  * ## Why this and not a migration tool
  *
  * Ported from the Vox Pop BFF (`apps/vox-pop-api/scripts/migrate.ts`), and the
- * reasoning transfers unchanged: this repo runs migrations rarely and by hand.
+ * reasoning transfers unchanged: this repo runs migrations rarely (since 2026-10-11,
+ * from the deploy workflow, before the Worker ships; by hand before that).
  * A tool would bring a config file, a DSL, and a second opinion about what a
  * migration is, in exchange for solving a problem — coordinating many
  * migrations across many developers — that this repo does not have. What it

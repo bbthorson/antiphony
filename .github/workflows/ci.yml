@@ -177,3 +177,44 @@ jobs:
       # copy is a build artifact derived from it, regenerated on every build
       # including Cloudflare's, which runs this same command.
       - run: npm run build -w @antiphony/docs
+
+  # Bookkeeping the apps depend on, kept OUT of the `verify` job on purpose:
+  # that job's name is the required status check (see the note above `knip`),
+  # and these two are not merge gates of the same kind.
+  contract:
+    name: contract version · release tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-node
+
+      # A PR that changes the committed contract must bump `info.version` and
+      # add a CHANGELOG entry (specs/api-versioning.md). Plain node, no install:
+      # it only reads two JSON files and git.
+      - name: Contract changes are versioned and recorded
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-contract-version.mjs "${{ github.event.pull_request.base.sha }}"
+
+      # release.yml publishes a package only when its `<name>-v<version>` tag is
+      # pushed. A version bump that lands on master without its tag is a release
+      # nobody shipped (`@antiphony/shared` 0.9.0 sat that way while Bardcast
+      # waited on it). A warning rather than a failure: a red CI on master would
+      # also stop every deploy, which is out of proportion to a missing tag.
+      - name: Every publishable version on master has its release tag
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          for pair in "shared:packages/shared" "capture-kit:packages/capture-kit"; do
+            prefix="${pair%%:*}"; dir="${pair#*:}"
+            version="$(node -p "require('./${dir}/package.json').version")"
+            tag="${prefix}-v${version}"
+            if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+              echo "${tag}: tagged"
+            else
+              echo "::warning file=${dir}/package.json::${dir} is at ${version} on master but ${tag} doesn't exist, so it was never published. Push the tag to run release.yml."
+            fi
+          done
