@@ -305,7 +305,10 @@ const createRouteDef = createRoute({
     description:
         'Creates a `dev.antiphony.audio.post` authored by the viewer. `reply` presence makes it a reply ' +
         '(no title); absence makes it a prompt. The audio is uploaded first (signed-URL flow) and referenced ' +
-        'as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`.',
+        'as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`. ' +
+        "A reply's `reply.parent` and `reply.root` StrongRefs must carry the stored records' CIDs " +
+        "(`400`, `REPLY_CID_MISMATCH`). `space` places the post in one of the tenant's spaces: a reply to a " +
+        'post in a space always lands in that space, and a reply to a flat post may name one.',
     middleware: [
         // TWO limits, and they are not redundant — same shape as the audio
         // proxy route. The aggregate is IP-keyed and deliberately loose; it

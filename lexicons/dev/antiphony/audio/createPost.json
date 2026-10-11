@@ -32,7 +32,7 @@
                         "reply": {
                             "type": "ref",
                             "ref": "dev.antiphony.audio.post#replyRef",
-                            "description": "StrongRef root + parent. Present ⇒ this is a reply."
+                            "description": "StrongRef root + parent. Present ⇒ this is a reply. Each `cid` must be the stored record's: `parent` the post answered, `root` its thread's prompt."
                         },
                         "langs": {
                             "type": "array",
@@ -53,7 +53,7 @@
                         "space": {
                             "type": "ref",
                             "ref": "dev.antiphony.audio.defs#spaceKey",
-                            "description": "Place a prompt in one of the tenant's spaces; the returned `uri` is then a space URI and its audio plays only through signed URLs. The audio must have been uploaded into the same space. A reply inherits its parent's space and must not name another."
+                            "description": "Place the post in one of the tenant's spaces; the returned `uri` is then a space URI, whose author segment is the tenant's DID (never the actor's), and its audio plays only through signed URLs. The audio must have been uploaded into the same space. A reply to a post in a space inherits that space and must not name another; a reply to a flat post may name one."
                         }
                     }
                 }
@@ -80,11 +80,15 @@
             "errors": [
                 {
                     "name": "InvalidRequest",
-                    "description": "The payload failed validation — an empty post, or a reply carrying a title."
+                    "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, or audio stored somewhere other than the post's space."
                 },
                 {
                     "name": "RecordNotFound",
                     "description": "The named space does not exist for this tenant, or a reply's parent was not found."
+                },
+                {
+                    "name": "ReplyCidMismatch",
+                    "description": "A reply's `reply.parent.cid` or `reply.root.cid` is not the CID of the stored record it names."
                 },
                 {
                     "name": "Conflict",
