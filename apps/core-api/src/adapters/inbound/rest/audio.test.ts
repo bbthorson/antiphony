@@ -463,7 +463,10 @@ describe('GET /api/v1/audio — private audio in a space', () => {
         const good = await signed();
 
         expect((await app().request(await signed(now() - 1))).status).toBe(404);
-        expect((await app().request(good.replace(/sig=./, 'sig=A'))).status).toBe(404);
+        // Flip the first character to a different one: always writing 'A' left the signature
+        // intact whenever it already began with 'A' (1 run in 64), which then served a 500.
+        const tampered = good.replace(/sig=(.)/, (_, c: string) => `sig=${c === 'A' ? 'B' : 'A'}`);
+        expect((await app().request(tampered)).status).toBe(404);
         expect((await app().request(await signed(now() + 600, 'blobs/app-1/other'))).status).toBe(404);
     });
 
