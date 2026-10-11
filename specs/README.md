@@ -15,6 +15,7 @@ When a spec's status changes, update its Status line and this table together.
 | Spec | Summary | Status |
 | :--- | :--- | :--- |
 | [`api-versioning.md`](api-versioning.md) | Two version axes: the `/api/v1/` URL major and the `0.x` contract version in `OPENAPI_INFO`; what counts as breaking before 1.0. | implemented |
+| [`assess-stage.md`](assess-stage.md) | A fifth, derived enrichment stage: typed judgements (speech quality, whether a reply answers its prompt) from Clef on Workers AI, stored as an assessment record. | proposal |
 | [`atproto-authority-model.md`](atproto-authority-model.md) | Who keeps each record: authority is custody, people are facets, orgs and tenants get minted DIDs, and a space record's author segment is its authority's DID (D1–D8). History in `archive/`. | decided; partial |
 | [`core-bff-boundary.md`](core-bff-boundary.md) | What belongs in the core versus a consuming app's BFF, the join contract between them, and where each removed route went. | implemented |
 | [`core-surface.md`](core-surface.md) | The public API is posts and audio only; author identity is carried as opaque references, never hydrated profiles. | implemented |
