@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Route tests for `/api/v1/posts` (the Antiphony `dev.antiphony.audio.post`
@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // importing a module-scoped singleton — a Worker gets its bindings on `env`, so
 // module-load construction is not available there.
 const rateLimitKeys: string[] = [];
+/** What the store answers. `under` everywhere except the over-limit cases below. */
+let rateLimitVerdict: 'under' | 'over' = 'under';
 
 const audioPostService = {
     createPost: vi.fn(),
@@ -38,24 +40,27 @@ vi.mock('../../../composition.js', () => ({
     rateLimitStore: {
         hit: async (key: string) => {
             rateLimitKeys.push(key);
-            return 'under' as const;
+            return rateLimitVerdict;
         },
     },
     }),
 }));
 
+// Every export the route imports must be here: a missing one throws on first
+// use, and `releaseIdempotencyClaim` is used on every failure path of a create
+// — so leaving it out turned each domain error into a 500 in this file, which
+// is why no case below could assert one.
 vi.mock('../../../lib/idempotency.js', () => ({
     checkIdempotency: vi.fn(async () => null),
     saveIdempotencyResult: vi.fn(async () => undefined),
+    releaseIdempotencyClaim: vi.fn(async () => undefined),
     IdempotencyInProgressError: class extends Error {},
 }));
 
-// The caller authenticates as an application via a service token; the app id
-// `test-app` matches ANTIPHONY_ORIGIN_APP_ID so credential + default tenancy
-// agree. The acting end user arrives via the X-Antiphony-Acting-Actor header.
+// The caller authenticates as the application `test-app` via a service token;
+// the acting end user arrives via the X-Antiphony-Acting-Actor header.
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
-process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 
 const { app } = await import('../../../app.js');
@@ -65,7 +70,9 @@ const { app } = await import('../../../app.js');
 const { seedValidatedPins } = await import('../../../lib/testing/seed-pins.js');
 await seedValidatedPins({ 'test-app': 'did:web:test-app.example' });
 
-const { checkIdempotency } = await import('../../../lib/idempotency.js');
+const { ForbiddenError, NotFoundError, ServiceError } = await import('shared/errors');
+const { REPLY_CID_MISMATCH } = await import('@antiphony/core/services/audio-posts');
+const { checkIdempotency, releaseIdempotencyClaim, saveIdempotencyResult } = await import('../../../lib/idempotency.js');
 
 const VIEW = {
     uri: 'at://u1/dev.antiphony.audio.post/p1',
@@ -358,5 +365,90 @@ describe('/api/v1/posts — rate-limit bucketing', () => {
         await app().request('/api/v1/posts/p1', READ_AUTH);
 
         expect(rateLimitKeys.every((k) => !k.startsWith('ratelimit_write_'))).toBe(true);
+    });
+});
+
+/**
+ * What a create the domain refuses answers on the wire. The service's own
+ * decisions are packages/core's subject; this pins that each refusal keeps its
+ * status and code through the REST error handler, and that the idempotency
+ * claim is released so a corrected retry with the same key is not stuck
+ * replaying (or 409ing on) the refusal.
+ */
+describe('POST /api/v1/posts — domain refusals', () => {
+    const IDEMPOTENCY_KEY = { 'idempotency-key': 'retry-me' };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(checkIdempotency).mockResolvedValue(null);
+        authAs('u1');
+    });
+
+    async function create() {
+        return app().request('/api/v1/posts', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json', ...IDEMPOTENCY_KEY }),
+            body: JSON.stringify({ text: 'a reply', reply: { root: { uri: 'at://x/c/r', cid: 'r' }, parent: { uri: 'at://x/c/r', cid: 'r' } } }),
+        });
+    }
+
+    it.each([
+        ['a missing or cross-tenant parent', new NotFoundError('Parent post not found'), 404, 'NOT_FOUND'],
+        ['a stale StrongRef CID', new ServiceError("reply.parent.cid doesn't match", 400, undefined, REPLY_CID_MISMATCH), 400, REPLY_CID_MISMATCH],
+        ['a reply by a non-participant', new ForbiddenError('Only the thread participants can reply here'), 403, 'FORBIDDEN'],
+    ])('answers %s with its status and code, and releases the claim', async (_case, err, status, code) => {
+        audioPostService.createPost.mockRejectedValue(err);
+
+        const res = await create();
+
+        expect(res.status).toBe(status);
+        const body = await res.json();
+        expect(body).toMatchObject({ success: false, error: { message: err.message } });
+        expect(body.error.code).toBe(code);
+        expect(releaseIdempotencyClaim).toHaveBeenCalledTimes(1);
+        expect(saveIdempotencyResult).not.toHaveBeenCalled();
+    });
+
+    it('does not release the claim after a successful create', async () => {
+        audioPostService.createPost.mockResolvedValue({ id: 'p1' });
+
+        expect((await create()).status).toBe(200);
+        expect(releaseIdempotencyClaim).not.toHaveBeenCalled();
+        expect(saveIdempotencyResult).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * The refusal itself. Every other case in this file runs under the limit, so
+ * without these nothing anywhere asserts that the middleware turns an `over`
+ * verdict into a 429 — it could stop enforcing and the suite would stay green.
+ */
+describe('/api/v1/posts — over the rate limit', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        rateLimitVerdict = 'over';
+    });
+    afterEach(() => {
+        rateLimitVerdict = 'under';
+    });
+
+    it('refuses a write with 429 RATE_LIMITED, and never reaches the service', async () => {
+        authAs('u1');
+        const res = await app().request('/api/v1/posts', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ text: 'hi' }),
+        });
+
+        expect(res.status).toBe(429);
+        expect(await res.json()).toMatchObject({ success: false, error: { code: 'RATE_LIMITED' } });
+        expect(audioPostService.createPost).not.toHaveBeenCalled();
+    });
+
+    it('refuses a read with 429 too', async () => {
+        const res = await app().request('/api/v1/posts/p1', READ_AUTH);
+
+        expect(res.status).toBe(429);
+        expect(audioPostService.getPostView).not.toHaveBeenCalled();
     });
 });

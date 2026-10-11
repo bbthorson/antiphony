@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Route tests for the XRPC surface at `/xrpc/*`.
@@ -24,15 +24,17 @@ const audioPostService = {
 };
 
 const getBlobSpace = vi.fn();
+/** What the rate-limit store answers. `under` except in the over-limit case. */
+let rateLimitVerdict: 'under' | 'over' = 'under';
 
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
         audioPostDeps: { getBlobSpace },
-    // The rate-limit middleware resolves its store from here. Under limit on every hit:
-    // these suites assert route behaviour, not rate-limit policy (that is
-    // middleware/rate-limit.test.ts).
-    rateLimitStore: { hit: async () => 'under' as const },
+    // The rate-limit middleware resolves its store from here. Under limit except
+    // in "over the rate limit" below: these suites assert route behaviour, not
+    // rate-limit policy (that is middleware/rate-limit-policy.test.ts).
+    rateLimitStore: { hit: async () => rateLimitVerdict },
     }),
 }));
 
@@ -48,7 +50,6 @@ vi.mock('../../../lib/app-did.js', () => ({
 
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
-process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 // Needed by `audioPlaybackUrl`; without it the helper returns null by design.
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.test';
@@ -182,6 +183,25 @@ describe('error dialect', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('over the rate limit', () => {
+    afterEach(() => {
+        rateLimitVerdict = 'under';
+    });
+
+    it('refuses a procedure as RateLimitExceeded with a 429, and never reaches the service', async () => {
+        rateLimitVerdict = 'over';
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'hi' }),
+        });
+
+        expect(res.status).toBe(429);
+        expect(await res.json()).toMatchObject({ error: 'RateLimitExceeded' });
+        expect(audioPostService.createPost).not.toHaveBeenCalled();
+    });
+});
 
 describe('dev.antiphony.audio.getPost', () => {
     it('returns the hydrated view for an anonymous (viewer-less) read', async () => {

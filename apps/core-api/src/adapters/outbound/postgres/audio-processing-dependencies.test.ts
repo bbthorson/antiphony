@@ -3,6 +3,7 @@ import { createTestDatabase, type TestDatabase } from './testing/pglite.js';
 import { postgresAudioPostDependencies } from './audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from './audio-processing-dependencies.js';
 import type { AudioPostRecord } from 'shared/types/audio';
+import { blobSpaceOf } from '../../../lib/blob-space.js';
 
 vi.mock('../../../lib/app-did.js', () => ({
     getAppDid: () => 'did:web:example.com',
@@ -252,6 +253,55 @@ describe('postgresAudioProcessingDependencies', () => {
             );
             const rows = await db.query('select id from audio_transcripts');
             expect(rows).toHaveLength(2);
+        });
+    });
+
+    describe('writeDerivedBlob', () => {
+        // An in-memory bucket, so what was written can be read back the way the
+        // audio proxy reads it: through the object's metadata.
+        function bucket() {
+            const objects = new Map<string, { metadata?: Record<string, string> }>();
+            const store = {
+                ...storage,
+                stat: async (path: string) => objects.get(path) ?? null,
+                uploadFile: vi.fn(async (_b: Buffer, path: string, _m: string, opts?: { metadata?: Record<string, string> }) => {
+                    objects.set(path, { metadata: opts?.metadata });
+                    return `r2://test/${path}`;
+                }),
+            };
+            return { objects, store };
+        }
+        const SPACE = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc' };
+
+        it('marks a blob derived from audio in a space as private to that space', async () => {
+            // Without the marker the proxy serves the blob unsigned, so a
+            // private post's processed audio would play for anyone holding the
+            // URL with its signature stripped.
+            const { objects, store } = bucket();
+            const cid = await postgresAudioProcessingDependencies(db, store).writeDerivedBlob(
+                TENANT, new Uint8Array([1, 2, 3]), 'audio/mpeg', SPACE,
+            );
+
+            expect(blobSpaceOf(objects.get(`blobs/${TENANT}/${cid}`)?.metadata)).toEqual(SPACE);
+        });
+
+        it('leaves a flat post’s derived blob public', async () => {
+            const { objects, store } = bucket();
+            const cid = await postgresAudioProcessingDependencies(db, store).writeDerivedBlob(
+                TENANT, new Uint8Array([4, 5, 6]), 'audio/mpeg',
+            );
+
+            expect(blobSpaceOf(objects.get(`blobs/${TENANT}/${cid}`)?.metadata)).toBeNull();
+        });
+
+        it('never rewrites bytes already stored, keeping their visibility', async () => {
+            const { store } = bucket();
+            const write = postgresAudioProcessingDependencies(db, store).writeDerivedBlob;
+            const first = await write(TENANT, new Uint8Array([7]), 'audio/mpeg', SPACE);
+            const again = await write(TENANT, new Uint8Array([7]), 'audio/mpeg');
+
+            expect(again).toBe(first);
+            expect(store.uploadFile).toHaveBeenCalledTimes(1);
         });
     });
 
