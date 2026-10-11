@@ -8,6 +8,22 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.1] — 2026-10-11
+
+A clarification and a fix; no request or response shape changes. **Patch.**
+
+### Fixed
+
+- **XRPC `dev.antiphony.audio.createPost` declares `Forbidden`.** A reply by
+  an actor who isn't a participant in the branch has always been refused with
+  `403` / `Forbidden`, but the lexicon's `errors` didn't list it, so a client
+  generated from the lexicon had no case for it.
+- **A create can no longer report a post it didn't store.** Post ids are unique
+  across tenants; when a new post's id was already held by another tenant's
+  post, the write was skipped and the create still answered `200` with the
+  id. It now fails with a `500`. Ids are TIDs, so this needed two tenants to
+  mint the same id in the same microsecond.
+
 ## [0.9.0] — 2026-10-11
 
 The 2026-10-11 decisions that must land before anyone keeps a real post
