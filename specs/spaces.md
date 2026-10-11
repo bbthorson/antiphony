@@ -10,7 +10,9 @@ Bardcast first.
 [`cross-repo-design.md`](./cross-repo-design.md)): the author segment is always the
 authority's DID; a reply may be placed in a space when its parent isn't; Vox Pop prompts get
 reply spaces; spaces XRPC uses the protocol's own `com.atproto.simplespace.*` names in Phase 3
-rather than mirrors of the REST routes. The sections below say where they're superseded.
+rather than mirrors of the REST routes. The sections below say where they're superseded. The
+first two are built (API contract 0.9.0, 2026-10-11), with the parent-CID check of
+[`cross-repo-design.md`](./cross-repo-design.md) §3.4.
 
 **First consumer:** Bardcast. Each campaign is a semi-private space.
 
@@ -169,9 +171,13 @@ outside the CID and correctable. A space repo commit is the author's signed clai
 find an author's records through the author's DID, so only an authority whose key Antiphony
 holds can be served and verified in Phase 3.
 
-**As built, the code still follows the earlier rule** (the acting actor's DID when it has one,
-else the tenant's app DID). Switching it changes `createPost`'s placement and is a contract
-change; it lands before Bardcast keeps its first recording.
+**As built (API contract 0.9.0, 2026-10-11):** `createPost` puts the authority's DID in the
+segment for every post it places, prompt or reply, whatever the acting actor asserts. Today
+that is the tenant's pinned app DID, the only authority Antiphony writes under; when posts can
+be written under an org's DID ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md)),
+the segment follows the authority. `SpacePlacement.authorSegment` stays on the stored record, so
+posts placed under the earlier rule (the acting actor's DID) keep their URIs; a StrongRef to one
+must use that URI. Until 0.9.0 the code followed the earlier rule.
 
 ### Replies inherit the parent's space
 
@@ -180,11 +186,13 @@ not name a different one. Otherwise a public reply to a private post would
 publish part of a private conversation. `resolveReplyBranch` already fetches the
 parent, so the placement comes free.
 
-**Revised 2026-10-11 (not yet built):** a reply to a **flat** parent may name a
+**Revised 2026-10-11, built in API contract 0.9.0:** a reply to a **flat** parent may name a
 space. Its placement must be at least as restrictive as its parent's, never less.
 Public viewers of such a thread see the prompt and no replies, which is what Vox
 Pop's per-prompt reply spaces want ([`cross-repo-design.md`](./cross-repo-design.md)
-§3.2–3.3). As built, a reply to a flat parent is always flat.
+§3.2–3.3). The named space must exist for the tenant (404) and the reply's audio must be
+stored in it (400), the same rules as a prompt's. Without a `space`, a reply to a flat parent
+is flat; replies further down a spaced branch inherit its space as before.
 
 ## Phases
 
@@ -244,6 +252,10 @@ What landed, and where it differs from the plan above:
   segment is the author's DID, or the tenant's app DID when they have none. A reply always
   lands in its parent's space; naming any other space is a 400. A parent URI whose placement
   doesn't match where the parent actually lives is treated as a missing parent (404).
+  *Changed in 0.9.0:* the author segment is always the authority's DID, and a reply to a
+  flat parent may name a space (see "The author segment" and "Replies inherit the parent's
+  space" above). A reply's `reply.parent.cid` and `reply.root.cid` must also match the stored
+  records (400, `REPLY_CID_MISMATCH`), and `reply.root` must name the thread's root.
 - **`packages/core` moved to `moduleResolution: bundler`** (with `module: esnext`), matching
   the root and core-api. The old `node` resolution can't read `@atproto/syntax`'s `exports`
   map. Nothing consumes core's `dist`; every consumer reads its source.

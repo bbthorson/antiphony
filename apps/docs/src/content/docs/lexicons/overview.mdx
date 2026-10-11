@@ -48,7 +48,7 @@ One record carries both halves of the conversation. A post <strong class="ap-cal
 
 <FieldTable rows={postFields} hint />
 
-**Threading is content-addressed.** `reply.root` points at the prompt; `reply.parent` points at the post being answered. Who may reply is not a field: the AppView gates replies into participant-only sub-threads. See [reply gating](/api/overview/#reply-gating).
+**Threading is content-addressed.** `reply.root` points at the prompt; `reply.parent` points at the post being answered. Both are StrongRefs, and Antiphony refuses one whose `cid` isn't the stored record's. Who may reply is not a field: the AppView gates replies into participant-only sub-threads. See [reply gating](/api/overview/#reply-gating).
 
 <Example
 	slot="example"
@@ -130,7 +130,7 @@ Records validate against the official `@atproto/lexicon` parser, blob refs use t
 
 **Record CIDs.** CIDv1, dag-cbor, sha2-256 over the public record fields. Every view's `cid`, and every StrongRef in a reply, is verifiable.
 
-**The at:// authority is the tenant app's DID.** Antiphony owns the repo, so a post's URI authority is always the tenant's `did:web`. The acting user's identity rides alongside as `authorDid`, outside the record CID. See [Tenant identity](/self-hosting/configuration/#tenant-identity) and the [authority model](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
+**The at:// authority is the tenant app's DID.** Antiphony owns the repo, so a post's URI authority is always the tenant's `did:web`. The acting user's identity rides alongside as `authorDid`, outside the record CID. A post in a space also has an author segment in its URI, and that is the tenant's DID too, never the user's. See [Tenant identity](/self-hosting/configuration/#tenant-identity) and the [authority model](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
 
 <Example slot="example" title="Blob ref" dot={false} code={examples.blob} />
 <UriCard slot="example" />

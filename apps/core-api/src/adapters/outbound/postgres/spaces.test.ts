@@ -15,7 +15,9 @@ vi.mock('../../../lib/app-did.js', () => ({
  * holds posts can't be deleted.
  */
 
-const SPACE = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc', authorSegment: 'did:plc:abc123player' };
+// The author segment is the authority's DID, the tenant's app DID here
+// (atproto-authority-model.md D8); the person who recorded it is a facet.
+const SPACE = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc', authorSegment: 'did:web:bardcast.example' };
 
 function post(over: Partial<AudioPostRecord> = {}): AudioPostRecord {
     return {

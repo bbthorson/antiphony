@@ -15,7 +15,7 @@ import {
     resolveAudioVariant,
     type ResolvedProcessing,
 } from 'shared/types/processing';
-import { ForbiddenError, NotFoundError, ValidationError } from 'shared/errors';
+import { ForbiddenError, NotFoundError, ServiceError, ValidationError } from 'shared/errors';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -57,10 +57,12 @@ export interface CreateAudioPostInput {
     /** Present ⇒ this post is a reply (StrongRef root + parent). */
     reply?: ReplyRef;
     /**
-     * The space to create a PROMPT in (specs/spaces.md). The author segment is
-     * derived: the author's DID, or the tenant's app DID when they have none.
-     * A reply is always created in its parent's space; naming any other space
-     * on a reply is refused. Absent ⇒ a flat, public post.
+     * The space to create the post in (specs/spaces.md). The author segment is
+     * derived: always the authority's DID (the tenant's app DID), never the
+     * author's (atproto-authority-model.md D8). A reply to a post in a space is
+     * created in that space, and naming any other is refused; a reply to a flat
+     * post may name a space. Absent ⇒ a flat, public post, or the parent's space
+     * for a reply.
      */
     space?: { type: string; skey: string };
     /** BCP-47 language tags. */
@@ -86,7 +88,8 @@ export interface CreateAudioPostInput {
  * app-as-repo-owner custody model (Model B), NOT the author. Author identity
  * (`authorId`/`authorDid`) stays on the record as attribution facets; inside a
  * space the protocol also needs an author segment, which is the placement's
- * `authorSegment` (specs/spaces.md, "The author segment"). Call sites resolve
+ * `authorSegment`: the authority's DID for every post this service creates
+ * (specs/spaces.md, "The author segment"). Call sites resolve
  * the app DID from the record's `originAppId` via `deps.getAppDid` and pass it
  * in, so this stays a pure function with no hidden config lookup.
  *
@@ -196,6 +199,19 @@ export function parsePostId(uri: string, expectedAppDid: string): string | null 
     return parsePostUri(uri, expectedAppDid)?.id ?? null;
 }
 
+/**
+ * The `code` of a reply whose StrongRef CID doesn't match the stored record
+ * (400). XRPC answers it as the named error `ReplyCidMismatch`.
+ */
+export const REPLY_CID_MISMATCH = 'REPLY_CID_MISMATCH';
+
+class ReplyCidMismatchError extends ServiceError {
+    constructor(message: string) {
+        super(message, 400, undefined, REPLY_CID_MISMATCH);
+        this.name = 'ReplyCidMismatchError';
+    }
+}
+
 /** Same space: the same type, key and author segment. */
 export function samePlacement(a: SpacePlacement | undefined, b: SpacePlacement | undefined): boolean {
     if (!a || !b) return a === b;
@@ -275,7 +291,9 @@ export class AudioPostService {
             ? await this.resolveReplyBranch(input.originAppId, input.authorId, input.reply)
             : undefined;
         const space = this.placementFor(input, branch?.space);
-        if (space && !input.reply) await this.assertSpaceExists(input.originAppId, space);
+        // A space the request named (a prompt's, or a reply's to a flat
+        // parent) must exist; an inherited one does, because the parent is in it.
+        if (space && !branch?.space) await this.assertSpaceExists(input.originAppId, space);
         if (input.embed) await this.assertAudioPlacement(input.originAppId, input.embed.audio.ref.$link, space);
 
         const createdAt = this.deps.now();
@@ -388,33 +406,38 @@ export class AudioPostService {
     }
 
     /**
-     * Where a new post lives (specs/spaces.md):
-     *  - a reply lives in its parent's space, always: a public reply to a
-     *    private post would publish part of a private conversation. Naming a
-     *    different space on a reply is refused rather than ignored.
-     *  - a prompt lives in the space it names, or is flat.
-     * The author segment is the acting author's DID, or the tenant's app DID when
-     * they have none (Model B preserved inside a space).
+     * Where a new post lives (specs/spaces.md). A reply's placement is at least
+     * as restrictive as its parent's, never less:
+     *  - a reply to a post in a space lives in that space, always: a public
+     *    reply to a private post would publish part of a private conversation.
+     *    Naming a different space is refused rather than ignored.
+     *  - a reply to a flat post, like a prompt, lives in the space it names, or
+     *    is flat. (A public prompt whose replies only some can hear is what Vox
+     *    Pop's per-prompt reply spaces are; cross-repo-design.md §3.2.)
+     * The author segment is the authority's DID, never the author's
+     * (atproto-authority-model.md D8): the tenant's app DID, the authority of
+     * every post this service writes today. The person stays the out-of-CID
+     * `authorId` / `authorDid` facets.
      */
     private placementFor(
         input: CreateAudioPostInput,
         parentSpace: SpacePlacement | undefined,
     ): SpacePlacement | undefined {
-        if (input.reply) {
-            const named = input.space;
-            if (named && (named.type !== parentSpace?.type || named.skey !== parentSpace?.skey)) {
-                throw new ValidationError("A reply is created in its parent's space; it can't name another");
+        const authorSegment = this.deps.getAppDid(input.originAppId);
+        const named = input.space;
+        if (parentSpace) {
+            if (named && (named.type !== parentSpace.type || named.skey !== parentSpace.skey)) {
+                throw new ValidationError("A reply to a post in a space is created in that space; it can't name another");
             }
-            if (!parentSpace) return undefined;
-            return { type: parentSpace.type, skey: parentSpace.skey, authorSegment: this.authorSegment(input) };
+            return { type: parentSpace.type, skey: parentSpace.skey, authorSegment };
         }
-        if (!input.space) return undefined;
-        const placement = { ...input.space, authorSegment: this.authorSegment(input) };
+        if (!named) return undefined;
+        const placement = { type: named.type, skey: named.skey, authorSegment };
         assertValidPlacement(placement);
         return placement;
     }
 
-    /** A prompt's space must exist for this tenant. (A reply's exists: its parent is in it.) */
+    /** A space a post names must exist for this tenant. */
     private async assertSpaceExists(originAppId: string, space: SpacePlacement): Promise<void> {
         const found = await this.deps.getSpace(originAppId, { type: space.type, skey: space.skey });
         if (!found) throw new NotFoundError('Space not found');
@@ -450,15 +473,18 @@ export class AudioPostService {
         }
     }
 
-    private authorSegment(input: CreateAudioPostInput): string {
-        return input.authorDid ?? this.deps.getAppDid(input.originAppId);
-    }
-
     /**
      * Authorize a reply and resolve its branch metadata (§6 "Reply gating"):
      * the participant pair AND the `rootAuthorId` recipient facet. Throws when
-     * the parent/root is missing/cross-tenant (404) or the author isn't allowed
-     * to reply (403).
+     * the parent is missing/cross-tenant (404), when the StrongRefs don't name
+     * the stored records (400, `REPLY_CID_MISMATCH` for a CID), or when the
+     * author isn't allowed to reply (403).
+     *
+     * The StrongRefs are sealed into the reply's CID, so they must be true when
+     * written (cross-repo-design.md §3.4): `reply.parent.cid` must be the
+     * parent's stored CID, and `reply.root` must be the thread's root as the
+     * parent already records it — the parent itself when it's a prompt, else
+     * the parent's own `reply.root`. That check needs no second read.
      *
      * - parent is the **prompt** (thread-root): any authenticated author may
      *   answer (the app's default audience policy); the branch opens with
@@ -490,6 +516,20 @@ export class AudioPostService {
         // treated exactly like a missing parent.
         if (!parent || !samePlacement(parsed?.space, parent.space)) {
             throw new NotFoundError('Parent post not found');
+        }
+        if (reply.parent.cid !== parent.cid) {
+            throw new ReplyCidMismatchError("reply.parent.cid doesn't match the parent post's CID");
+        }
+        const threadRoot =
+            parent.kind === 'prompt'
+                ? { uri: buildPostUri(this.deps.getAppDid(originAppId), parent.id, parent.space), cid: parent.cid }
+                : parent.reply?.root;
+        if (!threadRoot) throw new Error('Invariant: reply parent is missing its reply.root StrongRef');
+        if (reply.root.uri !== threadRoot.uri) {
+            throw new ValidationError("reply.root must name the thread's root post");
+        }
+        if (reply.root.cid !== threadRoot.cid) {
+            throw new ReplyCidMismatchError("reply.root.cid doesn't match the root post's CID");
         }
         const space = parent.space;
 
