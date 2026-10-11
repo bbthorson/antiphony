@@ -301,7 +301,9 @@ describe('postgresAudioPostDependencies', () => {
             await deps.savePost(original);
 
             const collision = post({ id: 'shared-id', originAppId: 'tenant-b', text: 'tenant B overwrite attempt' });
-            await deps.savePost(collision);
+            // Rejects rather than resolving: resolving would let the service
+            // report tenant B's post as created when nothing was stored.
+            await expect(deps.savePost(collision)).rejects.toThrow(/belongs to another tenant/);
 
             const readA = await deps.getPostById('tenant-a', 'shared-id');
             expect(readA?.text).toBe('tenant A post');

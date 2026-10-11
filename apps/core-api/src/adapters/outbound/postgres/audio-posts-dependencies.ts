@@ -104,7 +104,12 @@ export function postgresAudioPostDependencies(
             // `processing` and `lease_until` are only overwritten when the
             // record being saved actually carries processing state. A create
             // without it must not null out a column the processing worker owns.
-            await sql.query(
+            //
+            // `id` is the table's whole primary key, so another tenant's post
+            // can hold this id. The `where` keeps the upsert from touching it,
+            // which makes the statement write nothing — and `returning` is how
+            // that is noticed, instead of reporting a post created that isn't.
+            const rows = await sql.query<{ id: string }>(
                 `
                 insert into posts (id, origin_app_id, record, processing, lease_until, created_at)
                 values ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
@@ -114,6 +119,7 @@ export function postgresAudioPostDependencies(
                         processing   = coalesce(excluded.processing, posts.processing),
                         lease_until  = coalesce(excluded.lease_until, posts.lease_until)
                     where posts.origin_app_id = excluded.origin_app_id
+                returning id
                 `,
                 [
                     record.id,
@@ -124,6 +130,11 @@ export function postgresAudioPostDependencies(
                     split.createdAt,
                 ],
             );
+            if (rows.length === 0) {
+                throw new Error(
+                    `failed to save post "${record.id}" in origin "${record.originAppId}": the id belongs to another tenant`,
+                );
+            }
         },
 
         async patchProcessingState(

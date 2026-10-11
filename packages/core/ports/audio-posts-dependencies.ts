@@ -48,7 +48,12 @@ export interface AudioPostDependencies {
      */
     getAppDid(originAppId: string): string;
 
-    /** Persist a canonical post record (upsert). */
+    /**
+     * Persist a canonical post record (upsert within its tenant). Rejects,
+     * rather than resolving, when the record could not be written — e.g. its id
+     * is already taken by another tenant's post — so a caller never reports a
+     * post as created that is not stored.
+     */
     savePost(record: AudioPostRecord): Promise<void>;
 
     /**
