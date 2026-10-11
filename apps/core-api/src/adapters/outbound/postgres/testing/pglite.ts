@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { inject } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { loadMigrations } from '../../../../../migrations/load.js';
+import { bootMigratedPglite } from './pglite-boot.js';
 import type { SqlClient } from '../../../../ports/sql-client.js';
 
 /**
@@ -43,18 +45,36 @@ export interface TestDatabase extends SqlClient {
     truncate(): Promise<void>;
 }
 
+declare module 'vitest' {
+    interface ProvidedContext {
+        /** A dump of a migrated database, written once per run by `pglite-global-setup.ts`. */
+        pgliteTemplatePath: string;
+    }
+}
+
 /**
  * Boot a fresh in-memory Postgres with the shipped schema applied.
  *
- * Each call is an isolated database, so suites never share state. Booting costs
- * ~100–200ms, which is worth paying per FILE but not per test — use
- * `truncate()` between cases.
+ * Each call is an isolated database, so suites never share state. It loads the
+ * migrated template the global setup dumped (~0.7s) rather than running initdb
+ * and the migrations again (~3–4s), falling back to doing exactly that when
+ * the template is not provided. Still worth paying per FILE but not per test —
+ * use `truncate()` between cases.
  */
 export async function createTestDatabase(): Promise<TestDatabase> {
-    const pg = await PGlite.create();
-    for (const migration of loadMigrations()) {
-        await pg.exec(migration.sql);
-    }
+    const templatePath = inject('pgliteTemplatePath');
+    const pg = templatePath
+        ? await PGlite.create({ loadDataDir: new Blob([readFileSync(templatePath)]) })
+        : await bootMigratedPglite();
+
+    // Every table the migrations created, read back rather than listed by hand:
+    // a hand-kept list silently stops emptying the table the next migration
+    // adds, and its rows then leak from one test into the next.
+    const tables = (
+        await pg.query<{ tablename: string }>(
+            "select tablename from pg_tables where schemaname = 'public' order by tablename",
+        )
+    ).rows.map((r) => `"${r.tablename}"`);
 
     return {
         async query<T = Record<string, unknown>>(
@@ -65,7 +85,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
             return res.rows;
         },
         async truncate(): Promise<void> {
-            await pg.exec('truncate posts, spaces, audio_transcripts, idempotency_keys, rate_limits');
+            await pg.exec(`truncate ${tables.join(', ')}`);
         },
         async close(): Promise<void> {
             await pg.close();

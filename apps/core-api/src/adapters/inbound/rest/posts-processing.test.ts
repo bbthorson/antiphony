@@ -40,6 +40,9 @@ vi.mock('../../outbound/postgres/client.js', () => ({
 vi.mock('../../../lib/idempotency.js', () => ({
     checkIdempotency: vi.fn(async () => null),
     saveIdempotencyResult: vi.fn(async () => undefined),
+    // Called on every failure path of a create; a mock without it turns a
+    // domain error into a 500.
+    releaseIdempotencyClaim: vi.fn(async () => undefined),
     IdempotencyInProgressError: class extends Error {},
 }));
 
@@ -53,7 +56,6 @@ vi.mock('../../../middleware/rate-limit.js', () => ({
 // the acting end user (`u1`) is asserted with X-Antiphony-Acting-Actor.
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
-process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 process.env.ANTIPHONY_PROCESSING_INLINE = 'true';
 // Post views carry a playback URL pointing at this deployment's own audio proxy

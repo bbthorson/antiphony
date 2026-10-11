@@ -424,3 +424,102 @@ describe('verifySignedServiceAuth — refuses', () => {
         });
     });
 });
+
+/**
+ * The refusals that sit between a well-formed token and the signature check.
+ * Observation-only today, but each is a rule enforcement will rely on, and none
+ * was exercised: any of them could have been dropped with the suite green.
+ */
+describe('verifySignedServiceAuth — refuses before checking the signature', () => {
+    it('a header with no kid', async () => {
+        const token = await mint(keyPair.privateKey, {}, { kid: undefined });
+        expect(await verify(token)).toMatchObject({ ok: false, reason: 'missing-kid' });
+        expect(await verify(await mint(keyPair.privateKey, {}, { kid: '' }))).toMatchObject({
+            ok: false,
+            reason: 'missing-kid',
+        });
+    });
+
+    it.each([
+        ['no iss', { iss: undefined }],
+        ['an empty aud', { aud: '' }],
+        ['a string iat', { iat: '1800000000' }],
+        ['a non-finite exp', { exp: null }],
+        ['a non-string lxm', { op: undefined, lxm: 42 }],
+        ['a non-string op', { op: ['POST', '/api/v1/posts'] }],
+    ])('claims with %s', async (_case, claims) => {
+        const token = await mint(keyPair.privateKey, claims as Partial<SignedServiceAuthClaims>);
+        expect(await verify(token)).toMatchObject({ ok: false, reason: 'malformed-claims' });
+    });
+
+    it('a payload that is not an object', async () => {
+        const token = await mint(keyPair.privateKey);
+        const [h, , s] = token.split('.');
+        expect(await verify(`${h}.${encodeJson('a string')}.${s}`)).toMatchObject({
+            ok: false,
+            reason: 'malformed-claims',
+        });
+    });
+
+    it('an issuer two tenants are pinned to, rather than picking one by order', async () => {
+        process.env.ANTIPHONY_APP_DIDS = `${TENANT}:${ISSUER},other:${ISSUER}`;
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({
+            ok: false,
+            reason: 'ambiguous-issuer',
+        });
+    });
+
+    it('a kid the document does not publish', async () => {
+        const token = await mint(keyPair.privateKey, {}, { kid: '#rotated-away' });
+        expect(await verify(token)).toMatchObject({ ok: false, reason: 'no-verification-method' });
+    });
+
+    it('a verification method that is not a Multikey', async () => {
+        await seedPin([{ id: `${ISSUER}#atproto`, type: 'JsonWebKey2020', controller: ISSUER, publicKeyJwk: LIVE_JWK }]);
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({
+            ok: false,
+            reason: 'unsupported-key-type',
+        });
+    });
+
+    it('a Multikey whose key is missing or does not decode to P-256', async () => {
+        await seedPin([{ id: `${ISSUER}#atproto`, type: 'Multikey', controller: ISSUER }]);
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({ ok: false, reason: 'malformed-key' });
+
+        await seedPin([{ id: `${ISSUER}#atproto`, type: 'Multikey', controller: ISSUER, publicKeyMultibase: 'not-multibase' }]);
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({ ok: false, reason: 'malformed-key' });
+    });
+});
+
+/**
+ * The exact edges of the time window (60s lifetime, 60s skew either way, 300s
+ * span), with a pinned clock. The cases above sit well inside or outside them,
+ * so an off-by-one or a changed constant would not show there.
+ */
+describe('verifySignedServiceAuth — time-window boundaries', () => {
+    const IAT = 1_800_000_000;
+    const at = (ms: number) => ({ now: () => ms });
+
+    it('accepts up to exactly 60s past exp, and not 1ms later', async () => {
+        const token = await mint(keyPair.privateKey, { iat: IAT, exp: IAT + 60 });
+        const edge = (IAT + 60) * 1000 + 60_000;
+        expect((await verify(token, at(edge))).ok).toBe(true);
+        expect(await verify(token, at(edge + 1))).toMatchObject({ ok: false, reason: 'expired' });
+    });
+
+    it('accepts an iat up to exactly 60s ahead of the clock, and not 1ms more', async () => {
+        const token = await mint(keyPair.privateKey, { iat: IAT, exp: IAT + 60 });
+        const edge = IAT * 1000 - 60_000;
+        expect((await verify(token, at(edge))).ok).toBe(true);
+        expect(await verify(token, at(edge - 1))).toMatchObject({ ok: false, reason: 'not-yet-valid' });
+    });
+
+    it('accepts a 300s span, and not 301s', async () => {
+        const now = at(IAT * 1000);
+        expect((await verify(await mint(keyPair.privateKey, { iat: IAT, exp: IAT + 300 }), now)).ok).toBe(true);
+        expect(await verify(await mint(keyPair.privateKey, { iat: IAT, exp: IAT + 301 }), now)).toMatchObject({
+            ok: false,
+            reason: 'lifetime-too-long',
+        });
+    });
+});

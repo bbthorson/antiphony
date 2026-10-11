@@ -83,6 +83,10 @@
                     "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, or audio stored somewhere other than the post's space."
                 },
                 {
+                    "name": "Forbidden",
+                    "description": "The acting actor is not a participant in the branch it is replying to: only the prompt's author and the responder who opened the branch may continue it."
+                },
+                {
                     "name": "RecordNotFound",
                     "description": "The named space does not exist for this tenant, or a reply's parent was not found."
                 },

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Route tests for the XRPC surface at `/xrpc/*`.
@@ -24,15 +24,17 @@ const audioPostService = {
 };
 
 const getBlobSpace = vi.fn();
+/** What the rate-limit store answers. `under` except in the over-limit case. */
+let rateLimitVerdict: 'under' | 'over' = 'under';
 
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
         audioPostDeps: { getBlobSpace },
-    // The rate-limit middleware resolves its store from here. Under limit on every hit:
-    // these suites assert route behaviour, not rate-limit policy (that is
-    // middleware/rate-limit.test.ts).
-    rateLimitStore: { hit: async () => 'under' as const },
+    // The rate-limit middleware resolves its store from here. Under limit except
+    // in "over the rate limit" below: these suites assert route behaviour, not
+    // rate-limit policy (that is middleware/rate-limit-policy.test.ts).
+    rateLimitStore: { hit: async () => rateLimitVerdict },
     }),
 }));
 
@@ -48,7 +50,6 @@ vi.mock('../../../lib/app-did.js', () => ({
 
 const SERVICE_TOKEN = 'svc-tok-abcdefghijklmnopqrstuvwxyz012345';
 process.env.LOG_LEVEL = 'silent';
-process.env.ANTIPHONY_ORIGIN_APP_ID = 'test-app';
 process.env.ANTIPHONY_APP_TOKENS = `test-app:${SERVICE_TOKEN}`;
 // Needed by `audioPlaybackUrl`; without it the helper returns null by design.
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.test';
@@ -182,6 +183,25 @@ describe('error dialect', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('over the rate limit', () => {
+    afterEach(() => {
+        rateLimitVerdict = 'under';
+    });
+
+    it('refuses a procedure as RateLimitExceeded with a 429, and never reaches the service', async () => {
+        rateLimitVerdict = 'over';
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'hi' }),
+        });
+
+        expect(res.status).toBe(429);
+        expect(await res.json()).toMatchObject({ error: 'RateLimitExceeded' });
+        expect(audioPostService.createPost).not.toHaveBeenCalled();
+    });
+});
 
 describe('dev.antiphony.audio.getPost', () => {
     it('returns the hydrated view for an anonymous (viewer-less) read', async () => {
@@ -449,6 +469,47 @@ describe('dev.antiphony.audio.createPost', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('dev.antiphony.audio.createPost — declared errors', () => {
+    /**
+     * Every refusal the domain can give a create, rendered by this adapter,
+     * must be an error the lexicon declares (or one every XRPC method may
+     * answer). A client generated from the lexicon has no case for anything
+     * else. A reply by a non-participant answered `Forbidden` for a while with
+     * no such error declared.
+     */
+    const ANY_METHOD = new Set(['AuthenticationRequired', 'RateLimitExceeded', 'InternalServerError']);
+
+    it('answers only errors the lexicon declares', async () => {
+        const { readFileSync } = await import('node:fs');
+        const { ForbiddenError, NotFoundError, ValidationError, ServiceError } = await import('shared/errors');
+        const { REPLY_CID_MISMATCH } = await import('@antiphony/core/services/audio-posts');
+        const lexicon = JSON.parse(
+            readFileSync(new URL('../../../../../../lexicons/dev/antiphony/audio/createPost.json', import.meta.url), 'utf8'),
+        ) as { defs: { main: { errors: { name: string }[] } } };
+        const declared = new Set(lexicon.defs.main.errors.map((e) => e.name));
+
+        const refusals = [
+            new ValidationError("reply.root must name the thread's root post"),
+            new NotFoundError('Parent post not found'),
+            new ForbiddenError('Only the thread participants can reply here'),
+            new ServiceError("reply.parent.cid doesn't match", 400, undefined, REPLY_CID_MISMATCH),
+            new ServiceError('Idempotency conflict', 409),
+        ];
+        const undeclared: string[] = [];
+        for (const err of refusals) {
+            vi.mocked(audioPostService.createPost).mockRejectedValueOnce(err);
+            const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+                method: 'POST',
+                headers: authHeaders({ 'content-type': 'application/json' }),
+                body: JSON.stringify({ text: 'x' }),
+            });
+            const { error } = (await res.json()) as { error: string };
+            if (!declared.has(error) && !ANY_METHOD.has(error)) undeclared.push(`${err.status} → ${error}`);
+        }
+        expect(undeclared).toEqual([]);
+    });
+});
 
 describe('dev.antiphony.audio.reprocessPost', () => {
     it('sets processing and returns the re-hydrated view', async () => {

@@ -130,6 +130,39 @@ describe('AudioProcessingService.process', () => {
         );
     });
 
+    describe('derived blobs of a post in a space (specs/spaces.md, Phase 2)', () => {
+        // A derived blob without its post's space would be stored public, so
+        // its proxy URL would play with the signature stripped off: the exact
+        // leak signed playback exists to close.
+        const SPACE = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc' };
+        const placed = (processing: Partial<ProcessingState>) =>
+            makePost({
+                space: { ...SPACE, authorSegment: 'did:web:vox-pop.example' },
+                processing: { ...processing, updatedAt: new Date() } as ProcessingState,
+            });
+
+        it('writes the denoised blob into the post’s space', async () => {
+            const { deps } = makeDeps(placed({ denoise: 'pending' }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(deps.writeDerivedBlob).toHaveBeenCalledWith('vox-pop', expect.any(Uint8Array), 'audio/webm', SPACE);
+        });
+
+        it('writes the trimmed blob into the post’s space', async () => {
+            const { deps } = makeDeps(placed({ trim: 'pending' }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(deps.writeDerivedBlob).toHaveBeenCalledWith('vox-pop', expect.any(Uint8Array), 'audio/mpeg', SPACE);
+        });
+
+        it('writes a flat post’s derived blobs with no space', async () => {
+            const { deps } = makeDeps(makePost({ processing: { denoise: 'pending', trim: 'pending', updatedAt: new Date() } }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(vi.mocked(deps.writeDerivedBlob).mock.calls.map((c) => c[3])).toEqual([undefined, undefined]);
+        });
+    });
+
     it('runs denoise before transcribe, and transcribes the CLEANED audio', async () => {
         const post = makePost({ processing: { transcribe: 'pending', denoise: 'pending', updatedAt: new Date() } });
         const { deps } = makeDeps(post);
