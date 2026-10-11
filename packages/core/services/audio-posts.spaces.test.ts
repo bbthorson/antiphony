@@ -7,9 +7,9 @@ import {
     parsePostUri,
     type CreateAudioPostInput,
 } from './audio-posts';
-import type { AudioPostDependencies } from '../ports/audio-posts-dependencies';
-import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
-import type { SpaceKey, SpacePlacement } from 'shared/types/spaces';
+import { inMemoryAudioPostDependencies, type InMemoryAudioPostDependencies } from '../testing/in-memory-audio-post-dependencies';
+import type { AudioPostRecord } from 'shared/types/audio';
+import type { SpacePlacement } from 'shared/types/spaces';
 
 /**
  * atproto spaces, Phase 1 (specs/spaces.md): space-aware post URIs, and
@@ -72,47 +72,22 @@ describe('space post URIs', () => {
     });
 });
 
-/** In-memory dependencies that store posts, spaces and blob placements. */
-function makeDeps(): AudioPostDependencies & {
-    posts: Map<string, AudioPostRecord>;
-    spaces: Set<string>;
-    blobs: Map<string, SpaceKey | null>;
-} {
-    let counter = 0;
-    const posts = new Map<string, AudioPostRecord>();
-    const spaces = new Set<string>();
-    const blobs = new Map<string, SpaceKey | null>();
-    const keyOf = (originAppId: string, k: SpaceKey) => `${originAppId}/${k.type}/${k.skey}`;
-    return {
-        posts,
-        spaces,
-        blobs,
-        getSpace: vi.fn(async (originAppId: string, k: SpaceKey) =>
-            spaces.has(keyOf(originAppId, k))
-                ? ({ originAppId, ...k, readPolicy: 'managing-app', writePolicy: 'managing-app', createdAt: new Date(), updatedAt: new Date() } as const)
-                : null,
-        ),
-        getBlobSpace: vi.fn(async (originAppId: string, cid: string) => {
-            const key = `${originAppId}/${cid}`;
-            return blobs.has(key) ? { space: blobs.get(key) ?? null } : null;
-        }),
-        newPostId: vi.fn(() => `3kpost${++counter}aaaaa`),
-        getAppDid: vi.fn(appDidFor),
-        savePost: vi.fn(async (r: AudioPostRecord) => { posts.set(`${r.originAppId}/${r.id}`, r); }),
-        getPostById: vi.fn(async (originAppId: string, id: string) => posts.get(`${originAppId}/${id}`) ?? null),
-        queryByAuthor: vi.fn(async () => []),
-        queryByRootAuthor: vi.fn(async () => []),
-        queryReplies: vi.fn(async () => []),
-        getTranscriptsBySubjectUris: vi.fn(async () => new Map<string, TranscriptEnrichmentRecord>()),
-        resolveAudioUrl: vi.fn(async () => 'https://audio.example/x'),
-        // A distinct CID per record, so a StrongRef naming the wrong one is caught.
-        cidForRecord: vi.fn(async () => `bafyreitestcid${counter}`),
-        now: vi.fn(() => new Date('2026-10-07T00:00:00Z')),
-    } as unknown as AudioPostDependencies & {
-        posts: Map<string, AudioPostRecord>;
-        spaces: Set<string>;
-        blobs: Map<string, SpaceKey | null>;
-    };
+/**
+ * The shared in-memory store (`testing/in-memory-audio-post-dependencies.ts`),
+ * which runs the same contract as the Postgres binding, with each method
+ * wrapped in a spy for the call assertions below.
+ */
+function makeDeps(): InMemoryAudioPostDependencies {
+    const deps = inMemoryAudioPostDependencies({
+        getAppDid: appDidFor,
+        resolveAudioUrl: async () => 'https://audio.example/x',
+        now: () => new Date('2026-10-07T00:00:00Z'),
+    });
+    const spied = deps as unknown as Record<string, unknown>;
+    for (const [name, value] of Object.entries(deps)) {
+        if (typeof value === 'function') spied[name] = vi.fn(value as (...args: unknown[]) => unknown);
+    }
+    return deps;
 }
 
 const input = (over: Partial<CreateAudioPostInput> = {}): CreateAudioPostInput => ({
@@ -335,6 +310,18 @@ describe('reply StrongRef CIDs (cross-repo-design.md §3.4)', () => {
         await expect(
             svc.createPost(input({ authorId: 'creator', text: 'y', reply: { root: refTo(prompt), parent: refTo(reply) } })),
         ).resolves.toMatchObject({ kind: 'reply' });
+    });
+
+    it('treats another tenant’s post as missing, even named under the caller’s own authority', async () => {
+        // The uri passes the parse-time authority check (it names vox-pop's own
+        // DID), so only the store's tenant scoping stands between this reply
+        // and bardcast's thread.
+        const theirs = await svc.createPost(input({ authorId: 'creator' }));
+        const forged = { uri: buildPostUri(appDidFor('vox-pop'), theirs.id), cid: theirs.cid };
+        await expect(
+            svc.createPost(input({ originAppId: 'vox-pop', authorId: 'p2', text: 'x', reply: { root: forged, parent: forged } })),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(deps.posts.size).toBe(1);
     });
 
     it("refuses a root that isn't the thread's root", async () => {
