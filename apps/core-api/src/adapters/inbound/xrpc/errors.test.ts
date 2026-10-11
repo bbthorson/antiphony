@@ -38,6 +38,12 @@ describe('xrpcSymbol', () => {
         // which would serialize as a body with no `error` field at all.
         expect(xrpcSymbol(418)).toBe('InternalServerError');
     });
+
+    it('names the errors a lexicon declares, by domain code', () => {
+        expect(xrpcSymbol(400, 'REPLY_CID_MISMATCH')).toBe('ReplyCidMismatch');
+        // Any other code keeps its status's generic symbol.
+        expect(xrpcSymbol(400, 'VALIDATION_ERROR')).toBe('InvalidRequest');
+    });
 });
 
 describe('xrpcErrorHandler', () => {

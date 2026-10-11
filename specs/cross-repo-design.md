@@ -93,7 +93,9 @@ only the creator's team can hear.
 
 What changes in Antiphony: `resolveReplyBranch` accepts a `space` on a reply to a flat parent.
 The audio-placement check stays (the audio must be stored in the reply's space). A reply to a
-reply inherits as before. This is an additive contract change (a patch bump).
+reply inherits as before. This is an additive contract change on its own; it shipped in the
+0.9.0 minor with §3.4's parent-CID check and §4.2's author segment, which are breaking.
+**Built 2026-10-11** (API contract 0.9.0).
 
 ### 3.3 Vox Pop: replies in a space per prompt
 
@@ -188,10 +190,12 @@ and never stored. Three things to fix:
 
 1. **A placeholder CID in replies.** `ClientAntiphonyGateway.createReply`
    (`services/orchestrator/src/adapters/antiphony-gateway.ts`) passes `cid: "bafyplaceholder"`
-   when the caller has no prompt CID. Antiphony checks the parent reply's URI and space but not
-   its CID (`resolveReplyBranch` in `packages/core/services/audio-posts.ts`), so the fake CID is
+   when the caller has no prompt CID. Antiphony checked the parent reply's URI and space but not
+   its CID (`resolveReplyBranch` in `packages/core/services/audio-posts.ts`), so the fake CID was
    sealed into the reply. Fix both sides: Bardcast always passes the prompt's real CID, and
-   Antiphony rejects a parent CID that doesn't match the stored record (a 400).
+   Antiphony rejects a parent CID that doesn't match the stored record (a 400). *Antiphony's
+   side is built (API contract 0.9.0): a stale `reply.parent.cid` or `reply.root.cid` is a 400,
+   `REPLY_CID_MISMATCH` (XRPC `ReplyCidMismatch`).*
 2. **The lexicons overstate where records live.** `campaign.seat`, `campaign.action`,
    `campaign.chapter` and `character.stateEvent` say they're "written into the campaign's
    space", but no service stores them there: they live in Bardcast's D1 database. Per §3.1,
@@ -253,8 +257,8 @@ that verifies if it holds a key for the author segment's DID.
 D8). Antiphony's rule changes from "the acting actor's DID goes in the author segment" to "the
 authority's DID goes there, and the person is a facet". It applies to every space record
 Antiphony holds, Vox Pop's included. The player's portable part is their character, in their
-own repo; the campaign recordings were always the campaign's (D2). The code change lands before
-Bardcast keeps its first recording.
+own repo; the campaign recordings were always the campaign's (D2). The code change landed in API
+contract 0.9.0 (2026-10-11), before Bardcast kept its first recording.
 
 ### 4.3 The work, in order
 

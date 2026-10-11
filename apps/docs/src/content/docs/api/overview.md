@@ -32,7 +32,9 @@ Replies are **not** an open comment thread — the AppView enforces who may repl
 - **Replying to a prompt** is open to any authenticated viewer (the app's default audience policy).
 - **Replying to a reply** is restricted to that branch's **two participants** — the prompt's author (the creator) and the responder who opened the branch. Anyone else gets a `403`.
 
-So each top-level reply is a private creator ↔ responder back-and-forth no third party can join. The rule is enforced on **write** (`POST /api/v1/posts` rejects a disallowed reply) and surfaced on **read**, so you don't have to reimplement it: every `AudioPostView` carries a `viewer` block with
+So each top-level reply is a private creator ↔ responder back-and-forth no third party can join.
+
+A reply's `reply` StrongRefs must name the stored records: `parent` is the post being answered, with its current `cid`, and `root` is that thread's prompt, with its `cid`. Both are sealed into the reply's own CID, so a stale or placeholder CID is refused with a `400` (`code: REPLY_CID_MISMATCH`; XRPC `ReplyCidMismatch`), and a `root` that isn't the thread's prompt with a plain `400`. Take both from the `uri` and `cid` of the posts you're answering. The rule is enforced on **write** (`POST /api/v1/posts` rejects a disallowed reply) and surfaced on **read**, so you don't have to reimplement it: every `AudioPostView` carries a `viewer` block with
 
 - **`canReply`** — whether the current caller may reply to this post, and
 - **`replyDisabledReason`** — `unauthenticated` or `not_a_participant` when they can't.
@@ -61,11 +63,15 @@ Audio uploaded outside a space is content-addressed and public by CID, including
 
 ## Private audio in a space
 
-A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority. Posts in a space have space URIs (`at://{appDid}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
+A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority. Posts in a space have space URIs (`at://{appDid}/space/{type}/{skey}/{appDid}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
 
 1. **Create the space** — `PUT /api/v1/spaces/{spaceType}/{skey}` with `{ readPolicy?, writePolicy? }` (both default to `member-list`). Idempotent; the body replaces the policies. A DID is a valid `skey`, which is how you'd key a per-user space.
 2. **Upload into it** — add `spaceType` and `skey` fields to the `POST /api/v1/audio/upload` form. The response's `space` says where the blob lives. **The first upload of a given set of bytes decides this** and it never changes after, so re-uploading identical bytes can't make private audio public, or the reverse.
-3. **Post into it** — `POST /api/v1/posts` with `space: { type, skey }` on a prompt. The audio must live in the same space, and a flat post can't use audio that lives in one (`400` either way). Replies inherit their parent's space.
+3. **Post into it** — `POST /api/v1/posts` with `space: { type, skey }`. The space must exist (`404`), the audio must live in the same space, and a flat post can't use audio that lives in one (`400` either way). A reply's placement is never less private than its parent's:
+   - a reply to a post in a space goes in that space, whether or not it names it; naming a different one is a `400`.
+   - a reply to a public (flat) post may name a space, which is how a public prompt gets replies only some people can hear. Without one it's public too.
+
+The author segment of a space URI (the DID after the key) is always the space's authority, your app's DID. It never holds the person who recorded the post, even when you send `X-Antiphony-Acting-Actor-Did`: that person is the post's `author` (`authorId` / `authorDid`), which sits outside the record's CID and can be corrected later. A person's DID in the URI would be sealed into every reply.
 4. **Play it** — post views carry a signed `embed.audio.url`, and `dev.antiphony.audio.getPlaybackUrl` signs on request. Fetch a fresh one rather than storing it. Without a valid signature the proxy answers `404`, as it does for audio that doesn't exist. You may append `format=mp3`. Responses are `Cache-Control: private` and never cached past the signature.
 
 A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` (see [configuration](/self-hosting/configuration/#core-variables)).

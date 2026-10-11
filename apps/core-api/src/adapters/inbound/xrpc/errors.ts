@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
 import { reportError } from 'shared/observability/report-error';
+import { REPLY_CID_MISMATCH } from '@antiphony/core/services/audio-posts';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -50,9 +51,19 @@ const SYMBOL_BY_STATUS: Record<number, string> = {
     500: 'InternalServerError',
 };
 
-/** The XRPC symbol for a domain error's HTTP status. */
-export function xrpcSymbol(status: number): string {
-    return SYMBOL_BY_STATUS[status] ?? 'InternalServerError';
+/**
+ * Domain error `code` → a named XRPC error, for the errors a lexicon declares
+ * by name (a client branches on it rather than on the status alone). Anything
+ * not listed falls back to the status's generic symbol.
+ */
+const SYMBOL_BY_CODE: Record<string, string> = {
+    // dev.antiphony.audio.createPost: a reply StrongRef's CID isn't the stored record's.
+    [REPLY_CID_MISMATCH]: 'ReplyCidMismatch',
+};
+
+/** The XRPC symbol for a domain error: its named error if it has one, else its HTTP status's. */
+export function xrpcSymbol(status: number, code?: string): string {
+    return (code !== undefined ? SYMBOL_BY_CODE[code] : undefined) ?? SYMBOL_BY_STATUS[status] ?? 'InternalServerError';
 }
 
 /**
@@ -79,7 +90,7 @@ export const xrpcErrorHandler: ErrorHandler = (error, c) => {
     if (error instanceof ServiceError) {
         logger.warn({ ...meta, status: error.status, code: error.code, message: error.message }, 'service error');
         return c.json(
-            xrpcError(xrpcSymbol(error.status), error.message),
+            xrpcError(xrpcSymbol(error.status, error.code), error.message),
             error.status as ContentfulStatusCode,
         );
     }

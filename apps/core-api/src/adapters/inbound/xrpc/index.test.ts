@@ -403,6 +403,49 @@ describe('dev.antiphony.audio.createPost', () => {
         expect((await res.json()).error).toBe('InvalidRequest');
         expect(audioPostService.createPost).not.toHaveBeenCalled();
     });
+
+    const REF = { uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/root', cid: 'bafyroot' };
+
+    it('passes a space named on a reply through to the service', async () => {
+        vi.mocked(audioPostService.createPost).mockResolvedValueOnce({
+            id: 'r1',
+            cid: 'bafyreply1',
+            space: { type: 'audio.voxpop.space.replies', skey: 'root', authorSegment: 'did:web:test-app.example' },
+        } as Awaited<ReturnType<typeof audioPostService.createPost>>);
+
+        const space = { type: 'audio.voxpop.space.replies', skey: 'root' };
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'an answer', reply: { root: REF, parent: REF }, space }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(audioPostService.createPost).toHaveBeenCalledWith(expect.objectContaining({ space }));
+        // The author segment is the authority's DID (atproto-authority-model.md D8).
+        expect((await res.json()).uri).toBe(
+            'at://did:web:test-app.example/space/audio.voxpop.space.replies/root/did:web:test-app.example/dev.antiphony.audio.post/r1',
+        );
+    });
+
+    it('answers a reply whose StrongRef CID is stale with the named error ReplyCidMismatch', async () => {
+        const { ServiceError } = await import('shared/errors');
+        vi.mocked(audioPostService.createPost).mockRejectedValueOnce(
+            new ServiceError("reply.parent.cid doesn't match the parent post's CID", 400, undefined, 'REPLY_CID_MISMATCH'),
+        );
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'x', reply: { root: REF, parent: { ...REF, cid: 'bafyplaceholder' } } }),
+        });
+
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({
+            error: 'ReplyCidMismatch',
+            message: "reply.parent.cid doesn't match the parent post's CID",
+        });
+    });
 });
 
 // ---------------------------------------------------------------------------

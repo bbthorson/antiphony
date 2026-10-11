@@ -51,9 +51,10 @@ export type SpaceKey = z.infer<typeof SpaceKeySchema>;
  */
 export const SpacePlacementSchema = SpaceKeySchema.extend({
     /**
-     * The DID in the URI's author segment: the acting actor's DID, or the
-     * tenant's app DID when the actor has none. Sealed once the post is replied
-     * to; `authorId` / `authorDid` stay facets beside it.
+     * The DID in the URI's author segment: the space authority's DID (the
+     * tenant's app DID), never the acting actor's (atproto-authority-model.md
+     * D8). Sealed once the post is replied to; the person who recorded it is
+     * the `authorId` / `authorDid` facets beside it.
      */
     authorSegment: z.string().max(2048).regex(/^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$/, 'Must be a DID'),
 });

@@ -137,8 +137,8 @@ for them. With the authority's DID, readers find Antiphony and get commits signe
 `#atproto_space` key Antiphony holds for that authority.
 
 This replaces the earlier rule ("the acting actor's DID goes in the author segment") in
-[`spaces.md`](./spaces.md), which the Phase 1 code still implements. Changing it is a contract
-change to make before Bardcast keeps its first recording.
+[`spaces.md`](./spaces.md), which the Phase 1 code implemented. Built in API contract 0.9.0
+(2026-10-11), before anyone kept a recording.
 
 ## Antiphony is not a PDS
 

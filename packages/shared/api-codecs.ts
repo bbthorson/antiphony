@@ -35,9 +35,10 @@ export const CreateAudioPostRequestSchema = z.object({
   /**
    * The space to create this post in (specs/spaces.md). It must exist for the
    * calling tenant (`PUT /api/v1/spaces/{type}/{skey}`), and the audio must have
-   * been uploaded into the same space. A reply is always created in its
-   * parent's space: name it or omit it, but naming another is refused. Absent ⇒
-   * a flat, public post.
+   * been uploaded into the same space. A reply to a post in a space is always
+   * created in that space: name it or omit it, but naming another is refused.
+   * A reply to a flat post may name a space. Absent ⇒ a flat, public post (or,
+   * for a reply, its parent's space).
    */
   space: SpaceKeySchema.optional(),
 })
