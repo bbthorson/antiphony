@@ -9,7 +9,7 @@ REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs
 
 ## Status
 
-- **Pre-1.0.** The API contract is at `0.x` (currently `0.9.0`, the
+- **Pre-1.0.** The API contract is at `0.x` (currently `0.9.2`, the
   `info.version` in [`apps/core-api/openapi.json`](apps/core-api/openapi.json)),
   served under the `/api/v1/` URL major. While `0.x`, a **breaking** contract
   change bumps the minor and an additive change or fix bumps the patch — see
@@ -23,8 +23,12 @@ REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs
   (the contract: Zod schemas, codecs, NSIDs) and
   [`@antiphony/capture-kit`](https://www.npmjs.com/package/@antiphony/capture-kit)
   (headless browser recording and playback), both `0.x`.
-- **First consumer:** [Vox Pop](https://voxpop.audio), a separate codebase whose
-  backend calls this API over HTTP and depends on `@antiphony/shared`.
+- **Consumers:** two separate codebases whose backends call this API over HTTP
+  and depend on `@antiphony/shared`.
+  [Vox Pop](https://voxpop.audio) was the first. Bardcast is the second, and the
+  first consumer of atproto spaces: each campaign is a semi-private space
+  (see [`specs/spaces.md`](specs/spaces.md) and
+  [`specs/cross-repo-design.md`](specs/cross-repo-design.md)).
 
 ## Quickstart
 
