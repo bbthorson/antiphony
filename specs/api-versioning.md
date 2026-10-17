@@ -66,6 +66,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.8.0` | atproto spaces: the spaces API, uploads and posts into a space, and signed, expiring playback for that audio. Additive, but the audio proxy now refuses unsigned private audio, so minor. |
 | `0.9.1` | XRPC `createPost` declares the `Forbidden` it already answered, and a create whose post id another tenant holds fails instead of reporting a post it didn't store. A clarification and a fix, so patch. |
 | `0.9.0` | The 2026-10-11 decisions: a space URI's author segment is the authority's DID, reply StrongRef CIDs must match the stored records, and a reply to a flat post may name a space. The first two are breaking, so minor. |
+| `0.9.2` | URL fields declare `format: uri` again (lost in the zod 4 migration), and the post-read, create and `Audio` tag descriptions stop calling the streaming proxy a signed URL. Documentation of unchanged behaviour, so patch. |
 
 ### Next: the enrichment pipeline
 

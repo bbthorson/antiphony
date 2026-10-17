@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.9.1",
+    "version": "0.9.2",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -16,7 +16,7 @@
     },
     {
       "name": "Audio",
-      "description": "Audio storage primitives — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint."
+      "description": "Audio storage primitives — the capability-based playback proxy (streams the bytes; audio in a space needs a signed URL) and the service-token-gated upload endpoint."
     }
   ],
   "components": {
@@ -217,6 +217,7 @@
                                   },
                                   "url": {
                                     "type": "string",
+                                    "format": "uri",
                                     "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                                   },
                                   "durationMs": {
@@ -467,7 +468,7 @@
           "Posts"
         ],
         "summary": "Create an audio post",
-        "description": "Creates a `dev.antiphony.audio.post` authored by the viewer. `reply` presence makes it a reply (no title); absence makes it a prompt. The audio is uploaded first (signed-URL flow) and referenced as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`. A reply's `reply.parent` and `reply.root` StrongRefs must carry the stored records' CIDs (`400`, `REPLY_CID_MISMATCH`). `space` places the post in one of the tenant's spaces: a reply to a post in a space always lands in that space, and a reply to a flat post may name one.",
+        "description": "Creates a `dev.antiphony.audio.post` authored by the viewer. `reply` presence makes it a reply (no title); absence makes it a prompt. The audio is uploaded first (`POST /api/v1/audio/upload`) and its blob ref is passed as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`. A reply's `reply.parent` and `reply.root` StrongRefs must carry the stored records' CIDs (`400`, `REPLY_CID_MISMATCH`). `space` places the post in one of the tenant's spaces: a reply to a post in a space always lands in that space, and a reply to a flat post may name one.",
         "parameters": [
           {
             "schema": {
@@ -851,7 +852,7 @@
           "Posts"
         ],
         "summary": "Get an audio post by id",
-        "description": "Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). Scoped to the origin app — a post from another origin app reads as 404. Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.",
+        "description": "Returns the hydrated `AudioPostView` (author + audio playback URL + lifted transcript + viewer state). The playback URL points at this service's audio proxy (`GET /api/v1/audio`), which streams the bytes; it is stable for public audio, and signed and expiring (`exp` + `sig`) for audio in a space. Scoped to the origin app — a post from another origin app reads as 404. Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.",
         "parameters": [
           {
             "schema": {
@@ -997,6 +998,7 @@
                             },
                             "url": {
                               "type": "string",
+                              "format": "uri",
                               "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                             },
                             "durationMs": {
@@ -1370,6 +1372,7 @@
                             },
                             "url": {
                               "type": "string",
+                              "format": "uri",
                               "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                             },
                             "durationMs": {
@@ -1876,6 +1879,7 @@
                                   },
                                   "url": {
                                     "type": "string",
+                                    "format": "uri",
                                     "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                                   },
                                   "durationMs": {
@@ -2177,6 +2181,7 @@
                   },
                   "managingAppEndpoint": {
                     "type": "string",
+                    "format": "uri",
                     "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                   }
                 }
@@ -2235,6 +2240,7 @@
                         },
                         "managingAppEndpoint": {
                           "type": "string",
+                          "format": "uri",
                           "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                         },
                         "createdAt": {
@@ -2482,6 +2488,7 @@
                         },
                         "managingAppEndpoint": {
                           "type": "string",
+                          "format": "uri",
                           "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
                         },
                         "createdAt": {

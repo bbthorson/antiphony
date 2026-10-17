@@ -156,7 +156,9 @@ const getByIdRoute = createRoute({
     tags: ['Posts'],
     summary: 'Get an audio post by id',
     description:
-        'Returns the hydrated `AudioPostView` (author + signed audio URL + lifted transcript + viewer state). ' +
+        'Returns the hydrated `AudioPostView` (author + audio playback URL + lifted transcript + viewer state). ' +
+        'The playback URL points at this service\'s audio proxy (`GET /api/v1/audio`), which streams the bytes; ' +
+        'it is stable for public audio, and signed and expiring (`exp` + `sig`) for audio in a space. ' +
         'Scoped to the origin app — a post from another origin app reads as 404. ' +
         'Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
     middleware: [
@@ -304,8 +306,8 @@ const createRouteDef = createRoute({
     summary: 'Create an audio post',
     description:
         'Creates a `dev.antiphony.audio.post` authored by the viewer. `reply` presence makes it a reply ' +
-        '(no title); absence makes it a prompt. The audio is uploaded first (signed-URL flow) and referenced ' +
-        'as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`. ' +
+        '(no title); absence makes it a prompt. The audio is uploaded first (`POST /api/v1/audio/upload`) and its blob ref ' +
+        'is passed as the `embed`. `originAppId`/`authorId`/`kind` are stamped server-side. Supports `Idempotency-Key`. ' +
         "A reply's `reply.parent` and `reply.root` StrongRefs must carry the stored records' CIDs " +
         "(`400`, `REPLY_CID_MISMATCH`). `space` places the post in one of the tenant's spaces: a reply to a " +
         'post in a space always lands in that space, and a reply to a flat post may name one.',
