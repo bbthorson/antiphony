@@ -16,6 +16,10 @@ accepts no `model_id` to select between.
 § 5. Read § 6 before § 5's first bullet — the two disagree by design, and § 6 is
 the current state.
 
+**Extended 2026-09-26 with a second transcriber, Whisper on Workers AI (§ 7).** It
+now leads the transcriber scan, so the § 2 code samples, which list ElevenLabs
+first, describe the shape of the registry but no longer its order.
+
 | Change | Where |
 | :--- | :--- |
 | Per-stage registry + selection | `apps/core-api/src/lib/provider-registry.ts` (new) |
@@ -26,6 +30,7 @@ the current state.
 | Selection tests | `apps/core-api/src/lib/audio-processing.test.ts` |
 | Operator docs | `apps/docs/.../self-hosting/configuration.md` § Providers |
 | **Per-tenant provider + model** | `apps/core-api/src/lib/tenant-provider-config.ts` (new) — see § 6 |
+| **Workers AI (Whisper) transcriber** | `apps/core-api/src/adapters/outbound/workers-ai/` — see § 7 |
 
 ## The ask
 
@@ -361,9 +366,9 @@ is untouched. This is why the change came in smaller than § 5 predicted.
 
 Registry entries therefore hold `create(model?)` rather than a fixed instance,
 plus `acceptsModel` — an entry without it reports a tenant model rather than
-accepting one it would silently ignore. Only the ElevenLabs transcriber sets it
-today; `/audio-isolation` takes no `model_id`, and trim/waveform are local
-compute.
+accepting one it would silently ignore. Both transcribers set it (ElevenLabs
+and, since § 7, Workers AI); `/audio-isolation` takes no `model_id`, and
+trim/waveform are local compute.
 
 ### 6.3 Capabilities became tenant-scoped
 
@@ -391,3 +396,28 @@ with a log without taking out the rest of the variable.
 
 Per-*request* model choice (§ 5, now with a reason rather than a deferral) and
 cross-vendor fallback chains.
+
+## 7. Workers AI (Whisper) transcriber — added 2026-09-26
+
+A second `TranscriberPort` implementation,
+`apps/core-api/src/adapters/outbound/workers-ai/transcriber.ts`, runs Whisper on
+Cloudflare Workers AI. It is the first provider the registry was widened for, and
+it needed only an adapter and an entry: no port, contract or call-site change.
+
+| | |
+| :--- | :--- |
+| **Registry name** | `workers-ai`, the first entry in `TRANSCRIBERS` (`apps/core-api/src/lib/provider-registry.ts`) |
+| **Credential** | The Worker's `AI` binding, `"ai": { "binding": "AI" }` in `apps/core-api/wrangler.jsonc`. No vendor key. |
+| **Available when** | The binding is bound. A binding never reaches `process.env`, so `worker.ts` hands each handler's `env` to `bindWorkersAi()` (`apps/core-api/src/adapters/outbound/workers-ai/binding.ts`) and `available()` reads it back. Under the Node entry nothing binds it, and it reports unavailable. |
+| **Model** | `@cf/openai/whisper-large-v3-turbo` by default. `WORKERS_AI_STT_MODEL` overrides it for the deployment, per the § 3.1 convention; `ANTIPHONY_APP_STT_MODELS` overrides it per tenant (`acceptsModel`, § 6.2). |
+
+**Selection.** Because it leads the list and is not `explicitOnly`, the § 2.2 scan
+picks it on any Worker that has the binding, ahead of ElevenLabs. To keep Scribe on
+such a deployment, set `ANTIPHONY_TRANSCRIBER=elevenlabs`, or pin one tenant with
+`ANTIPHONY_APP_TRANSCRIBERS`. Naming `workers-ai` where the binding is absent is a
+misconfiguration and behaves as § 2.3 and § 6.4 describe: logged, stage
+unavailable, no fallback.
+
+**Denoise is unaffected.** Workers AI has no audio-isolation model, so
+`DENOISERS` still holds only ElevenLabs and the stub, and a deployment that wants
+denoise still needs `ELEVENLABS_API_KEY`.
