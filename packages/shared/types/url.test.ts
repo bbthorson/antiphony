@@ -119,4 +119,16 @@ describe('httpsUrl()', () => {
         expect(patterns.length).toBeGreaterThan(0);
         for (const p of patterns) expect(p.flags).toBe('');
     });
+
+    it('documents as `format: "uri"` plus the scheme `pattern`', () => {
+        // zod 4 keeps one `format` per string schema and the last format check
+        // wins; `.regex()` after `.url()` silently dropped `format: "uri"` from
+        // openapi.json. See "Why the check order matters" in url.ts.
+        const json = z.toJSONSchema(schema);
+        expect(json).toMatchObject({
+            type: 'string',
+            format: 'uri',
+            pattern: '^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/',
+        });
+    });
 });

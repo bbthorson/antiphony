@@ -68,6 +68,18 @@ import { z } from 'zod';
  * emits a pattern that means the same thing everywhere.
  * `apps/core-api/src/openapi-patterns.test.ts` fails if a flag leaks again.
  *
+ * ## Why the check order matters
+ *
+ * In zod 4 every string format check (`.url()`, `.regex()`, `.email()`, …)
+ * writes the schema's single `format` slot, and the LAST one wins. `.regex()`
+ * claims it as `format: "regex"`, which the JSON Schema generator drops (the
+ * regex is emitted as `pattern` instead). With `.url()` first, the regex
+ * overwrote it and `openapi.json` lost `format: "uri"` on every URL field after
+ * the zod 4 migration. With `.regex()` first, `.url()` keeps the slot and the
+ * document carries both `format: "uri"` and the scheme `pattern`. Both checks
+ * run either way, so the runtime behaviour is the same; `url.test.ts` asserts
+ * the emitted JSON Schema so a reorder fails CI.
+ *
  * Usage:
  *
  *     url:     httpsUrl()
@@ -78,12 +90,13 @@ export function httpsUrl() {
         z
             .string()
             .trim()
+            // `.regex()` BEFORE `.url()`: see "Why the check order matters" above.
+            .regex(/^[Hh][Tt][Tt][Pp][Ss]?:\/\//, { message: 'URL must use the http or https scheme' })
             // The one audited bare `.url()` in the repo: this function IS the
-            // replacement the rule points at, and the scheme anchor below is
+            // replacement the rule points at, and the scheme anchor above is
             // what makes it safe. Every other call site is a bug.
             // eslint-disable-next-line antiphony/no-bare-zod-url
             .url()
-            .regex(/^[Hh][Tt][Tt][Pp][Ss]?:\/\//, { message: 'URL must use the http or https scheme' })
     );
 }
 

@@ -8,6 +8,28 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.2] — 2026-10-17
+
+Documentation of the contract only; no request, response or runtime validation
+changes. **Patch.**
+
+### Fixed
+
+- **URL fields declare `format: uri` again.** `embed.audio#view.url` and a
+  space's `managingAppEndpoint` carry `format: "uri"` alongside their
+  `http`/`https` scheme `pattern` in `openapi.json`, matching the lexicons
+  (`actor.profile.rssFeed` gets the same fix in `@antiphony/shared`, but no
+  REST route returns it). The format was dropped by the zod 4 migration (the scheme
+  `.regex()` claimed the schema's single format slot after `.url()`); the
+  runtime has validated these fields as URLs throughout, so a value that was
+  valid before is valid now. A client generated from the document may now type
+  them as URIs.
+- **`GET /api/v1/posts/{postId}` no longer says "signed audio URL".** The post
+  view's playback URL points at the audio proxy (`GET /api/v1/audio`), which
+  streams the bytes, and is signed and expiring only for audio in a space. The
+  `Audio` tag and `POST /api/v1/posts` descriptions said the same stale thing
+  ("signed-URL playback proxy", "signed-URL flow") and are corrected too.
+
 ## [0.9.1] — 2026-10-11
 
 A clarification and a fix; no request or response shape changes. **Patch.**

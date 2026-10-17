@@ -8,7 +8,7 @@
  */
 export const OPENAPI_INFO = {
     title: 'Antiphony Core API',
-    version: '0.9.1',
+    version: '0.9.2',
     description: [
         'Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.',
         '',
@@ -39,5 +39,5 @@ export const OPENAPI_INFO = {
 export const OPENAPI_TAGS = [
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
     { name: 'Spaces', description: "A tenant's atproto spaces — create or replace one, read one. Posts and audio placed in a space are private: their audio plays through signed, expiring URLs." },
-    { name: 'Audio', description: 'Audio storage primitives — the capability-based signed-URL playback proxy and the service-token-gated upload endpoint.' },
+    { name: 'Audio', description: 'Audio storage primitives — the capability-based playback proxy (streams the bytes; audio in a space needs a signed URL) and the service-token-gated upload endpoint.' },
 ] as const;

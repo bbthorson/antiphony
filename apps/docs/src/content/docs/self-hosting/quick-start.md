@@ -35,10 +35,17 @@ Apply the schema to an empty database. Each migration runs in its own transactio
 DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
 
-Four tables come out of it: `posts`, `audio_transcripts`, `idempotency_keys`, and `rate_limits`. Two properties are worth knowing because they are enforced rather than conventional — the query facets (`author_id`, `kind`, `cid`, …) are **generated columns** off the record JSON, so they cannot drift from it, and the "a reply has a parent and a root author; a prompt has neither" invariant is a **check constraint**, not just a Zod refinement.
+Five tables come out of it — `posts`, `audio_transcripts`, `idempotency_keys`, `rate_limits` and `spaces` — plus the `schema_migrations` ledger. Two properties are worth knowing because they are enforced rather than conventional — the query facets (`author_id`, `kind`, `cid`, …) are **generated columns** off the record JSON, so they cannot drift from it, and the "a reply has a parent and a root author; a prompt has neither" invariant is a **check constraint**, not just a Zod refinement.
 
-:::caution[Apply-once DDL, not a migration chain]
-Running it twice fails on `relation already exists` and changes nothing. There is no versioned migration tool yet.
+:::note[A numbered migration chain with a ledger]
+The schema is the numbered files in `apps/core-api/migrations/`, applied in filename order. Every applied file is recorded, with a checksum, in a `schema_migrations` table, so `migrate` is safe to re-run: it applies only what is pending and is a no-op when the database is current. After pulling a release that adds a migration, run the same command again.
+
+- `-- --dry-run` lists what is pending without applying it.
+- An applied file must never be edited. The checksum turns an edit into a hard error rather than a silent no-op.
+- There are no down-migrations. Undo a change with a new forward migration.
+- A database that already has the schema from before the ledger existed (applied by hand from the old `db/schema.sql`) needs a one-time `-- --baseline` instead. Never baseline an empty database.
+
+How to write a migration is in `apps/core-api/db/README.md`.
 :::
 
 ## 3. Pin your tenant's app DID

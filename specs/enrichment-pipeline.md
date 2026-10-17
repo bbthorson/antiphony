@@ -14,8 +14,9 @@ Not restated below, but load-bearing:
 
 - **The provider seam.** `TranscriberPort` / `DenoiserPort` are pure interfaces in
   Firebase-free `@antiphony/core`; concrete providers live in outbound adapters and
-  are selected off env in `resolveProviders()` (`apps/core-api/src/lib/audio-processing.ts`).
-  The stub providers exercise the full create → process → hydrate loop with no secrets.
+  are selected off env in `resolveProviders()` (`apps/core-api/src/lib/audio-processing.ts`),
+  per stage, through the registry in `apps/core-api/src/lib/provider-registry.ts`
+  ([`provider-selection.md`](./provider-selection.md)). The stub providers exercise the full create → process → hydrate loop with no secrets.
 - **Denoise-before-transcribe ordering**, including the idempotent-retry case (a pass
   with denoise already `ready` starts from the cleaned variant rather than the noisy
   original).
@@ -26,13 +27,27 @@ Not restated below, but load-bearing:
 
 ## Provider policy
 
-The reference deployment wires **ElevenLabs** for both audio stages — Scribe for
-transcription, Voice Isolator for denoise. One vendor, one API key, one adapter family.
+The reference deployment transcribes with **Whisper on Cloudflare Workers AI** and
+denoises with **ElevenLabs** Voice Isolator. ElevenLabs Scribe is the other
+transcriber.
 
-This is a *deployment* choice, not a contract one. Nothing in `@antiphony/core` names
-ElevenLabs; a self-hoster swapping in Whisper writes one adapter satisfying
-`TranscriberPort` and changes nothing else. Keep it that way — provider-specific
-concepts (voice ids, model names, vendor error codes) must not leak into the ports.
+- **Whisper** (`apps/core-api/src/adapters/outbound/workers-ai/transcriber.ts`, added
+  2026-09-26) runs inside the Worker through its `AI` binding (`"ai": { "binding": "AI" }`
+  in `apps/core-api/wrangler.jsonc`), so there is no vendor key and the audio never
+  leaves Cloudflare. It is registered as `workers-ai` and leads the default scan, so a
+  Worker with the binding transcribes on Whisper unless `ANTIPHONY_TRANSCRIBER` (or a
+  tenant's `ANTIPHONY_APP_TRANSCRIBERS` entry) names `elevenlabs`. The model defaults to
+  `@cf/openai/whisper-large-v3-turbo`; `WORKERS_AI_STT_MODEL` overrides it per
+  deployment and `ANTIPHONY_APP_STT_MODELS` per tenant. Under the Node entry the
+  binding is never set, so the scan falls through to ElevenLabs.
+- **ElevenLabs** needs `ELEVENLABS_API_KEY`: Scribe for transcription, Voice Isolator
+  for denoise. Denoise has no Workers AI equivalent, so it stays here.
+
+Which provider runs is a *deployment* choice, not a contract one. Nothing in
+`@antiphony/core` names Whisper or ElevenLabs: the Whisper adapter was one more
+`TranscriberPort` implementation and a registry entry, with nothing else changed. Keep
+it that way — provider-specific concepts (voice ids, model names, vendor error codes)
+must not leak into the ports.
 
 ## Stage taxonomy
 
@@ -44,7 +59,7 @@ recompute behavior; **execution** determines where a stage can be deployed
 | :--- | :--- | :--- | :--- |
 | `denoise` | byte-mutating | external API | contributes to the processed variant |
 | `trim` | byte-mutating | local compute | contributes to the processed variant |
-| `transcribe` | derived | external API | `dev.antiphony.audio.transcript` record |
+| `transcribe` | derived | external API (Workers AI binding or ElevenLabs) | `dev.antiphony.audio.transcript` record |
 | `waveform` | derived | local compute | normalized peaks on `ProcessingState` |
 
 **Byte-mutating** stages produce new audio. They **compose in order into a single
