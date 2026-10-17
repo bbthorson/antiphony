@@ -24,13 +24,13 @@
   "dependencies": {
     "@antiphony/core": "*",
     "@antiphony/shared": "*",
-    "@atproto/syntax": "0.0.0-spaces-alpha-20261001173819",
+    "@atproto/syntax": "0.7.6",
     "@hono/zod-openapi": "^1.6.3",
     "@ipld/dag-cbor": "^10.0.2",
     "@neondatabase/serverless": "^1.2.0",
-    "hono": "^4.13.12",
+    "hono": "^4.13.13",
     "multiformats": "^14.0.5",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
