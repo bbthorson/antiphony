@@ -8,7 +8,8 @@ import { loadMigrations } from '../migrations/load.js';
  * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api
  * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --dry-run
  * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --until 0003
- * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline
+ * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline --until 0001 --dry-run
+ * DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline --until 0001
  * ```
  *
  * ## Why this exists now
@@ -103,11 +104,6 @@ async function main(): Promise<void> {
         process.exitCode = 1;
         return;
     }
-    if (baseline && (dryRun || until)) {
-        console.error('--baseline cannot be combined with --dry-run or --until.');
-        process.exitCode = 1;
-        return;
-    }
 
     const url = connectionString();
     if (!url) {
@@ -168,6 +164,26 @@ async function main(): Promise<void> {
             return;
         }
 
+        if (until) {
+            // The drift check above deliberately ran over *every* migration, not
+            // just the ones about to be applied: a drifted earlier file usually
+            // means the database is not the shape the later ones assume, and
+            // that is worth hearing whether or not this run reaches them.
+            const cut = pending.findIndex((m) => m.filename.startsWith(until));
+            if (cut === -1) {
+                const held = pending.map((m) => m.filename).join(', ') || 'none';
+                console.error(`No pending migration starts with '${until}'. Pending: ${held}.`);
+                process.exitCode = 1;
+                return;
+            }
+            const held = pending.slice(cut + 1);
+            pending = pending.slice(0, cut + 1);
+            if (held.length > 0) {
+                console.log(`Stopping after ${until}; holding back ${held.length}:`);
+                for (const m of held) console.log(`  ${m.filename}`);
+            }
+        }
+
         // ── --baseline ────────────────────────────────────────────────────────
         //
         // Record every pending migration as applied WITHOUT running it.
@@ -179,16 +195,28 @@ async function main(): Promise<void> {
         // already there and fail on the first one — so the ledger has to be
         // told what it missed, once.
         //
-        // It is deliberately all-or-nothing over the pending set and in ONE
-        // transaction: baselining half a chain would leave a database claiming
-        // a state it does not have, which is strictly worse than the problem
-        // this solves.
+        // It is all-or-nothing over the pending set, in ONE transaction, and
+        // the pending set is everything up to `--until` when that is given.
+        //
+        // `--until` is not optional in practice. Production's hand-applied
+        // schema is `0001` and nothing later, but the chain now has later
+        // files (`0002_spaces` onwards). A bare `--baseline` would record those
+        // as applied too, and the database would claim tables and columns it
+        // has never had, with every later deploy trusting the ledger. So
+        // baseline exactly what the database has: `--baseline --until 0001`,
+        // then a plain `migrate` applies the rest for real. Add `--dry-run`
+        // first to see what would be recorded.
         //
         // ⚠️ This is the one operation here that can lie. Everything else
         // proves what it did by doing it; this asserts something about the
         // database that the operator is vouching for. Use it only for
         // migrations the database demonstrably already has.
         if (baseline) {
+            if (dryRun) {
+                console.log(`Would baseline ${pending.length} migration(s) as already applied (nothing recorded):`);
+                for (const m of pending) console.log(`  ${m.filename}`);
+                return;
+            }
             console.log(`Baselining ${pending.length} migration(s) as already applied:`);
             for (const m of pending) console.log(`  ${m.filename}`);
             await client.query('BEGIN');
@@ -209,26 +237,6 @@ async function main(): Promise<void> {
                     'schema, it still does not.',
             );
             return;
-        }
-
-        if (until) {
-            // The drift check above deliberately ran over *every* migration, not
-            // just the ones about to be applied: a drifted earlier file usually
-            // means the database is not the shape the later ones assume, and
-            // that is worth hearing whether or not this run reaches them.
-            const cut = pending.findIndex((m) => m.filename.startsWith(until));
-            if (cut === -1) {
-                const held = pending.map((m) => m.filename).join(', ') || 'none';
-                console.error(`No pending migration starts with '${until}'. Pending: ${held}.`);
-                process.exitCode = 1;
-                return;
-            }
-            const held = pending.slice(cut + 1);
-            pending = pending.slice(0, cut + 1);
-            if (held.length > 0) {
-                console.log(`Stopping after ${until}; holding back ${held.length}:`);
-                for (const m of held) console.log(`  ${m.filename}`);
-            }
         }
 
         if (dryRun) {

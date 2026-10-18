@@ -35,14 +35,23 @@ cutover, applied by hand with `psql -f db/schema.sql`. Running `migrate`
 against such a database would try to apply `0001` and fail on the first
 `create table` that already exists.
 
-Baseline it once, which records the chain as applied without executing it:
+Baseline it once, which records migrations as applied without executing them.
+**Always pass `--until 0001`**: a hand-applied database has `0001` and nothing
+later, and a bare `--baseline` would also record `0002_spaces` and every file
+after it, so the ledger would claim tables and columns the database has never
+had. Preview first, then record, then let a plain `migrate` apply the rest:
 
 ```bash
-DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline
+DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline --until 0001 --dry-run
+DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline --until 0001
+DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api
 ```
 
 Only ever do this for migrations the database demonstrably already has. On a
 genuinely empty database, skip it and let `migrate` apply the chain normally.
+
+Until a database is baselined, `deploy.yml`'s migrate step fails on `0001`
+(`relation "posts" already exists`) and the Worker is not deployed.
 
 ---
 
@@ -52,9 +61,8 @@ applies THIS FILE to an in-process Postgres 18 (PGlite) and runs the real
 bindings against it, so a drift between the schema and the code that reads it
 fails the suite rather than production. It is the same file you apply to Neon.
 
-No migration tool is wired yet — this is still apply-once DDL, not a
-versioned migration chain. That is the next thing to fix if the schema
-changes after first deploy.
+The schema is now a numbered migration chain (`apps/core-api/migrations/`),
+applied by `scripts/migrate.ts` with a `schema_migrations` ledger; see above.
 
 Scope assumes Phase −1 has landed (the dead /system/* routes deleted), so
 `users`, `handles`, and `atproto_oauth_states` are absent by design — they
