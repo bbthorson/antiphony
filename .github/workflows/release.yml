@@ -15,6 +15,9 @@ name: Release
 #   2. git tag shared-v0.6.0        && git push origin shared-v0.6.0
 #      git tag capture-kit-v0.1.0   && git push origin capture-kit-v0.1.0
 #
+# A tag push publishes to npm and then creates the matching GitHub Release (the
+# `github-release` job). A manual run never publishes and never creates one.
+#
 # The tag is the trigger AND the assertion. The tag PREFIX selects which package
 # is published (see "Resolve the target package"), and the version suffix must
 # match that package's own `version` — so neither a mistyped package nor a
@@ -91,6 +94,11 @@ jobs:
     name: publish to npm
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Read by the `github-release` job below.
+    outputs:
+      slug: ${{ steps.pkg.outputs.slug }}
+      name: ${{ steps.pkg.outputs.name }}
+      version: ${{ steps.pkg.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -267,3 +275,66 @@ jobs:
             echo "### Published ${PKG_NAME}@${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
             echo "https://www.npmjs.com/package/${PKG_NAME}/v/${PKG_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # The GitHub Release for a published tag.
+  #
+  # Before this job, seven tags had been pushed and none had a release; they
+  # were backfilled by hand on 2026-10-18. Doing it here means the release page
+  # cannot fall behind npm again.
+  #
+  # A SEPARATE job so that only it holds `contents: write`. The publish job runs
+  # `npm ci` and therefore dependencies' install scripts; it keeps the
+  # read-only token the workflow grants by default.
+  #
+  # Runs only after a successful publish from a tag push. Re-running it is
+  # harmless: an existing release is left alone.
+  github-release:
+    name: GitHub Release
+    needs: publish
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # Full history only for the tag list (to find the previous tag of the
+      # same package); nothing is built here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ needs.publish.outputs.slug }}
+          PKG_NAME: ${{ needs.publish.outputs.name }}
+          PKG_VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it alone."
+            exit 0
+          fi
+
+          # The previous tag OF THIS PACKAGE, so the generated PR list covers
+          # this package's interval. GitHub's own default is the previous
+          # release of any package, which interleaves shared and capture-kit.
+          PREV="$(git tag --list "${SLUG}-v*" --sort=-v:refname | grep -vxF "$TAG" | head -n1 || true)"
+
+          NOTES="Published to npm as [\`${PKG_NAME}@${PKG_VERSION}\`](https://www.npmjs.com/package/${PKG_NAME}/v/${PKG_VERSION}).
+
+          This is a package release. Changes to the API contract are recorded separately in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/master/CHANGELOG.md): package and contract versions move independently (\`specs/api-versioning.md\`)."
+
+          ARGS=(--title "${PKG_NAME} ${PKG_VERSION}" --notes "$NOTES" --verify-tag --generate-notes)
+          [ -n "$PREV" ] && ARGS+=(--notes-start-tag "$PREV")
+          # Same rule as the npm dist-tag above: a prerelease version is a
+          # prerelease here too. "Latest" on the release page tracks the
+          # contract package, so a capture-kit release does not take it.
+          case "$PKG_VERSION" in
+            *-*) ARGS+=(--prerelease --latest=false) ;;
+            *)   if [ "$SLUG" = shared ]; then ARGS+=(--latest); else ARGS+=(--latest=false); fi ;;
+          esac
+
+          gh release create "$TAG" "${ARGS[@]}"
+          echo "### GitHub Release: ${TAG}" >> "$GITHUB_STEP_SUMMARY"
