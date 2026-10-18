@@ -210,7 +210,7 @@ Collected from the 2026-10-11 design review, beyond XRPC:
 **Shared code**
 14. **`@antiphony/client` scope:** what moves in from Vox Pop's and Bardcast's clients, and
     whether the fake Antiphony for tests ships with it.
-15. **`@antiphony/shared` 0.9.0** is unpublished; Bardcast waits on it.
+15. ~~**`@antiphony/shared` 0.9.0** is unpublished; Bardcast waits on it.~~ Published 2026-10-11.
 
 **Implementation owed now, before any kept post** (decided, not built): the author segment
 (D8), replies placed in a space under a flat parent, the parent-CID check, and Bardcast's

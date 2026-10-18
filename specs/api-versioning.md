@@ -31,8 +31,8 @@ literal to drift.
 
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
-divergence. For example, `@antiphony/shared` (at `0.9.0`) and `@antiphony/capture-kit`
-(at `0.1.0`) track their own release lines while the contract sits at `0.9.0` and
+divergence. For example, `@antiphony/shared` (at `0.9.1`) and `@antiphony/capture-kit`
+(at `0.1.0`) track their own release lines while the contract sits at `0.9.2` and
 internal packages sit at `0.1.0`. That is correct: a package bump for an export
 or dependency change is a different event from a breaking *contract* change.
 

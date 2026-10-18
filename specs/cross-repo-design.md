@@ -290,7 +290,7 @@ extras (invites, spaces as members, `read_self`).
 | **A `checkUserAccess` helper** | Nobody yet (§4.3 step 3) | In `@antiphony/client`: verify Antiphony's service auth, call the app's decision function, answer in the protocol's shape. |
 | **A fake Antiphony** | Vox Pop: `antiphony-stub.ts` (417 lines). Bardcast: `fetch` mocks. | `@antiphony/testing`: an in-memory implementation of the REST contract for local dev and tests. |
 | **Tenant DID tooling** | Vox Pop: `scripts/generate-app-did-key.mjs`, `check-app-did-key.mjs`, `infra/did-web/`. Bardcast needs the same before it's a tenant in production. | A CLI or template in this repo, beside `tenant-onboarding.md`, that also writes the `#atproto_space` key (§4.3 step 2). |
-| **`@antiphony/shared` 0.9.0** | Unpublished (npm has 0.8.0). Bardcast copies the space schemas meanwhile. | Publish it. |
+| ~~**`@antiphony/shared` 0.9.0**~~ | Published 2026-10-11, with the space schemas. Bardcast can drop its copies. | Done. |
 
 **Stays in the apps:** AT Proto OAuth (`@bbthorson/atproto-cf-auth`), SMS verification and the
 phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess`, and app data
@@ -300,7 +300,7 @@ phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess
 
 1. **Now, while URIs are free:** the §4.2 author-segment change in `createPost`; §3.2 rule
    change; Bardcast's CID fix with
-   Antiphony's parent-CID check; publish `@antiphony/shared` 0.9.0.
+   Antiphony's parent-CID check; ~~publish `@antiphony/shared` 0.9.0~~ (published 2026-10-11).
 2. **Next:** Vox Pop reply spaces (§3.3); `@antiphony/client` with the signer, then both apps
    move onto it; the Bardcast lexicon wording.
 3. **Phase 3 groundwork:** keys, `checkUserAccess` endpoints and the conformance harness
