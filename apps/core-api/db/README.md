@@ -36,10 +36,12 @@ against such a database would try to apply `0001` and fail on the first
 `create table` that already exists.
 
 Baseline it once, which records migrations as applied without executing them.
-**Always pass `--until 0001`**: a hand-applied database has `0001` and nothing
-later, and a bare `--baseline` would also record `0002_spaces` and every file
-after it, so the ledger would claim tables and columns the database has never
-had. Preview first, then record, then let a plain `migrate` apply the rest:
+**Always pass `--until <the last file the database has>`.** A bare `--baseline`
+records every pending file, so the ledger would claim tables and columns the
+database may never have had. A database built from the old `db/schema.sql` has
+`0001`; check whether anyone also ran later files by hand (for `0002`: does a
+`spaces` table exist?). Preview first, then record, then let a plain `migrate`
+apply the rest:
 
 ```bash
 DATABASE_URL='postgresql://…' npm run migrate -w @antiphony/core-api -- --baseline --until 0001 --dry-run

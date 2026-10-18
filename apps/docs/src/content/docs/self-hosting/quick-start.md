@@ -43,7 +43,7 @@ The schema is the numbered files in `apps/core-api/migrations/`, applied in file
 - `-- --dry-run` lists what is pending without applying it.
 - An applied file must never be edited. The checksum turns an edit into a hard error rather than a silent no-op.
 - There are no down-migrations. Undo a change with a new forward migration.
-- A database that already has the schema from before the ledger existed (applied by hand from the old `db/schema.sql`) needs a one-time `-- --baseline --until 0001`, then a plain `migrate` for the rest. Without `--until`, the later files would be recorded as applied without running. Add `--dry-run` to preview. Never baseline an empty database.
+- A database that already has the schema from before the ledger existed (applied by hand from the old `db/schema.sql`) needs a one-time `-- --baseline --until 0001` (or the last later file you also applied by hand), then a plain `migrate` for the rest. Without `--until`, every pending file would be recorded as applied without running. Add `--dry-run` to preview. Never baseline an empty database.
 
 How to write a migration is in `apps/core-api/db/README.md`.
 :::

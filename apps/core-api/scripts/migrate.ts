@@ -198,13 +198,14 @@ async function main(): Promise<void> {
         // It is all-or-nothing over the pending set, in ONE transaction, and
         // the pending set is everything up to `--until` when that is given.
         //
-        // `--until` is not optional in practice. Production's hand-applied
-        // schema is `0001` and nothing later, but the chain now has later
-        // files (`0002_spaces` onwards). A bare `--baseline` would record those
-        // as applied too, and the database would claim tables and columns it
-        // has never had, with every later deploy trusting the ledger. So
-        // baseline exactly what the database has: `--baseline --until 0001`,
-        // then a plain `migrate` applies the rest for real. Add `--dry-run`
+        // `--until` is not optional in practice. A hand-applied database has
+        // some prefix of the chain (`0001` from the old `db/schema.sql`, plus
+        // whatever later files someone ran by hand), and the chain keeps
+        // growing. A bare `--baseline` records everything pending, so the
+        // database would claim tables and columns it may never have had, with
+        // every later deploy trusting the ledger. So check what the database
+        // has, baseline exactly that (`--baseline --until 0001`, or `0002`, …),
+        // then let a plain `migrate` apply the rest for real. Add `--dry-run`
         // first to see what would be recorded.
         //
         // ⚠️ This is the one operation here that can lie. Everything else
