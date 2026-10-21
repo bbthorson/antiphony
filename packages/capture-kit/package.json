@@ -61,7 +61,7 @@
     "antiphony"
   ],
   "scripts": {
-    "build": "node ./scripts/clean.mjs && tsup",
+    "build": "node ./scripts/clean.mjs && tsdown",
     "//prepare": "Same reason as @antiphony/shared: every export resolves into dist/, so a cold `git clone && npm ci && npm run typecheck` has nothing to typecheck against until this has run. npm runs prepare for workspace packages on install.",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
@@ -81,7 +81,7 @@
     "jsdom": "^30.1.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tsup": "^9.0.0",
+    "tsdown": "^0.23.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.71.2",
     "vitest": "^5.0.5"

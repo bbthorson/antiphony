@@ -140,20 +140,21 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node ./scripts/clean.mjs && tsup",
+    "build": "node ./scripts/clean.mjs && tsdown",
     "//prepare": "Every export in this package resolves into dist/, so a tree without it cannot be typechecked by the workspaces that consume it (apps/reference imports @antiphony/shared/* directly). npm runs prepare for workspace packages on install, which makes `git clone && npm ci && npm run typecheck` work on a cold checkout instead of only on a machine that happens to have built already.",
     "prepare": "npm run build",
-    "typecheck": "tsc --noEmit",
+    "//typecheck": "Two passes because tsdown.config.ts cannot be checked under this package's `module: commonjs`: that implies node10 resolution, which ignores `exports`, and tsdown ships its types only through `exports`. tsconfig.tsdown.json checks the config file alone with bundler resolution; the package source keeps the CommonJS settings it is deliberately checked under (see packaging.test.ts).",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tsdown.json",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
   },
-  "//peerDependencies": "zod is a PEER, not a dependency, and the build has always assumed as much: tsup.config.ts marks it `external` so that there is ONE zod module instance shared with the consumer — the comment there spells out the consequence, that `@hono/zod-openapi`'s `.openapi()` extension never reaches schemas defined here if the instance is duplicated. Declaring it under `dependencies` said the opposite, that this package brings its own, and the contradiction was not theoretical: a consumer pinned to zod 3 against this package's range gets two instances. As a peer, npm resolves one instance and says so when it cannot. The range is `^4.0.0` following the Zod 4 migration.",
+  "//peerDependencies": "zod is a PEER, not a dependency, and the build has always assumed as much: tsdown.config.ts marks it `neverBundle` so that there is ONE zod module instance shared with the consumer — the comment there spells out the consequence, that `@hono/zod-openapi`'s `.openapi()` extension never reaches schemas defined here if the instance is duplicated. Declaring it under `dependencies` said the opposite, that this package brings its own, and the contradiction was not theoretical: a consumer pinned to zod 3 against this package's range gets two instances. As a peer, npm resolves one instance and says so when it cannot. The range is `^4.0.0` following the Zod 4 migration.",
   "peerDependencies": {
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "tsup": "^9.0.0",
+    "tsdown": "^0.23.1",
     "typescript-eslint": "^8.71.2",
     "typescript": "^5.7.2",
     "vitest": "^5.0.5",

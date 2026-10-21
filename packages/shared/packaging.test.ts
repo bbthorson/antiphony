@@ -16,8 +16,8 @@ import { dirname, resolve } from 'node:path';
 const PKG_ROOT = (() => {
     let dir = process.cwd();
     for (;;) {
-        if (existsSync(resolve(dir, 'packages/shared/tsup.config.ts'))) return resolve(dir, 'packages/shared');
-        if (existsSync(resolve(dir, 'tsup.config.ts')) && existsSync(resolve(dir, 'index.ts'))) return dir;
+        if (existsSync(resolve(dir, 'packages/shared/tsdown.config.ts'))) return resolve(dir, 'packages/shared');
+        if (existsSync(resolve(dir, 'tsdown.config.ts')) && existsSync(resolve(dir, 'index.ts'))) return dir;
         const parent = dirname(dir);
         if (parent === dir) throw new Error('could not locate packages/shared from ' + process.cwd());
         dir = parent;
@@ -32,14 +32,14 @@ const read = (p: string) => readFileSync(resolve(PKG_ROOT, p), 'utf8');
  * The failure these exist to catch is quiet and only reachable from OUTSIDE the
  * repo, which is why nothing else caught it: `types/processing.ts` was exported
  * by `index.ts`, listed in the README's subpath table, and covered by the
- * `./types/*` wildcard in `exports` — but it was not a tsup entry, so no
+ * `./types/*` wildcard in `exports` — but it was not a build entry, so no
  * no `dist` file for it was ever emitted and
  * `@antiphony/shared/types/processing` resolved to nothing for every consumer
  * of the published package. In-repo callers import `shared/types/processing`
  * through a tsconfig path alias to source, so the whole test suite, typecheck
  * and lint were green over a subpath that did not exist once published.
  *
- * These read the config files as text rather than importing them: tsup's config
+ * These read the config files as text rather than importing them: tsdown's config
  * is a `defineConfig` call and the package manifest is data, so a regex over
  * the source is both sufficient and immune to the build being stale.
  */
@@ -49,16 +49,16 @@ function indexReExports(): string[] {
     return [...read('index.ts').matchAll(/export \* from '\.\/([^']+)'/g)].map(([, m]) => `${m}.ts`);
 }
 
-/** The `entry` array in `tsup.config.ts`. */
-function tsupEntries(): string[] {
-    const block = read('tsup.config.ts').match(/const entry = \[([\s\S]*?)\];/);
-    if (!block) throw new Error('could not find the tsup `entry` array');
+/** The `entry` array in `tsdown.config.ts`. */
+function buildEntries(): string[] {
+    const block = read('tsdown.config.ts').match(/const entry = \[([\s\S]*?)\];/);
+    if (!block) throw new Error('could not find the tsdown `entry` array');
     return [...block[1].matchAll(/'([^']+)'/g)].map(([, m]) => m);
 }
 
-describe('tsup entries vs. the public surface', () => {
+describe('build entries vs. the public surface', () => {
     it('emits a dist file for every module index.ts re-exports', () => {
-        const entries = tsupEntries();
+        const entries = buildEntries();
         // `errors`/`utils`/`observability` are directories re-exported as
         // `./errors`; their entry is the index file inside them.
         const missing = indexReExports().filter(
@@ -74,6 +74,6 @@ describe('tsup entries vs. the public surface', () => {
         expect(advertised, 'the README subpath table changed shape').toBeTruthy();
         const named = [...advertised![1].matchAll(/`(\w+)`/g)].map(([, m]) => `types/${m}.ts`);
         expect(named.length).toBeGreaterThan(0);
-        expect(tsupEntries()).toEqual(expect.arrayContaining(named));
+        expect(buildEntries()).toEqual(expect.arrayContaining(named));
     });
 });
