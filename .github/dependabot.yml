@@ -103,3 +103,12 @@ updates:
           - dependency-name: '@types/node'
             update-types:
                 - version-update:semver-major
+
+          # `@atproto/syntax` is pinned EXACTLY to a spaces-alpha prerelease
+          # (apps/core-api, packages/core) because atproto spaces only exist on
+          # that line. Dependabot reads `0.0.0-spaces-alpha-…` as older than any
+          # stable release and "upgrades" it: #205 moved it to 0.7.7, which has
+          # no `AtUri.makeSpace`, `isSpace` or `SpaceRef`, and typecheck failed
+          # across core-api and core. Move this pin by hand when spaces ship in
+          # a stable @atproto/syntax, then delete this entry.
+          - dependency-name: '@atproto/syntax'
