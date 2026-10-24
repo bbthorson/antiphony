@@ -30,6 +30,7 @@ const { requestId } = await import('./request-id.js');
 const { errorHandler } = await import('./error-handler.js');
 const { validateAllPins, resetValidatedPinsForTest } = await import('../lib/app-did.js');
 const { logger } = await import('../lib/logger.js');
+const { acknowledgeValidatedPins } = await import('../lib/testing/seed-pins.js');
 
 function b64url(bytes: Uint8Array): string {
     let s = '';
@@ -121,10 +122,12 @@ beforeEach(async () => {
             }),
         })) as unknown as typeof fetch,
     });
+    acknowledgeValidatedPins([TENANT]);
 });
 
 afterEach(() => {
     delete process.env.ANTIPHONY_APP_DIDS;
+    delete process.env.ANTIPHONY_APP_DID_DOC_HASHES;
     resetValidatedPinsForTest();
     vi.restoreAllMocks();
 });
@@ -240,6 +243,7 @@ describe('what it reports', () => {
                 };
             }) as unknown as typeof fetch,
         });
+        acknowledgeValidatedPins([TENANT, 'other']);
 
         const error = vi.spyOn(logger, 'error');
         const res = await call({

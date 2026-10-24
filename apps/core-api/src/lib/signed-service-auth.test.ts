@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { base58btc } from 'multiformats/bases/base58';
 import { validateAllPins, resetValidatedPinsForTest } from './app-did.js';
+import { acknowledgeValidatedPins } from './testing/seed-pins.js';
 import {
     redactOperationForLog,
     verifySignedServiceAuth,
@@ -101,7 +102,7 @@ async function seedPin(methods: unknown[]): Promise<void> {
                 verificationMethod: methods,
             }),
         })) as unknown as typeof fetch,
-    });
+    });    acknowledgeValidatedPins([TENANT]);
 }
 
 let keyPair: CryptoKeyPair;
@@ -130,6 +131,7 @@ beforeEach(async () => {
 
 afterEach(() => {
     delete process.env.ANTIPHONY_APP_DIDS;
+    delete process.env.ANTIPHONY_APP_DID_DOC_HASHES;
     resetValidatedPinsForTest();
 });
 
@@ -404,6 +406,24 @@ describe('verifySignedServiceAuth — refuses', () => {
         expect(await verify(await mint(keyPair.privateKey))).toMatchObject({
             ok: false,
             reason: 'no-pin-snapshot',
+        });
+    });
+
+    it('a valid signature from a key in a document nobody acknowledged (#117)', async () => {
+        // The attack drift detection exists for: whoever controls the did:web
+        // host publishes their own key. The signature is genuine — it is the
+        // keystore that is untrusted, so it must fail before key selection.
+        delete process.env.ANTIPHONY_APP_DID_DOC_HASHES;
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({
+            ok: false,
+            reason: 'unacknowledged-document',
+        });
+
+        process.env.ANTIPHONY_APP_DID_DOC_HASHES = `${TENANT}:sha256:${'0'.repeat(64)}`;
+        expect(await verify(await mint(keyPair.privateKey))).toMatchObject({
+            ok: false,
+            reason: 'unacknowledged-document',
+            detail: expect.stringMatching(/^changed: sha256:/),
         });
     });
 

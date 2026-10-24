@@ -13,6 +13,7 @@ import {
     ensureTenantPin,
     revalidateAllPins,
 } from './app-did.js';
+import { didDocumentHash } from './did-document-hash.js';
 
 afterEach(() => {
     delete process.env.ANTIPHONY_APP_DIDS;
@@ -691,6 +692,15 @@ describe('ensureTenantPin — the KV layer', () => {
 });
 
 describe('revalidateAllPins — the drift cron', () => {
+    afterEach(() => {
+        delete process.env.ANTIPHONY_APP_DID_DOC_HASHES;
+    });
+
+    /** Acknowledge `body` as the tenant's document, as a committed hash would. */
+    const acknowledge = async (body: unknown) => {
+        process.env.ANTIPHONY_APP_DID_DOC_HASHES = `vox-pop:${await didDocumentHash(body)}`;
+    };
+
     it('reports drift instead of throwing', async () => {
         // Nothing is serving this call. A pin that has genuinely drifted fails
         // closed on its own at the next request; the cron's job is to say so
@@ -698,25 +708,73 @@ describe('revalidateAllPins — the drift cron', () => {
         // gate never had.
         process.env.ANTIPHONY_APP_DIDS = PINS;
 
-        const drift = await revalidateAllPins({
+        const { failures } = await revalidateAllPins({
             fetchImpl: okFetch(doc('someone-else.example')),
             expectedPdsHost: 'api.antiphony.dev',
         });
 
-        expect(drift).toHaveLength(1);
-        expect(drift[0]).toMatchObject({ originAppId: 'vox-pop', kind: 'disproof' });
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toMatchObject({ originAppId: 'vox-pop', kind: 'disproof' });
     });
 
-    it('reports nothing when every pin still proves out', async () => {
+    it('reports nothing when every pin still proves out against its acknowledged document', async () => {
         process.env.ANTIPHONY_APP_DIDS = PINS;
+        await acknowledge(doc());
         await expect(
             revalidateAllPins({ fetchImpl: okFetch(), expectedPdsHost: 'api.antiphony.dev' }),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual({ failures: [], changes: [] });
     });
 
     it('refreshes the snapshot, so a quiet tenant stays warm', async () => {
         process.env.ANTIPHONY_APP_DIDS = PINS;
         await revalidateAllPins({ fetchImpl: okFetch() });
         expect(getAppDid('vox-pop')).toBe(DID);
+    });
+
+    it('reports a changed document that still proves custody — and keeps serving it (#117)', async () => {
+        // The hijack #117 describes: the service block is untouched, so every
+        // custody check passes, and a key has been added. Before drift
+        // detection this was absorbed silently. It must be reported — and must
+        // NOT fail closed, because a legitimate rotation looks identical.
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        await acknowledge(doc());
+        const rekeyed = {
+            ...doc(),
+            verificationMethod: [{ id: `${DID}#atproto`, type: 'Multikey', controller: DID, publicKeyMultibase: 'z' }],
+        };
+
+        const { failures, changes } = await revalidateAllPins({
+            fetchImpl: okFetch(rekeyed),
+            expectedPdsHost: 'api.antiphony.dev',
+        });
+
+        expect(failures).toEqual([]);
+        expect(changes).toEqual([
+            {
+                originAppId: 'vox-pop',
+                did: DID,
+                acknowledgement: {
+                    status: 'changed',
+                    expected: await didDocumentHash(doc()),
+                    observed: await didDocumentHash(rekeyed),
+                },
+            },
+        ]);
+        expect(getAppDid('vox-pop')).toBe(DID);
+    });
+
+    it('is not fooled by key order or whitespace', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        await acknowledge(doc());
+        const { service, id } = doc();
+        const { changes } = await revalidateAllPins({ fetchImpl: okFetch({ service, id }) });
+        expect(changes).toEqual([]);
+    });
+
+    it('reports a tenant with no baseline separately from a changed one', async () => {
+        process.env.ANTIPHONY_APP_DIDS = PINS;
+        const { changes } = await revalidateAllPins({ fetchImpl: okFetch() });
+        expect(changes).toHaveLength(1);
+        expect(changes[0].acknowledgement.status).toBe('no-baseline');
     });
 });

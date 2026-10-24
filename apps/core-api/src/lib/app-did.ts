@@ -1,5 +1,6 @@
 import { isValidDid } from '@atproto/syntax';
 import { logger } from './logger.js';
+import { didDocumentHash, documentAcknowledgement, type DocumentAcknowledgement } from './did-document-hash.js';
 
 /**
  * Per-tenant app-DID registry — the "pinning layer" from
@@ -202,7 +203,7 @@ export function custodyService(doc: unknown): CustodyService | null {
 export type AppDidFailureKind = 'disproof' | 'unreachable';
 
 export type AppDidValidation =
-    | { ok: true; did: string; custody: CustodyService; document: unknown }
+    | { ok: true; did: string; custody: CustodyService; document: unknown; documentHash: string }
     | { ok: false; did: string; reason: string; kind: AppDidFailureKind };
 
 /**
@@ -259,7 +260,13 @@ export interface ValidateAppDidOptions {
  * fetch the DID document, confirm its `id`, require a custody service
  * endpoint, and — when an expected host is configured — require that endpoint
  * to point at Antiphony (the "custody claim is true" check). Returns the
- * document snapshot on success. Off the hot path; call at boot / onboarding.
+ * document snapshot and its canonical hash on success. Off the hot path; call
+ * at boot / onboarding.
+ *
+ * Drift is deliberately not judged here: whether a changed document should
+ * fail, report or be refused as a keystore depends on the caller, so this
+ * returns `documentHash` and leaves the comparison to them
+ * (`did-document-hash.ts`).
  *
  * Method-dispatched only at the resolve step: `did:web` via its own domain,
  * `did:plc` via the PLC directory. Everything after the document is in hand is
@@ -335,7 +342,7 @@ export async function validateAppDid(
             };
         }
     }
-    return { ok: true, did, custody, document: doc };
+    return { ok: true, did, custody, document: doc, documentHash: await didDocumentHash(doc) };
 }
 
 // --- Boot snapshot (the connective tissue) ----------------------------------
@@ -346,6 +353,11 @@ export interface ValidatedPin {
     did: string;
     custody: CustodyService;
     document: unknown;
+    /**
+     * `sha256:<hex>` of the canonical `document` — what drift detection
+     * compares against the acknowledged baseline (`did-document-hash.ts`).
+     */
+    documentHash: string;
     /**
      * When the custody proof was last actually obtained, in epoch millis.
      *
@@ -442,7 +454,10 @@ const kvKey = (originAppId: string) => `pin:${originAppId}`;
 async function readKvPin(kv: PinCacheKV, originAppId: string): Promise<ValidatedPin | null> {
     try {
         const raw = (await kv.get(kvKey(originAppId), 'json')) as ValidatedPin | null;
-        return raw && typeof raw.validatedAt === 'number' ? raw : null;
+        // An entry written before `documentHash` existed is treated as a miss
+        // rather than served without one: re-resolving costs one fetch, and a
+        // pin with no hash would read as unacknowledged to everything after.
+        return raw && typeof raw.validatedAt === 'number' && typeof raw.documentHash === 'string' ? raw : null;
     } catch (err) {
         logger.warn({ err, originAppId }, '[app-did] pin cache read failed; resolving directly');
         return null;
@@ -538,6 +553,7 @@ export async function ensureTenantPin(
             did: result.did,
             custody: result.custody,
             document: result.document,
+            documentHash: result.documentHash,
             validatedAt: now,
         };
         remember(pin);
@@ -606,6 +622,21 @@ export async function ensureTenantPin(
     );
 }
 
+/** A pin that stopped proving custody. */
+export interface PinFailure {
+    originAppId: string;
+    did: string;
+    reason: string;
+    kind: AppDidFailureKind;
+}
+
+/** A pin that still proves custody, from a document nobody has acknowledged. */
+export interface DocumentChange {
+    originAppId: string;
+    did: string;
+    acknowledgement: Exclude<DocumentAcknowledgement, { status: 'acknowledged' }>;
+}
+
 /**
  * Revalidate every configured pin, off the request path, purely to report.
  *
@@ -615,15 +646,23 @@ export async function ensureTenantPin(
  * low-traffic service: lazy validation alone might not re-check a quiet tenant
  * for a long time, and revocation is exactly what you want to notice quickly.
  *
- * Reports rather than throws. Nothing is serving this call, and a pin that has
- * genuinely drifted will fail closed on its own at the next request through
- * `ensureTenantPin`. Returns the drifted tenants for the caller to log or alert
- * on.
+ * Two different findings, kept apart because they mean different things:
+ *
+ *   - **`failures`** — the custody claim no longer validates. A disproved pin
+ *     is evicted here and fails closed at its next request.
+ *   - **`changes`** — the document still proves custody but differs from the
+ *     acknowledged baseline (#117). Reported only: the pin stays served,
+ *     because a legitimate key rotation looks exactly like this and must not
+ *     take the tenant down. Acknowledging it is a hash update in
+ *     `wrangler.jsonc`, which the deploy gate enforces.
+ *
+ * Reports rather than throws. Nothing is serving this call.
  */
 export async function revalidateAllPins(
     opts: EnsurePinOptions = {},
-): Promise<{ originAppId: string; did: string; reason: string; kind: AppDidFailureKind }[]> {
-    const drift: { originAppId: string; did: string; reason: string; kind: AppDidFailureKind }[] = [];
+): Promise<{ failures: PinFailure[]; changes: DocumentChange[] }> {
+    const failures: PinFailure[] = [];
+    const changes: DocumentChange[] = [];
     for (const [originAppId, did] of parseAppDids()) {
         const result = await validateAppDid(did, {
             expectedPdsHost: opts.expectedPdsHost,
@@ -636,19 +675,24 @@ export async function revalidateAllPins(
                 did: result.did,
                 custody: result.custody,
                 document: result.document,
+                documentHash: result.documentHash,
                 validatedAt: opts.now?.() ?? Date.now(),
             };
             remember(pin);
             if (opts.kv) await writeKvPin(opts.kv, pin);
+            const acknowledgement = documentAcknowledgement(originAppId, result.documentHash);
+            if (acknowledgement.status !== 'acknowledged') {
+                changes.push({ originAppId, did, acknowledgement });
+            }
             continue;
         }
-        drift.push({ originAppId, did, reason: result.reason, kind: result.kind });
+        failures.push({ originAppId, did, reason: result.reason, kind: result.kind });
         if (result.kind === 'disproof') {
             validatedPins?.delete(originAppId);
             if (opts.kv) await opts.kv.delete(kvKey(originAppId)).catch(() => undefined);
         }
     }
-    return drift;
+    return { failures, changes };
 }
 
 /**
@@ -683,6 +727,7 @@ export async function validateAllPins(
             did: result.did,
             custody: result.custody,
             document: result.document,
+            documentHash: result.documentHash,
             validatedAt: Date.now(),
         });
     }

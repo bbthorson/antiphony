@@ -252,6 +252,18 @@
 		"ANTIPHONY_R2_BUCKET": "antiphony-r2-bucket",
 		"ANTIPHONY_PDS_HOST": "api.antiphony.dev",
 		"ANTIPHONY_APP_DIDS": "voxpop:did:web:did.voxpop.audio",
+		// The acknowledged hash of each tenant's DID document (`appId:sha256:<hex>`,
+		// JCS-canonical, see src/lib/did-document-hash.ts) — drift detection,
+		// #117. `npm run validate:pins` fails the deploy when a resolved document
+		// does not match, and prints the canonical document it saw. Updating a
+		// hash here IS the acknowledgment of a re-keying event: read the printed
+		// document before changing it, because for did:web a changed document is
+		// indistinguishable from a hijack until a person has looked.
+		//
+		// Deliberately EMPTY until voxpop's live document is reviewed and its hash
+		// committed — so the deploy gate fails rather than trusting a document
+		// nobody acknowledged.
+		"ANTIPHONY_APP_DID_DOC_HASHES": "",
 		// The transcode backend for on-demand renditions (apps/audio-rendition).
 		// Set 2026-08-18, when that service first deployed successfully — before
 		// then this was deliberately ABSENT, which is a supported state: the audio

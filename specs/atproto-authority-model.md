@@ -21,7 +21,10 @@ commits to keeping, and impossible to change after.
 2. **Antiphony holds a record only under a DID whose document names it.** The custody check:
    the DID document's `#atproto_space_host` (or, while tenants migrate, `#atproto_pds`) entry
    points at Antiphony. A tenant pins each such DID; Antiphony snapshots the resolved document
-   and never re-resolves it on the request path.
+   and never re-resolves it on the request path. Any change to that document is a re-keying
+   event: its canonical hash is committed next to the pin (`ANTIPHONY_APP_DID_DOC_HASHES`), the
+   deploy gate fails until a changed hash is acknowledged in review, and the hourly cron reports
+   a change without failing closed ([#117](https://github.com/bbthorson/antiphony/issues/117)).
 3. **Attribution stays out of the CID.** `authorId` (the app's opaque id for a person) and
    `authorDid` are stamped on a post outside its canonical record, so they can be filled in,
    corrected or severed later without rewriting anything.
@@ -156,9 +159,10 @@ the tenants still on it. In Phase 3 Antiphony serves the space protocol's own sy
    the authority. Never promise user-level migration of posts. A Bardcast player's portable part
    is their character, in their own repo; a Vox Pop creator's is their authorship facet.
 2. **`did:web` fragility.** A lapsed domain or rebrand orphans the identity, and document drift
-   is indistinguishable from a hijack. Drift detection is a requirement, not yet implemented
-   ([#117](https://github.com/bbthorson/antiphony/issues/117)). Minted `did:plc` doesn't have the
-   problem.
+   is indistinguishable from a hijack. Drift detection turns that into a change a person must
+   acknowledge ([#117](https://github.com/bbthorson/antiphony/issues/117)), but it cannot tell a
+   hijack from a rotation — the acknowledging reviewer has to. Minted `did:plc` doesn't have the
+   problem: its signed operation log says which key made a change.
 3. **Corpus concentration.** One DID can hold a whole corpus, so takedown or legal pressure
    lands on that authority rather than one record.
 4. **Federation norms may favour user repos.** If the network comes to read app- or org-held

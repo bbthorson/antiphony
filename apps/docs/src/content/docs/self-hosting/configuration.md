@@ -41,6 +41,7 @@ Every tenant needs **two** registry entries, and they're keyed on the same `orig
 | Variable | Purpose |
 |---|---|
 | `ANTIPHONY_APP_DIDS` | Comma-separated `appId:did` pairs pinning each tenant's `at://` authority, e.g. `voxpop:did:web:did.voxpop.audio`. Split on the first colon, so the DID's own colons are safe. **Required for any tenant that reads or writes posts** — see the custody note below. |
+| `ANTIPHONY_APP_DID_DOC_HASHES` | Comma-separated `appId:sha256:<hex>` pairs: the acknowledged hash of each tenant's DID document. `npm run validate:pins` fails the deploy when a resolved document doesn't match, and prints the document and the value to set — read it before committing, because for `did:web` a changed document can't be told apart from a hijack. The hourly cron only logs a mismatch. |
 | `ANTIPHONY_PDS_HOST` | Your Antiphony host (e.g. `api.antiphony.dev`). A pin's `#atproto_pds` `serviceEndpoint` must point at this host — that's what turns "the DID document exists" into "the DID names *us* as its PDS". |
 
 :::caution[Custody is proven per request, and fails closed]
