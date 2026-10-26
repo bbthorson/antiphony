@@ -260,12 +260,12 @@
 		// document before changing it, because for did:web a changed document is
 		// indistinguishable from a hijack until a person has looked.
 		//
-		// voxpop acknowledged 2026-10-26: key zDnaeUpy…WERffV matches vox-pop's
-		// infra/did-web/public/.well-known/did.json. The live document still has
-		// the legacy #atproto_pds service entry; vox-pop #917 moved its committed
-		// copy to #atproto_space_host but that was never redeployed. Redeploying it
-		// changes this hash — update it here in the same breath.
-		"ANTIPHONY_APP_DID_DOC_HASHES": "voxpop:sha256:d70cf6e39eb8fcfc7707f6e9bbf90bffabc3a85a231ff431efa6a238c58f05c2",
+		// voxpop acknowledged 2026-10-26 (#211), re-acknowledged for the
+		// #atproto_space_host cutover: vox-pop #917 swapped the legacy #atproto_pds
+		// entry for #atproto_space_host, and nothing else changed — the signing key
+		// is still zDnaeUpy…WERffV. Merge this only right after the new document is
+		// live: until then validate-pins sees the old one and fails the deploy.
+		"ANTIPHONY_APP_DID_DOC_HASHES": "voxpop:sha256:854dfcf0c507f6b7c73aee0cd8d066a9fa5c27276fcd72b9ecad3f92f83edfbb",
 		// The transcode backend for on-demand renditions (apps/audio-rendition).
 		// Set 2026-08-18, when that service first deployed successfully — before
 		// then this was deliberately ABSENT, which is a supported state: the audio
