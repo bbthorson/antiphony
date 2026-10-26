@@ -70,7 +70,7 @@
   },
   "//peerDependencies": "React is a peer, not a dependency, so a consumer's own React is the one the hooks run on. Two React copies in one tree means two dispatchers and 'invalid hook call' at runtime \u2014 the standard failure mode for a hooks library that gets this wrong. The range matches what apps/reference and the Vox Pop clients are on.",
   "peerDependencies": {
-    "react": "^19.2.8"
+    "react": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -79,8 +79,8 @@
     "@types/react": "^19.0.7",
     "eslint": "^10.11.0",
     "jsdom": "^30.1.3",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsdown": "^0.23.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.71.2",
