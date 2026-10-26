@@ -36,12 +36,12 @@
   "//devDependencies.wrangler": "Declared at the root because deploy-docs.yml runs `npx wrangler deploy` from the repo root. Without it the command relies on core-api's copy hoisting, and on a miss `npx` silently downloads the newest wrangler onto the deploy path. Keep in step with apps/core-api/package.json.",
   "//devDependencies.zod": "Declared at the root to force npm to hoist a single instance of zod across the monorepo. Without this, packages/shared and apps/core-api receive separate nested copies of zod in their node_modules, breaking @hono/zod-openapi's prototype schema extension.",
   "devDependencies": {
-    "@atproto/lex-document": "^0.1.13",
-    "eslint": "^10.11.0",
-    "knip": "^6.41.0",
+    "@atproto/lex-document": "^0.1.14",
+    "eslint": "^10.13.0",
+    "knip": "^6.42.1",
     "semver": "^7.8.5",
     "typescript": "^5.7.2",
-    "wrangler": "^4.151.0",
+    "wrangler": "^4.152.0",
     "zod": "^4.6.5"
   },
   "//packageManager": "The single source for the npm version: every workflow reads this field and installs it explicitly, because actions/setup-node does not switch npm on it. apps/audio-rendition/Dockerfile pins the same version by hand \u2014 keep the two in step. npm 10 and 12 install different trees from the same lockfile (12 honours `allowScripts`), so bump it deliberately.",
