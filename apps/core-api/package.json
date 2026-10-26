@@ -30,7 +30,7 @@
     "@neondatabase/serverless": "^1.2.0",
     "hono": "^4.13.12",
     "multiformats": "^14.0.5",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.11",
