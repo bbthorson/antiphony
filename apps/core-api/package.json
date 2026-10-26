@@ -33,17 +33,17 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.11",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
-    "eslint": "^10.11.0",
+    "eslint": "^10.13.0",
     "globals": "^17.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.71.2",
+    "typescript-eslint": "^8.72.0",
     "vitest": "^5.0.5",
-    "wrangler": "^4.151.0"
+    "wrangler": "^4.152.0"
   },
   "engines": {
     "node": ">=22"
