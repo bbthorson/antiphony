@@ -260,10 +260,12 @@
 		// document before changing it, because for did:web a changed document is
 		// indistinguishable from a hijack until a person has looked.
 		//
-		// Deliberately EMPTY until voxpop's live document is reviewed and its hash
-		// committed — so the deploy gate fails rather than trusting a document
-		// nobody acknowledged.
-		"ANTIPHONY_APP_DID_DOC_HASHES": "",
+		// voxpop acknowledged 2026-10-26: key zDnaeUpy…WERffV matches vox-pop's
+		// infra/did-web/public/.well-known/did.json. The live document still has
+		// the legacy #atproto_pds service entry; vox-pop #917 moved its committed
+		// copy to #atproto_space_host but that was never redeployed. Redeploying it
+		// changes this hash — update it here in the same breath.
+		"ANTIPHONY_APP_DID_DOC_HASHES": "voxpop:sha256:d70cf6e39eb8fcfc7707f6e9bbf90bffabc3a85a231ff431efa6a238c58f05c2",
 		// The transcode backend for on-demand renditions (apps/audio-rendition).
 		// Set 2026-08-18, when that service first deployed successfully — before
 		// then this was deliberately ABSENT, which is a supported state: the audio
