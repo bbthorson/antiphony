@@ -1,4 +1,4 @@
-import { validateAllPins } from '../app-did.js';
+import { getValidatedPin, validateAllPins } from '../app-did.js';
 
 /**
  * Seed the validated app-DID snapshot for a test, with no network I/O.
@@ -54,4 +54,24 @@ export async function seedValidatedPins(
             };
         }) as unknown as typeof fetch,
     });
+}
+
+/**
+ * Acknowledge the documents currently in the pin snapshot, as if their hashes
+ * had been committed to `ANTIPHONY_APP_DID_DOC_HASHES`.
+ *
+ * For suites whose subject sits downstream of drift detection — signed service
+ * auth refuses keys from an unacknowledged document, and those suites are
+ * about the token, not about #117. Taken from the real snapshot rather than a
+ * hand-computed constant, so a change to the canonical form cannot leave a
+ * fixture asserting a hash nothing produces.
+ */
+export function acknowledgeValidatedPins(appIds: string[]): void {
+    process.env.ANTIPHONY_APP_DID_DOC_HASHES = appIds
+        .map((appId) => {
+            const pin = getValidatedPin(appId);
+            if (!pin) throw new Error(`acknowledgeValidatedPins: no snapshot for "${appId}"`);
+            return `${appId}:${pin.documentHash}`;
+        })
+        .join(',');
 }

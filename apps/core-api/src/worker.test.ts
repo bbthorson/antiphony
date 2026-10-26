@@ -25,7 +25,7 @@ process.env.LOG_LEVEL = 'silent';
 // in `app-config.test.ts`. Here it is setup, not the thing under test.
 process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.test.antiphony.dev';
 
-const revalidateAllPins = vi.fn(async () => [] as unknown[]);
+const revalidateAllPins = vi.fn(async () => ({ failures: [] as unknown[], changes: [] as unknown[] }));
 const sqlQuery = vi.fn(async (_text?: string): Promise<Record<string, unknown>[]> => [
     { swept_table: 'rate_limits', deleted: 3 },
 ]);
@@ -70,7 +70,7 @@ beforeEach(() => {
     sqlQuery.mockClear();
     process_.mockClear();
     ensureTenantPin.mockClear();
-    revalidateAllPins.mockImplementation(async () => []);
+    revalidateAllPins.mockImplementation(async () => ({ failures: [], changes: [] }));
     ensureTenantPin.mockImplementation(async () => undefined);
     process_.mockImplementation(async () => true);
     services = { backend: 'postgres', sql: { query: sqlQuery }, audioProcessingDeps: {} };
@@ -145,9 +145,16 @@ describe('worker scheduled — the TTL sweep', () => {
         // Disk reclamation and did:web custody are unrelated concerns, and the
         // drift report is a log line rather than a throw — a tenant that has
         // genuinely drifted fails closed at its next request, not here.
-        revalidateAllPins.mockResolvedValueOnce([
-            { originAppId: 'vox-pop', did: 'did:web:x', reason: 'did-doc-id-mismatch', kind: 'disproof' },
-        ]);
+        revalidateAllPins.mockResolvedValueOnce({
+            failures: [{ originAppId: 'vox-pop', did: 'did:web:x', reason: 'did-doc-id-mismatch', kind: 'disproof' }],
+            changes: [
+                {
+                    originAppId: 'vox-pop',
+                    did: 'did:web:x',
+                    acknowledgement: { status: 'changed', expected: 'sha256:aa', observed: 'sha256:bb' },
+                },
+            ],
+        });
         const worker = await freshWorker();
 
         await worker.scheduled(cron, {}, ctx);

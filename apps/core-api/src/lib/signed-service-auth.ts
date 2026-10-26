@@ -1,5 +1,6 @@
 import { base58btc } from 'multiformats/bases/base58';
 import { parseAppDids, getValidatedPin } from './app-did.js';
+import { documentAcknowledgement } from './did-document-hash.js';
 
 /**
  * Verify the signed service-auth JWT Vox Pop sends in `X-Antiphony-Service-Auth`
@@ -30,10 +31,15 @@ import { parseAppDids, getValidatedPin } from './app-did.js';
  *     a key lookup that is defensible today. If this ever becomes the ONLY
  *     credential, that window is the blast radius of Vox Pop's DID host going
  *     down, and it needs revisiting first (flagged on #116).
- *   - Nothing detects that the document CHANGED (#117). An attacker who
- *     controls the `did:web` host can add a `verificationMethod` and mint
- *     tokens we would accept. That is precisely why this ships log-only: the
- *     bearer token is still the credential, and this is an observation.
+ *   - A key is only taken from a document whose hash matches the baseline
+ *     acknowledged in `ANTIPHONY_APP_DID_DOC_HASHES` (#117). Without that, an
+ *     attacker who controls the `did:web` host could add a
+ *     `verificationMethod` and mint tokens we would accept. A legitimate
+ *     rotation therefore reads `unacknowledged-document` until its hash is
+ *     committed — which is the acknowledgment step, not a side effect of it.
+ *     The custody check does NOT refuse on the same mismatch: a changed
+ *     document is not a disproved custody claim, but it is an untrusted
+ *     keystore.
  *
  * ## Order of operations
  *
@@ -62,6 +68,7 @@ export type SignedServiceAuthFailure =
     | 'unknown-issuer'
     | 'ambiguous-issuer'
     | 'no-pin-snapshot'
+    | 'unacknowledged-document'
     | 'no-verification-method'
     | 'unsupported-key-type'
     | 'malformed-key'
@@ -411,6 +418,11 @@ export async function verifySignedServiceAuth(
 
     const pin = getValidatedPin(tenant.originAppId);
     if (!pin) return { ok: false, reason: 'no-pin-snapshot', detail: tenant.originAppId };
+
+    const ack = documentAcknowledgement(tenant.originAppId, pin.documentHash);
+    if (ack.status !== 'acknowledged') {
+        return { ok: false, reason: 'unacknowledged-document', detail: `${ack.status}: ${pin.documentHash}` };
+    }
 
     const vm = verificationMethodByKid(pin.document, kid);
     if (!vm) return { ok: false, reason: 'no-verification-method', detail: kid };

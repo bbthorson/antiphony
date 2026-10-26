@@ -142,9 +142,12 @@ snapshotted the DID document, so the key is a field read on something in memory.
   unreachable. Defensible for an observation. If this ever becomes the *only*
   credential, that window is the blast radius of a tenant's DID host going down,
   and it must be revisited **before** the flip, not after.
-- **Document drift is not detected (#117).** Whoever controls the `did:web` host
-  can add a `verificationMethod` and mint tokens this verifier accepts. That is
-  the strongest single reason enforcement waits.
+- **Keys come only from an acknowledged document (#117).** A document whose
+  canonical hash does not match `ANTIPHONY_APP_DID_DOC_HASHES` yields
+  `unacknowledged-document` before any key is selected, so a `verificationMethod`
+  added by whoever controls the `did:web` host is not accepted. The corollary:
+  a legitimate rotation fails verification until its hash is committed, so the
+  tenant must announce a rotation before flipping its signer.
 
 ### Rollout
 

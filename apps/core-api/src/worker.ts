@@ -141,15 +141,32 @@ export default {
         //
         // Reports rather than throws, and runs BEFORE the sweep so a drift
         // report is not lost to a database problem.
-        const drift = await revalidateAllPins({
+        const { failures, changes } = await revalidateAllPins({
             expectedPdsHost: APP_CONFIG.PDS_HOST,
             kv: bindings?.PIN_CACHE as PinCacheKV | undefined,
         });
-        if (drift.length > 0) {
+        if (failures.length > 0) {
             logger.error(
-                { drift },
+                { drift: failures },
                 '[app-did] pin drift detected — a tenant DID no longer proves custody',
             );
+        }
+        // A changed document still proves custody, so nothing fails closed on
+        // it (#117) — but for `did:web` it is indistinguishable from a hijack
+        // until someone acknowledges it, so it is an error, not a warning.
+        // A tenant with no baseline at all is a config gap, and a warning.
+        for (const change of changes) {
+            if (change.acknowledgement.status === 'changed') {
+                logger.error(
+                    change,
+                    '[app-did] DID document CHANGED since it was acknowledged — re-keying event or hijack; review it and update ANTIPHONY_APP_DID_DOC_HASHES',
+                );
+            } else {
+                logger.warn(
+                    change,
+                    '[app-did] DID document has no acknowledged baseline in ANTIPHONY_APP_DID_DOC_HASHES',
+                );
+            }
         }
 
         // Mechanism 5: the reading `/health` can only report when someone

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { validateAllPins, checkTenantRegistryDrift } from '../src/lib/app-did.js';
+import { canonicalJson, documentAcknowledgement, parseDocHashBaselines } from '../src/lib/did-document-hash.js';
 import { parseAppTokens } from '../src/middleware/service-auth.js';
 
 /**
@@ -27,6 +28,23 @@ import { parseAppTokens } from '../src/middleware/service-auth.js';
  * env vars — tenants with a token but no pin, and the reverse — which is config
  * drift, fully knowable at deploy time, and it has no business being a runtime
  * warning nobody reads.
+ *
+ * ## Document drift fails the deploy (#117)
+ *
+ * Every resolved document is hashed (JCS, then SHA-256) and compared with the
+ * baseline committed in `ANTIPHONY_APP_DID_DOC_HASHES`. A mismatch — or a
+ * tenant with no baseline — fails the gate, and the fix is to update the hash
+ * in `wrangler.jsonc` in the same PR. That is the "surfaced and acknowledged"
+ * step of the pinning contract: a re-keying event becomes a reviewed diff.
+ *
+ * The failure prints the canonical document it saw. Read it before copying
+ * the hash: a gate that is satisfied by pasting whatever it printed has been
+ * turned into a formality, and for `did:web` a changed document is
+ * indistinguishable from a hijack until a person has looked.
+ *
+ * This is the only place a mismatch stops anything. The hourly cron reports it
+ * and leaves the tenant serving — a changed document is not a disproved
+ * custody claim. See `src/lib/did-document-hash.ts`.
  *
  * ## What this deliberately does NOT do
  *
@@ -105,6 +123,7 @@ function workerVars(): Record<string, string> {
 const vars = workerVars();
 const pdsHost = (process.env.ANTIPHONY_PDS_HOST ?? vars.ANTIPHONY_PDS_HOST)?.trim();
 const raw = (process.env.ANTIPHONY_APP_DIDS ?? vars.ANTIPHONY_APP_DIDS)?.trim();
+const rawHashes = process.env.ANTIPHONY_APP_DID_DOC_HASHES ?? vars.ANTIPHONY_APP_DID_DOC_HASHES;
 
 if (!raw) {
     // An empty pin set is valid — a deployment with no tenants onboarded yet.
@@ -127,6 +146,35 @@ try {
     const snapshot = await validateAllPins({ expectedPdsHost: pdsHost, raw });
     const proved = [...snapshot.values()].map((p) => `${p.originAppId} (via ${p.custody.kind})`);
     console.log(`[validate-pins] proved custody for ${snapshot.size} tenant(s): ${proved.join(', ')}`);
+
+    // Drift: every document must match the hash someone acknowledged. Checked
+    // for ALL tenants before failing, so one deploy surfaces every change
+    // rather than one per attempt.
+    const baselines = parseDocHashBaselines(rawHashes);
+    const unacknowledged = [...snapshot.values()].flatMap((pin) => {
+        const ack = documentAcknowledgement(pin.originAppId, pin.documentHash, baselines);
+        return ack.status === 'acknowledged' ? [] : [{ pin, ack }];
+    });
+    if (unacknowledged.length) {
+        for (const { pin, ack } of unacknowledged) {
+            const why =
+                ack.status === 'changed'
+                    ? `CHANGED since it was acknowledged (expected ${ack.expected})`
+                    : 'has NO acknowledged baseline';
+            console.error(
+                `[validate-pins] ${pin.originAppId} (${pin.did}): DID document ${why}.\n` +
+                    `  observed ${pin.documentHash}\n` +
+                    `  canonical document:\n  ${canonicalJson(pin.document)}`,
+            );
+        }
+        const entries = [...snapshot.values()].map((p) => `${p.originAppId}:${p.documentHash}`).join(',');
+        throw new Error(
+            `${unacknowledged.length} tenant DID document(s) not acknowledged — a re-keying event or a hijack, and only a person can tell which.\n` +
+                `Review each document above. If every change is expected, acknowledge it by setting this in apps/core-api/wrangler.jsonc vars:\n` +
+                `  "ANTIPHONY_APP_DID_DOC_HASHES": "${entries}"`,
+        );
+    }
+    console.log(`[validate-pins] every DID document matches its acknowledged hash`);
 
     // Name the tenants still on the legacy claim. `#atproto_pds` asserts we are
     // an AT Protocol PDS, which we are not (#115) — it stays accepted only so

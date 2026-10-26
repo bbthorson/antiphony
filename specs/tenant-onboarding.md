@@ -84,9 +84,8 @@ The validator requires `id` to equal the pinned DID and a custody endpoint whose
 host matches `ANTIPHONY_PDS_HOST`. A signing `verificationMethod` is **not**
 required for the pin to validate — the unsigned-repo gap is deferred in
 `atproto-authority-model.md` — but publishing one is what enables signed service
-auth (`specs/service-auth.md`), and a tenant that does should expect the added
-entry to be absorbed silently: document drift is not currently detected
-([#117](https://github.com/bbthorson/antiphony/issues/117)).
+auth (`specs/service-auth.md`). Adding one is a document change like any other:
+it needs acknowledging (see [Drift](#drift--re-keying)).
 
 ### 3. Generate a service token
 
@@ -100,7 +99,14 @@ MAY carry two tokens simultaneously (rotation window).
 ANTIPHONY_PDS_HOST=api.antiphony.dev
 ANTIPHONY_APP_DIDS=bardcast:did:web:{bardcast-domain},voxpop:did:web:{voxpop-domain}
 ANTIPHONY_APP_TOKENS=bardcast:{token-a},voxpop:{token-b}
+ANTIPHONY_APP_DID_DOC_HASHES=bardcast:sha256:{hex},voxpop:sha256:{hex}
 ```
+
+The document hashes are the acknowledged baseline for drift detection. Run
+`npm run validate:pins -w @antiphony/core-api` with the new pin and no hash: it
+fails, prints each tenant's canonical document and the line to commit. Read the
+document — it is what you are vouching for — then commit the hash in
+`wrangler.jsonc`.
 
 `ANTIPHONY_PDS_HOST` is what turns the custody host-match check on — while it is
 unset, the gate logs a warning and only checks that *a* custody endpoint exists,
@@ -120,12 +126,23 @@ Two distinct "drift" concerns:
 
 1. **Registry drift** (implemented): the token and DID registries disagree.
    `checkTenantRegistryDrift` warns at boot — a fast misconfiguration catch.
-2. **DID-document drift** (deferred): a `did:web` document changing after
-   onboarding is indistinguishable from domain hijack, and is the fragility
-   mitigation you get before `did:plc` (`atproto-authority-model.md`). Detecting
-   it needs a *persisted* baseline to diff against across boots. Deferred to the
-   **GA gate** (first kept post) — during beta the corpus is wipeable and there
-   are no live users, so the fragility it mitigates is not yet live.
+2. **DID-document drift** (implemented, #117): a `did:web` document changing
+   after onboarding is indistinguishable from domain hijack, and is the
+   fragility mitigation you get before `did:plc` (`atproto-authority-model.md`).
+   The baseline is the JCS-canonical SHA-256 hash committed in
+   `ANTIPHONY_APP_DID_DOC_HASHES` — acknowledged, not observed, because a
+   baseline that updates itself from the resolution it should be checked
+   against detects nothing.
+   - **Deploy gate** (`validate-pins.ts`) fails on a changed or missing hash.
+     Updating the hash in the same PR is the acknowledgment.
+   - **Hourly cron** logs a changed document at `error` and keeps serving the
+     tenant: custody still proves out, and a legitimate rotation looks exactly
+     like this.
+   - **Signed service auth** refuses keys from an unacknowledged document
+     (`unacknowledged-document`).
+
+   A tenant rotating a key should publish the new key alongside the old and
+   tell us; we acknowledge the new hash, and again when the old key is dropped.
 
 Because the app DID is sealed into reply StrongRef CIDs at *write* time, treat
 any DID change as a re-keying event that invalidates existing thread references
