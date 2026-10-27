@@ -20,6 +20,7 @@ When a spec's status changes, update its Status line and this table together.
 | [`core-bff-boundary.md`](core-bff-boundary.md) | What belongs in the core versus a consuming app's BFF, the join contract between them, and where each removed route went. | implemented |
 | [`core-surface.md`](core-surface.md) | The public API is posts and audio only; author identity is carried as opaque references, never hydrated profiles. | implemented |
 | [`cross-repo-design.md`](cross-repo-design.md) | How Antiphony, Vox Pop and Bardcast fit together: REST for tenants and XRPC for the protocol, per-prompt reply spaces, the author segment, the Phase 3 plan, and shared code to move into Antiphony. | decided |
+| [`deletion.md`](deletion.md) | Deleting posts and their audio: hard delete with a content-free ledger, what happens to replies below a deleted post, shared-blob safety, author erasure. Contract 0.10.0. | implemented |
 | [`did-plc-and-multi-did-tenancy.md`](did-plc-and-multi-did-tenancy.md) | `did:plc` tenant DIDs and more than one DID per tenant. Phase 1 (the pin validator accepts `did:plc`) is built; later phases are proposal. | partial |
 | [`docs-content-scope.md`](docs-content-scope.md) | Which content belongs on docs.antiphony.dev (protocol and infrastructure) and which belongs to apps built on it. | implemented |
 | [`enrichment-pipeline.md`](enrichment-pipeline.md) | The four processing stages (denoise, trim, transcribe, waveform), their ordering, durable dispatch, and the provider seam. | implemented |

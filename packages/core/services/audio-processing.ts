@@ -377,6 +377,15 @@ export class AudioProcessingService {
         // which is what invalidates the derived artifacts below.
         let variantChanged = false;
 
+        // Every variant written for this post, superseded ones included, so a
+        // delete can find them all (specs/deletion.md § 1.1). Read-modify-write
+        // is safe here: the lease makes this the only pass running for the post.
+        const derivedBlobCids = [...(post.processing.derivedBlobCids ?? [])];
+        const recordDerived = (cid: string): string[] => {
+            if (!derivedBlobCids.includes(cid)) derivedBlobCids.push(cid);
+            return [...derivedBlobCids];
+        };
+
         // A `ready` link being re-applied is marked `pending` BEFORE it runs,
         // for the same reason derived recompute is: if this pass dies partway,
         // a retry must find outstanding work. Left `ready`, it would compute
@@ -416,6 +425,7 @@ export class AudioProcessingService {
                     await this.settle(originAppId, postId, {
                         denoise: 'ready',
                         processedBlobCid,
+                        derivedBlobCids: recordDerived(processedBlobCid),
                         // Recorded because providers transcode: without it a
                         // later pass would read these bytes under the ORIGINAL
                         // embed's mime type.
@@ -462,6 +472,7 @@ export class AudioProcessingService {
                     await this.settle(originAppId, postId, {
                         trim: 'ready',
                         processedBlobCid,
+                        derivedBlobCids: recordDerived(processedBlobCid),
                         processedMimeType: trimmed.mimeType,
                         // The first stage that makes the variant's duration
                         // genuinely differ from the record's immutable

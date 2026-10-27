@@ -26,8 +26,18 @@ function makeDeps(): SpaceDependencies & { stored: Map<string, SpaceRecord> } {
             stored.set(id, record);
             return record;
         }),
+        // Occupied keys stand in for a space that still holds posts.
+        deleteSpace: vi.fn(async (originAppId, k) => {
+            const id = `${originAppId}/${k.type}/${k.skey}`;
+            if (!stored.has(id)) return 'absent' as const;
+            if (occupied.has(id)) return 'not-empty' as const;
+            stored.delete(id);
+            return 'deleted' as const;
+        }),
     };
 }
+
+const occupied = new Set<string>();
 
 describe('SpaceService', () => {
     const key = { type: 'game.bardcast.space.player', skey: 'did:plc:abc123player' };
@@ -61,5 +71,19 @@ describe('SpaceService', () => {
             await expect(svc.putSpace({ originAppId: 'bardcast', key: bad, readPolicy: 'public', writePolicy: 'public' })).rejects.toMatchObject({ status: 400 });
         }
         expect(deps.putSpace).not.toHaveBeenCalled();
+    });
+
+    it('deletes an empty space, answers false for an absent one, and 409s one that holds posts', async () => {
+        const deps = makeDeps();
+        const svc = new SpaceService(deps);
+        await svc.putSpace({ originAppId: 'bardcast', key, readPolicy: 'public', writePolicy: 'public' });
+        const full = { ...key, skey: 'did:plc:fullplayer' };
+        await svc.putSpace({ originAppId: 'bardcast', key: full, readPolicy: 'public', writePolicy: 'public' });
+        occupied.add(`bardcast/${full.type}/${full.skey}`);
+
+        await expect(svc.deleteSpace('bardcast', key)).resolves.toBe(true);
+        await expect(svc.deleteSpace('bardcast', key)).resolves.toBe(false);
+        await expect(svc.deleteSpace('bardcast', full)).rejects.toMatchObject({ status: 409, code: 'SPACE_NOT_EMPTY' });
+        await expect(svc.deleteSpace('bardcast', { ...key, skey: 'has space' })).rejects.toMatchObject({ status: 400 });
     });
 });

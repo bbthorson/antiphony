@@ -67,12 +67,35 @@ describe('webhookNotifier', () => {
         expect(headers['X-Antiphony-Timestamp']).toBe(EVENT.occurredAt);
         expect(headers['Content-Type']).toBe('application/json');
         expect(JSON.parse(body)).toEqual({
+            type: 'stage.settled',
             postId: 'p1',
             originAppId: 'vox-pop',
             stage: 'transcribe',
             status: 'ready',
             occurredAt: '2026-07-19T14:03:11.204Z',
         });
+    });
+
+    it('sends post.deleted through the same signed channel, with its own type and event id', async () => {
+        // specs/deletion.md § 8: one URL and secret per tenant, two event types.
+        configureTenant();
+        const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+        const deleted = {
+            originAppId: 'vox-pop',
+            postId: 'p1',
+            uri: 'at://did:web:voxpop.example/dev.antiphony.audio.post/p1',
+            kind: 'prompt' as const,
+            occurredAt: '2026-10-20T14:03:11.204Z',
+        };
+
+        await webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep).notifyDeleted(deleted);
+
+        const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+        const body = init.body as string;
+        const headers = init.headers as Record<string, string>;
+        expect(headers['X-Antiphony-Signature']).toBe(`sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`);
+        expect(headers['X-Antiphony-Event-Id']).toBe('p1:deleted');
+        expect(JSON.parse(body)).toEqual({ type: 'post.deleted', ...deleted });
     });
 
     it('does not POST for a tenant with no webhook configured', async () => {

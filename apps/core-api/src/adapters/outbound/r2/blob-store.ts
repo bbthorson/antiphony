@@ -34,6 +34,9 @@ export interface R2BlobStoreConfig {
     bucketName: string;
 }
 
+/** Most keys one R2 `delete` call accepts. */
+const R2_DELETE_BATCH = 1000;
+
 /** `r2://{bucket}/{path}` — anchored so a partial match cannot pass. */
 const R2_URL = /^r2:\/\/([^/]+)\/(.+)$/;
 
@@ -108,6 +111,14 @@ export function r2BlobStore(config: R2BlobStoreConfig): BlobStore {
             const object = await bucket.get(objectPath);
             if (!object) return null;
             return new Uint8Array(await object.arrayBuffer());
+        },
+
+        async delete(objectPaths: string[]): Promise<void> {
+            // R2's limit per call. A post's blobs and renditions are a handful of
+            // keys, so a page of deletions is one or two calls.
+            for (let i = 0; i < objectPaths.length; i += R2_DELETE_BATCH) {
+                await bucket.delete(objectPaths.slice(i, i + R2_DELETE_BATCH));
+            }
         },
 
         extractObjectPath(url: string): string | null {

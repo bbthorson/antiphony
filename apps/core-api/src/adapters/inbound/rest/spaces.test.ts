@@ -27,6 +27,8 @@ const spaceService = new SpaceService({
         rows.set(id, row);
         return row;
     },
+    deleteSpace: async (originAppId, key) =>
+        rows.delete(`${originAppId}|${key.type}|${key.skey}`) ? 'deleted' : 'absent',
 });
 
 vi.mock('../../../composition.js', () => ({

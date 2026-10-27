@@ -101,15 +101,33 @@ export function postgresAudioProcessingDependencies(
             // routed there rather than into the jsonb. Nothing does this today
             // — the lease moves through claim/release — but the patch type
             // permits it, and silently dropping it would be the worse failure.
+            // A pass can write a variant for a post that is deleted mid-pass. If
+            // the delete committed first, this update finds no row, and nothing
+            // else will ever name the blob the pass just wrote, so the same
+            // statement queues it for the blob drain (specs/deletion.md § 6.2).
+            // If this update commits first, the delete finds the CID in the
+            // post's state instead. Either way the bytes are collected.
+            const written = [
+                ...(typeof rest.processedBlobCid === 'string' ? [rest.processedBlobCid] : []),
+                ...(Array.isArray(rest.derivedBlobCids) ? (rest.derivedBlobCids as string[]) : []),
+            ];
             const rows = await sql.query<{ id: string }>(
                 `
-                update posts
-                   set processing  = coalesce(processing, '{}'::jsonb) || $3::jsonb,
-                       lease_until = coalesce($4, lease_until)
-                 where id = $1 and origin_app_id = $2
-                returning id
+                with updated as (
+                    update posts
+                       set processing  = coalesce(processing, '{}'::jsonb) || $3::jsonb,
+                           lease_until = coalesce($4, lease_until)
+                     where id = $1 and origin_app_id = $2
+                    returning id
+                ), orphaned as (
+                    insert into blob_deletions (origin_app_id, cid)
+                    select distinct $2::text, c from unnest($5::text[]) as c
+                     where not exists (select 1 from updated)
+                    on conflict (origin_app_id, cid) do update set enqueued_at = now()
+                )
+                select id from updated
                 `,
-                [postId, originAppId, JSON.stringify(merge), leaseUntil ?? null],
+                [postId, originAppId, JSON.stringify(merge), leaseUntil ?? null, written],
             );
 
             // Reject a patch to a missing post: a patch aimed at a post that is gone means the caller's view of

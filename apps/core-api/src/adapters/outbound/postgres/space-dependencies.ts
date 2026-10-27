@@ -74,5 +74,30 @@ export function postgresSpaceDependencies(sql: SqlClient): SpaceDependencies {
             if (!row) throw new Error('[postgres] space upsert returned no row');
             return toRecord(row);
         },
+
+        async deleteSpace(originAppId, key) {
+            // One statement. The `not exists` guard answers "not empty" itself
+            // rather than leaning on the posts foreign key, which would refuse
+            // the delete with an error indistinguishable from any other failure.
+            const [row] = await sql.query<{ found: boolean; deleted: boolean }>(
+                `
+                with target as (
+                    select 1 from spaces where origin_app_id = $1 and space_type = $2 and skey = $3
+                ), removed as (
+                    delete from spaces
+                     where origin_app_id = $1 and space_type = $2 and skey = $3
+                       and not exists (
+                           select 1 from posts
+                            where origin_app_id = $1 and space_type = $2 and skey = $3
+                       )
+                    returning 1
+                )
+                select exists (select 1 from target) as found, exists (select 1 from removed) as deleted
+                `,
+                [originAppId, key.type, key.skey],
+            );
+            if (!row?.found) return 'absent';
+            return row.deleted ? 'deleted' : 'not-empty';
+        },
     };
 }

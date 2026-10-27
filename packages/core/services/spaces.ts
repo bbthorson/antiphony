@@ -1,5 +1,5 @@
 import { isValidNsid, isValidRecordKey, SpaceRef } from '@atproto/syntax';
-import { NotFoundError, ValidationError } from 'shared/errors';
+import { NotFoundError, ServiceError, ValidationError } from 'shared/errors';
 import type { SpaceKey, SpacePolicy, SpaceRecord, SpaceView } from 'shared/types/spaces';
 import type { SpaceDependencies } from '../ports/space-dependencies';
 
@@ -36,6 +36,18 @@ export class SpaceService {
         return this.toView(stored);
     }
 
+    /**
+     * Delete an empty space (specs/deletion.md § 4.3). True when it was deleted,
+     * false when there was no such space, so a retry is harmless. A space that
+     * still holds posts is a 409 `SPACE_NOT_EMPTY`.
+     */
+    async deleteSpace(originAppId: string, key: SpaceKey): Promise<boolean> {
+        assertValidSpaceKey(key);
+        const outcome = await this.deps.deleteSpace(originAppId, key);
+        if (outcome === 'not-empty') throw new SpaceNotEmptyError();
+        return outcome === 'deleted';
+    }
+
     toView(space: SpaceRecord): SpaceView {
         return {
             uri: spaceUri(this.deps.getAppDid(space.originAppId), space),
@@ -60,4 +72,14 @@ export function assertValidSpaceKey(key: SpaceKey): void {
 export function spaceUri(authority: string, key: SpaceKey): string {
     // Validated by the caller; SpaceRef wants the branded string types.
     return new SpaceRef(authority as `did:${string}:${string}`, key.type as `${string}.${string}.${string}`, key.skey).toString();
+}
+
+/** 409 — a space can't be deleted while any post is in it. */
+export const SPACE_NOT_EMPTY = 'SPACE_NOT_EMPTY';
+
+export class SpaceNotEmptyError extends ServiceError {
+    constructor() {
+        super('Space still holds posts; delete them first', 409, undefined, SPACE_NOT_EMPTY);
+        this.name = 'SpaceNotEmptyError';
+    }
 }

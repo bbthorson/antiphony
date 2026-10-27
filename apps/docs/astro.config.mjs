@@ -82,6 +82,7 @@ export default defineConfig({
 					label: 'API reference',
 					items: [
 						{ label: 'Overview', slug: 'api/overview' },
+						{ label: 'Deleting posts and audio', slug: 'api/deleting' },
 						// Generated Scalar-rendered endpoint list — a secondary aid.
 						{ label: 'Endpoint reference', link: '/api/reference/' },
 					],

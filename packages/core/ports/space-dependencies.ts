@@ -22,4 +22,11 @@ export interface SpaceDependencies {
         writePolicy: SpacePolicy;
         managingAppEndpoint?: string;
     }): Promise<SpaceRecord>;
+
+    /**
+     * Delete the space if no post is in it. `absent` when there was no such
+     * space; `not-empty` when posts remain, because a post's space is sealed into
+     * its URI and every reply's StrongRef, so a space holding posts can't go.
+     */
+    deleteSpace(originAppId: string, key: SpaceKey): Promise<'deleted' | 'absent' | 'not-empty'>;
 }
