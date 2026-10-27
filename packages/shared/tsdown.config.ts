@@ -33,6 +33,7 @@ const entry = [
   'observability/report-error.ts',
   'types/audio.ts',
   'types/blob.ts',
+  'types/deletion.ts',
   // `types/processing.ts` is an entry for the same reason the others are: the
   // package `exports` map advertises a `./types/*` wildcard, so
   // `@antiphony/shared/types/processing` is a subpath consumers can write — and

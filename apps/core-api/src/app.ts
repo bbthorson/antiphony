@@ -7,6 +7,7 @@ import { postsRoute } from './adapters/inbound/rest/posts.js';
 import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { spacesRoute } from './adapters/inbound/rest/spaces.js';
+import { authorsRoute } from './adapters/inbound/rest/authors.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
 import { servicesFor } from './composition.js';
@@ -129,6 +130,7 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/posts', postsRoute);
     // A tenant's atproto spaces (specs/spaces.md).
     a.route('/api/v1/spaces', spacesRoute);
+    a.route('/api/v1/authors', authorsRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
     // more-specific upload sub-route BEFORE the proxy so it takes
     // precedence — Hono dispatches by registration order.

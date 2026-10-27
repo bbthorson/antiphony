@@ -1,5 +1,6 @@
 import { AudioPostService } from '@antiphony/core/services/audio-posts';
 import { SpaceService } from '@antiphony/core/services/spaces';
+import { PostDeletionService } from '@antiphony/core/services/post-deletion';
 import { makeStorageService, type StorageService } from '@antiphony/core/services/storage';
 import type { AudioPostDependencies } from '@antiphony/core/ports/audio-posts-dependencies';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
@@ -20,6 +21,8 @@ import { logger } from './lib/logger.js';
 import { neonSqlClient } from './adapters/outbound/postgres/client.js';
 import { postgresAudioPostDependencies } from './adapters/outbound/postgres/audio-posts-dependencies.js';
 import { postgresSpaceDependencies } from './adapters/outbound/postgres/space-dependencies.js';
+import { postgresPostDeletionDependencies } from './adapters/outbound/postgres/post-deletion-dependencies.js';
+import { webhookNotifier } from './adapters/outbound/webhook/notifier.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
 import { postgresRateLimitStore } from './adapters/outbound/postgres/rate-limit-store.js';
 import { postgresIdempotencyStore } from './adapters/outbound/postgres/idempotency-store.js';
@@ -68,6 +71,8 @@ export interface Services {
     audioPostService: AudioPostService;
     /** A tenant's atproto spaces (specs/spaces.md). */
     spaceService: SpaceService;
+    /** Deleting posts and their audio (specs/deletion.md). */
+    postDeletionService: PostDeletionService;
     storage: StorageService;
     audioPostDeps: AudioPostDependencies;
     audioProcessingDeps: AudioProcessingDependencies;
@@ -76,7 +81,8 @@ export interface Services {
     /**
      * The raw SQL handle. Present for maintenance work that is not a domain
      * operation and so has no port to reach through — today only the TTL sweep
-     * the Worker's cron drives.
+     * the Worker's cron drives. (The cron's blob drain goes through
+     * `postDeletionService`, which has one.)
      */
     sql: SqlClient;
     /**
@@ -224,6 +230,11 @@ export function createServices(env: RuntimeEnv): Services {
     return {
         audioPostService: new AudioPostService(audioPostDeps),
         spaceService: new SpaceService(postgresSpaceDependencies(sql)),
+        postDeletionService: new PostDeletionService(
+            postgresPostDeletionDependencies(sql, audioPostDeps, storage),
+            webhookNotifier(logger),
+            logger,
+        ),
         storage,
         audioPostDeps,
         audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),

@@ -47,4 +47,6 @@ export interface R2BucketLike {
     ): Promise<unknown>;
     get(key: string, options?: R2GetOptions): Promise<R2ObjectBodyLike | null>;
     head(key: string): Promise<R2ObjectMeta | null>;
+    /** R2 takes up to 1,000 keys per call; a key that holds nothing is not an error. */
+    delete(keys: string | string[]): Promise<void>;
 }

@@ -431,6 +431,7 @@ describe('AudioProcessingService.process', () => {
                 processedBlobCid: CLEANED_CID,
                 processedMimeType: 'audio/mpeg',
                 processedDurationMs: 3100,
+                derivedBlobCids: [CLEANED_CID],
             });
         });
 
@@ -448,6 +449,27 @@ describe('AudioProcessingService.process', () => {
             const settled = patches.filter((patch) => patch.processedBlobCid).at(-1);
             expect(settled?.processedMimeType).toBe('audio/mpeg');
             expect(settled?.processedDurationMs).toBe(3100);
+        });
+
+        it('records both variants it wrote, so a delete can find the superseded one', async () => {
+            // The denoised blob is replaced by the trimmed one within the pass,
+            // but it still holds the person's voice; without the list nothing
+            // would name it (specs/deletion.md § 1.1).
+            const { deps, patches } = makeDeps(makePost({
+                processing: {
+                    denoise: 'pending',
+                    trim: 'pending',
+                    derivedBlobCids: ['bafkreiearlier'],
+                    updatedAt: new Date(),
+                },
+            }));
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            const lists = patches.map((patch) => patch.derivedBlobCids).filter(Boolean);
+            expect(lists).toEqual([
+                ['bafkreiearlier', CLEANED_CID],
+                ['bafkreiearlier', CLEANED_CID, 'bafkrei2'],
+            ]);
         });
 
         it('runs after denoise, never before', async () => {

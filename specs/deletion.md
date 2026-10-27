@@ -1,6 +1,8 @@
 # Deleting posts and their audio
 
-**Status:** proposal, 2026-10-20. Nothing here is built.
+**Status:** implemented, API contract 0.10.0 (2026-10-27). Proposed 2026-10-20, and the
+decision points in § 11 approved as recommended. Where the build differs from the
+proposal, § 12 says so.
 
 **Why now.** Vox Pop has promised listeners and creators that their recordings
 can be erased, and Antiphony has no delete operation of any kind: no route
@@ -224,8 +226,8 @@ Query: `replies` = `delete` | `keep` | `keep-with-did` (default `delete`).
 ```
 
 - `status`: `deleted` when this call removed the post, `already-deleted` when the
-  ledger already has it. The second is still `200`: the caller asked for the post
-  to be gone, and it is.
+  ledger already has it, `pending` while the subtree needs more calls. The second
+  is still `200`: the caller asked for the post to be gone, and it is.
 - `complete`: `false` when the subtree was larger than one call deletes (§ 7).
   Replies are removed deepest first and the post itself last, so a partial call
   never leaves replies whose deletion was asked for under a missing parent. Call
@@ -288,7 +290,7 @@ calls it after erasing a prompt whose reply space kept nothing.
 
 A delete runs in two steps:
 
-1. **One database transaction:** delete the post rows (with `returning`), delete
+1. **One database statement:** delete the post rows (with `returning`), delete
    their transcripts, write their ledger rows, and insert every candidate CID
    (original, processed, derived) into `blob_deletions (origin_app_id, cid,
    enqueued_at)`.
@@ -405,8 +407,8 @@ Under [`api-versioning.md`](./api-versioning.md):
   marks the `410` and the dangling parent **BREAKING**.
 - **`@antiphony/shared`** gains the request and response schemas and
   `derivedBlobCids` on `ProcessingStateSchema` (optional, internal). That needs a
-  package minor (`0.10.0`) on the package axis when the user chooses to release
-  it. Vox Pop's exact pin stays on `0.9.1` until it moves.
+  package minor (`0.9.2` → `0.10.0`) on the package axis, released separately.
+  Vox Pop's exact pin stays on `0.9.1` until it moves.
 
 ## 11. Decision points for review
 
@@ -419,3 +421,33 @@ Under [`api-versioning.md`](./api-versioning.md):
 | D-5 | `410` for a deleted post, or keep `404`? | `410`, tenant-only (§ 2.3). |
 | D-6 | Contract minor (`0.10.0`) or patch (`0.9.3`)? | Minor (§ 10). |
 | D-7 | Record `derivedBlobCids` in this change, orphan sweep later? | Yes (§ 1.1). |
+
+## 12. As built (2026-10-27)
+
+- **One statement, not a transaction.** `SqlClient` runs one statement at a time over
+  HTTP and can't hold a transaction open, so `deletePosts` is one statement whose
+  data-modifying CTEs delete the rows and transcripts, write the ledger and queue the
+  blobs (`apps/core-api/src/adapters/outbound/postgres/post-deletion-dependencies.ts`).
+  A statement is atomic, which is the property § 6.1 needs.
+- **Re-queueing during a drain.** A CID queued again while a drain is deleting it moves
+  its `enqueued_at`, and the drain only removes rows whose timestamp it read, so the
+  second request survives that drain and is re-checked by the next.
+- **A settle that finds its post gone queues the blob it carried**, in the same
+  statement as the failed update (`audio-processing-dependencies.ts`). This is § 6.2's
+  second race, closed in the adapter rather than the service.
+- **`status: 'pending'`** was added to the single-post response for a subtree that needs
+  more calls; § 4.1 only named the two finished states.
+- **Thread lookup.** The subtree walk reads the whole thread by `reply.root.uri`, a new
+  generated column with a partial index (`reply_root_uri`), and walks parent links in
+  the service.
+- **Author erasure** is keyed for rate limiting by tenant alone, so an operator job that
+  asserts different actors still shares one bucket.
+- **Code:** `packages/core/services/post-deletion.ts` (the walk, paging and policies),
+  `packages/core/ports/post-deletion-dependencies.ts`, `packages/core/ports/deletion-notifier.ts`,
+  `apps/core-api/migrations/0003_deletion.sql`, `apps/core-api/src/adapters/inbound/rest/authors.ts`,
+  and the `DELETE` routes in `rest/posts.ts` and `rest/spaces.ts`.
+- **Tests:** `packages/core/services/post-deletion.test.ts` (policies, ordering, paging,
+  idempotency, erasure), `apps/core-api/src/adapters/outbound/postgres/post-deletion.test.ts`
+  (against Postgres: shared blobs, variants as references, tenant isolation, replies kept
+  in a reply space, R2 failure and retry, re-queue, the mid-pass race), and
+  `apps/core-api/src/adapters/inbound/rest/deletion.test.ts` (the routes and the `410`).

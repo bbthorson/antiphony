@@ -15,8 +15,9 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 
 The canonical resources:
 
-- **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), and `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment). One record type; `reply` presence is prompt-vs-reply.
-- **`/spaces`** — Create, replace and read your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
+- **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment), and [`DELETE`](/api/deleting/) one with its audio. One record type; `reply` presence is prompt-vs-reply.
+- **`/spaces`** — Create, replace, read and delete your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
+- **`/authors`** — [Erase](/api/deleting/#erase-everything-one-author-wrote) every post one author wrote, for an account-erasure request.
 - **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and stream stored audio back (`GET /api/v1/audio`, with range support and optional mp3 renditions): from a stable, non-expiring URL for public audio, and a signed one that expires in an hour for audio in a space.
 
 `GET /api/v1/posts` is one endpoint with two slices: by default the **viewer's own** posts (optionally filtered by `kind`), and with `?rootAuthor=<id>` the replies whose thread root that id authored — "replies addressed to X", the raw feed you'd compose an inbox from. That's [queries, not bespoke views](/explanation/api-design-principles/#2-queries-not-bespoke-views) in practice.
@@ -53,7 +54,7 @@ X-Antiphony-Acting-Actor-Did: <their-at-protocol-did>   # optional
 
 Your app's tenancy (`originAppId`) is derived from the token — Antiphony never sees your end users' credentials, and you never see Antiphony's. Antiphony verifies no end-user identity tokens. Full contract: [`specs/service-auth.md`](https://github.com/bbthorson/antiphony/blob/master/specs/service-auth.md).
 
-The acting-actor header is the optional axis: required on writes and viewer-scoped reads, omitted for an anonymous, tenancy-scoped read. A request with no service token gets a `401` on every data route — "public" means "no viewer," not "no tenant."
+The acting-actor header is the optional axis: required on writes and viewer-scoped reads, omitted for an anonymous, tenancy-scoped read. Deletes don't need it: who may delete is your app's decision (see [Deleting posts and audio](/api/deleting/)). A request with no service token gets a `401` on every data route — "public" means "no viewer," not "no tenant."
 
 The sole anonymous exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted content-addressed `blobs/` paths resolved to audio bytes or derived renditions (e.g. mp3). Audio in a space also needs a signature in the URL (below).
 

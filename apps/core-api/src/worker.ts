@@ -86,6 +86,10 @@ function workerApp(): OpenAPIHono {
     return cachedApp;
 }
 
+
+/** Drain batches the hourly cron runs before handing the rest to the next hour. */
+const BLOB_DRAIN_PASSES = 10;
+
 export default {
     /**
      * ## There is no boot gate here, and that is the design
@@ -208,6 +212,22 @@ export default {
             return;
         }
         await sweepExpired(sql, logger);
+
+        // Finish any blob deletion a delete call left queued: a crash between
+        // its statement and the R2 call, or a drain that failed
+        // (specs/deletion.md § 6.1). Bounded passes so a backlog is worked down
+        // over several hours rather than in one long invocation; swallowed for
+        // the same reason the sweep is — the queue keeps the work.
+        try {
+            const { postDeletionService } = servicesFor(bindings);
+            for (let pass = 0; pass < BLOB_DRAIN_PASSES; pass++) {
+                const { deleted, retained } = await postDeletionService.drainAll();
+                if (deleted + retained > 0) logger.info({ deleted, retained }, '[deletion] drained queued blobs');
+                if (deleted + retained === 0) break;
+            }
+        } catch (err) {
+            logger.error({ err }, '[deletion] blob drain failed; left queued for the next run');
+        }
     },
 
     /**

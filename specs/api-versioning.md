@@ -32,12 +32,12 @@ literal to drift.
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
 divergence. For example, `@antiphony/shared` (at `0.9.2`) and `@antiphony/capture-kit`
-(at `0.1.0`) track their own release lines while the contract sits at `0.9.2` and
+(at `0.1.0`) track their own release lines while the contract sits at `0.10.0` and
 internal packages sit at `0.1.0`. That is correct: a package bump for an export
 or dependency change is a different event from a breaking *contract* change.
-The two `0.9.2`s are a coincidence, not a link: the contract reached `0.9.2` with
-a documentation fix, and the package reached it with a build-tool change
-(tsup → tsdown) that left its exports unchanged.
+The two lines briefly agreed at `0.9.2` by coincidence: the contract reached it
+with a documentation fix, and the package with a build-tool change (tsup →
+tsdown) that left its exports unchanged.
 
 ### Pre-1.0 semantics (we are here)
 
@@ -70,6 +70,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.9.1` | XRPC `createPost` declares the `Forbidden` it already answered, and a create whose post id another tenant holds fails instead of reporting a post it didn't store. A clarification and a fix, so patch. |
 | `0.9.0` | The 2026-10-11 decisions: a space URI's author segment is the authority's DID, reply StrongRef CIDs must match the stored records, and a reply to a flat post may name a space. The first two are breaking, so minor. |
 | `0.9.2` | URL fields declare `format: uri` again (lost in the zod 4 migration), and the post-read, create and `Audio` tag descriptions stop calling the streaming proxy a signed URL. Documentation of unchanged behaviour, so patch. |
+| `0.10.0` | Deletion ([`deletion.md`](./deletion.md)): delete and erase routes, additive; a deleted post reads `410`, and a kept reply's parent StrongRef may no longer resolve. Both change what existing reads can return, so minor. |
 
 ### Next: the enrichment pipeline
 

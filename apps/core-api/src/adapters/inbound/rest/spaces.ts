@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { SpaceViewSchema } from 'shared/types/spaces';
+import { DeleteSpaceResultSchema } from 'shared/types/deletion';
 import { PutSpaceRequestSchema } from 'shared/api-codecs';
 import { ServiceError } from 'shared/errors';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
@@ -16,6 +17,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *
  *   PUT /{spaceType}/{skey}  — create a space, or replace its policies
  *   GET /{spaceType}/{skey}  — read one
+ *   DELETE /{spaceType}/{skey} — delete an empty one (specs/deletion.md § 4.3)
  *
  * A space's authority is always the calling tenant's own DID, so the path names
  * only `{ type, skey }`. Tenant-level, so a service token is enough: no acting
@@ -105,6 +107,35 @@ app.openapi(getRoute, async (c) => {
     const { spaceType, skey } = c.req.valid('param');
     const view = await servicesFor(c.env).spaceService.getSpace(getOriginAppId(c), { type: spaceType, skey });
     return c.json({ success: true as const, data: view }, 200);
+});
+
+const deleteRoute = createRoute({
+    method: 'delete',
+    path: '/{spaceType}/{skey}',
+    tags: ['Spaces'],
+    summary: 'Delete an empty space',
+    description:
+        "Deletes one of the calling tenant's spaces, once no post is in it: a post's space is sealed into its URI, " +
+        'so a space holding posts answers 409 (`SPACE_NOT_EMPTY`). Delete or erase its posts first. Idempotent: ' +
+        '`deleted` is false when there was no such space.',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+    ] as const,
+    request: { params: SpaceParamsSchema },
+    responses: {
+        200: jsonResponse(DeleteSpaceResultSchema, 'Whether a space was deleted'),
+        400: errorResponse('Invalid space type or key'),
+        401: errorResponse('Not authenticated'),
+        409: errorResponse('The space still holds posts (`SPACE_NOT_EMPTY`)'),
+    },
+});
+
+app.openapi(deleteRoute, async (c) => {
+    const { spaceType, skey } = c.req.valid('param');
+    const deleted = await servicesFor(c.env).spaceService.deleteSpace(getOriginAppId(c), { type: spaceType, skey });
+    return c.json({ success: true as const, data: { deleted } }, 200);
 });
 
 export { app as spacesRoute };

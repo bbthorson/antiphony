@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { AudioPostViewSchema } from 'shared/types/audio';
+import { DeletePostResultSchema, RepliesPolicySchema } from 'shared/types/deletion';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
@@ -25,6 +26,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   GET    /:postId/replies   — thread: replies to the post (paginated)
  *   POST   /                  — create a post (idempotency-capable)
  *   PATCH  /:postId           — (re)trigger audio enrichment (processing only)
+ *   DELETE /:postId           — delete a post, its audio, and per `replies` its replies
  *
  * This is the canonical content surface: a single post collection where
  * `reply` presence discriminates a prompt (thread root) from a reply. The
@@ -160,6 +162,7 @@ const getByIdRoute = createRoute({
         'The playback URL points at this service\'s audio proxy (`GET /api/v1/audio`), which streams the bytes; ' +
         'it is stable for public audio, and signed and expiring (`exp` + `sig`) for audio in a space. ' +
         'Scoped to the origin app — a post from another origin app reads as 404. ' +
+        'A post this tenant deleted reads as 410 (`POST_DELETED`). ' +
         'Requires a service token (establishes the tenant); omit `X-Antiphony-Acting-Actor` for an anonymous (viewer-less) read.',
     middleware: [
         requireServiceToken(),
@@ -174,15 +177,24 @@ const getByIdRoute = createRoute({
     responses: {
         200: jsonResponse(AudioPostViewSchema, 'Hydrated audio post'),
         404: errorResponse('Post not found'),
+        410: errorResponse('Post deleted (`POST_DELETED`)'),
     },
 });
 
 app.openapi(getByIdRoute, async (c) => {
     const postId = c.req.param('postId');
     const viewerUid = c.get('viewerUid');
+    const originAppId = getOriginAppId(c);
 
-    const view = await servicesFor(c.env).audioPostService.getPostView(getOriginAppId(c), postId, viewerUid);
+    const view = await servicesFor(c.env).audioPostService.getPostView(originAppId, postId, viewerUid);
     if (!view) {
+        // A deleted post is 410, so a tenant can tell its own deletion from a
+        // mistyped id. Only this tenant's ledger is read, so it reveals nothing
+        // about anyone else's posts (specs/deletion.md § 2.3).
+        const deleted = await servicesFor(c.env).postDeletionService.getDeletedPost(originAppId, postId);
+        if (deleted) {
+            return c.json(errorEnvelope(c, 'Post deleted', { code: 'POST_DELETED' }), 410);
+        }
         return c.json(errorEnvelope(c, 'Post not found'), 404);
     }
 
@@ -516,6 +528,60 @@ app.openapi(patchRoute, async (c) => {
     }
 
     return c.json({ success: true as const, data: view }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /:postId — delete a post and its audio
+// ---------------------------------------------------------------------------
+
+const deleteRoute = createRoute({
+    method: 'delete',
+    path: '/{postId}',
+    tags: ['Posts'],
+    summary: 'Delete an audio post and its audio',
+    description:
+        'Hard-deletes the post: its record, its transcript, and every blob and rendition no remaining post in this ' +
+        'tenant references. A content-free ledger row (the URI and the time) is kept, so a repeated delete answers ' +
+        '`already-deleted` and a later read answers 410.\n\n' +
+        '`replies` decides what happens to the replies below the post: `delete` (default) removes them all; `keep` ' +
+        'leaves them, with a parent StrongRef that no longer resolves; `keep-with-did` keeps each reply that has an ' +
+        '`authorDid` and deletes the rest. A kept reply keeps its URI, CID and space.\n\n' +
+        'A large subtree is removed over several calls, deepest first and the post last: while `complete` is false, ' +
+        'repeat the same call. Idempotent. Who may delete is the calling app\'s decision; no acting actor is required. ' +
+        'Each deleted post also fires a best-effort `post.deleted` webhook.',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+    ] as const,
+    request: {
+        params: z.object({
+            postId: z.string().openapi({ description: 'The post id' }),
+        }),
+        query: z.object({
+            replies: RepliesPolicySchema.default('delete').openapi({
+                description: 'What happens to the replies below the post (default `delete`)',
+            }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(DeletePostResultSchema, 'What this call deleted and kept'),
+        400: errorResponse('Invalid `replies`'),
+        401: errorResponse('Not authenticated'),
+        404: errorResponse('Post not found'),
+    },
+});
+
+app.openapi(deleteRoute, async (c) => {
+    const { postId } = c.req.valid('param');
+    const { replies } = c.req.valid('query');
+    const originAppId = getOriginAppId(c);
+
+    const result = await servicesFor(c.env).postDeletionService.deletePost(originAppId, postId, replies);
+    if (!result) {
+        return c.json(errorEnvelope(c, 'Post not found'), 404);
+    }
+    return c.json({ success: true as const, data: result }, 200);
 });
 
 export { app as postsRoute };

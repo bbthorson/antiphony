@@ -178,6 +178,18 @@ export const ProcessingStateSchema = ResolvedProcessingSchema.extend({
      */
     denoiseModel: z.string().optional(),
     /**
+     * Every blob CID a byte-mutating stage has written for this post, in order,
+     * including variants a later stage or a reprocess has since superseded.
+     *
+     * `processedBlobCid` names only the latest. A pass that runs denoise then
+     * trim writes two blobs and keeps one, and the other still holds the
+     * person's voice — so deleting a post has to find it from here, or its bytes
+     * outlive the erasure (specs/deletion.md § 1.1). Appended, never pruned.
+     *
+     * Internal, like the other variant fields: never reaches a view.
+     */
+    derivedBlobCids: z.array(z.string()).optional(),
+    /**
      * Peaks for the processed variant, once the `waveform` stage completes.
      * Same normalization and bounds as `embed.waveform` (0–100, max 1000), so
      * a view can never carry a larger payload than the record allows.

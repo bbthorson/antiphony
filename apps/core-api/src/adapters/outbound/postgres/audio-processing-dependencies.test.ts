@@ -14,6 +14,7 @@ const storage = {
     openStream: async () => null,
     stat: async () => null,
     download: async () => null,
+    deleteObjects: async () => {},
     extractObjectPath: () => null,
 };
 

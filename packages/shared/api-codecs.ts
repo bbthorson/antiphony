@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
 import { ProcessingRequestSchema } from './types/processing';
+import { RepliesPolicySchema } from './types/deletion';
 import { SpaceKeySchema, SpacePolicySchema } from './types/spaces';
 import { httpsUrl } from './types/url';
 
@@ -86,3 +87,15 @@ export const PutSpaceRequestSchema = z.object({
   managingAppEndpoint: httpsUrl().optional(),
 });
 export type PutSpaceRequest = z.infer<typeof PutSpaceRequestSchema>;
+
+/**
+ * `POST /api/v1/authors/{authorId}/erase` — account erasure. Deletes every post
+ * the author wrote, applying `replies` to the subtrees below them, up to `limit`
+ * posts per call. The author's own posts are always deleted: `replies` governs
+ * other people's replies below them (specs/deletion.md § 4.2).
+ */
+export const EraseAuthorRequestSchema = z.object({
+  replies: RepliesPolicySchema.default('delete'),
+  limit: z.number().int().min(1).max(200).default(100),
+});
+export type EraseAuthorRequest = z.infer<typeof EraseAuthorRequestSchema>;

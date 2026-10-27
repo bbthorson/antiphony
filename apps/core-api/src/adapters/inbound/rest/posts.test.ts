@@ -26,6 +26,10 @@ const audioPostService = {
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
+        // A missing post asks the deletion ledger whether it was deleted (410)
+        // before answering 404; none of these posts was. `deletion.test.ts`
+        // covers the 410.
+        postDeletionService: { getDeletedPost: async () => null },
     // The rate-limit middleware resolves its store from here. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
     // middleware/rate-limit.test.ts).

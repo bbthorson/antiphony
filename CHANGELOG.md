@@ -8,6 +8,58 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] — 2026-10-27
+
+Deleting posts and their audio ([`specs/deletion.md`](./specs/deletion.md)).
+Until now nothing could be removed. **Minor**: the routes are additive, but
+two existing things can now mean something new.
+
+### Added
+
+- **`DELETE /api/v1/posts/{postId}`** hard-deletes a post: its record, its
+  transcript, and every blob and rendition no remaining post in the tenant
+  references. `?replies=delete|keep|keep-with-did` (default `delete`) decides
+  what happens to the replies below it; `keep-with-did` keeps each reply that
+  has an `authorDid`. A kept reply keeps its URI, CID and space. A large subtree
+  is removed over several calls, deepest first and the post last, reported by
+  `complete`. A repeated delete answers `status: already-deleted`.
+- **`POST /api/v1/authors/{authorId}/erase`** deletes every post an author wrote,
+  paged by `limit` (default 100, at most 200), for account erasure. The author's
+  own posts are always deleted; `replies` governs other people's replies below
+  them.
+- **`DELETE /api/v1/spaces/{spaceType}/{skey}`** deletes an empty space
+  (`409`, `SPACE_NOT_EMPTY`, while posts remain).
+- A **`post.deleted`** webhook per deleted post, on the tenant's existing
+  webhook URL and signature.
+
+### Changed
+
+- **BREAKING:** `GET /api/v1/posts/{postId}` answers **`410`** with
+  `code: POST_DELETED` for a post the tenant deleted. A never-existent id is
+  still `404`.
+- **BREAKING (meaning):** a reply's `reply.parent` and `reply.root` StrongRefs
+  can now name a post that no longer exists, when the post was deleted with
+  `replies=keep` or `keep-with-did`. Until now they always resolved. No field
+  changed.
+- Stage-settled webhooks gain `"type": "stage.settled"`, so a receiver can tell
+  them from `post.deleted`. Additive.
+- Deletes need only the service token; no `X-Antiphony-Acting-Actor` is
+  required. Who may delete is the calling app's decision.
+
+### Internal
+
+- Migration `0003_deletion.sql`: the `deleted_posts` ledger (URI and time only),
+  the `blob_deletions` queue, and indexed references for the shared-blob check.
+  The hourly cron finishes any blob deletion a call left queued.
+- Processing records every variant it writes (`processing.derivedBlobCids`), so
+  a delete finds a denoised blob that a trim in the same pass replaced. Variants
+  written before this release aren't recorded.
+
+`@antiphony/shared` gains `RepliesPolicySchema`, the deletion result schemas,
+`EraseAuthorRequestSchema` and the optional `derivedBlobCids` on
+`ProcessingStateSchema`. That needs a package release (`0.10.0` on the package
+axis) before a consumer can import them; this entry doesn't publish one.
+
 ## [0.9.2] — 2026-10-17
 
 Documentation of the contract only; no request, response or runtime validation

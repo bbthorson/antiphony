@@ -54,6 +54,14 @@ export function createFakeBucket(): FakeBucket {
             return { key };
         },
 
+        async delete(keys: string | string[]): Promise<void> {
+            // R2 refuses more than 1,000 keys per call; so does the fake, so a
+            // caller that forgets to batch fails here rather than in production.
+            const list = Array.isArray(keys) ? keys : [keys];
+            if (list.length > 1000) throw new Error('R2 delete accepts at most 1000 keys');
+            for (const key of list) objects.delete(key);
+        },
+
         async head(key: string): Promise<R2ObjectMeta | null> {
             const stored = objects.get(key);
             if (!stored) return null;

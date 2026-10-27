@@ -9,7 +9,7 @@ import { createServices, readRuntimeEnv, servicesFor } from './composition.js';
  */
 
 const DB = 'postgresql://user:pass@ep-test.us-east-1.aws.neon.tech/antiphony';
-const fakeR2 = { get: async () => null, put: async () => ({}), head: async () => null };
+const fakeR2 = { get: async () => null, put: async () => ({}), head: async () => null, delete: async () => {} };
 
 describe('composition root — bindings are required', () => {
     it('refuses to compose with nothing bound', () => {

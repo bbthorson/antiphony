@@ -4,6 +4,7 @@ import type {
     ProcessingNotifierPort,
     StageSettledEvent,
 } from '@antiphony/core/ports/processing-notifier';
+import type { DeletionNotifierPort, PostDeletedEvent } from '@antiphony/core/ports/deletion-notifier';
 import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-config.js';
 
 /**
@@ -17,6 +18,10 @@ import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-c
  * bounds itself (a short timeout, a couple of quick retries) and, on final
  * failure, logs and RESOLVES — the service also guards, but the adapter should
  * not lean on that to swallow ordinary network noise.
+ *
+ * **Two event types, one channel.** Stage events and `post.deleted` events
+ * (specs/deletion.md § 8) go to the same URL with the same signature, and carry
+ * a `type` so a receiver can tell them apart.
  *
  * **Silent per-tenant opt-out.** A tenant with no `{url, secret}` (or partial
  * config, already logged at parse) resolves to nothing here and simply gets no
@@ -41,19 +46,74 @@ export function webhookNotifier(
     // Injected only so tests exercise the retry path without real wall-clock
     // delay; production uses the real timer.
     sleep: (ms: number) => Promise<void> = defaultSleep,
-): ProcessingNotifierPort {
+): ProcessingNotifierPort & DeletionNotifierPort {
     return {
         async notify(event: StageSettledEvent): Promise<void> {
             const config = resolveWebhookConfig(event.originAppId);
             if (!config) return; // no webhook for this tenant → nothing to do
-            await deliver(config, event, logger, fetchImpl, sleep);
+            await deliver(
+                config,
+                {
+                    type: 'stage.settled',
+                    postId: event.postId,
+                    originAppId: event.originAppId,
+                    stage: event.stage,
+                    status: event.status,
+                    occurredAt: event.occurredAt,
+                },
+                {
+                    eventId: `${event.postId}:${event.stage}:${event.status}`,
+                    timestamp: event.occurredAt,
+                    context: { originAppId: event.originAppId, postId: event.postId, stage: event.stage },
+                    label: 'stage-settled',
+                },
+                logger,
+                fetchImpl,
+                sleep,
+            );
+        },
+
+        async notifyDeleted(event: PostDeletedEvent): Promise<void> {
+            const config = resolveWebhookConfig(event.originAppId);
+            if (!config) return;
+            await deliver(
+                config,
+                {
+                    type: 'post.deleted',
+                    originAppId: event.originAppId,
+                    postId: event.postId,
+                    uri: event.uri,
+                    kind: event.kind,
+                    occurredAt: event.occurredAt,
+                },
+                {
+                    // A post is deleted once, so its id names the event.
+                    eventId: `${event.postId}:deleted`,
+                    timestamp: event.occurredAt,
+                    context: { originAppId: event.originAppId, postId: event.postId },
+                    label: 'post-deleted',
+                },
+                logger,
+                fetchImpl,
+                sleep,
+            );
         },
     };
 }
 
+interface Delivery {
+    eventId: string;
+    timestamp: string;
+    /** Log fields identifying the event. */
+    context: Record<string, string>;
+    /** How the logs name the event. */
+    label: string;
+}
+
 async function deliver(
     config: WebhookConfig,
-    event: StageSettledEvent,
+    payload: Record<string, unknown>,
+    delivery: Delivery,
     logger: Logger,
     fetchImpl: typeof fetch,
     sleep: (ms: number) => Promise<void>,
@@ -61,13 +121,7 @@ async function deliver(
     // The signed bytes ARE the payload the receiver recomputes over, so the
     // body is serialized once and both signed and sent verbatim — re-serializing
     // per attempt would risk a signature that doesn't match the bytes on the wire.
-    const body = JSON.stringify({
-        postId: event.postId,
-        originAppId: event.originAppId,
-        stage: event.stage,
-        status: event.status,
-        occurredAt: event.occurredAt,
-    });
+    const body = JSON.stringify(payload);
     const signature = `sha256=${createHmac('sha256', config.secret).update(body).digest('hex')}`;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -77,8 +131,8 @@ async function deliver(
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Antiphony-Signature': signature,
-                    'X-Antiphony-Event-Id': `${event.postId}:${event.stage}:${event.status}`,
-                    'X-Antiphony-Timestamp': event.occurredAt,
+                    'X-Antiphony-Event-Id': delivery.eventId,
+                    'X-Antiphony-Timestamp': delivery.timestamp,
                 },
                 body,
                 redirect: 'manual',
@@ -94,15 +148,15 @@ async function deliver(
             const transient = res.status >= 500 || res.status === 429 || res.status === 408;
             if (!transient) {
                 logger.error(
-                    { originAppId: event.originAppId, postId: event.postId, stage: event.stage, status: res.status },
-                    '[webhook] receiver rejected stage-settled webhook (4xx); not retrying',
+                    { ...delivery.context, status: res.status },
+                    `[webhook] receiver rejected ${delivery.label} webhook (4xx); not retrying`,
                 );
                 return;
             }
             if (attempt === MAX_ATTEMPTS) {
                 logger.error(
-                    { originAppId: event.originAppId, postId: event.postId, stage: event.stage, status: res.status, attempts: attempt },
-                    '[webhook] stage-settled webhook failed after retries (transient status); dropped',
+                    { ...delivery.context, status: res.status, attempts: attempt },
+                    `[webhook] ${delivery.label} webhook failed after retries (transient status); dropped`,
                 );
                 return;
             }
@@ -111,8 +165,8 @@ async function deliver(
             // budget is spent, then drop with a log.
             if (attempt === MAX_ATTEMPTS) {
                 logger.error(
-                    { err, originAppId: event.originAppId, postId: event.postId, stage: event.stage, attempts: attempt },
-                    '[webhook] stage-settled webhook failed after retries; dropped',
+                    { err, ...delivery.context, attempts: attempt },
+                    `[webhook] ${delivery.label} webhook failed after retries; dropped`,
                 );
                 return;
             }

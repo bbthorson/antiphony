@@ -24,6 +24,9 @@ export interface StorageService {
     /** An object's size, type and metadata without its bytes, or null when absent. */
     stat(objectPath: string): Promise<BlobStat | null>;
 
+    /** Delete objects by path; a missing path is not an error. */
+    deleteObjects(objectPaths: string[]): Promise<void>;
+
     /** Extract the storage object path from a full URL, or null if unrecognised. */
     extractObjectPath(url: string): string | null;
 }
@@ -45,6 +48,9 @@ export function makeStorageService(blob: BlobStore): StorageService {
         },
         stat(objectPath) {
             return blob.stat(objectPath);
+        },
+        deleteObjects(objectPaths) {
+            return blob.delete(objectPaths);
         },
         extractObjectPath(url) {
             return blob.extractObjectPath(url);

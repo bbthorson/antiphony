@@ -101,6 +101,13 @@ export interface BlobStore {
     stat(objectPath: string): Promise<BlobStat | null>;
 
     /**
+     * Delete objects by path. Deleting a path that holds nothing succeeds, so a
+     * retried delete is harmless (specs/deletion.md). Rejects when the backend
+     * could not delete, so the caller keeps whatever told it to try.
+     */
+    delete(objectPaths: string[]): Promise<void>;
+
+    /**
      * Extract the storage object path from a full provider URL. Returns null
      * for a URL this provider does not recognise. Implementations MAY accept
      * several shapes (current and legacy).
