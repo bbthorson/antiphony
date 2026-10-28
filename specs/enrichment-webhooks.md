@@ -78,18 +78,20 @@ artifact is worth fetching; the view is where it fetches it. (If a future consum
 the cheap scalars inlined — e.g. `processedDurationMs` on `trim: ready` — that is an
 additive change to revisit then, not a v1 commitment.)
 
-## Auth — HMAC over timestamp and raw body
+## Auth — HMAC over the raw body
 
 Each request carries:
-- `X-Antiphony-Signature: sha256=<hex>` — an HMAC-SHA256 of `${timestamp}.${body}` keyed by the tenant's webhook secret.
-- `X-Antiphony-Timestamp: <unix_seconds>` — Unix timestamp of dispatch.
-- `X-Antiphony-Event-Id: <uuid>` — unique event ID for deduplication.
+- `X-Antiphony-Signature: sha256=<hex>` — an HMAC-SHA256 of the raw request body keyed by the tenant's webhook secret.
+- `X-Antiphony-Timestamp: <ISO 8601>` — the event's `occurredAt`, repeated as a header. **Not signed.**
+- `X-Antiphony-Event-Id` — `{postId}:{stage}:{status}` for a stage event, `{postId}:deleted` for a deletion. **Not signed, and not unique per delivery:** a recompute re-fires the same `{postId}:{stage}:ready` (see § Delivery below).
 
-The receiver recomputes the HMAC over `${timestamp}.${rawBody}` and constant-time-compares. Receivers should reject deliveries with timestamps older than 5 minutes (or skewed into the future) and deduplicate on `X-Antiphony-Event-Id` to prevent replay attacks.
+The receiver recomputes the HMAC over the raw body and constant-time-compares. Only the body is authenticated, so staleness checks use `occurredAt` from the body, never the header. Dedupe is latest-wins on `(postId, stage)` by `occurredAt`, not "seen this event id before".
+
+(Corrected 2026-10-28. This section previously described a `${timestamp}.${body}` signature, a Unix-seconds timestamp and a UUID event id. The adapter has never sent those, and the receiver guide in `apps/docs` has always described the raw-body signature.)
 
 Outbound delivery uses `redirect: 'manual'` so signed payloads are never reposted across redirects.
 
-No bearer token: unlike the inbound `/system/*` routes (which core authenticates), here core is the *client*, and a shared bearer sent outbound would be a static secret on the wire with no per-message integrity. HMAC binds the secret to the exact bytes and dispatch timestamp.
+No bearer token: unlike the inbound `/system/*` routes (which core authenticates), here core is the *client*, and a shared bearer sent outbound would be a static secret on the wire with no per-message integrity. HMAC binds the secret to the exact bytes, `occurredAt` included.
 
 ## Config — per tenant
 
