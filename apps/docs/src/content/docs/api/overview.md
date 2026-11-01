@@ -72,7 +72,12 @@ A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/ma
    - a reply to a post in a space goes in that space, whether or not it names it; naming a different one is a `400`.
    - a reply to a public (flat) post may name a space, which is how a public prompt gets replies only some people can hear. Without one it's public too.
 
-The author segment of a space URI (the DID after the key) is always the space's authority, your app's DID. It never holds the person who recorded the post, even when you send `X-Antiphony-Acting-Actor-Did`: that person is the post's `author` (`authorId` / `authorDid`), which sits outside the record's CID and can be corrected later. A person's DID in the URI would be sealed into every reply.
+The author segment of a space URI (the DID after the key) is chosen per post with `spaceAuthor`:
+
+- `authority` (the default): your app's DID. Use it for what your app keeps: a contribution from someone outside the group, or work your app generates.
+- `actor`: the acting person's own DID, from `X-Antiphony-Acting-Actor-Did`, which must be a valid DID. Use it for a member's own record, which can later move to their own repo under the same URI. A flat post has no author segment, so `actor` on one is a `400`.
+
+Either way the person is also the post's `author` (`authorId` / `authorDid`), outside the record's CID. The segment is sealed into every reply's StrongRef, so choose it deliberately. See [the decision record](https://github.com/bbthorson/antiphony/blob/master/specs/audio-service-and-groups.md).
 4. **Play it** — post views carry a signed `embed.audio.url`, and `dev.antiphony.audio.getPlaybackUrl` signs on request. Fetch a fresh one rather than storing it. Without a valid signature the proxy answers `404`, as it does for audio that doesn't exist. You may append `format=mp3`. Responses are `Cache-Control: private` and never cached past the signature.
 
 A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` (see [configuration](/self-hosting/configuration/#core-variables)).

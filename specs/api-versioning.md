@@ -71,6 +71,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.9.0` | The 2026-10-11 decisions: a space URI's author segment is the authority's DID, reply StrongRef CIDs must match the stored records, and a reply to a flat post may name a space. The first two are breaking, so minor. |
 | `0.9.2` | URL fields declare `format: uri` again (lost in the zod 4 migration), and the post-read, create and `Audio` tag descriptions stop calling the streaming proxy a signed URL. Documentation of unchanged behaviour, so patch. |
 | `0.10.0` | Deletion ([`deletion.md`](./deletion.md)): delete and erase routes, additive; a deleted post reads `410`, and a kept reply's parent StrongRef may no longer resolve. Both change what existing reads can return, so minor. |
+| `0.10.1` | `spaceAuthor` on post create ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G5): a member's own post in a space carries their DID in its author segment. A new optional field, defaulting to the old behaviour, so patch. |
 
 ### Next: the enrichment pipeline
 

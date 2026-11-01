@@ -40,6 +40,18 @@ export const SpaceKeySchema = z.object({
 export type SpaceKey = z.infer<typeof SpaceKeySchema>;
 
 /**
+ * Whose DID a new post in a space carries in its URI's author segment
+ * (specs/audio-service-and-groups.md G3, G5):
+ *  - `authority`: the space authority's DID. For what the authority keeps: a
+ *    publisher's record of an outsider's contribution (a Vox Pop reply), or
+ *    work an app generates for a group.
+ *  - `actor`: the acting actor's own DID. For a member's own record (a Bardcast
+ *    player's reply), so it can later move to their own repo with the same URI.
+ */
+export const SpaceAuthorSchema = z.enum(['authority', 'actor']);
+export type SpaceAuthor = z.infer<typeof SpaceAuthorSchema>;
+
+/**
  * Where a post lives, when it lives in a space. Absent ⇒ the post is flat and
  * public: `at://{appDid}/{collection}/{rkey}`. Present ⇒
  * `at://{appDid}/space/{type}/{skey}/{authorSegment}/{collection}/{rkey}`, and
@@ -51,10 +63,12 @@ export type SpaceKey = z.infer<typeof SpaceKeySchema>;
  */
 export const SpacePlacementSchema = SpaceKeySchema.extend({
     /**
-     * The DID in the URI's author segment: the space authority's DID (the
-     * tenant's app DID), never the acting actor's (atproto-authority-model.md
-     * D8). Sealed once the post is replied to; the person who recorded it is
-     * the `authorId` / `authorDid` facets beside it.
+     * The DID in the URI's author segment. The space authority's DID (the
+     * tenant's app DID) by default; the acting actor's own DID when the post was
+     * created with `spaceAuthor: 'actor'`, a member's own record
+     * (specs/audio-service-and-groups.md G5, replacing
+     * atproto-authority-model.md D8). Sealed into the URI. The person who
+     * recorded it is also the `authorId` / `authorDid` facets beside it.
      */
     authorSegment: z.string().max(2048).regex(/^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$/, 'Must be a DID'),
 });

@@ -8,7 +8,7 @@ import {
     type TranscriptEnrichmentRecord,
     type ViewerState,
 } from 'shared/types/audio';
-import type { SpacePlacement } from 'shared/types/spaces';
+import type { SpaceAuthor, SpacePlacement } from 'shared/types/spaces';
 import { EMBED_NSID } from 'shared/nsid';
 import {
     toProcessingView,
@@ -57,14 +57,19 @@ export interface CreateAudioPostInput {
     /** Present ⇒ this post is a reply (StrongRef root + parent). */
     reply?: ReplyRef;
     /**
-     * The space to create the post in (specs/spaces.md). The author segment is
-     * derived: always the authority's DID (the tenant's app DID), never the
-     * author's (atproto-authority-model.md D8). A reply to a post in a space is
-     * created in that space, and naming any other is refused; a reply to a flat
-     * post may name a space. Absent ⇒ a flat, public post, or the parent's space
-     * for a reply.
+     * The space to create the post in (specs/spaces.md). A reply to a post in a
+     * space is created in that space, and naming any other is refused; a reply
+     * to a flat post may name a space. Absent ⇒ a flat, public post, or the
+     * parent's space for a reply.
      */
     space?: { type: string; skey: string };
+    /**
+     * Whose DID is the author segment when the post lands in a space
+     * (specs/audio-service-and-groups.md G5). `authority` (the default) is the
+     * tenant's app DID; `actor` is `authorDid`, which must then be a valid DID.
+     * `actor` on a post that lands flat is refused.
+     */
+    spaceAuthor?: SpaceAuthor;
     /** BCP-47 language tags. */
     langs?: string[];
     /** Author self-label values. */
@@ -88,8 +93,8 @@ export interface CreateAudioPostInput {
  * app-as-repo-owner custody model (Model B), NOT the author. Author identity
  * (`authorId`/`authorDid`) stays on the record as attribution facets; inside a
  * space the protocol also needs an author segment, which is the placement's
- * `authorSegment`: the authority's DID for every post this service creates
- * (specs/spaces.md, "The author segment"). Call sites resolve
+ * `authorSegment`: the authority's DID, or a member's own DID for a member's
+ * record (specs/audio-service-and-groups.md G5). Call sites resolve
  * the app DID from the record's `originAppId` via `deps.getAppDid` and pass it
  * in, so this stays a pure function with no hidden config lookup.
  *
@@ -414,27 +419,39 @@ export class AudioPostService {
      *  - a reply to a flat post, like a prompt, lives in the space it names, or
      *    is flat. (A public prompt whose replies only some can hear is what Vox
      *    Pop's per-prompt reply spaces are; cross-repo-design.md §3.2.)
-     * The author segment is the authority's DID, never the author's
-     * (atproto-authority-model.md D8): the tenant's app DID, the authority of
-     * every post this service writes today. The person stays the out-of-CID
-     * `authorId` / `authorDid` facets.
+     * The author segment is chosen per post, not inherited from the parent
+     * (specs/audio-service-and-groups.md G5): the authority's DID (the tenant's
+     * app DID) by default, for what the authority keeps; the acting actor's own
+     * DID for a member's record (`spaceAuthor: 'actor'`). The person is also the
+     * out-of-CID `authorId` / `authorDid` facets either way.
      */
     private placementFor(
         input: CreateAudioPostInput,
         parentSpace: SpacePlacement | undefined,
     ): SpacePlacement | undefined {
-        const authorSegment = this.deps.getAppDid(input.originAppId);
         const named = input.space;
-        if (parentSpace) {
-            if (named && (named.type !== parentSpace.type || named.skey !== parentSpace.skey)) {
-                throw new ValidationError("A reply to a post in a space is created in that space; it can't name another");
-            }
-            return { type: parentSpace.type, skey: parentSpace.skey, authorSegment };
+        if (parentSpace && named && (named.type !== parentSpace.type || named.skey !== parentSpace.skey)) {
+            throw new ValidationError("A reply to a post in a space is created in that space; it can't name another");
         }
-        if (!named) return undefined;
-        const placement = { type: named.type, skey: named.skey, authorSegment };
-        assertValidPlacement(placement);
+        const where = parentSpace ?? named;
+        if (!where) {
+            if (input.spaceAuthor === 'actor') {
+                throw new ValidationError("spaceAuthor 'actor' needs a post in a space; a flat post has no author segment");
+            }
+            return undefined;
+        }
+        const placement = { type: where.type, skey: where.skey, authorSegment: this.authorSegmentFor(input) };
+        if (!parentSpace) assertValidPlacement(placement);
         return placement;
+    }
+
+    /** The author segment of a new post in a space: the authority's DID, or the acting actor's. */
+    private authorSegmentFor(input: CreateAudioPostInput): string {
+        if (input.spaceAuthor !== 'actor') return this.deps.getAppDid(input.originAppId);
+        if (!input.authorDid || !isValidDid(input.authorDid)) {
+            throw new ValidationError("spaceAuthor 'actor' needs the acting actor's DID (X-Antiphony-Acting-Actor-Did)");
+        }
+        return input.authorDid;
     }
 
     /** A space a post names must exist for this tenant. */

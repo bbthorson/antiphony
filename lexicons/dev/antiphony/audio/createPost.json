@@ -53,7 +53,13 @@
                         "space": {
                             "type": "ref",
                             "ref": "dev.antiphony.audio.defs#spaceKey",
-                            "description": "Place the post in one of the tenant's spaces; the returned `uri` is then a space URI, whose author segment is the tenant's DID (never the actor's), and its audio plays only through signed URLs. The audio must have been uploaded into the same space. A reply to a post in a space inherits that space and must not name another; a reply to a flat post may name one."
+                            "description": "Place the post in one of the tenant's spaces; the returned `uri` is then a space URI, whose author segment is set by `spaceAuthor`, and its audio plays only through signed URLs. The audio must have been uploaded into the same space. A reply to a post in a space inherits that space and must not name another; a reply to a flat post may name one."
+                        },
+                        "spaceAuthor": {
+                            "type": "string",
+                            "knownValues": ["authority", "actor"],
+                            "default": "authority",
+                            "description": "Whose DID is the author segment of a post in a space. `authority`: the tenant's DID, for what the authority keeps. `actor`: the acting actor's own DID, for a member's own record; the acting actor DID must be asserted. `actor` on a post that lands flat is refused."
                         }
                     }
                 }
@@ -80,7 +86,7 @@
             "errors": [
                 {
                     "name": "InvalidRequest",
-                    "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, or audio stored somewhere other than the post's space."
+                    "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, audio stored somewhere other than the post's space, or `spaceAuthor: actor` on a flat post or without a valid acting actor DID."
                 },
                 {
                     "name": "Forbidden",

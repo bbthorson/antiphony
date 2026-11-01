@@ -246,7 +246,7 @@ export function xrpcRoute(): Hono {
                 );
             }
 
-            const { text, title, embed, reply, langs, selfLabels, processing, space } = validation.data;
+            const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor } = validation.data;
             const originAppId = getOriginAppId(c);
             const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
@@ -262,6 +262,7 @@ export function xrpcRoute(): Hono {
                 selfLabels,
                 processing: initialProcessing,
                 space,
+                spaceAuthor,
             });
 
             if (hasPendingStage(initialProcessing)) {

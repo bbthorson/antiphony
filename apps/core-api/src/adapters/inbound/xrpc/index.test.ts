@@ -448,6 +448,37 @@ describe('dev.antiphony.audio.createPost', () => {
         );
     });
 
+    it("passes spaceAuthor and the acting actor's DID through, and answers with the member's segment", async () => {
+        const PLAYER = 'did:plc:abc123player';
+        vi.mocked(audioPostService.createPost).mockResolvedValueOnce({
+            id: 'r2',
+            cid: 'bafyreply2',
+            space: { type: 'game.bardcast.space.campaign', skey: 'thornwood', authorSegment: PLAYER },
+        } as Awaited<ReturnType<typeof audioPostService.createPost>>);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', 'x-antiphony-acting-actor-did': PLAYER }),
+            body: JSON.stringify({ text: 'my answer', space: { type: 'game.bardcast.space.campaign', skey: 'thornwood' }, spaceAuthor: 'actor' }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(audioPostService.createPost).toHaveBeenCalledWith(expect.objectContaining({ spaceAuthor: 'actor', authorDid: PLAYER }));
+        expect((await res.json()).uri).toBe(
+            `at://did:web:test-app.example/space/game.bardcast.space.campaign/thornwood/${PLAYER}/dev.antiphony.audio.post/r2`,
+        );
+    });
+
+    it('refuses an unknown spaceAuthor', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'hi', spaceAuthor: 'someone-else' }),
+        });
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('InvalidRequest');
+    });
+
     it('answers a reply whose StrongRef CID is stale with the named error ReplyCidMismatch', async () => {
         const { ServiceError } = await import('shared/errors');
         vi.mocked(audioPostService.createPost).mockRejectedValueOnce(
