@@ -389,7 +389,7 @@ app.openapi(createRouteDef, async (c) => {
         );
     }
 
-    const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor } = validation.data;
+    const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
 
     const originAppId = getOriginAppId(c);
     // Resolve the opt-in request against THIS TENANT's capabilities: each
@@ -415,6 +415,7 @@ app.openapi(createRouteDef, async (c) => {
             processing: initialProcessing,
             space,
             spaceAuthor,
+            authority,
         });
 
         // Kick off processing for any stage that's actually pending. Which

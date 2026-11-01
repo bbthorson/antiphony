@@ -8,12 +8,17 @@ import type { SpaceRecord } from 'shared/types/spaces';
  */
 
 const { SpaceService } = await import('@antiphony/core/services/spaces');
+const { authorityNotRegistered } = await import('@antiphony/core/services/did-registry');
+const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
 const rows = new Map<string, SpaceRecord>();
 const spaceService = new SpaceService({
     getAppDid: () => 'did:web:test-app.example',
-    getSpace: async (originAppId, key) => rows.get(`${originAppId}|${key.type}|${key.skey}`) ?? null,
+    assertWritableAuthority: async (_originAppId, did) => {
+        if (did !== TABLE) throw authorityNotRegistered(did);
+    },
+    getSpace: async (originAppId, key) => rows.get(`${originAppId}|${key.authority ?? ''}|${key.type}|${key.skey}`) ?? null,
     putSpace: async (input) => {
-        const id = `${input.originAppId}|${input.key.type}|${input.key.skey}`;
+        const id = `${input.originAppId}|${input.key.authority ?? ''}|${input.key.type}|${input.key.skey}`;
         const prior = rows.get(id);
         const row: SpaceRecord = {
             originAppId: input.originAppId,
@@ -28,7 +33,7 @@ const spaceService = new SpaceService({
         return row;
     },
     deleteSpace: async (originAppId, key) =>
-        rows.delete(`${originAppId}|${key.type}|${key.skey}`) ? 'deleted' : 'absent',
+        rows.delete(`${originAppId}|${key.authority ?? ''}|${key.type}|${key.skey}`) ? 'deleted' : 'absent',
 });
 
 vi.mock('../../../composition.js', () => ({
@@ -105,6 +110,28 @@ describe('/api/v1/spaces', () => {
         expect((await get()).status).toBe(404);
         await put({});
         expect((await get(OTHER_TOKEN)).status).toBe(404);
+    });
+
+    it("puts, reads and deletes a space under ?authority=, apart from the app DID's", async () => {
+        const q = `${PATH}?authority=${TABLE}`;
+        const res = await put({ readPolicy: 'managing-app' }, SERVICE_TOKEN, q);
+        expect(res.status).toBe(200);
+        expect((await res.json()).data).toMatchObject({
+            authority: TABLE,
+            uri: `at://${TABLE}/space/game.bardcast.space.campaign/thornwood`,
+        });
+        expect((await get()).status).toBe(404); // not the app DID's
+        expect((await get(SERVICE_TOKEN, q)).status).toBe(200);
+        const del = await app().request(q, { method: 'DELETE', headers: { authorization: `Bearer ${SERVICE_TOKEN}` } });
+        expect((await del.json()).data).toEqual({ deleted: true });
+    });
+
+    it('400s an unregistered authority, and one that is not a DID', async () => {
+        const unregistered = await put({}, SERVICE_TOKEN, `${PATH}?authority=did:plc:zyxwvutsrqponmlkjihgfedc`);
+        expect(unregistered.status).toBe(400);
+        expect((await unregistered.json()).error.code).toBe('AUTHORITY_NOT_REGISTERED');
+        expect((await put({}, SERVICE_TOKEN, `${PATH}?authority=nope`)).status).toBe(400);
+        expect(rows.size).toBe(0);
     });
 
     it('refuses to create a space when it could not keep its audio private', async () => {

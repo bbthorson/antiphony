@@ -73,6 +73,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.10.0` | Deletion ([`deletion.md`](./deletion.md)): delete and erase routes, additive; a deleted post reads `410`, and a kept reply's parent StrongRef may no longer resolve. Both change what existing reads can return, so minor. |
 | `0.10.1` | `spaceAuthor` on post create ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G5): a member's own post in a space carries their DID in its author segment. A new optional field, defaulting to the old behaviour, so patch. |
 | `0.10.2` | `PUT`/`GET /api/v1/dids`: a tenant registers DIDs it acts for besides its app DID, custody proven first ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). New routes, so patch. |
+| `0.10.3` | Posts and spaces under a registered DID: `authority` on post create, `?authority=` on spaces, `spaceAuthority` on upload, `DELETE /api/v1/dids/{did}` ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). All optional and defaulting to the app DID, so patch. |
 
 ### Next: the enrichment pipeline
 

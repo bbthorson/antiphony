@@ -45,6 +45,13 @@ export interface DidRegistryDependencies {
         role: TenantDidRole;
         subjectRef?: string;
     }): Promise<'inserted' | 'exists'>;
+    /**
+     * Delete this tenant's registration of `did`, unless any post or space is
+     * still under it: their URIs name the DID, so it can't stop being one this
+     * tenant writes under while they exist. `absent` when this tenant hasn't
+     * registered it (including when another tenant has).
+     */
+    deleteTenantDid(originAppId: string, did: string): Promise<'deleted' | 'absent' | 'in-use'>;
     /** A tenant's registrations, newest first. `cursor` is opaque, from a previous page. */
     listTenantDids(originAppId: string, opts: { limit: number; cursor?: string }): Promise<TenantDidPage>;
 }

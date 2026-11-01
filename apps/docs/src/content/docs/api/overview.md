@@ -64,7 +64,7 @@ Audio uploaded outside a space is content-addressed and public by CID, including
 
 ## Private audio in a space
 
-A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority. Posts in a space have space URIs (`at://{appDid}/space/{type}/{skey}/{appDid}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
+A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority (or a DID your app registered; see [DIDs your app acts for](#dids-your-app-acts-for)). Posts in a space have space URIs (`at://{authority}/space/{type}/{skey}/{authorSegment}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
 
 1. **Create the space** — `PUT /api/v1/spaces/{spaceType}/{skey}` with `{ readPolicy?, writePolicy? }` (both default to `member-list`). Idempotent; the body replaces the policies. A DID is a valid `skey`, which is how you'd key a per-user space.
 2. **Upload into it** — add `spaceType` and `skey` fields to the `POST /api/v1/audio/upload` form. The response's `space` says where the blob lives. **The first upload of a given set of bytes decides this** and it never changes after, so re-uploading identical bytes can't make private audio public, or the reverse.
@@ -89,9 +89,15 @@ Your app writes under its own DID, pinned when it was onboarded. To also act for
 - **The DID's document must name this Antiphony as its space host** (`#atproto_space_host`), as your app DID's does. Antiphony checks before keeping the registration: `400 DID_CUSTODY_DISPROVED` if it doesn't, `503 DID_UNREACHABLE` if the document can't be read right now.
 - **A DID belongs to one app.** Another app's DID is `409 DID_TAKEN`.
 - **Registrations aren't rewritten.** Repeating one returns it unchanged (`200`); a different role or subject is `409 DID_REGISTERED_DIFFERENTLY`.
-- `GET /api/v1/dids` lists yours, newest first.
+- `GET /api/v1/dids` lists yours, newest first. `DELETE /api/v1/dids/{did}` unregisters one, once nothing is under it (`409 DID_IN_USE` otherwise).
 
-Registering a DID doesn't yet let a post or space go under it. That arrives in a later contract version.
+Once registered, name it as the **authority** of what you write:
+
+- `POST /api/v1/posts` with `authority: "<did>"` writes the post at `at://<did>/…`. A `space` it names must exist under that authority.
+- `PUT /api/v1/spaces/{spaceType}/{skey}?authority=<did>` creates a space under it; `GET` and `DELETE` take the same parameter. Two groups can each have a space with the same type and key.
+- `POST /api/v1/audio/upload` takes `spaceAuthority` beside `spaceType` and `skey`.
+- **A reply always has its parent's authority.** Omit it, or name the same one.
+- Each write under a registered DID re-checks that its document still names this Antiphony (`503 AUTHORITY_CUSTODY_UNPROVEN` if not); an unregistered one is `400 AUTHORITY_NOT_REGISTERED`.
 
 ## Envelope
 

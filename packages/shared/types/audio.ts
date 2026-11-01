@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SpacePlacementSchema } from './spaces';
+import { DidStringSchema } from './dids';
 import { BlobRefSchema } from './blob';
 import { TimestampSchema } from './records';
 import { ProcessingStateSchema, ProcessingViewSchema } from './processing';
@@ -199,6 +200,14 @@ export const AudioPostRecordSchema = z.object({
      * the record CID.
      */
     space: SpacePlacementSchema.optional(),
+    /**
+     * The post's `at://` authority when it isn't the tenant's app DID: a DID the
+     * tenant registered, such as a group's (specs/did-plc-and-multi-did-tenancy.md
+     * §3). Absent ⇒ the app DID. A reply always has its parent's. Storage-layer,
+     * NOT in the lexicon or the record CID: like placement, it is location, and
+     * fixed at creation because replies seal it into their StrongRefs.
+     */
+    authority: DidStringSchema.optional(),
 
     // --- Lexicon fields (public contract) ---
     /** User-authored text (bsky-semantic). May be empty for pure-audio posts. NEVER the transcript. */

@@ -41,14 +41,14 @@ describe('space post URIs', () => {
 
     it('round-trips a space uri, placement included', () => {
         const uri = buildPostUri(APP, '3kabc2def3ghi', CAMPAIGN);
-        expect(parsePostUri(uri, APP)).toEqual({ id: '3kabc2def3ghi', space: CAMPAIGN });
+        expect(parsePostUri(uri, APP)).toEqual({ authority: APP, id: '3kabc2def3ghi', space: CAMPAIGN });
         expect(parsePostId(uri, APP)).toBe('3kabc2def3ghi');
     });
 
     it('accepts a DID as the space key (a per-player space)', () => {
         const mine: SpacePlacement = { type: 'game.bardcast.space.player', skey: PLAYER, authorSegment: APP };
         const uri = buildPostUri(APP, '3kabc2def3ghi', mine);
-        expect(parsePostUri(uri, APP)).toEqual({ id: '3kabc2def3ghi', space: mine });
+        expect(parsePostUri(uri, APP)).toEqual({ authority: APP, id: '3kabc2def3ghi', space: mine });
     });
 
     it('rejects a space uri from another tenant', () => {
@@ -409,7 +409,7 @@ describe("a member's own record: spaceAuthor 'actor' (audio-service-and-groups.m
         expect(prompt.space).toEqual({ ...IN_CAMPAIGN, authorSegment: PLAYER });
         const uri = buildPostUri(APP, prompt.id, prompt.space);
         expect(uri).toBe(`at://${APP}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
-        expect(parsePostUri(uri, APP)).toEqual({ id: prompt.id, space: prompt.space });
+        expect(parsePostUri(uri, APP)).toEqual({ authority: APP, id: prompt.id, space: prompt.space });
     });
 
     it('chooses the author segment per post down a branch, and resolves parents by it', async () => {
@@ -456,5 +456,101 @@ describe("a member's own record: spaceAuthor 'actor' (audio-service-and-groups.m
         const omitted = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN }));
         expect(explicit.space).toEqual(CAMPAIGN);
         expect(omitted.space).toEqual(CAMPAIGN);
+    });
+});
+
+describe('posts under a registered authority (did-plc-and-multi-did-tenancy.md §3)', () => {
+    const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
+    const OTHER = 'did:plc:zyxwvutsrqponmlkjihgfedc';
+    const IN_CAMPAIGN = { type: CAMPAIGN.type, skey: CAMPAIGN.skey };
+    const REPLIES = { type: 'audio.voxpop.space.replies', skey: '3kprompt2abc' };
+    let deps: ReturnType<typeof makeDeps>;
+    let svc: AudioPostService;
+    beforeEach(() => {
+        deps = makeDeps();
+        deps.authorities.add(`bardcast/${TABLE}`);
+        deps.spaces.add(`bardcast@${TABLE}/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
+        deps.spaces.add(`bardcast@${TABLE}/${REPLIES.type}/${REPLIES.skey}`);
+        // The same campaign key under the app DID: a different space.
+        deps.spaces.add(`bardcast/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
+        svc = new AudioPostService(deps);
+    });
+    const refTo = (post: AudioPostRecord) => ({ uri: buildPostUri(post.authority ?? APP, post.id, post.space), cid: post.cid });
+
+    it("writes a prompt under the named DID, in that DID's space", async () => {
+        const prompt = await svc.createPost(input({ authority: TABLE, authorDid: PLAYER, space: IN_CAMPAIGN }));
+        expect(prompt.authority).toBe(TABLE);
+        // The author segment is the authority's DID, which is now the table's.
+        expect(prompt.space).toEqual({ ...IN_CAMPAIGN, authorSegment: TABLE });
+        expect(refTo(prompt).uri).toBe(`at://${TABLE}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${TABLE}/dev.antiphony.audio.post/${prompt.id}`);
+        const [view] = await svc.hydrateAudioPosts([prompt], null);
+        expect(view!.uri).toBe(refTo(prompt).uri);
+    });
+
+    it("puts a member's own DID in the segment under the group's authority", async () => {
+        const prompt = await svc.createPost(input({ authority: TABLE, authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
+        expect(refTo(prompt).uri).toBe(`at://${TABLE}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
+    });
+
+    it("refuses an authority the tenant hasn't registered, saving nothing", async () => {
+        await expect(svc.createPost(input({ authority: OTHER }))).rejects.toMatchObject({ status: 400, code: 'AUTHORITY_NOT_REGISTERED' });
+        await expect(svc.createPost(input({ authority: 'not-a-did' }))).rejects.toMatchObject({ status: 400 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('stores naming the app DID as naming none', async () => {
+        const prompt = await svc.createPost(input({ authority: APP }));
+        expect(prompt.authority).toBeUndefined();
+        expect(deps.assertWritableAuthority).not.toHaveBeenCalled();
+    });
+
+    it("needs the space to exist under the post's own authority", async () => {
+        deps.spaces.delete(`bardcast@${TABLE}/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
+        // The app DID still has a space by that key, but it's a different space.
+        await expect(svc.createPost(input({ authority: TABLE, space: IN_CAMPAIGN }))).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("refuses audio stored in the same-named space under another authority", async () => {
+        deps.blobs.set('bardcast/bafkappaudio', { ...IN_CAMPAIGN });
+        deps.blobs.set('bardcast/bafktableaudio', { ...IN_CAMPAIGN, authority: TABLE });
+        const embed = (cid: string) => ({
+            $type: 'dev.antiphony.embed.audio' as const,
+            audio: { $type: 'blob' as const, ref: { $link: cid }, mimeType: 'audio/webm', size: 10 },
+        });
+        await expect(svc.createPost(input({ authority: TABLE, space: IN_CAMPAIGN, embed: embed('bafkappaudio') }))).rejects.toMatchObject({
+            status: 400,
+        });
+        await expect(svc.createPost(input({ space: IN_CAMPAIGN, embed: embed('bafktableaudio') }))).rejects.toMatchObject({ status: 400 });
+        await expect(svc.createPost(input({ authority: TABLE, space: IN_CAMPAIGN, embed: embed('bafktableaudio') }))).resolves.toBeTruthy();
+    });
+
+    it("gives a reply its parent's authority, and refuses naming another", async () => {
+        const prompt = await svc.createPost(input({ authority: TABLE, space: IN_CAMPAIGN }));
+        const ref = { root: refTo(prompt), parent: refTo(prompt) };
+        const reply = await svc.createPost(input({ authorId: 'p2', text: 'an answer', reply: ref }));
+        expect(reply.authority).toBe(TABLE);
+        expect(reply.space).toEqual({ ...IN_CAMPAIGN, authorSegment: TABLE });
+        await expect(svc.createPost(input({ authorId: 'p2', text: 'x', reply: ref, authority: TABLE }))).resolves.toBeTruthy();
+        await expect(svc.createPost(input({ authorId: 'p2', text: 'x', reply: ref, authority: APP }))).rejects.toMatchObject({ status: 400 });
+        // And down the branch, resolving the parent by its own authority.
+        const back = await svc.createPost(input({ authorId: 'dm', text: 'and then', reply: { root: refTo(prompt), parent: refTo(reply) } }));
+        expect(back.authority).toBe(TABLE);
+    });
+
+    it('treats a parent named under the wrong authority as missing', async () => {
+        const prompt = await svc.createPost(input({ authority: TABLE, space: IN_CAMPAIGN }));
+        const wrong = { uri: buildPostUri(APP, prompt.id, { ...IN_CAMPAIGN, authorSegment: TABLE }), cid: prompt.cid };
+        await expect(svc.createPost(input({ authorId: 'p2', text: 'x', reply: { root: wrong, parent: wrong } }))).rejects.toMatchObject({
+            status: 404,
+        });
+    });
+
+    it("places a flat org prompt's replies in a reply space under the org's DID (Vox Pop)", async () => {
+        const prompt = await svc.createPost(input({ authority: TABLE }));
+        expect(refTo(prompt).uri).toBe(`at://${TABLE}/dev.antiphony.audio.post/${prompt.id}`);
+        const reply = await svc.createPost(
+            input({ authorId: 'caller', text: 'a reply', reply: { root: refTo(prompt), parent: refTo(prompt) }, space: REPLIES }),
+        );
+        expect(refTo(reply).uri).toBe(`at://${TABLE}/space/${REPLIES.type}/${REPLIES.skey}/${TABLE}/dev.antiphony.audio.post/${reply.id}`);
     });
 });

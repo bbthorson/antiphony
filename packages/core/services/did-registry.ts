@@ -14,6 +14,34 @@ export const DID_UNREACHABLE = 'DID_UNREACHABLE';
 /** 503: this deployment can't check custody (no `ANTIPHONY_PDS_HOST`), so it registers nothing. */
 export const DIDS_UNAVAILABLE = 'DIDS_UNAVAILABLE';
 
+/** 409: a post or space is still under the DID, so it can't be unregistered. */
+export const DID_IN_USE = 'DID_IN_USE';
+
+/** 400: a write named an authority that isn't a DID this tenant registered. */
+export const AUTHORITY_NOT_REGISTERED = 'AUTHORITY_NOT_REGISTERED';
+/** 503: the authority is registered, but its custody can't be proven right now. */
+export const AUTHORITY_CUSTODY_UNPROVEN = 'AUTHORITY_CUSTODY_UNPROVEN';
+
+/** The refusal for a write under a DID the tenant hasn't registered (or another tenant has). */
+export function authorityNotRegistered(did: string): ServiceError {
+    return new ServiceError(
+        `${did} isn't a DID this app registered; register it with PUT /api/v1/dids/{did} first`,
+        400,
+        undefined,
+        AUTHORITY_NOT_REGISTERED,
+    );
+}
+
+/** The refusal for a write under a registered DID whose document no longer proves custody. */
+export function authorityCustodyUnproven(did: string): ServiceError {
+    return new ServiceError(
+        `Can't currently prove ${did} names this deployment as its space host; try again`,
+        503,
+        undefined,
+        AUTHORITY_CUSTODY_UNPROVEN,
+    );
+}
+
 /** The most registrations one page returns. */
 export const MAX_DID_PAGE = 200;
 
@@ -91,6 +119,21 @@ export class DidRegistryService {
         // that row exactly as if we had read it first.
         if (outcome === 'exists') return { view: this.sameOrRefuse(stored, input), created: false };
         return { view: toView(stored), created: true };
+    }
+
+    /**
+     * Unregister one of the calling tenant's DIDs. True when it was deleted,
+     * false when there was no such registration, so a retry is harmless. A DID
+     * with any post or space still under it is a 409 `DID_IN_USE`: delete those
+     * first.
+     */
+    async unregister(originAppId: string, did: string): Promise<boolean> {
+        if (!isValidDid(did)) return false;
+        const outcome = await this.deps.deleteTenantDid(originAppId, did);
+        if (outcome === 'in-use') {
+            throw new ServiceError('Posts or spaces are still under this DID; delete them first', 409, undefined, DID_IN_USE);
+        }
+        return outcome === 'deleted';
     }
 
     /** One of the calling tenant's registrations. Another tenant's reads as missing. */

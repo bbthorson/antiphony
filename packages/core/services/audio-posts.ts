@@ -70,6 +70,13 @@ export interface CreateAudioPostInput {
      * `actor` on a post that lands flat is refused.
      */
     spaceAuthor?: SpaceAuthor;
+    /**
+     * The post's `at://` authority when it isn't the tenant's app DID: a DID the
+     * tenant registered (specs/did-plc-and-multi-did-tenancy.md §3). A reply
+     * always has its parent's; naming another is refused. Naming the app DID
+     * itself is the same as omitting it.
+     */
+    authority?: string;
     /** BCP-47 language tags. */
     langs?: string[];
     /** Author self-label values. */
@@ -139,51 +146,77 @@ export function buildPostUri(appDid: string, rkey: string, space?: SpacePlacemen
     return buildRecordUri({ authority: appDid, collection: NSID.AudioPost, rkey, ...(space ? { space } : {}) });
 }
 
-/** A post uri, parsed: its rkey and, for a post in a space, its placement. */
+/** A post uri, parsed: its authority, its rkey and, for a post in a space, its placement. */
 export interface ParsedPostUri {
+    authority: string;
     id: string;
     space?: SpacePlacement;
 }
 
 /**
- * Parse a post `at://` uri, flat or in a space — the inverse of `buildPostUri`
- * — but ONLY when the uri's authority is `expectedAppDid` (the caller's own
- * tenant app DID). A StrongRef whose authority is a different app DID — a
- * forged or cross-tenant reference — returns null, so it can't resolve inside
- * another tenant. This makes explicit, at parse time, the tenancy scope that
- * `resolveReplyParticipants` otherwise enforces only via the origin-app post
- * lookup. Returns null for a malformed/empty/non-matching uri, and for any
- * collection other than the audio-post one.
+ * A post's `at://` authority: the DID it was written under, or the tenant's app
+ * DID when it names none (every post written before a tenant could act under
+ * another DID).
  */
-export function parsePostUri(uri: string, expectedAppDid: string): ParsedPostUri | null {
+export function authorityOf(
+    record: Pick<AudioPostRecord, 'originAppId' | 'authority'>,
+    getAppDid: (originAppId: string) => string,
+): string {
+    return record.authority ?? getAppDid(record.originAppId);
+}
+
+/** A stored post's canonical uri. */
+export function postUriOf(
+    record: Pick<AudioPostRecord, 'originAppId' | 'authority' | 'id' | 'space'>,
+    getAppDid: (originAppId: string) => string,
+): string {
+    return buildPostUri(authorityOf(record, getAppDid), record.id, record.space);
+}
+
+/**
+ * Parse a post `at://` uri, flat or in a space — the inverse of `buildPostUri`.
+ * With `expectedAuthority`, ONLY a uri under that authority parses.
+ *
+ * Without it, any authority parses, and the CALLER must check the parsed
+ * authority against the stored post's (`authorityOf`) after a tenant-scoped
+ * lookup by id. That pair is what keeps a forged or cross-tenant reference from
+ * resolving: the lookup can only find the caller's own post, and the authority
+ * must be the one that post was written under. `resolveReplyBranch` does
+ * exactly that, since a tenant's posts may sit under several DIDs.
+ *
+ * Returns null for a malformed/empty/non-matching uri, and for any collection
+ * other than the audio-post one.
+ */
+export function parsePostUri(uri: string, expectedAuthority?: string): ParsedPostUri | null {
     const AT = 'at://';
     if (!uri.startsWith(AT)) return null;
     // Segments: [authority, collection, rkey] for a flat uri. filter(Boolean)
     // drops empty segments so a trailing slash (or `//`) doesn't yield an empty
     // id.
     const segments = uri.slice(AT.length).split('/').filter(Boolean);
-    // Authority MUST be the tenant's own app DID — reject cross-tenant/forged refs.
-    if (segments[0] !== expectedAppDid) return null;
+    const authority = segments[0];
+    if (!authority || !isValidDid(authority)) return null;
+    if (expectedAuthority !== undefined && authority !== expectedAuthority) return null;
 
-    if (segments[1] === 'space') return parseSpacePostUri(uri, expectedAppDid);
+    if (segments[1] === 'space') return parseSpacePostUri(uri, authority);
 
     // A well-formed flat post uri is exactly [authority, collection, rkey].
     if (segments.length !== 3) return null;
     // Collection MUST be the audio-post collection — reject cross-collection spoofing.
     if (segments[1] !== NSID.AudioPost) return null;
     const rkey = segments[2];
-    return rkey && rkey.trim() ? { id: rkey } : null;
+    return rkey && rkey.trim() ? { authority, id: rkey } : null;
 }
 
 /** The space shape, read by `@atproto/syntax` and then held to the same rules as a flat uri. */
-function parseSpacePostUri(uri: string, expectedAppDid: string): ParsedPostUri | null {
+function parseSpacePostUri(uri: string, authority: string): ParsedPostUri | null {
     let parsed: AtUri;
     try {
         parsed = new AtUri(uri);
     } catch {
         return null;
     }
-    if (!parsed.isSpace || parsed.spaceDid !== expectedAppDid) return null;
+    if (!parsed.isSpace || parsed.spaceDid !== authority) return null;
     const { spaceType, skey, authorDid } = parsed;
     if (!spaceType || !skey || !authorDid) return null;
     if (parsed.collection !== NSID.AudioPost) return null;
@@ -192,16 +225,16 @@ function parseSpacePostUri(uri: string, expectedAppDid: string): ParsedPostUri |
     // Round-trip: a uri this service would not have built itself isn't one of its posts.
     const space: SpacePlacement = { type: spaceType, skey, authorSegment: authorDid };
     try {
-        if (buildPostUri(expectedAppDid, rkey, space) !== uri) return null;
+        if (buildPostUri(authority, rkey, space) !== uri) return null;
     } catch {
         return null;
     }
-    return { id: rkey, space };
+    return { authority, id: rkey, space };
 }
 
 /** The post id (rkey) of a post uri, flat or in a space. See `parsePostUri`. */
-export function parsePostId(uri: string, expectedAppDid: string): string | null {
-    return parsePostUri(uri, expectedAppDid)?.id ?? null;
+export function parsePostId(uri: string, expectedAuthority?: string): string | null {
+    return parsePostUri(uri, expectedAuthority)?.id ?? null;
 }
 
 /**
@@ -295,11 +328,15 @@ export class AudioPostService {
         const branch = input.reply
             ? await this.resolveReplyBranch(input.originAppId, input.authorId, input.reply)
             : undefined;
-        const space = this.placementFor(input, branch?.space);
+        const authority = this.authorityFor(input, branch);
+        // Writing under another DID needs it registered to this tenant, with
+        // custody still proven. The app DID is proven at the auth boundary.
+        if (authority !== undefined) await this.deps.assertWritableAuthority(input.originAppId, authority);
+        const space = this.placementFor(input, branch?.space, authority);
         // A space the request named (a prompt's, or a reply's to a flat
         // parent) must exist; an inherited one does, because the parent is in it.
-        if (space && !branch?.space) await this.assertSpaceExists(input.originAppId, space);
-        if (input.embed) await this.assertAudioPlacement(input.originAppId, input.embed.audio.ref.$link, space);
+        if (space && !branch?.space) await this.assertSpaceExists(input.originAppId, space, authority);
+        if (input.embed) await this.assertAudioPlacement(input.originAppId, input.embed.audio.ref.$link, space, authority);
 
         const createdAt = this.deps.now();
         // Replies carry no title (record invariant); only prompts do.
@@ -340,6 +377,7 @@ export class AudioPostService {
             rootAuthorId: branch?.rootAuthorId,
             processing,
             space,
+            ...(authority !== undefined ? { authority } : {}),
             text: input.text,
             title,
             embed: input.embed,
@@ -428,6 +466,7 @@ export class AudioPostService {
     private placementFor(
         input: CreateAudioPostInput,
         parentSpace: SpacePlacement | undefined,
+        authority: string | undefined,
     ): SpacePlacement | undefined {
         const named = input.space;
         if (parentSpace && named && (named.type !== parentSpace.type || named.skey !== parentSpace.skey)) {
@@ -440,23 +479,50 @@ export class AudioPostService {
             }
             return undefined;
         }
-        const placement = { type: where.type, skey: where.skey, authorSegment: this.authorSegmentFor(input) };
+        const placement = { type: where.type, skey: where.skey, authorSegment: this.authorSegmentFor(input, authority) };
         if (!parentSpace) assertValidPlacement(placement);
         return placement;
     }
 
     /** The author segment of a new post in a space: the authority's DID, or the acting actor's. */
-    private authorSegmentFor(input: CreateAudioPostInput): string {
-        if (input.spaceAuthor !== 'actor') return this.deps.getAppDid(input.originAppId);
+    private authorSegmentFor(input: CreateAudioPostInput, authority: string | undefined): string {
+        if (input.spaceAuthor !== 'actor') return authority ?? this.deps.getAppDid(input.originAppId);
         if (!input.authorDid || !isValidDid(input.authorDid)) {
             throw new ValidationError("spaceAuthor 'actor' needs the acting actor's DID (X-Antiphony-Acting-Actor-Did)");
         }
         return input.authorDid;
     }
 
-    /** A space a post names must exist for this tenant. */
-    private async assertSpaceExists(originAppId: string, space: SpacePlacement): Promise<void> {
-        const found = await this.deps.getSpace(originAppId, { type: space.type, skey: space.skey });
+    /**
+     * A new post's authority, as stored: undefined for the tenant's app DID.
+     * A reply has its parent's, always: its URI and its parent's must name the
+     * same repo, or a thread would straddle two owners. A prompt has the one it
+     * names. Naming the app DID is normalised to undefined, so a post's stored
+     * shape doesn't depend on how the request spelled it.
+     */
+    private authorityFor(
+        input: CreateAudioPostInput,
+        branch: { authority?: string } | undefined,
+    ): string | undefined {
+        const appDid = this.deps.getAppDid(input.originAppId);
+        const named = input.authority === appDid ? undefined : input.authority;
+        if (named !== undefined && !isValidDid(named)) throw new ValidationError(`Invalid authority (must be a DID): ${named}`);
+        if (branch) {
+            if (input.authority !== undefined && named !== branch.authority) {
+                throw new ValidationError("A reply has its parent's authority; it can't name another");
+            }
+            return branch.authority;
+        }
+        return named;
+    }
+
+    /** A space a post names must exist for this tenant, under the post's authority. */
+    private async assertSpaceExists(originAppId: string, space: SpacePlacement, authority: string | undefined): Promise<void> {
+        const found = await this.deps.getSpace(originAppId, {
+            type: space.type,
+            skey: space.skey,
+            ...(authority !== undefined ? { authority } : {}),
+        });
         if (!found) throw new NotFoundError('Space not found');
     }
 
@@ -471,6 +537,7 @@ export class AudioPostService {
         originAppId: string,
         blobCid: string,
         space: SpacePlacement | undefined,
+        authority: string | undefined,
     ): Promise<void> {
         const stored = await this.deps.getBlobSpace(originAppId, blobCid);
         if (!stored) {
@@ -478,7 +545,7 @@ export class AudioPostService {
             return;
         }
         const where = stored.space;
-        if (space && (where?.type !== space.type || where?.skey !== space.skey)) {
+        if (space && (where?.type !== space.type || where?.skey !== space.skey || where?.authority !== authority)) {
             throw new ValidationError(
                 where
                     ? 'This audio was uploaded into a different space'
@@ -525,13 +592,15 @@ export class AudioPostService {
         originAppId: string,
         authorId: string,
         reply: ReplyRef,
-    ): Promise<{ participants: string[]; rootAuthorId: string; space?: SpacePlacement }> {
-        const parsed = parsePostUri(reply.parent.uri, this.deps.getAppDid(originAppId));
+    ): Promise<{ participants: string[]; rootAuthorId: string; space?: SpacePlacement; authority?: string }> {
+        const getAppDid = (id: string) => this.deps.getAppDid(id);
+        const parsed = parsePostUri(reply.parent.uri);
         const parent = parsed ? await this.deps.getPostById(originAppId, parsed.id) : null;
         // The uri must name the parent where it actually lives: a real post id
-        // under a different (or missing) space is a forged reference, and is
-        // treated exactly like a missing parent.
-        if (!parent || !samePlacement(parsed?.space, parent.space)) {
+        // under a different authority, or a different (or missing) space, is a
+        // forged reference, and is treated exactly like a missing parent. The
+        // lookup above is tenant-scoped, so another tenant's post never matches.
+        if (!parent || parsed?.authority !== authorityOf(parent, getAppDid) || !samePlacement(parsed?.space, parent.space)) {
             throw new NotFoundError('Parent post not found');
         }
         if (reply.parent.cid !== parent.cid) {
@@ -539,7 +608,7 @@ export class AudioPostService {
         }
         const threadRoot =
             parent.kind === 'prompt'
-                ? { uri: buildPostUri(this.deps.getAppDid(originAppId), parent.id, parent.space), cid: parent.cid }
+                ? { uri: postUriOf(parent, getAppDid), cid: parent.cid }
                 : parent.reply?.root;
         if (!threadRoot) throw new Error('Invariant: reply parent is missing its reply.root StrongRef');
         if (reply.root.uri !== threadRoot.uri) {
@@ -549,6 +618,7 @@ export class AudioPostService {
             throw new ReplyCidMismatchError("reply.root.cid doesn't match the root post's CID");
         }
         const space = parent.space;
+        const authority = parent.authority;
 
         if (parent.kind === 'prompt') {
             // Top-level reply: the audience answers the call. Deduped so a
@@ -558,6 +628,7 @@ export class AudioPostService {
                 participants: Array.from(new Set([parent.authorId, authorId])),
                 rootAuthorId: parent.authorId,
                 ...(space ? { space } : {}),
+                ...(authority !== undefined ? { authority } : {}),
             };
         }
 
@@ -573,7 +644,12 @@ export class AudioPostService {
         if (parent.rootAuthorId === undefined) {
             throw new Error('Invariant: reply parent is missing its rootAuthorId facet');
         }
-        return { participants, rootAuthorId: parent.rootAuthorId, ...(space ? { space } : {}) };
+        return {
+            participants,
+            rootAuthorId: parent.rootAuthorId,
+            ...(space ? { space } : {}),
+            ...(authority !== undefined ? { authority } : {}),
+        };
     }
 
     /**
@@ -643,8 +719,8 @@ export class AudioPostService {
         if (records.length === 0) return [];
 
         // Resolve authority per-record: a hydration batch can span tenants, and
-        // each record's uri is keyed on ITS tenant's app DID.
-        const uris = records.map((r) => buildPostUri(this.deps.getAppDid(r.originAppId), r.id, r.space));
+        // each record's uri is keyed on its own authority (or its tenant's app DID).
+        const uris = records.map((r) => postUriOf(r, (id) => this.deps.getAppDid(id)));
 
         const transcriptMap = await this.deps.getTranscriptsBySubjectUris(uris);
 
@@ -658,7 +734,7 @@ export class AudioPostService {
         transcriptMap: Map<string, TranscriptEnrichmentRecord>,
         viewerUid: string | null,
     ): Promise<AudioPostView> {
-        const uri = buildPostUri(this.deps.getAppDid(record.originAppId), record.id, record.space);
+        const uri = postUriOf(record, (id) => this.deps.getAppDid(id));
 
         // --- Hydrated audio embed (playback URL + lifted transcript) ---
         // Guard the nested audio ref defensively: although a parsed record with

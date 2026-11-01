@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.10.2",
+    "version": "0.10.3",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read. Deletes are the exception: who may delete is the app's decision, so they need only the service token.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -676,6 +676,11 @@
                       "authority",
                       "actor"
                     ]
+                  },
+                  "authority": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
                   }
                 }
               }
@@ -2452,7 +2457,7 @@
           "Spaces"
         ],
         "summary": "Create or replace a space",
-        "description": "Creates the space `at://{appDid}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: an omitted policy goes back to `member-list`). Idempotent. Posts and audio uploaded into a space are private: their audio plays only through signed, expiring URLs. A deployment without a playback secret refuses to create spaces (503) rather than store audio it could not keep private.",
+        "description": "Creates the space `at://{authority}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: an omitted policy goes back to `member-list`). Idempotent. Posts and audio uploaded into a space are private: their audio plays only through signed, expiring URLs. A deployment without a playback secret refuses to create spaces (503) rather than store audio it could not keep private. `?authority=` puts the space under a DID the app registered (400 `AUTHORITY_NOT_REGISTERED` otherwise; 503 `AUTHORITY_CUSTODY_UNPROVEN` when its document no longer names this deployment).",
         "parameters": [
           {
             "schema": {
@@ -2473,6 +2478,18 @@
             "description": "The space key, in record-key syntax. A DID is a valid skey.",
             "name": "skey",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$",
+              "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`."
+            },
+            "required": false,
+            "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`.",
+            "name": "authority",
+            "in": "query"
           }
         ],
         "requestBody": {
@@ -2542,6 +2559,11 @@
                           "type": "string",
                           "pattern": "^at:\\/\\/.+\\/space\\/.+\\/.+$"
                         },
+                        "authority": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
                         "readPolicy": {
                           "type": "string",
                           "enum": [
@@ -2574,6 +2596,7 @@
                         "type",
                         "skey",
                         "uri",
+                        "authority",
                         "readPolicy",
                         "writePolicy",
                         "createdAt",
@@ -2590,7 +2613,7 @@
             }
           },
           "400": {
-            "description": "Invalid space type, key or policies",
+            "description": "Invalid space type, key, authority or policies, or an authority the app has not registered",
             "content": {
               "application/json": {
                 "schema": {
@@ -2682,7 +2705,7 @@
             }
           },
           "503": {
-            "description": "This deployment has no playback secret, so it cannot keep space audio private",
+            "description": "No playback secret (`SPACES_UNAVAILABLE`), or the authority's custody is unproven right now",
             "content": {
               "application/json": {
                 "schema": {
@@ -2755,6 +2778,18 @@
             "description": "The space key, in record-key syntax. A DID is a valid skey.",
             "name": "skey",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$",
+              "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`."
+            },
+            "required": false,
+            "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`.",
+            "name": "authority",
+            "in": "query"
           }
         ],
         "responses": {
@@ -2790,6 +2825,11 @@
                           "type": "string",
                           "pattern": "^at:\\/\\/.+\\/space\\/.+\\/.+$"
                         },
+                        "authority": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
                         "readPolicy": {
                           "type": "string",
                           "enum": [
@@ -2822,6 +2862,7 @@
                         "type",
                         "skey",
                         "uri",
+                        "authority",
                         "readPolicy",
                         "writePolicy",
                         "createdAt",
@@ -3003,6 +3044,18 @@
             "description": "The space key, in record-key syntax. A DID is a valid skey.",
             "name": "skey",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$",
+              "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`."
+            },
+            "required": false,
+            "description": "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`.",
+            "name": "authority",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3673,6 +3726,152 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "DIDs"
+        ],
+        "summary": "Unregister a DID",
+        "description": "Unregisters one of the calling tenant's DIDs, once no post or space is under it: their URIs name the DID, so one still in use answers 409 (`DID_IN_USE`). Idempotent: `deleted` is false when there was no such registration, including another tenant's.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work)."
+            },
+            "required": true,
+            "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work).",
+            "name": "did",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether a registration was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "deleted"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Posts or spaces are still under the DID (`DID_IN_USE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/dids": {
@@ -4097,7 +4296,7 @@
           "Audio"
         ],
         "summary": "Upload audio (authenticated)",
-        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post. Optional `spaceType` + `skey` fields store it privately in one of the tenant's spaces; the first upload of the same bytes decides where they live, and the response's `space` says which.",
+        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post. Optional `spaceType` + `skey` fields store it privately in one of the tenant's spaces, with an optional `spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes decides where they live, and the response's `space` says which.",
         "responses": {
           "200": {
             "description": "Stored audio blob ref",
@@ -4166,13 +4365,18 @@
                               "minLength": 1,
                               "maxLength": 512,
                               "pattern": "^[A-Za-z0-9._:~-]+$"
+                            },
+                            "authority": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
                             }
                           },
                           "required": [
                             "type",
                             "skey"
                           ],
-                          "description": "The space the blob is stored in, when it is private. Absent ⇒ public. The first upload of the same bytes decides this, so it can differ from the space this request named."
+                          "description": "The space the blob is stored in, when it is private. Absent ⇒ public. `authority` is present when the space is under a DID other than the app's own. The first upload of the same bytes decides this, so it can differ from the space this request named."
                         }
                       },
                       "required": [

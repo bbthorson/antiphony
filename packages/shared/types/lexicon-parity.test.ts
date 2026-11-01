@@ -292,6 +292,7 @@ const CASES: ParityCase[] = [
             rootAuthorId: STORAGE_FIELDS,
             processing: STORAGE_FIELDS,
             space: STORAGE_FIELDS,
+            authority: STORAGE_FIELDS,
         },
     },
     { lexicon: 'dev.antiphony.audio.post#replyRef', schema: ReplyRefSchema },

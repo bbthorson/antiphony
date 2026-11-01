@@ -1,9 +1,9 @@
 # `did:plc` minting and multi-DID tenancy
 
 **Status:** design, 2026-09-24. Phase 1 (the validator accepts `did:plc`) is
-implemented alongside this spec. **Phase 2 is partly built (2026-11-01):** the
-registry (§3, as built below). Writes under a registered DID, and custody
-re-proven per DID on the write path (§2), are next. Phases 3–4 (minting,
+implemented alongside this spec. **Phase 2 is built (2026-11-01):** the
+registry, writes under a registered DID, and custody re-proven per DID on the
+write path (§§2–3, as built below). Phases 3–4 (minting,
 claiming) are replaced: Antiphony no longer mints
 ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G2).
 Companion to [`atproto-authority-model.md`](./atproto-authority-model.md) (why
@@ -195,9 +195,42 @@ What landed, and where it differs from the proposal above:
   space host, which for a tenant-supplied DID would let a tenant claim anyone's.
   Another tenant's registered or pinned DID is a 409; a repeat is a no-op; a
   changed role or subject is a 409, since records may be sealed under it.
-- **Not yet:** nothing writes under a registered DID; no per-DID snapshot or
-  `getWritableDid` (§2); no unregistering (it waits until posts can be under a
-  DID, so it can refuse while any are).
+- **Not yet (built in 0.10.3, below):** writes under a registered DID, per-DID
+  custody, unregistering.
+
+### §§2–3 step B as built (API contract 0.10.3, 2026-11-01)
+
+- **A post stores its authority** as `authority` on the record, storage-layer
+  and outside the CID like `space`; absent means the app DID, which is every
+  earlier post. URIs come from `authorityOf` / `postUriOf`
+  (`packages/core/services/audio-posts.ts`) everywhere: hydration, the thread
+  root, transcript subjects, the deletion ledger, XRPC `createPost`.
+- **A reply always has its parent's authority.** A post's URI and its parent's
+  name the same repo, so a thread never straddles owners. A Vox Pop reply to an
+  org's flat prompt, named into a reply space, lands in that space under the
+  org's DID.
+- **Parsing is generic, then checked.** `parsePostUri` accepts any authority;
+  the reply path then requires the parsed authority to be the stored parent's
+  own, after a tenant-scoped lookup. That replaces the old parse-time "must be
+  the app DID" check, which can't know a tenant's registered DIDs synchronously.
+- **Spaces are keyed `(origin_app_id, authority, type, skey)`**, with `''` for
+  the app DID (a primary key can't hold a null; the app DID isn't stored).
+  Uploads record a non-app authority in a second R2 metadata key,
+  `antiphony-space-authority`, so earlier blobs read as before.
+- **The write path re-proves custody per DID.** `assertWritableAuthority`
+  (`apps/core-api/src/adapters/outbound/postgres/writable-authority.ts`) needs a
+  `tenant_dids` row for the caller, then `ensureDidCustody`: the app DID's
+  cached, outage-tolerant check (`ensureTenantPin`), now one shared state
+  machine keyed by DID, requiring `ANTIPHONY_PDS_HOST`. In place of the
+  proposed `getWritableDid`: reads serve the stored authority and need no proof.
+- **The database keeps an authority honest** (`migrations/0005_authority.sql`):
+  foreign keys from posts and spaces to `tenant_dids (did, origin_app_id)`, so
+  nothing can be stored under a DID not registered to its own tenant, and
+  `DELETE /api/v1/dids/{did}` is refused (409 `DID_IN_USE`) while anything is
+  under it.
+- **Not built:** the hourly cron doesn't sweep registered DIDs yet; a moved DID
+  is caught at its next write instead. The app DID still lives in
+  `ANTIPHONY_APP_DIDS`.
 
 ### Which DID a write goes under
 

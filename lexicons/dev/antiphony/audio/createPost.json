@@ -60,6 +60,11 @@
                             "knownValues": ["authority", "actor"],
                             "default": "authority",
                             "description": "Whose DID is the author segment of a post in a space. `authority`: the tenant's DID, for what the authority keeps. `actor`: the acting actor's own DID, for a member's own record; the acting actor DID must be asserted. `actor` on a post that lands flat is refused."
+                        },
+                        "authority": {
+                            "type": "string",
+                            "format": "did",
+                            "description": "The post's at:// authority when it isn't the app's own DID: a DID the app registered (PUT /api/v1/dids/{did}), such as a group's. A named space must exist under the same authority. A reply always has its parent's authority: omit it or name the same one."
                         }
                     }
                 }
@@ -86,7 +91,7 @@
             "errors": [
                 {
                     "name": "InvalidRequest",
-                    "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, audio stored somewhere other than the post's space, or `spaceAuthor: actor` on a flat post or without a valid acting actor DID."
+                    "description": "The payload failed validation — an empty post, a reply carrying a title, a reply naming a space other than its parent's, a `reply.root` that is not the thread's root, audio stored somewhere other than the post's space, `spaceAuthor: actor` on a flat post or without a valid acting actor DID, an authority the app hasn't registered, or a reply naming an authority other than its parent's."
                 },
                 {
                     "name": "Forbidden",

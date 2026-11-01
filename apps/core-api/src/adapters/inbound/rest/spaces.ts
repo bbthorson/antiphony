@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { SpaceViewSchema } from 'shared/types/spaces';
+import { DidStringSchema } from 'shared/types/dids';
 import { DeleteSpaceResultSchema } from 'shared/types/deletion';
 import { PutSpaceRequestSchema } from 'shared/api-codecs';
 import { ServiceError } from 'shared/errors';
@@ -19,9 +20,10 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   GET /{spaceType}/{skey}  — read one
  *   DELETE /{spaceType}/{skey} — delete an empty one (specs/deletion.md § 4.3)
  *
- * A space's authority is always the calling tenant's own DID, so the path names
- * only `{ type, skey }`. Tenant-level, so a service token is enough: no acting
- * actor is needed to manage the tenant's own spaces.
+ * A space's authority is the calling tenant's own app DID unless `?authority=`
+ * names a DID the tenant registered (specs/did-plc-and-multi-did-tenancy.md §3),
+ * so the path names only `{ type, skey }`. Tenant-level, so a service token is
+ * enough: no acting actor is needed to manage the tenant's own spaces.
  */
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
@@ -31,16 +33,32 @@ const SpaceParamsSchema = z.object({
     skey: z.string().openapi({ description: 'The space key, in record-key syntax. A DID is a valid skey.' }),
 });
 
+const AuthorityQuerySchema = z.object({
+    authority: DidStringSchema.optional().openapi({
+        description:
+            "The space's authority, when it isn't the app's own DID: a DID the app registered with `PUT /api/v1/dids/{did}`.",
+    }),
+});
+
+/** The space key a request names: its path, plus `?authority=` when given. */
+const keyOf = (param: { spaceType: string; skey: string }, query: { authority?: string | undefined }) => ({
+    type: param.spaceType,
+    skey: param.skey,
+    ...(query.authority !== undefined ? { authority: query.authority } : {}),
+});
+
 const putRoute = createRoute({
     method: 'put',
     path: '/{spaceType}/{skey}',
     tags: ['Spaces'],
     summary: 'Create or replace a space',
     description:
-        'Creates the space `at://{appDid}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: ' +
+        'Creates the space `at://{authority}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: ' +
         'an omitted policy goes back to `member-list`). Idempotent. Posts and audio uploaded into a space are ' +
         'private: their audio plays only through signed, expiring URLs. A deployment without a playback secret ' +
-        'refuses to create spaces (503) rather than store audio it could not keep private.',
+        'refuses to create spaces (503) rather than store audio it could not keep private. `?authority=` puts the ' +
+        "space under a DID the app registered (400 `AUTHORITY_NOT_REGISTERED` otherwise; 503 " +
+        '`AUTHORITY_CUSTODY_UNPROVEN` when its document no longer names this deployment).',
     middleware: [
         requireServiceToken(),
         rateLimit(RATE_LIMITS.writeAggregate),
@@ -52,13 +70,14 @@ const putRoute = createRoute({
     ] as const,
     request: {
         params: SpaceParamsSchema,
+        query: AuthorityQuerySchema,
         body: { content: { 'application/json': { schema: PutSpaceRequestSchema } } },
     },
     responses: {
         200: jsonResponse(SpaceViewSchema, 'The space as stored'),
-        400: errorResponse('Invalid space type, key or policies'),
+        400: errorResponse('Invalid space type, key, authority or policies, or an authority the app has not registered'),
         401: errorResponse('Not authenticated'),
-        503: errorResponse('This deployment has no playback secret, so it cannot keep space audio private'),
+        503: errorResponse('No playback secret (`SPACES_UNAVAILABLE`), or the authority\'s custody is unproven right now'),
     },
 });
 
@@ -71,11 +90,10 @@ app.openapi(putRoute, async (c) => {
             'SPACES_UNAVAILABLE',
         );
     }
-    const { spaceType, skey } = c.req.valid('param');
     const body = c.req.valid('json');
     const view = await servicesFor(c.env).spaceService.putSpace({
         originAppId: getOriginAppId(c),
-        key: { type: spaceType, skey },
+        key: keyOf(c.req.valid('param'), c.req.valid('query')),
         readPolicy: body.readPolicy,
         writePolicy: body.writePolicy,
         ...(body.managingAppEndpoint ? { managingAppEndpoint: body.managingAppEndpoint } : {}),
@@ -94,7 +112,7 @@ const getRoute = createRoute({
         rateLimit(RATE_LIMITS.readAggregate),
         rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
     ] as const,
-    request: { params: SpaceParamsSchema },
+    request: { params: SpaceParamsSchema, query: AuthorityQuerySchema },
     responses: {
         200: jsonResponse(SpaceViewSchema, 'The space'),
         400: errorResponse('Invalid space type or key'),
@@ -104,8 +122,7 @@ const getRoute = createRoute({
 });
 
 app.openapi(getRoute, async (c) => {
-    const { spaceType, skey } = c.req.valid('param');
-    const view = await servicesFor(c.env).spaceService.getSpace(getOriginAppId(c), { type: spaceType, skey });
+    const view = await servicesFor(c.env).spaceService.getSpace(getOriginAppId(c), keyOf(c.req.valid('param'), c.req.valid('query')));
     return c.json({ success: true as const, data: view }, 200);
 });
 
@@ -123,7 +140,7 @@ const deleteRoute = createRoute({
         rateLimit(RATE_LIMITS.writeAggregate),
         rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
     ] as const,
-    request: { params: SpaceParamsSchema },
+    request: { params: SpaceParamsSchema, query: AuthorityQuerySchema },
     responses: {
         200: jsonResponse(DeleteSpaceResultSchema, 'Whether a space was deleted'),
         400: errorResponse('Invalid space type or key'),
@@ -133,8 +150,7 @@ const deleteRoute = createRoute({
 });
 
 app.openapi(deleteRoute, async (c) => {
-    const { spaceType, skey } = c.req.valid('param');
-    const deleted = await servicesFor(c.env).spaceService.deleteSpace(getOriginAppId(c), { type: spaceType, skey });
+    const deleted = await servicesFor(c.env).spaceService.deleteSpace(getOriginAppId(c), keyOf(c.req.valid('param'), c.req.valid('query')));
     return c.json({ success: true as const, data: { deleted } }, 200);
 });
 

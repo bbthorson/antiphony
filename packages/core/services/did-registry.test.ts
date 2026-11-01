@@ -13,6 +13,9 @@ const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
 const ORG = 'did:plc:zyxwvutsrqponmlkjihgfedc';
 const appDid = (originAppId: string) => `did:web:${originAppId}.example`;
 
+/** DIDs that still have posts or spaces under them. */
+const inUse = new Set<string>();
+
 function fakeDeps(proof: CustodyProof = { ok: true }) {
     const rows = new Map<string, TenantDidRecord>();
     let clock = Date.parse('2026-11-01T00:00:00Z');
@@ -26,6 +29,13 @@ function fakeDeps(proof: CustodyProof = { ok: true }) {
             rows.set(input.did, { ...input, createdAt: new Date((clock += 1000)) });
             return 'inserted' as const;
         }),
+        deleteTenantDid: async (originAppId, did) => {
+            const row = rows.get(did);
+            if (!row || row.originAppId !== originAppId) return 'absent';
+            if (inUse.has(did)) return 'in-use';
+            rows.delete(did);
+            return 'deleted';
+        },
         listTenantDids: async (originAppId, { limit }) => {
             const mine = [...rows.values()]
                 .filter((r) => r.originAppId === originAppId)
@@ -145,5 +155,36 @@ describe('DidRegistryService on a deployment that cannot check custody', () => {
             code: 'DIDS_UNAVAILABLE',
         });
         expect(rows.size).toBe(0);
+    });
+});
+
+describe('DidRegistryService.unregister', () => {
+    it("deletes the tenant's own registration, and is a no-op after", async () => {
+        const { deps, rows } = fakeDeps();
+        const svc = new DidRegistryService(deps);
+        await svc.register({ originAppId: 'bardcast', did: TABLE, role: 'group' });
+        expect(await svc.unregister('bardcast', TABLE)).toBe(true);
+        expect(rows.has(TABLE)).toBe(false);
+        expect(await svc.unregister('bardcast', TABLE)).toBe(false);
+    });
+
+    it("leaves another tenant's registration alone", async () => {
+        const { deps, rows } = fakeDeps();
+        const svc = new DidRegistryService(deps);
+        await svc.register({ originAppId: 'voxpop', did: ORG, role: 'group' });
+        expect(await svc.unregister('bardcast', ORG)).toBe(false);
+        expect(rows.has(ORG)).toBe(true);
+    });
+
+    it('refuses while anything is still under the DID, with 409 DID_IN_USE', async () => {
+        const { deps } = fakeDeps();
+        const svc = new DidRegistryService(deps);
+        await svc.register({ originAppId: 'bardcast', did: TABLE, role: 'group' });
+        inUse.add(TABLE);
+        try {
+            await expect(svc.unregister('bardcast', TABLE)).rejects.toMatchObject({ status: 409, code: 'DID_IN_USE' });
+        } finally {
+            inUse.delete(TABLE);
+        }
     });
 });

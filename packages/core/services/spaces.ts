@@ -1,14 +1,16 @@
-import { isValidNsid, isValidRecordKey, SpaceRef } from '@atproto/syntax';
+import { isValidDid, isValidNsid, isValidRecordKey, SpaceRef } from '@atproto/syntax';
 import { NotFoundError, ServiceError, ValidationError } from 'shared/errors';
-import type { SpaceKey, SpacePolicy, SpaceRecord, SpaceView } from 'shared/types/spaces';
+import type { ScopedSpaceKey, SpaceKey, SpacePolicy, SpaceRecord, SpaceView } from 'shared/types/spaces';
 import type { SpaceDependencies } from '../ports/space-dependencies';
 
 /**
  * SpaceService — a tenant's atproto spaces (specs/spaces.md, Phase 2).
  *
- * A space is `(authority DID, type, skey)`; the authority is always the calling
- * tenant's DID, so a tenant only ever names `{ type, skey }`. Policies are
- * replaced, not merged, so the same PUT always leaves the same space.
+ * A space is `(authority DID, type, skey)`. The authority is the calling
+ * tenant's app DID unless the key names a DID the tenant registered
+ * (specs/did-plc-and-multi-did-tenancy.md §3); naming the app DID is the same as
+ * naming none. Policies are replaced, not merged, so the same PUT always leaves
+ * the same space.
  *
  * Enforcement doesn't live here: posts check their space through
  * `AudioPostDependencies.getSpace`, and playback of a spaced post's audio is
@@ -19,19 +21,20 @@ export class SpaceService {
 
     async putSpace(input: {
         originAppId: string;
-        key: SpaceKey;
+        key: ScopedSpaceKey;
         readPolicy: SpacePolicy;
         writePolicy: SpacePolicy;
         managingAppEndpoint?: string;
     }): Promise<SpaceView> {
-        assertValidSpaceKey(input.key);
-        const stored = await this.deps.putSpace(input);
+        const key = this.scoped(input.originAppId, input.key);
+        // Creating a space under another DID needs the same proof as a post under it.
+        if (key.authority !== undefined) await this.deps.assertWritableAuthority(input.originAppId, key.authority);
+        const stored = await this.deps.putSpace({ ...input, key });
         return this.toView(stored);
     }
 
-    async getSpace(originAppId: string, key: SpaceKey): Promise<SpaceView> {
-        assertValidSpaceKey(key);
-        const stored = await this.deps.getSpace(originAppId, key);
+    async getSpace(originAppId: string, key: ScopedSpaceKey): Promise<SpaceView> {
+        const stored = await this.deps.getSpace(originAppId, this.scoped(originAppId, key));
         if (!stored) throw new NotFoundError('Space not found');
         return this.toView(stored);
     }
@@ -41,16 +44,21 @@ export class SpaceService {
      * false when there was no such space, so a retry is harmless. A space that
      * still holds posts is a 409 `SPACE_NOT_EMPTY`.
      */
-    async deleteSpace(originAppId: string, key: SpaceKey): Promise<boolean> {
-        assertValidSpaceKey(key);
-        const outcome = await this.deps.deleteSpace(originAppId, key);
+    async deleteSpace(originAppId: string, key: ScopedSpaceKey): Promise<boolean> {
+        const outcome = await this.deps.deleteSpace(originAppId, this.scoped(originAppId, key));
         if (outcome === 'not-empty') throw new SpaceNotEmptyError();
         return outcome === 'deleted';
     }
 
+    private scoped(originAppId: string, key: ScopedSpaceKey): ScopedSpaceKey {
+        return scopedKey(key, this.deps.getAppDid(originAppId));
+    }
+
     toView(space: SpaceRecord): SpaceView {
+        const authority = space.authority ?? this.deps.getAppDid(space.originAppId);
         return {
-            uri: spaceUri(this.deps.getAppDid(space.originAppId), space),
+            uri: spaceUri(authority, space),
+            authority,
             type: space.type,
             skey: space.skey,
             readPolicy: space.readPolicy,
@@ -60,6 +68,18 @@ export class SpaceService {
             updatedAt: space.updatedAt.toISOString(),
         };
     }
+}
+
+/**
+ * Validate a key and normalise its authority: the tenant's app DID, named or
+ * not, is stored as no authority, so one space can't exist twice under two
+ * spellings of the same owner.
+ */
+function scopedKey(key: ScopedSpaceKey, appDid: string): ScopedSpaceKey {
+    assertValidSpaceKey(key);
+    if (key.authority === undefined || key.authority === appDid) return { type: key.type, skey: key.skey };
+    if (!isValidDid(key.authority)) throw new ValidationError(`Invalid space authority (must be a DID): ${key.authority}`);
+    return { type: key.type, skey: key.skey, authority: key.authority };
 }
 
 /** Reject a space key whose parts aren't atproto syntax (an NSID type, a record-key skey). */

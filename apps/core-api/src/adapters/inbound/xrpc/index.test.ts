@@ -469,6 +469,24 @@ describe('dev.antiphony.audio.createPost', () => {
         );
     });
 
+    it("passes a named authority through, and answers with the post's own authority in its uri", async () => {
+        const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
+        vi.mocked(audioPostService.createPost).mockResolvedValueOnce({
+            id: 'p3',
+            cid: 'bafyp3',
+            originAppId: 'test-app',
+            authority: TABLE,
+        } as Awaited<ReturnType<typeof audioPostService.createPost>>);
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ text: 'an org prompt', authority: TABLE }),
+        });
+        expect(res.status).toBe(200);
+        expect(audioPostService.createPost).toHaveBeenCalledWith(expect.objectContaining({ authority: TABLE }));
+        expect((await res.json()).uri).toBe(`at://${TABLE}/dev.antiphony.audio.post/p3`);
+    });
+
     it('refuses an unknown spaceAuthor', async () => {
         const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
             method: 'POST',

@@ -1,18 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
+import { authorityNotRegistered } from './did-registry';
 import { SpaceService, spaceUri } from './spaces';
 import type { SpaceDependencies } from '../ports/space-dependencies';
 import type { SpaceRecord } from 'shared/types/spaces';
 
 const APP = 'did:web:bardcast.example';
+const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
+const idOf = (originAppId: string, k: { type: string; skey: string; authority?: string }) =>
+    `${originAppId}${k.authority ? `@${k.authority}` : ''}/${k.type}/${k.skey}`;
 
 function makeDeps(): SpaceDependencies & { stored: Map<string, SpaceRecord> } {
     const stored = new Map<string, SpaceRecord>();
     return {
         stored,
         getAppDid: () => APP,
-        getSpace: vi.fn(async (originAppId, k) => stored.get(`${originAppId}/${k.type}/${k.skey}`) ?? null),
+        getSpace: vi.fn(async (originAppId, k) => stored.get(idOf(originAppId, k)) ?? null),
+        assertWritableAuthority: vi.fn(async (_originAppId: string, did: string) => {
+            if (did !== TABLE) throw authorityNotRegistered(did);
+        }),
         putSpace: vi.fn(async (input) => {
-            const id = `${input.originAppId}/${input.key.type}/${input.key.skey}`;
+            const id = idOf(input.originAppId, input.key);
             const prior = stored.get(id);
             const record: SpaceRecord = {
                 originAppId: input.originAppId,
@@ -28,7 +35,7 @@ function makeDeps(): SpaceDependencies & { stored: Map<string, SpaceRecord> } {
         }),
         // Occupied keys stand in for a space that still holds posts.
         deleteSpace: vi.fn(async (originAppId, k) => {
-            const id = `${originAppId}/${k.type}/${k.skey}`;
+            const id = idOf(originAppId, k);
             if (!stored.has(id)) return 'absent' as const;
             if (occupied.has(id)) return 'not-empty' as const;
             stored.delete(id);
@@ -47,6 +54,7 @@ describe('SpaceService', () => {
         const view = await svc.putSpace({ originAppId: 'bardcast', key, readPolicy: 'managing-app', writePolicy: 'managing-app' });
         expect(view).toEqual({
             uri: `at://${APP}/space/game.bardcast.space.player/did:plc:abc123player`,
+            authority: APP,
             ...key,
             readPolicy: 'managing-app',
             writePolicy: 'managing-app',
@@ -85,5 +93,43 @@ describe('SpaceService', () => {
         await expect(svc.deleteSpace('bardcast', key)).resolves.toBe(false);
         await expect(svc.deleteSpace('bardcast', full)).rejects.toMatchObject({ status: 409, code: 'SPACE_NOT_EMPTY' });
         await expect(svc.deleteSpace('bardcast', { ...key, skey: 'has space' })).rejects.toMatchObject({ status: 400 });
+    });
+});
+
+describe('SpaceService under another authority (did-plc-and-multi-did-tenancy.md §3)', () => {
+    const key = { type: 'game.bardcast.space.campaign', skey: 'thornwood' };
+
+    it("creates a space under a registered DID, keyed apart from the app DID's", async () => {
+        const deps = makeDeps();
+        const svc = new SpaceService(deps);
+        const mine = await svc.putSpace({ originAppId: 'bardcast', key, readPolicy: 'managing-app', writePolicy: 'managing-app' });
+        const table = await svc.putSpace({
+            originAppId: 'bardcast',
+            key: { ...key, authority: TABLE },
+            readPolicy: 'managing-app',
+            writePolicy: 'managing-app',
+        });
+        expect(mine.authority).toBe(APP);
+        expect(table).toMatchObject({ authority: TABLE, uri: `at://${TABLE}/space/${key.type}/${key.skey}` });
+        expect(deps.stored.size).toBe(2);
+        expect(deps.assertWritableAuthority).toHaveBeenCalledTimes(1);
+        await expect(svc.getSpace('bardcast', { ...key, authority: TABLE })).resolves.toMatchObject({ authority: TABLE });
+    });
+
+    it('treats naming the app DID as naming none', async () => {
+        const deps = makeDeps();
+        const svc = new SpaceService(deps);
+        await svc.putSpace({ originAppId: 'bardcast', key: { ...key, authority: APP }, readPolicy: 'public', writePolicy: 'public' });
+        expect(deps.assertWritableAuthority).not.toHaveBeenCalled();
+        await expect(svc.getSpace('bardcast', key)).resolves.toMatchObject({ authority: APP });
+    });
+
+    it("refuses an authority the tenant hasn't registered, or one that isn't a DID", async () => {
+        const svc = new SpaceService(makeDeps());
+        const other = 'did:plc:zyxwvutsrqponmlkjihgfedc';
+        await expect(
+            svc.putSpace({ originAppId: 'bardcast', key: { ...key, authority: other }, readPolicy: 'public', writePolicy: 'public' }),
+        ).rejects.toMatchObject({ status: 400, code: 'AUTHORITY_NOT_REGISTERED' });
+        await expect(svc.getSpace('bardcast', { ...key, authority: 'nope' })).rejects.toMatchObject({ status: 400 });
     });
 });

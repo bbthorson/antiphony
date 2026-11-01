@@ -14,7 +14,7 @@ import type { TrimmerPort } from '../ports/audio-trimmer';
 import type { WaveformPort } from '../ports/audio-waveform';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { type ProcessingNotifierPort, noopNotifier } from '../ports/processing-notifier';
-import { buildPostUri } from './audio-posts';
+import { postUriOf } from './audio-posts';
 
 export interface ProcessingProviders {
     transcriber?: TranscriberPort;
@@ -557,7 +557,7 @@ export class AudioProcessingService {
                     });
                     await this.deps.saveTranscript({
                         id: this.deps.newTranscriptId(),
-                        subject: { uri: buildPostUri(this.deps.getAppDid(originAppId), post.id, post.space), cid: post.cid },
+                        subject: { uri: postUriOf(post, (id) => this.deps.getAppDid(id)), cid: post.cid },
                         transcript: result.transcript,
                         lang: result.lang,
                         model: result.model,

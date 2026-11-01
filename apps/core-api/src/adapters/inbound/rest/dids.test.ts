@@ -21,6 +21,12 @@ const didRegistryService = new DidRegistryService({
         rows.set(input.did, { ...input, createdAt: new Date('2026-11-01T00:00:00Z') });
         return 'inserted';
     },
+    deleteTenantDid: async (originAppId, did) => {
+        const row = rows.get(did);
+        if (!row || row.originAppId !== originAppId) return 'absent';
+        rows.delete(did);
+        return 'deleted';
+    },
     listTenantDids: async (originAppId, { limit }) => {
         const mine = [...rows.values()].filter((r) => r.originAppId === originAppId);
         return { items: mine.slice(0, limit), nextCursor: null };
@@ -110,6 +116,13 @@ describe('/api/v1/dids', () => {
         expect((await (await get(`/api/v1/dids/${TABLE}`)).json()).data.did).toBe(TABLE);
         const page = (await (await get('/api/v1/dids?limit=10')).json()).data;
         expect(page).toEqual({ items: [expect.objectContaining({ did: TABLE })], nextCursor: null });
+    });
+
+    it('unregisters a DID, and answers a repeat with deleted: false', async () => {
+        await put(TABLE, { role: 'group' });
+        const del = () => app().request(`/api/v1/dids/${TABLE}`, { method: 'DELETE', headers: { authorization: `Bearer ${SERVICE_TOKEN}` } });
+        expect((await (await del()).json()).data).toEqual({ deleted: true });
+        expect((await (await del()).json()).data).toEqual({ deleted: false });
     });
 
     it('needs a service token', async () => {

@@ -8,6 +8,33 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.3] — 2026-11-01
+
+Posts and spaces under a DID the app registered, such as a group's
+([`specs/did-plc-and-multi-did-tenancy.md`](./specs/did-plc-and-multi-did-tenancy.md)
+§3, step B). **Patch**: every new field is optional and defaults to today's
+behaviour (the app's own DID); existing posts, spaces and URIs are unchanged.
+
+### Added
+
+- **`authority`** on `POST /api/v1/posts` and XRPC `createPost`: write the post
+  under a DID registered with `PUT /api/v1/dids/{did}`. Its URI is
+  `at://{authority}/…`, and a `space` it names must exist under the same
+  authority. A reply always has its parent's authority: omit it or name the same
+  one (400 otherwise). An authority the app hasn't registered is 400
+  `AUTHORITY_NOT_REGISTERED`; a registered one whose document no longer names
+  this deployment is 503 `AUTHORITY_CUSTODY_UNPROVEN` (re-checked hourly, like
+  the app DID). Naming the app DID is the same as naming none.
+- **`?authority=`** on `PUT`, `GET` and `DELETE /api/v1/spaces/{spaceType}/{skey}`:
+  a space is keyed by its authority too, so two groups can each have a space
+  with the same type and key. Space views gain **`authority`**.
+- **`spaceAuthority`** on `POST /api/v1/audio/upload`, beside `spaceType` and
+  `skey`; the response's `space` carries `authority` when it isn't the app DID.
+- **`DELETE /api/v1/dids/{did}`** unregisters a DID, refused with 409
+  `DID_IN_USE` while any post or space is under it.
+- Migration `0005_authority.sql`: foreign keys keep a post's or space's
+  authority to a DID registered to its own app.
+
 ## [0.10.2] — 2026-11-01
 
 A tenant can register DIDs it acts for besides its app DID, such as a group's

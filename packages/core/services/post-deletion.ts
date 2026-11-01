@@ -9,7 +9,7 @@ import type {
 import type { DeletedPostRecord, PostDeletionDependencies, PostToDelete } from '../ports/post-deletion-dependencies';
 import { noopDeletionNotifier, type DeletionNotifierPort } from '../ports/deletion-notifier';
 import { type Logger, defaultLogger } from '../ports/logger';
-import { buildPostUri } from './audio-posts';
+import { postUriOf } from './audio-posts';
 
 /**
  * PostDeletionService — hard deletes of posts and their audio
@@ -148,8 +148,8 @@ export class PostDeletionService {
      * post itself once everything below it that is to go has gone.
      */
     private async deleteSubtree(originAppId: string, post: AudioPostRecord, opts: SubtreeOptions): Promise<SubtreePage> {
-        const appDid = this.deps.getAppDid(originAppId);
-        const uriOf = (p: AudioPostRecord) => buildPostUri(appDid, p.id, p.space);
+        // Each post's own authority: a tenant's posts may sit under several DIDs.
+        const uriOf = (p: AudioPostRecord) => postUriOf(p, (id) => this.deps.getAppDid(id));
         const postUri = uriOf(post);
 
         // Every reply in the thread, then the walk from this post down. A prompt

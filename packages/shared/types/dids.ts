@@ -17,7 +17,7 @@ import { TimestampSchema } from './records';
  */
 
 /** A DID, by shape: `did:{method}:{id}`. */
-const DidSchema = z
+export const DidStringSchema = z
     .string()
     .max(2048)
     .regex(/^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$/, 'Must be a DID');
@@ -31,7 +31,7 @@ export type TenantDidRole = z.infer<typeof TenantDidRoleSchema>;
 
 /** A registered DID as stored. */
 export const TenantDidRecordSchema = z.object({
-    did: DidSchema,
+    did: DidStringSchema,
     /** The tenant that may write under it. */
     originAppId: z.string(),
     role: TenantDidRoleSchema,
@@ -43,7 +43,7 @@ export type TenantDidRecord = z.infer<typeof TenantDidRecordSchema>;
 
 /** A registered DID as the API returns it. */
 export const TenantDidViewSchema = z.object({
-    did: DidSchema,
+    did: DidStringSchema,
     role: TenantDidRoleSchema,
     subjectRef: z.string().max(256).optional(),
     /** ISO 8601. */

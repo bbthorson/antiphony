@@ -1,5 +1,6 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
-import type { SpaceKey, SpaceRecord } from 'shared/types/spaces';
+import type { ScopedSpaceKey, SpaceRecord } from 'shared/types/spaces';
+import { authorityNotRegistered } from '../services/did-registry';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -20,14 +21,18 @@ import type {
 export interface InMemoryAudioPostDependencies extends AudioPostDependencies {
     /** Stored posts, keyed by id: as in Postgres, an id belongs to one tenant. */
     readonly posts: Map<string, AudioPostRecord>;
-    /** Spaces that exist, as `{originAppId}/{type}/{skey}`. */
+    /** Spaces that exist, as `spaceKeyOf` writes them. */
     readonly spaces: Set<string>;
     /** Stored blobs and their space, as `{originAppId}/{cid}`; null is public. */
-    readonly blobs: Map<string, SpaceKey | null>;
+    readonly blobs: Map<string, ScopedSpaceKey | null>;
+    /** DIDs each tenant may write under besides its app DID, as `{originAppId}/{did}`. */
+    readonly authorities: Set<string>;
     readonly transcripts: Map<string, TranscriptEnrichmentRecord>;
 }
 
-export const spaceKeyOf = (originAppId: string, k: SpaceKey) => `${originAppId}/${k.type}/${k.skey}`;
+/** `{originAppId}/{type}/{skey}` for the app DID's spaces; `{originAppId}@{authority}/{type}/{skey}` for another's. */
+export const spaceKeyOf = (originAppId: string, k: ScopedSpaceKey) =>
+    `${originAppId}${k.authority !== undefined ? `@${k.authority}` : ''}/${k.type}/${k.skey}`;
 
 /** Postgres order: `(created_at, id)`, so equal timestamps still page stably. */
 function compare(a: AudioPostRecord, b: AudioPostRecord): number {
@@ -61,7 +66,8 @@ export function inMemoryAudioPostDependencies(
 ): InMemoryAudioPostDependencies {
     const posts = new Map<string, AudioPostRecord>();
     const spaces = new Set<string>();
-    const blobs = new Map<string, SpaceKey | null>();
+    const blobs = new Map<string, ScopedSpaceKey | null>();
+    const authorities = new Set<string>();
     const transcripts = new Map<string, TranscriptEnrichmentRecord>();
     let counter = 0;
     const clone = (r: AudioPostRecord): AudioPostRecord => structuredClone(r);
@@ -71,6 +77,7 @@ export function inMemoryAudioPostDependencies(
         posts,
         spaces,
         blobs,
+        authorities,
         transcripts,
         newPostId: () => `3kpost${++counter}aaaaa`,
         getAppDid: (originAppId) => `did:web:${originAppId}.example`,
@@ -142,6 +149,12 @@ export function inMemoryAudioPostDependencies(
             if (!spaces.has(spaceKeyOf(originAppId, key))) return null;
             const at = new Date('2026-10-07T00:00:00Z');
             return { originAppId, ...key, readPolicy: 'managing-app', writePolicy: 'managing-app', createdAt: at, updatedAt: at };
+        },
+
+        // Registration only: custody is always proven here. The Postgres
+        // binding also re-proves it.
+        async assertWritableAuthority(originAppId, did) {
+            if (!authorities.has(`${originAppId}/${did}`)) throw authorityNotRegistered(did);
         },
 
         async getBlobSpace(originAppId, blobCid) {
