@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
-import { SpaceKeySchema, type SpaceKey } from 'shared/types/spaces';
+import { ScopedSpaceKeySchema, type ScopedSpaceKey } from 'shared/types/spaces';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
@@ -9,6 +9,7 @@ import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { blobSpaceMetadata, blobSpaceOf } from '../../../lib/blob-space.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
+import { getAppDid } from '../../../lib/app-did.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
@@ -32,7 +33,9 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * (specs/spaces.md). The blob is then **private**: its object carries the
  * space in R2 custom metadata (lib/blob-space.ts), and the proxy plays it only
  * through a signed, expiring URL. The path stays `blobs/{originAppId}/{cid}`,
- * so renditions and processing need nothing new.
+ * so renditions and processing need nothing new. An optional `spaceAuthority`
+ * names a space under a DID the tenant registered rather than its app DID
+ * (specs/did-plc-and-multi-did-tenancy.md §3); it is recorded beside the space.
  *
  * **The first upload wins.** The same bytes are the same object, so a second
  * upload never rewrites it, and never changes its visibility either way. The
@@ -69,10 +72,11 @@ const UploadResponseSchema = z.object({
         description:
             'Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed\'s `audio`.',
     }),
-    space: SpaceKeySchema.optional().openapi({
+    space: ScopedSpaceKeySchema.optional().openapi({
         description:
-            'The space the blob is stored in, when it is private. Absent ⇒ public. The first upload of the same ' +
-            'bytes decides this, so it can differ from the space this request named.',
+            'The space the blob is stored in, when it is private. Absent ⇒ public. `authority` is present when the ' +
+            "space is under a DID other than the app's own. The first upload of the same bytes decides this, so it " +
+            'can differ from the space this request named.',
     }),
 });
 
@@ -90,8 +94,9 @@ const uploadRoute = createRoute({
         'Authenticated multipart/form-data upload with a single `file` field (max 25MB; ' +
         'types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns ' +
         'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post. ' +
-        'Optional `spaceType` + `skey` fields store it privately in one of the tenant\'s spaces; the first ' +
-        'upload of the same bytes decides where they live, and the response\'s `space` says which.',
+        'Optional `spaceType` + `skey` fields store it privately in one of the tenant\'s spaces, with an optional ' +
+        '`spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes ' +
+        'decides where they live, and the response\'s `space` says which.',
     middleware: [
         requireAuth(),
         rateLimit(RATE_LIMITS.writeAggregate),
@@ -150,21 +155,30 @@ app.openapi(uploadRoute, async (c) => {
     const originAppId = getOriginAppId(c);
     const services = servicesFor(c.env);
 
-    // Both or neither: half a space names nothing.
+    // Both or neither: half a space names nothing. An authority alone names nothing either.
     const spaceType = formData.get('spaceType');
     const skey = formData.get('skey');
-    let requested: SpaceKey | undefined;
-    if (spaceType !== null || skey !== null) {
-        const parsed = SpaceKeySchema.safeParse({ type: spaceType, skey });
+    const spaceAuthority = formData.get('spaceAuthority');
+    let requested: ScopedSpaceKey | undefined;
+    if (spaceType !== null || skey !== null || spaceAuthority !== null) {
+        const parsed = ScopedSpaceKeySchema.safeParse({
+            type: spaceType,
+            skey,
+            ...(spaceAuthority !== null ? { authority: spaceAuthority } : {}),
+        });
         if (!parsed.success) {
             return c.json(
-                errorEnvelope(c, 'Invalid space: send both "spaceType" and "skey"', { issues: parsed.error.issues }),
+                errorEnvelope(c, 'Invalid space: send both "spaceType" and "skey", and "spaceAuthority" only as a DID', {
+                    issues: parsed.error.issues,
+                }),
                 400,
             );
         }
-        // Throws 404 for a space this tenant doesn't have.
+        // Throws 404 for a space this tenant doesn't have under that authority.
         await services.spaceService.getSpace(originAppId, parsed.data);
-        requested = parsed.data;
+        // Recorded as the services store it: no authority for the app DID.
+        const { authority, ...key } = parsed.data;
+        requested = authority !== undefined && authority !== getAppDid(originAppId) ? { ...key, authority } : key;
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -180,7 +194,7 @@ app.openapi(uploadRoute, async (c) => {
     // later marker wins; both callers then see `space` on a re-read, and a
     // post's placement check refuses the mismatch either way.
     const existing = await services.storage.stat(path);
-    let space: SpaceKey | null;
+    let space: ScopedSpaceKey | null;
     if (existing) {
         space = blobSpaceOf(existing.metadata);
     } else {
@@ -202,7 +216,9 @@ app.openapi(uploadRoute, async (c) => {
                 mimeType,
                 size: buffer.byteLength,
             },
-            ...(space ? { space: { type: space.type, skey: space.skey } } : {}),
+            ...(space
+                ? { space: { type: space.type, skey: space.skey, ...(space.authority !== undefined ? { authority: space.authority } : {}) } }
+                : {}),
         },
     }, 200);
 });

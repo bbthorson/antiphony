@@ -187,15 +187,15 @@ describe('reply gating (createPost, §6)', () => {
     });
 
     it('rejects a reply whose parent StrongRef carries a foreign (cross-tenant) authority', async () => {
-        // The parent post EXISTS (getPostById would return it), but the ref's
-        // authority is another tenant's app DID. The parse-time authority check
-        // rejects it BEFORE the lookup, so a forged cross-tenant StrongRef can't
-        // open a branch inside this tenant.
+        // The parent post EXISTS (getPostById returns it), but the ref's
+        // authority is another tenant's app DID. A tenant's posts may sit under
+        // several DIDs, so the parse accepts any authority; the parsed one must
+        // then be the stored post's own, so a forged cross-tenant StrongRef
+        // can't open a branch inside this tenant.
         setParent(prompt);
         const forged = { uri: buildPostUri('did:web:bardcast.com', prompt.id), cid: prompt.cid };
         const input = promptInput({ authorId: 'responder', text: 'a reply', reply: { root: rootRef, parent: forged } });
         await expect(svc.createPost(input)).rejects.toMatchObject({ status: 404 });
-        expect(deps.getPostById).not.toHaveBeenCalled();
         expect(deps.savePost).not.toHaveBeenCalled();
     });
 

@@ -174,7 +174,7 @@ someone hear their own reply.
 | :--- | :--- | :--- |
 | 1 | Record these decisions and mark what they replace (this change). | all three |
 | 2 | **The sealed part first.** `createPost` takes the author segment the caller names, from the acting actor, when the record is a member's (G5), instead of always the authority. Bardcast names it for campaign posts and creation recordings. *Antiphony's side built 2026-11-01: `spaceAuthor: 'actor'` (API contract 0.10.1).* | antiphony, bardcast |
-| 3 | **Group DIDs.** The table's and the org's DID as authority, once the group host is chosen (open question 1). Until then, Antiphony's multi-DID tenancy (`did-plc-and-multi-did-tenancy.md` §§2–3) is how a write goes under a DID other than the app's. *The registry is built (contract 0.10.2); writes under a registered DID are next.* | antiphony, bardcast, vox-pop |
+| 3 | **Group DIDs.** The table's and the org's DID as authority, once the group host is chosen (open question 1). Until then, Antiphony's multi-DID tenancy (`did-plc-and-multi-did-tenancy.md` §§2–3) is how a write goes under a DID other than the app's. *Antiphony's side is built (contract 0.10.3): register the group's DID, then name it as `authority` on posts and spaces. What remains is choosing the group host that creates those DIDs.* | antiphony, bardcast, vox-pop |
 | 4 | **Bardcast's chapter and join consent** (G3): the join flow says chapters stay with the table. | bardcast |
 | 5 | **Vox Pop members from the members space** (G4): membership records and acceptances, with Postgres as an index. | vox-pop |
 | 6 | **Audio service mode** (G2): process audio referenced by records in other repos, read with a space credential, and publish derived records. | antiphony |

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { TimestampSchema } from './records';
 import { httpsUrl } from './url';
+import { DidStringSchema } from './dids';
 
 /**
  * atproto **spaces** (specs/spaces.md): permissioned repos with access control at
@@ -38,6 +39,18 @@ export const SpaceKeySchema = z.object({
     skey: RecordKeySchema,
 });
 export type SpaceKey = z.infer<typeof SpaceKeySchema>;
+
+/**
+ * A space with its authority: the full triple (authority, type, skey). An
+ * absent `authority` is the tenant's own app DID, which is every space created
+ * before a tenant could act under another DID
+ * (specs/did-plc-and-multi-did-tenancy.md §3). Otherwise it is a DID the tenant
+ * registered (`PUT /api/v1/dids/{did}`).
+ */
+export const ScopedSpaceKeySchema = SpaceKeySchema.extend({
+    authority: DidStringSchema.optional(),
+});
+export type ScopedSpaceKey = z.infer<typeof ScopedSpaceKeySchema>;
 
 /**
  * Whose DID a new post in a space carries in its URI's author segment
@@ -92,8 +105,10 @@ export type SpacePolicy = z.infer<typeof SpacePolicySchema>;
 
 /** A space as stored: tenant-scoped, keyed by `(originAppId, type, skey)`. */
 export const SpaceRecordSchema = SpaceKeySchema.extend({
-    /** The tenant whose DID is the space's authority. */
+    /** The tenant that owns the space. */
     originAppId: z.string(),
+    /** The space's authority when it isn't the tenant's app DID: a DID the tenant registered. */
+    authority: DidStringSchema.optional(),
     readPolicy: SpacePolicySchema,
     writePolicy: SpacePolicySchema,
     /**
@@ -109,8 +124,10 @@ export type SpaceRecord = z.infer<typeof SpaceRecordSchema>;
 
 /** A space as the API returns it. */
 export const SpaceViewSchema = SpaceKeySchema.extend({
-    /** The space's own `at://` reference: `at://{appDid}/space/{type}/{skey}`. */
+    /** The space's own `at://` reference: `at://{authority}/space/{type}/{skey}`. */
     uri: z.string().regex(/^at:\/\/.+\/space\/.+\/.+$/, 'Must be a space at:// URI'),
+    /** The space's authority: the app's own DID, or a DID the app registered. */
+    authority: DidStringSchema,
     readPolicy: SpacePolicySchema,
     writePolicy: SpacePolicySchema,
     managingAppEndpoint: httpsUrl().optional(),

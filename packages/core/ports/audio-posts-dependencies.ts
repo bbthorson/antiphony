@@ -1,6 +1,6 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
-import type { SpaceKey, SpaceRecord } from 'shared/types/spaces';
+import type { ScopedSpaceKey, SpaceKey, SpaceRecord } from 'shared/types/spaces';
 
 /**
  * AudioPostDependencies is the portable interface the `AudioPostService`
@@ -129,17 +129,26 @@ export interface AudioPostDependencies {
      */
     resolveAudioUrl(originAppId: string, blobCid: string, space?: SpaceKey): Promise<string | null>;
 
-    /** The tenant's space, or null if it has none by that key. */
-    getSpace(originAppId: string, key: SpaceKey): Promise<SpaceRecord | null>;
+    /** The tenant's space under `key.authority` (absent: the app DID), or null if it has none by that key. */
+    getSpace(originAppId: string, key: ScopedSpaceKey): Promise<SpaceRecord | null>;
+
+    /**
+     * Refuse unless the tenant may write under `did`, a DID other than its app
+     * DID: it must be registered to this tenant (`tenant_dids`), and its document
+     * must still name this deployment as its space host, re-proven on the write
+     * path the way the app DID is. Throws a `ServiceError`: 400
+     * `AUTHORITY_NOT_REGISTERED`, or 503 `AUTHORITY_CUSTODY_UNPROVEN`.
+     */
+    assertWritableAuthority(originAppId: string, did: string): Promise<void>;
 
     /**
      * Where a stored blob lives: `{ space: null }` for public audio, `{ space }`
      * for audio uploaded into a space, `null` when no such blob is stored. Read
      * from the blob's own storage metadata, set when its bytes were first
      * uploaded (the first upload wins; re-uploading identical bytes never moves
-     * them).
+     * them). The space's `authority` is absent for the app DID.
      */
-    getBlobSpace(originAppId: string, blobCid: string): Promise<{ space: SpaceKey | null } | null>;
+    getBlobSpace(originAppId: string, blobCid: string): Promise<{ space: ScopedSpaceKey | null } | null>;
 
     /**
      * Compute the content CID for a canonical lexicon record — DAG-CBOR

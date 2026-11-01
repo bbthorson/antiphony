@@ -75,6 +75,30 @@ export function postgresDidRegistryDependencies(
             return rows.length > 0 ? 'inserted' : 'exists';
         },
 
+        async deleteTenantDid(originAppId, did) {
+            // One statement, shaped like deleteSpace: the `not exists` guards
+            // answer "in use" themselves rather than leaning on the foreign keys
+            // from posts and spaces (migration 0005), whose refusal would be
+            // indistinguishable from any other failure.
+            const [row] = await sql.query<{ found: boolean; deleted: boolean }>(
+                `
+                with target as (
+                    select 1 from tenant_dids where did = $1 and origin_app_id = $2
+                ), removed as (
+                    delete from tenant_dids
+                     where did = $1 and origin_app_id = $2
+                       and not exists (select 1 from posts  where authority = $1     and origin_app_id = $2)
+                       and not exists (select 1 from spaces where authority_did = $1 and origin_app_id = $2)
+                    returning 1
+                )
+                select exists (select 1 from target) as found, exists (select 1 from removed) as deleted
+                `,
+                [did, originAppId],
+            );
+            if (!row?.found) return 'absent';
+            return row.deleted ? 'deleted' : 'in-use';
+        },
+
         async listTenantDids(originAppId, { limit, cursor }) {
             // Newest first, keyed on (created_at, did). The cursor is the last
             // DID of the previous page, resolved in the same statement; a cursor

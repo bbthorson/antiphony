@@ -88,6 +88,8 @@ export function postgresAudioPostDependencies(
 ): AudioPostDependencies {
     const spaces = postgresSpaceDependencies(sql);
     return {
+        assertWritableAuthority: spaces.assertWritableAuthority,
+
         // A TID is the `rkey` in
         // at://{appDid}/{collection}/{rkey}, so it must be an honest AT-Proto
         // record key regardless of what stores it.

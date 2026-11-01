@@ -171,6 +171,30 @@ describe('POST /api/v1/audio/upload', () => {
             });
         });
 
+        it("records a space's authority when it isn't the app DID, and drops the app DID's", async () => {
+            const TABLE = 'did:plc:abcdefghijklmnopqrstuvwx';
+            getSpace.mockResolvedValue({});
+            stat.mockResolvedValue(null);
+
+            const res = await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey, spaceAuthority: TABLE }));
+            expect(res.status).toBe(200);
+            expect((await res.json()).data.space).toEqual({ ...SPACE, authority: TABLE });
+            expect(getSpace).toHaveBeenCalledWith('antiphony', { ...SPACE, authority: TABLE });
+            expect(uploadFile.mock.calls[0][3]).toEqual({
+                metadata: { 'antiphony-space': 'game.bardcast.space.campaign/thornwood', 'antiphony-space-authority': TABLE },
+            });
+
+            uploadFile.mockClear();
+            await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey, spaceAuthority: 'did:web:antiphony.example' }, new Uint8Array([8])));
+            expect(uploadFile.mock.calls[0][3]).toEqual({ metadata: { 'antiphony-space': 'game.bardcast.space.campaign/thornwood' } });
+        });
+
+        it('400s an authority that is not a DID, or one with no space', async () => {
+            expect((await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey, spaceAuthority: 'nope' }))).status).toBe(400);
+            expect((await post(spaced({ spaceAuthority: 'did:plc:abcdefghijklmnopqrstuvwx' }))).status).toBe(400);
+            expect(getSpace).not.toHaveBeenCalled();
+        });
+
         it('never rewrites bytes already stored, so a public blob stays public', async () => {
             getSpace.mockResolvedValue({});
             stat.mockResolvedValue({ size: 3 });

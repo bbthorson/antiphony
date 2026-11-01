@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { XRPC_NSID } from 'shared/nsid';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
-import { buildPostUri } from '@antiphony/core/services/audio-posts';
+import { postUriOf } from '@antiphony/core/services/audio-posts';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
@@ -246,7 +246,7 @@ export function xrpcRoute(): Hono {
                 );
             }
 
-            const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor } = validation.data;
+            const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
             const originAppId = getOriginAppId(c);
             const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
@@ -263,6 +263,7 @@ export function xrpcRoute(): Hono {
                 processing: initialProcessing,
                 space,
                 spaceAuthor,
+                authority,
             });
 
             if (hasPendingStage(initialProcessing)) {
@@ -275,7 +276,7 @@ export function xrpcRoute(): Hono {
             // uri is built here rather than re-read so a create still costs one
             // write and no extra read.
             return c.json({
-                uri: buildPostUri(getAppDid(originAppId), created.id, created.space),
+                uri: postUriOf(created, getAppDid),
                 cid: created.cid,
             });
         },

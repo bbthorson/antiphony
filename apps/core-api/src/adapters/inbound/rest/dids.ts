@@ -16,9 +16,10 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   PUT /{did}  — register one (custody proven first)
  *   GET /{did}  — read one of the tenant's registrations
  *   GET /       — list them, newest first
+ *   DELETE /{did} — unregister one nothing is under
  *
- * Tenant-level, so a service token is enough. Registering a DID doesn't yet let
- * a post or space go under it; that is the next step of the multi-DID work.
+ * Tenant-level, so a service token is enough. Once registered, a DID can be the
+ * `authority` of posts and spaces.
  */
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
@@ -138,6 +139,34 @@ app.openapi(listRoute, async (c) => {
         ...(cursor ? { cursor } : {}),
     });
     return c.json({ success: true as const, data: page }, 200);
+});
+
+const deleteRoute = createRoute({
+    method: 'delete',
+    path: '/{did}',
+    tags: ['DIDs'],
+    summary: 'Unregister a DID',
+    description:
+        "Unregisters one of the calling tenant's DIDs, once no post or space is under it: their URIs name the DID, so " +
+        'one still in use answers 409 (`DID_IN_USE`). Idempotent: `deleted` is false when there was no such ' +
+        'registration, including another tenant\'s.',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+    ] as const,
+    request: { params: DidParamsSchema },
+    responses: {
+        200: jsonResponse(z.object({ deleted: z.boolean() }), 'Whether a registration was deleted'),
+        401: errorResponse('Not authenticated'),
+        409: errorResponse('Posts or spaces are still under the DID (`DID_IN_USE`)'),
+    },
+});
+
+app.openapi(deleteRoute, async (c) => {
+    const { did } = c.req.valid('param');
+    const deleted = await servicesFor(c.env).didRegistryService.unregister(getOriginAppId(c), did);
+    return c.json({ success: true as const, data: { deleted } }, 200);
 });
 
 export { app as didsRoute };

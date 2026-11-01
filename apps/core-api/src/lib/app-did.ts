@@ -450,23 +450,26 @@ export interface EnsurePinOptions {
 
 const kvKey = (originAppId: string) => `pin:${originAppId}`;
 
+/** What every cached custody proof carries, whoever it is about. */
+type CustodyProofEntry = Omit<ValidatedPin, 'originAppId'>;
+
 /** A KV round trip must never be the reason a request fails. */
-async function readKvPin(kv: PinCacheKV, originAppId: string): Promise<ValidatedPin | null> {
+async function readKvEntry<T extends CustodyProofEntry>(kv: PinCacheKV, key: string, log: Record<string, string>): Promise<T | null> {
     try {
-        const raw = (await kv.get(kvKey(originAppId), 'json')) as ValidatedPin | null;
+        const raw = (await kv.get(key, 'json')) as T | null;
         // An entry written before `documentHash` existed is treated as a miss
         // rather than served without one: re-resolving costs one fetch, and a
         // pin with no hash would read as unacknowledged to everything after.
         return raw && typeof raw.validatedAt === 'number' && typeof raw.documentHash === 'string' ? raw : null;
     } catch (err) {
-        logger.warn({ err, originAppId }, '[app-did] pin cache read failed; resolving directly');
+        logger.warn({ err, ...log }, '[app-did] pin cache read failed; resolving directly');
         return null;
     }
 }
 
-async function writeKvPin(kv: PinCacheKV, pin: ValidatedPin): Promise<void> {
+async function writeKvEntry(kv: PinCacheKV, key: string, entry: CustodyProofEntry, log: Record<string, string>): Promise<void> {
     try {
-        await kv.put(kvKey(pin.originAppId), JSON.stringify(pin), {
+        await kv.put(key, JSON.stringify(entry), {
             // Expire on the STALENESS bound, not the freshness one. KV is the
             // last-known-good store; an entry past `PIN_FRESH_MS` is still
             // useful as the thing to fall back on when the DID host is down,
@@ -475,13 +478,125 @@ async function writeKvPin(kv: PinCacheKV, pin: ValidatedPin): Promise<void> {
             expirationTtl: Math.floor(PIN_STALE_TOLERANCE_MS / 1000),
         });
     } catch (err) {
-        logger.warn({ err, originAppId: pin.originAppId }, '[app-did] pin cache write failed');
+        logger.warn({ err, ...log }, '[app-did] pin cache write failed');
     }
+}
+
+function writeKvPin(kv: PinCacheKV, pin: ValidatedPin): Promise<void> {
+    return writeKvEntry(kv, kvKey(pin.originAppId), pin, { originAppId: pin.originAppId });
 }
 
 function remember(pin: ValidatedPin): void {
     validatedPins ??= new Map();
     validatedPins.set(pin.originAppId, pin);
+}
+
+/**
+ * Where one custody proof is cached: the isolate-local slot, its KV key, and
+ * how to build an entry from a fresh proof. Lets the app DID (keyed by tenant)
+ * and a registered DID (keyed by DID) share one state machine.
+ */
+interface CustodySlot<T extends CustodyProofEntry> {
+    /** Log context, and the subject named in error messages. */
+    log: Record<string, string>;
+    subject: string;
+    kvKey: string;
+    local(): T | undefined;
+    remember(entry: T): void;
+    forget(): void;
+    entry(proof: CustodyProofEntry): T;
+}
+
+/**
+ * Prove custody for one DID, from cache when possible: the shared core of
+ * `ensureTenantPin` and `ensureDidCustody`. Three layers, cheapest first
+ * (isolate-local, KV, resolve), with the freshness, staleness, 404-grace and
+ * backoff rules documented on `ensureTenantPin`. Throws on failure.
+ */
+async function ensureCustody<T extends CustodyProofEntry>(slot: CustodySlot<T>, did: string, opts: EnsurePinOptions): Promise<void> {
+    const now = opts.now?.() ?? Date.now();
+
+    const local = slot.local();
+    if (local && local.did === did && now - local.validatedAt < PIN_FRESH_MS) return;
+    // Backing off after a transient failure. The entry is stale but within
+    // tolerance (checked when the backoff was set), so serving it is the same
+    // decision already made, just without re-paying the fetch timeout.
+    if (local && local.did === did && local.retryNotBefore !== undefined && now < local.retryNotBefore) return;
+
+    if (!local && opts.kv) {
+        const cached = await readKvEntry<T>(opts.kv, slot.kvKey, slot.log);
+        // `cached.did === did` guards the case that matters: the pin was
+        // repointed in config since the cache was written, so the cached proof
+        // is about a DID this deployment no longer claims.
+        if (cached && cached.did === did && now - cached.validatedAt < PIN_FRESH_MS) {
+            slot.remember(cached);
+            return;
+        }
+    }
+
+    const result = await validateAppDid(did, {
+        expectedPdsHost: opts.expectedPdsHost,
+        fetchImpl: opts.fetchImpl,
+        plcDirectoryUrl: opts.plcDirectoryUrl,
+    });
+
+    if (result.ok) {
+        const entry = slot.entry({
+            did: result.did,
+            custody: result.custody,
+            document: result.document,
+            documentHash: result.documentHash,
+            validatedAt: now,
+        });
+        slot.remember(entry);
+        if (opts.kv) await writeKvEntry(opts.kv, slot.kvKey, entry, slot.log);
+        return;
+    }
+
+    const lastGood = (local?.did === did ? local : undefined) ?? (opts.kv ? await readKvEntry<T>(opts.kv, slot.kvKey, slot.log) : null);
+
+    if (result.kind === 'disproof') {
+        const is404 = result.reason === 'did-doc-http-404';
+        if (is404 && lastGood && lastGood.did === did && now - lastGood.validatedAt < PIN_FRESH_MS + PIN_404_GRACE_MS) {
+            logger.warn(
+                {
+                    ...slot.log,
+                    did,
+                    reason: result.reason,
+                    graceRemainingMs: PIN_FRESH_MS + PIN_404_GRACE_MS - (now - lastGood.validatedAt),
+                },
+                '[app-did] transient 404 resolving the DID document — serving existing custody snapshot within grace period',
+            );
+            slot.remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
+            return;
+        }
+
+        // The custody claim is known false. Evict everywhere — a cached "yes"
+        // is now a cached wrong answer — and refuse.
+        slot.forget();
+        if (opts.kv) await opts.kv.delete(slot.kvKey).catch(() => undefined);
+        logger.error({ ...slot.log, did, reason: result.reason }, '[app-did] custody DISPROVED — evicting and failing closed');
+        throw new Error(`[app-did] pin validation failed for ${slot.subject}: ${result.reason}`);
+    }
+
+    // Unreachable. Fall back to the last known good, from either layer, even if
+    // it is past `PIN_FRESH_MS` — that is the entire point of keeping it.
+    if (lastGood && lastGood.did === did && now - lastGood.validatedAt < PIN_STALE_TOLERANCE_MS) {
+        logger.warn(
+            { ...slot.log, did, reason: result.reason, staleForMs: now - lastGood.validatedAt },
+            '[app-did] DID document unreachable — serving the last proven custody snapshot',
+        );
+        // `validatedAt` carried over deliberately, so the staleness bound keeps
+        // counting from the last real proof rather than restarting here.
+        slot.remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
+        return;
+    }
+
+    logger.error(
+        { ...slot.log, did, reason: result.reason },
+        '[app-did] DID document unreachable and no usable snapshot — failing closed',
+    );
+    throw new Error(`[app-did] cannot prove custody for ${slot.subject}: ${result.reason}`);
 }
 
 /**
@@ -514,13 +629,13 @@ export async function ensureTenantPin(
     originAppId: string,
     opts: EnsurePinOptions = {},
 ): Promise<void> {
+    // A fresh (or backing-off) snapshot is served before config is even read,
+    // exactly as before this shared the state machine: the snapshot is the
+    // proof, and `validateAllPins` may have built it from a pin set passed in
+    // directly rather than from the environment.
     const now = opts.now?.() ?? Date.now();
-
     const local = validatedPins?.get(originAppId);
     if (local && now - local.validatedAt < PIN_FRESH_MS) return;
-    // Backing off after a transient failure. The entry is stale but within
-    // tolerance (checked when the backoff was set), so serving it is the same
-    // decision already made, just without re-paying the fetch timeout.
     if (local && local.retryNotBefore !== undefined && now < local.retryNotBefore) return;
 
     const did = parseAppDids().get(originAppId);
@@ -529,97 +644,57 @@ export async function ensureTenantPin(
         // `at://` uri cannot be well-formed without a proven DID authority.
         throw new Error(`[app-did] no app DID pinned for tenant "${originAppId}"`);
     }
-
-    if (!local && opts.kv) {
-        const cached = await readKvPin(opts.kv, originAppId);
-        // `cached.did === did` guards the case that matters: the pin was
-        // repointed in config since the cache was written, so the cached proof
-        // is about a DID this deployment no longer claims.
-        if (cached && cached.did === did && now - cached.validatedAt < PIN_FRESH_MS) {
-            remember(cached);
-            return;
-        }
-    }
-
-    const result = await validateAppDid(did, {
-        expectedPdsHost: opts.expectedPdsHost,
-        fetchImpl: opts.fetchImpl,
-        plcDirectoryUrl: opts.plcDirectoryUrl,
-    });
-
-    if (result.ok) {
-        const pin: ValidatedPin = {
-            originAppId,
-            did: result.did,
-            custody: result.custody,
-            document: result.document,
-            documentHash: result.documentHash,
-            validatedAt: now,
-        };
-        remember(pin);
-        if (opts.kv) await writeKvPin(opts.kv, pin);
-        return;
-    }
-
-    if (result.kind === 'disproof') {
-        const is404 = result.reason === 'did-doc-http-404';
-        const lastGood = local ?? (opts.kv ? await readKvPin(opts.kv, originAppId) : null);
-        if (
-            is404 &&
-            lastGood &&
-            lastGood.did === did &&
-            now - lastGood.validatedAt < PIN_FRESH_MS + PIN_404_GRACE_MS
-        ) {
-            logger.warn(
-                {
-                    originAppId,
-                    did,
-                    reason: result.reason,
-                    graceRemainingMs: PIN_FRESH_MS + PIN_404_GRACE_MS - (now - lastGood.validatedAt),
-                },
-                '[app-did] transient 404 resolving the DID document — serving existing custody snapshot within grace period',
-            );
-            remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
-            return;
-        }
-
-        // The custody claim is known false. Evict everywhere — a cached "yes"
-        // is now a cached wrong answer — and refuse.
-        validatedPins?.delete(originAppId);
-        if (opts.kv) await opts.kv.delete(kvKey(originAppId)).catch(() => undefined);
-        logger.error(
-            { originAppId, did, reason: result.reason },
-            '[app-did] custody DISPROVED — evicting and failing closed',
-        );
-        throw new Error(`[app-did] pin validation failed for tenant "${originAppId}": ${result.reason}`);
-    }
-
-    // Unreachable. Fall back to the last known good, from either layer, even if
-    // it is past `PIN_FRESH_MS` — that is the entire point of keeping it.
-    const lastGood = local ?? (opts.kv ? await readKvPin(opts.kv, originAppId) : null);
-    if (lastGood && lastGood.did === did && now - lastGood.validatedAt < PIN_STALE_TOLERANCE_MS) {
-        logger.warn(
-            {
-                originAppId,
-                did,
-                reason: result.reason,
-                staleForMs: now - lastGood.validatedAt,
-            },
-            '[app-did] DID document unreachable — serving the last proven custody snapshot',
-        );
-        // `validatedAt` carried over deliberately, so the staleness bound keeps
-        // counting from the last real proof rather than restarting here.
-        remember({ ...lastGood, retryNotBefore: now + PIN_RETRY_BACKOFF_MS });
-        return;
-    }
-
-    logger.error(
-        { originAppId, did, reason: result.reason },
-        '[app-did] DID document unreachable and no usable snapshot — failing closed',
+    await ensureCustody<ValidatedPin>(
+        {
+            log: { originAppId },
+            subject: `tenant "${originAppId}"`,
+            kvKey: kvKey(originAppId),
+            local: () => validatedPins?.get(originAppId),
+            remember,
+            forget: () => validatedPins?.delete(originAppId),
+            entry: (proof) => ({ originAppId, ...proof }),
+        },
+        did,
+        opts,
     );
-    throw new Error(
-        `[app-did] cannot prove custody for tenant "${originAppId}": ${result.reason}`,
+}
+
+/** Custody proofs for DIDs a tenant registered (`tenant_dids`), keyed by DID. */
+const validatedDids = new Map<string, CustodyProofEntry>();
+
+/**
+ * Prove a REGISTERED DID still names this deployment as its space host, with
+ * the same layers and rules as `ensureTenantPin`, keyed by the DID rather than
+ * a tenant (specs/did-plc-and-multi-did-tenancy.md §2). Called on the write
+ * path, before anything is written under the DID; reads serve the authority
+ * stored on the record and need no proof.
+ *
+ * Unlike the app DID, an expected host is REQUIRED: without one,
+ * `validateAppDid` accepts any space host, which for a tenant-supplied DID would
+ * let a tenant write under anyone's. Throws on failure.
+ */
+export async function ensureDidCustody(did: string, opts: EnsurePinOptions = {}): Promise<void> {
+    if (!opts.expectedPdsHost) {
+        throw new Error(`[app-did] cannot prove custody for ${did}: no ANTIPHONY_PDS_HOST`);
+    }
+    await ensureCustody<CustodyProofEntry>(
+        {
+            log: { did },
+            subject: did,
+            kvKey: `did:${did}`,
+            local: () => validatedDids.get(did),
+            remember: (entry) => validatedDids.set(did, entry),
+            forget: () => validatedDids.delete(did),
+            entry: (proof) => proof,
+        },
+        did,
+        opts,
     );
+}
+
+/** Test hook: forget every registered DID's cached proof. */
+export function resetDidCustodyCache(): void {
+    validatedDids.clear();
 }
 
 /** A pin that stopped proving custody. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BLOB_SPACE_METADATA_KEY, blobSpaceMetadata, blobSpaceOf } from './blob-space.js';
+import { BLOB_SPACE_AUTHORITY_METADATA_KEY, BLOB_SPACE_METADATA_KEY, blobSpaceMetadata, blobSpaceOf } from './blob-space.js';
 
 /**
  * The marker that decides whether the audio proxy serves a blob unsigned
@@ -16,6 +16,19 @@ describe('blob space marker', () => {
     it('reads a DID as the space key, colons intact', () => {
         const player = { type: 'game.bardcast.space.player', skey: 'did:plc:abc123' };
         expect(blobSpaceOf(blobSpaceMetadata(player))).toEqual(player);
+    });
+
+    it("records a space's authority beside it, and reads a blob without one as the app DID's", () => {
+        const table = { type: 'game.bardcast.space.campaign', skey: 'thornwood', authority: 'did:plc:abcdefghijklmnopqrstuvwx' };
+        const metadata = blobSpaceMetadata(table);
+        expect(metadata[BLOB_SPACE_AUTHORITY_METADATA_KEY]).toBe(table.authority);
+        expect(blobSpaceOf(metadata)).toEqual(table);
+        // Every blob stored before authorities existed carries only the first key.
+        expect(blobSpaceOf({ [BLOB_SPACE_METADATA_KEY]: 'game.bardcast.space.campaign/thornwood' })).toEqual({
+            type: 'game.bardcast.space.campaign',
+            skey: 'thornwood',
+        });
+        expect(blobSpaceMetadata({ type: 'a.b.c', skey: 'k' })).not.toHaveProperty(BLOB_SPACE_AUTHORITY_METADATA_KEY);
     });
 
     it('reads no marker as public', () => {

@@ -3,7 +3,7 @@ import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
 import { ProcessingRequestSchema } from './types/processing';
 import { RepliesPolicySchema } from './types/deletion';
 import { SpaceAuthorSchema, SpaceKeySchema, SpacePolicySchema } from './types/spaces';
-import { TenantDidRoleSchema } from './types/dids';
+import { DidStringSchema, TenantDidRoleSchema } from './types/dids';
 import { httpsUrl } from './types/url';
 
 /**
@@ -54,6 +54,14 @@ export const CreateAudioPostRequestSchema = z.object({
    * an author segment, so `actor` on a flat post is refused.
    */
   spaceAuthor: SpaceAuthorSchema.optional(),
+  /**
+   * The post's `at://` authority, when it isn't the app's own DID: a DID the
+   * app registered (`PUT /api/v1/dids/{did}`), such as a group's
+   * (specs/did-plc-and-multi-did-tenancy.md §3). A named `space` must exist under
+   * the same authority. A reply always has its parent's authority: omit it, or
+   * name the same one. Sealed into the URI.
+   */
+  authority: DidStringSchema.optional(),
 })
   // A reply is a caption on someone else's prompt — it carries no title.
   .refine((d) => !(d.reply && d.title), {
