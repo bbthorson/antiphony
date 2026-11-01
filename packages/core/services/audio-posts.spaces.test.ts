@@ -392,3 +392,69 @@ describe('audio placement (Phase 2)', () => {
         expect(deps.resolveAudioUrl).toHaveBeenLastCalledWith('bardcast', 'bafkpublic', undefined);
     });
 });
+
+describe("a member's own record: spaceAuthor 'actor' (audio-service-and-groups.md G5)", () => {
+    let deps: ReturnType<typeof makeDeps>;
+    let svc: AudioPostService;
+    const IN_CAMPAIGN = { type: CAMPAIGN.type, skey: CAMPAIGN.skey };
+    beforeEach(() => {
+        deps = makeDeps();
+        deps.spaces.add(`bardcast/${CAMPAIGN.type}/${CAMPAIGN.skey}`);
+        svc = new AudioPostService(deps);
+    });
+    const refTo = (post: AudioPostRecord) => ({ uri: buildPostUri(APP, post.id, post.space), cid: post.cid });
+
+    it("puts the acting actor's DID in the author segment, under the same authority", async () => {
+        const prompt = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
+        expect(prompt.space).toEqual({ ...IN_CAMPAIGN, authorSegment: PLAYER });
+        const uri = buildPostUri(APP, prompt.id, prompt.space);
+        expect(uri).toBe(`at://${APP}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
+        expect(parsePostUri(uri, APP)).toEqual({ id: prompt.id, space: prompt.space });
+    });
+
+    it('chooses the author segment per post down a branch, and resolves parents by it', async () => {
+        const prompt = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
+        const reply = await svc.createPost(
+            input({ authorId: 'p2', authorDid: OTHER_PLAYER, text: 'my answer', spaceAuthor: 'actor', reply: { root: refTo(prompt), parent: refTo(prompt) } }),
+        );
+        expect(reply.space).toEqual({ ...IN_CAMPAIGN, authorSegment: OTHER_PLAYER });
+        // The authority's own record in the same space, replying to a member's.
+        const back = await svc.createPost(
+            input({ authorId: 'dm', authorDid: PLAYER, text: 'and then', reply: { root: refTo(prompt), parent: refTo(reply) } }),
+        );
+        expect(back.space).toEqual(CAMPAIGN);
+    });
+
+    it("treats a parent named under someone else's author segment as missing", async () => {
+        const prompt = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
+        const wrong = { uri: buildPostUri(APP, prompt.id, { ...IN_CAMPAIGN, authorSegment: APP }), cid: prompt.cid };
+        await expect(
+            svc.createPost(input({ authorId: 'p2', authorDid: OTHER_PLAYER, text: 'x', reply: { root: wrong, parent: wrong } })),
+        ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('refuses actor authorship on a post that lands flat, saving nothing', async () => {
+        await expect(svc.createPost(input({ authorDid: PLAYER, spaceAuthor: 'actor' }))).rejects.toMatchObject({ status: 400 });
+        const flat = await svc.createPost(input());
+        vi.mocked(deps.savePost).mockClear();
+        await expect(
+            svc.createPost(input({ authorId: 'p2', authorDid: OTHER_PLAYER, text: 'x', spaceAuthor: 'actor', reply: { root: refTo(flat), parent: refTo(flat) } })),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it('refuses actor authorship without a valid acting actor DID', async () => {
+        await expect(svc.createPost(input({ space: IN_CAMPAIGN, spaceAuthor: 'actor' }))).rejects.toMatchObject({ status: 400 });
+        await expect(
+            svc.createPost(input({ authorDid: 'not-a-did', space: IN_CAMPAIGN, spaceAuthor: 'actor' })),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(deps.savePost).not.toHaveBeenCalled();
+    });
+
+    it("keeps the authority's DID when spaceAuthor is 'authority' or absent", async () => {
+        const explicit = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'authority' }));
+        const omitted = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN }));
+        expect(explicit.space).toEqual(CAMPAIGN);
+        expect(omitted.space).toEqual(CAMPAIGN);
+    });
+});

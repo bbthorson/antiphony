@@ -130,7 +130,7 @@ Records validate against the official `@atproto/lexicon` parser, blob refs use t
 
 **Record CIDs.** CIDv1, dag-cbor, sha2-256 over the public record fields. Every view's `cid`, and every StrongRef in a reply, is verifiable.
 
-**The at:// authority is the tenant app's DID.** Antiphony owns the repo, so a post's URI authority is always the tenant's `did:web`. The acting user's identity rides alongside as `authorDid`, outside the record CID. A post in a space also has an author segment in its URI, and that is the tenant's DID too, never the user's. See [Tenant identity](/self-hosting/configuration/#tenant-identity) and the [authority model](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
+**The at:// authority is the tenant app's DID.** Antiphony owns the repo, so a post's URI authority is always the tenant's `did:web`. The acting user's identity rides alongside as `authorDid`, outside the record CID. A post in a space also has an author segment in its URI: the tenant's DID by default, or the acting user's own DID when `createPost` asks for `spaceAuthor: actor` (a member's own record). See [Tenant identity](/self-hosting/configuration/#tenant-identity) and the [authority model](https://github.com/bbthorson/antiphony/blob/master/specs/atproto-authority-model.md).
 
 <Example slot="example" title="Blob ref" dot={false} code={examples.blob} />
 <UriCard slot="example" />

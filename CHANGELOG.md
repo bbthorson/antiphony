@@ -8,6 +8,23 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.1] — 2026-11-01
+
+A member's own post in a space can carry the member's DID in its URI
+([`specs/audio-service-and-groups.md`](./specs/audio-service-and-groups.md)
+G3, G5). **Patch**: one new optional field, defaulting to today's behaviour.
+
+### Added
+
+- **`spaceAuthor`** on `POST /api/v1/posts` and XRPC
+  `dev.antiphony.audio.createPost`: `authority` (the default, unchanged: the
+  tenant's DID is the author segment) or `actor` (the acting actor's own DID,
+  from `X-Antiphony-Acting-Actor-Did`). `actor` needs a post that lands in a
+  space and a valid acting actor DID, or it is a `400` (`InvalidRequest` over
+  XRPC). The segment is chosen per post: a reply doesn't inherit its parent's.
+  This replaces "the author segment is always the authority's DID" (authority
+  model D8) for members' records only; Vox Pop's reply spaces are unaffected.
+
 ## [0.10.0] — 2026-10-27
 
 Deleting posts and their audio ([`specs/deletion.md`](./specs/deletion.md)).

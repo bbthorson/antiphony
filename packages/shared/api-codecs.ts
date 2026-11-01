@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
 import { ProcessingRequestSchema } from './types/processing';
 import { RepliesPolicySchema } from './types/deletion';
-import { SpaceKeySchema, SpacePolicySchema } from './types/spaces';
+import { SpaceAuthorSchema, SpaceKeySchema, SpacePolicySchema } from './types/spaces';
 import { httpsUrl } from './types/url';
 
 /**
@@ -42,6 +42,17 @@ export const CreateAudioPostRequestSchema = z.object({
    * for a reply, its parent's space).
    */
   space: SpaceKeySchema.optional(),
+  /**
+   * Whose DID is the author segment of a post in a space
+   * (specs/audio-service-and-groups.md G5). `authority` (the default when
+   * absent; optional rather than defaulted, so the request type stays
+   * optional for clients that build it): the
+   * space authority's DID, for what a publisher keeps or an app generates.
+   * `actor`: the acting actor's DID (`X-Antiphony-Acting-Actor-Did`, which
+   * must be a valid DID), for a member's own record. Only a post in a space has
+   * an author segment, so `actor` on a flat post is refused.
+   */
+  spaceAuthor: SpaceAuthorSchema.optional(),
 })
   // A reply is a caption on someone else's prompt — it carries no title.
   .refine((d) => !(d.reply && d.title), {
