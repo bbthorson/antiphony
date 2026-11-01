@@ -5,6 +5,11 @@
 author segment). This is the current model. How it got here, including the arguments for
 each step, is in [`archive/atproto-authority-model-history.md`](./archive/atproto-authority-model-history.md).
 
+> **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md): Antiphony becomes an audio service, shared
+> contexts become atmospheric groups, and a member's records are authored under their own DID.
+> Rules 2 and 5, D2's Bardcast rows, D3's minting and D8 are replaced, and each is marked below.
+> The rest stands.
+
 **Companions:** [`spaces.md`](./spaces.md) (how spaces are built),
 [`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) (minting and holding
 more than one DID), [`cross-repo-design.md`](./cross-repo-design.md) (how Vox Pop and Bardcast
@@ -18,7 +23,8 @@ commits to keeping, and impossible to change after.
 
 1. **Authority is custody, not authorship.** The DID in the `at://` authority position says
    who keeps a record. Who wrote it is an attribution facet. The two are never conflated.
-2. **Antiphony holds a record only under a DID whose document names it.** The custody check:
+2. *(Replaced 2026-11-01, G2: custody pinning goes once Antiphony stops hosting repos.)*
+   **Antiphony holds a record only under a DID whose document names it.** The custody check:
    the DID document's `#atproto_space_host` (or, while tenants migrate, `#atproto_pds`) entry
    points at Antiphony. A tenant pins each such DID; Antiphony snapshots the resolved document
    and never re-resolves it on the request path. Any change to that document is a re-keying
@@ -31,7 +37,8 @@ commits to keeping, and impossible to change after.
 4. **The app owns attribution.** The app holds the mapping from its opaque ids to people
    (phone numbers, linked DIDs). Only the id reaches Antiphony, and an export carries ids only
    the app can resolve.
-5. **Inside a space, the author segment is the authority's DID.** A person is a facet there
+5. *(Replaced 2026-11-01, G5: the author segment follows ownership.)*
+   **Inside a space, the author segment is the authority's DID.** A person is a facet there
    too, never a URI segment (D8).
 
 ## D1 — Spaces are adopted
@@ -42,6 +49,11 @@ either flat (public, `at://{authority}/{collection}/{rkey}`) or placed in a spac
 visibility is the space's read policy, never a field on the record. See [`spaces.md`](./spaces.md).
 
 ## D2 — Authority is chosen by who should keep the post
+
+*Bardcast rows replaced 2026-11-01* ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G3–G5): campaign content is under the table's
+group DID, a player's prompts and replies are authored under their own DID, and creation
+recordings go in the player's personal-private space. The Vox Pop rows stand, with the org's
+DID as a group DID (G4).
 
 | Who posts | `at://` authority | Author | Who keeps it |
 | :--- | :--- | :--- | :--- |
@@ -58,6 +70,10 @@ check (rule 2) fails. Records a person should own outright go in their own repo,
 the app with their OAuth session.
 
 ## D3 — DIDs are minted by default, and owning yours is a paid upgrade
+
+*Minting replaced 2026-11-01* ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G2, open question 1): Antiphony stops minting DIDs.
+Group DIDs come from whichever group host is chosen. The rule that the group, through its app,
+holds the top rotation key stands.
 
 - **New tenants and orgs get an Antiphony-minted `did:plc`**, with the owner holding the
   highest-priority rotation key and Antiphony a lower-priority operational key. The document
@@ -126,6 +142,10 @@ Decided by Brad. The full model is in Vox Pop's `specs/organizations.md` § 0.
   than the tenant's pinned app DID ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md)).
 
 ## D8 — The author segment is the authority's DID (2026-10-11)
+
+*Replaced 2026-11-01* by [`audio-service-and-groups.md`](./audio-service-and-groups.md) G5: members' records are authored under their own DID,
+hosted for them until their PDS can hold spaces. Outsiders' contributions (Vox Pop replies) and
+works an app generates for a group keep the authority's DID, as below.
 
 Decided by Brad. A space record's URI has an author segment:
 `at://{authority}/space/{type}/{skey}/{author}/{collection}/{rkey}`. For everything Antiphony
