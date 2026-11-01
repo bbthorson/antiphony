@@ -16,6 +16,12 @@ first two are built (API contract 0.9.0, 2026-10-11), with the parent-CID check 
 
 **First consumer:** Bardcast. Each campaign is a semi-private space.
 
+> **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md). Decision 1 (Antiphony is the space host
+> for the tenant's DID) and "The author segment" no longer hold, and Phase 3 (Antiphony as a
+> space host) won't be built as written. Antiphony becomes an audio service that reads spaces
+> with a credential (G2). Phases 1 and 2 stay in the tree until the migration steps there
+> replace them.
+
 ## Decisions this plan builds on (settled, not reopened here)
 
 1. **A space's authority is always the tenant's DID** (or an org's DID), never

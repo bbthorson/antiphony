@@ -15,6 +15,10 @@ changed here.
 - **A space record's `{authorDid}` segment is always the space authority's DID.** People are
   `authorId` / `authorDid` facets. The table under "Which DID a write goes under" is updated.
 
+> **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md): Antiphony stops minting DIDs (§4, §5).
+> Group DIDs come from a group host. §§2–3 (more than one DID per tenant) are still how a write
+> goes under a DID other than the app's while Antiphony hosts repos.
+
 ## Decisions this builds on
 
 Settled by the project owner, 2026-09-24. This spec designs around them; it

@@ -9,6 +9,11 @@ being native to it is what sets them apart. So where a choice is between "works 
 "is a correct atproto citizen when someone else's app shows up", this note leans to the
 second, as long as the first still works.
 
+> **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md). §3.1's role table, §4.2 (option A) and
+> Phase 3 with Antiphony as space host (§4.1, §4.3 steps 2–3 and 5–10) are replaced. Antiphony
+> becomes an audio service, and §4.2's option B, the player's DID as author, returns as
+> G5–G6. §3.2–3.3 (Vox Pop reply spaces) and §5 (shared code) stand.
+
 ## Decisions
 
 | # | Question | Decision | Repo | When |
