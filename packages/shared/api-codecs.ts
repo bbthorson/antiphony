@@ -3,6 +3,7 @@ import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
 import { ProcessingRequestSchema } from './types/processing';
 import { RepliesPolicySchema } from './types/deletion';
 import { SpaceAuthorSchema, SpaceKeySchema, SpacePolicySchema } from './types/spaces';
+import { TenantDidRoleSchema } from './types/dids';
 import { httpsUrl } from './types/url';
 
 /**
@@ -110,3 +111,17 @@ export const EraseAuthorRequestSchema = z.object({
   limit: z.number().int().min(1).max(200).default(100),
 });
 export type EraseAuthorRequest = z.infer<typeof EraseAuthorRequestSchema>;
+
+/**
+ * `PUT /api/v1/dids/{did}` — register a DID the calling tenant may write under
+ * besides its app DID (specs/did-plc-and-multi-did-tenancy.md §3). The DID's
+ * document must name this deployment as its space host; Antiphony checks that
+ * before keeping the registration. Repeating the same registration is a no-op.
+ */
+export const RegisterDidRequestSchema = z.object({
+  /** What the DID is to the tenant. Only `group` today. */
+  role: TenantDidRoleSchema,
+  /** The tenant's own id for the group (a table id, an org id). Opaque to Antiphony. */
+  subjectRef: z.string().min(1).max(256).optional(),
+});
+export type RegisterDidRequest = z.infer<typeof RegisterDidRequestSchema>;

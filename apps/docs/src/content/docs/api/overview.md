@@ -82,6 +82,17 @@ Either way the person is also the post's `author` (`authorId` / `authorDid`), ou
 
 A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` (see [configuration](/self-hosting/configuration/#core-variables)).
 
+## DIDs your app acts for
+
+Your app writes under its own DID, pinned when it was onboarded. To also act for a group, such as a game table or an organization with a DID of its own, register that DID with `PUT /api/v1/dids/{did}` and `{ "role": "group", "subjectRef": "<your id for it>" }`.
+
+- **The DID's document must name this Antiphony as its space host** (`#atproto_space_host`), as your app DID's does. Antiphony checks before keeping the registration: `400 DID_CUSTODY_DISPROVED` if it doesn't, `503 DID_UNREACHABLE` if the document can't be read right now.
+- **A DID belongs to one app.** Another app's DID is `409 DID_TAKEN`.
+- **Registrations aren't rewritten.** Repeating one returns it unchanged (`200`); a different role or subject is `409 DID_REGISTERED_DIFFERENTLY`.
+- `GET /api/v1/dids` lists yours, newest first.
+
+Registering a DID doesn't yet let a post or space go under it. That arrives in a later contract version.
+
 ## Envelope
 
 Every JSON response wraps its payload:

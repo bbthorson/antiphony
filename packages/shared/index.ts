@@ -4,6 +4,7 @@ export * from './types/audio';
 export * from './types/processing';
 export * from './types/spaces';
 export * from './types/deletion';
+export * from './types/dids';
 export * from './types/blob';
 export * from './types/url';
 export * from './nsid';

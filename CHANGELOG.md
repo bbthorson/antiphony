@@ -8,6 +8,29 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.2] — 2026-11-01
+
+A tenant can register DIDs it acts for besides its app DID, such as a group's
+([`specs/did-plc-and-multi-did-tenancy.md`](./specs/did-plc-and-multi-did-tenancy.md)
+§3, step A). **Patch**: new routes only. Registering a DID doesn't yet let a
+post or space go under it; that is the next step.
+
+### Added
+
+- **`PUT /api/v1/dids/{did}`** registers a DID with `{ role: "group",
+  subjectRef? }`. Antiphony resolves the DID's document first and requires it to
+  name this deployment as its space host, as the app DID's does (400
+  `DID_CUSTODY_DISPROVED`, 503 `DID_UNREACHABLE`). A DID belongs to at most one
+  tenant (409 `DID_TAKEN`, also for another tenant's app DID). A repeat is a
+  no-op (200, `201` the first time); a different role or subject is refused (409
+  `DID_REGISTERED_DIFFERENTLY`). A deployment without `ANTIPHONY_PDS_HOST`
+  answers 503 `DIDS_UNAVAILABLE`, since it can't check that the document names
+  it.
+- **`GET /api/v1/dids/{did}`** and **`GET /api/v1/dids`** (newest first,
+  `limit` 1–200, `cursor`) read the calling tenant's registrations. Another
+  tenant's DID reads as 404.
+- Migration `0004_tenant_dids.sql`.
+
 ## [0.10.1] — 2026-11-01
 
 A member's own post in a space can carry the member's DID in its URI
