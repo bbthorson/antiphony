@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.10.1",
+    "version": "0.10.2",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read. Deletes are the exception: who may delete is the app's decision, so they need only the service token.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -13,6 +13,10 @@
     {
       "name": "Spaces",
       "description": "A tenant's atproto spaces — create or replace one, read one. Posts and audio placed in a space are private: their audio plays through signed, expiring URLs."
+    },
+    {
+      "name": "DIDs",
+      "description": "DIDs a tenant may write under besides its app DID, such as a group's. Custody is proven when one is registered: its document must name this deployment as its space host."
     },
     {
       "name": "Audio",
@@ -3129,6 +3133,695 @@
           },
           "409": {
             "description": "The space still holds posts (`SPACE_NOT_EMPTY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dids/{did}": {
+      "put": {
+        "tags": [
+          "DIDs"
+        ],
+        "summary": "Register a DID",
+        "description": "Registers a DID the calling tenant acts for, such as a group's (a Bardcast table, a Vox Pop org), so later writes can go under it. Antiphony first resolves the DID's document and requires it to name this deployment as its space host (`#atproto_space_host`), the same check the app DID passes: 400 `DID_CUSTODY_DISPROVED` if it does not, 503 `DID_UNREACHABLE` if the document cannot be read. A DID belongs to at most one tenant (409 `DID_TAKEN`). Repeating a registration is a no-op (200); changing its role or subject is refused (409 `DID_REGISTERED_DIFFERENTLY`), since records may already be sealed under it. A deployment without `ANTIPHONY_PDS_HOST` cannot check custody and answers 503 `DIDS_UNAVAILABLE`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work)."
+            },
+            "required": true,
+            "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work).",
+            "name": "did",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "group"
+                    ]
+                  },
+                  "subjectRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Already registered, unchanged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "did": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "group"
+                          ]
+                        },
+                        "subjectRef": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "did",
+                        "role",
+                        "createdAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "did": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "group"
+                          ]
+                        },
+                        "subjectRef": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "did",
+                        "role",
+                        "createdAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a DID, the app's own DID, or custody disproved (`DID_CUSTODY_DISPROVED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another tenant's DID (`DID_TAKEN`), or registered differently (`DID_REGISTERED_DIFFERENTLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The DID document could not be read (`DID_UNREACHABLE`), or custody cannot be checked here (`DIDS_UNAVAILABLE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "DIDs"
+        ],
+        "summary": "Get a registered DID",
+        "description": "Returns one of the calling tenant's registrations. Another tenant's DID reads as 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work)."
+            },
+            "required": true,
+            "description": "The DID, e.g. `did:plc:…` (URL-encode its colons or not; both work).",
+            "name": "did",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "did": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "group"
+                          ]
+                        },
+                        "subjectRef": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "did",
+                        "role",
+                        "createdAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not registered by this tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dids": {
+      "get": {
+        "tags": [
+          "DIDs"
+        ],
+        "summary": "List registered DIDs",
+        "description": "The calling tenant's registrations, newest first. The app DID is not listed: it is pinned in config.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "1–200 (default 50)"
+            },
+            "required": false,
+            "description": "1–200 (default 50)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "description": "`nextCursor` from the previous page"
+            },
+            "required": false,
+            "description": "`nextCursor` from the previous page",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of registrations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "did": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "group"
+                                ]
+                              },
+                              "subjectRef": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "did",
+                              "role",
+                              "createdAt"
+                            ]
+                          }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "nextCursor"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
             "content": {
               "application/json": {
                 "schema": {

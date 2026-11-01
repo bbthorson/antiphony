@@ -1,7 +1,11 @@
 # `did:plc` minting and multi-DID tenancy
 
 **Status:** design, 2026-09-24. Phase 1 (the validator accepts `did:plc`) is
-implemented alongside this spec; everything from Phase 2 on is proposal.
+implemented alongside this spec. **Phase 2 is partly built (2026-11-01):** the
+registry (§3, as built below). Writes under a registered DID, and custody
+re-proven per DID on the write path (§2), are next. Phases 3–4 (minting,
+claiming) are replaced: Antiphony no longer mints
+([`audio-service-and-groups.md`](./audio-service-and-groups.md) G2).
 Companion to [`atproto-authority-model.md`](./atproto-authority-model.md) (why
 the authority sits where it does) and
 [`tenant-onboarding.md`](./tenant-onboarding.md) (today's runbook). Neither is
@@ -172,6 +176,28 @@ create unique index tenant_dids_one_tenant_did on tenant_dids (origin_app_id) wh
   the id.
 - `ANTIPHONY_APP_DIDS` becomes a bootstrap that seeds `role = 'tenant'` rows,
   and is retired once the table is authoritative.
+
+### §3 as built (API contract 0.10.2, 2026-11-01)
+
+What landed, and where it differs from the proposal above:
+
+- **`tenant_dids`** (`migrations/0004_tenant_dids.sql`): `did` primary key,
+  `origin_app_id`, `role`, `subject_ref`, `created_at`. **`role` is `group` only**:
+  Antiphony doesn't mint, so `provenance`, `top_key_holder` and `claimed_at` are
+  gone, and there is no `user` role because a person's DID is never an authority
+  here (`audio-service-and-groups.md` G2, G4). The app DID stays in
+  `ANTIPHONY_APP_DIDS`, not in the table; moving it is a separate change.
+- **`PUT /api/v1/dids/{did}`** registers one; `GET /api/v1/dids/{did}` and
+  `GET /api/v1/dids` read them (`DidRegistryService`,
+  `packages/core/services/did-registry.ts`). Custody is proven synchronously
+  before the row is written, with the app DID's validator, and **requires
+  `ANTIPHONY_PDS_HOST`**: without an expected host the validator accepts any
+  space host, which for a tenant-supplied DID would let a tenant claim anyone's.
+  Another tenant's registered or pinned DID is a 409; a repeat is a no-op; a
+  changed role or subject is a 409, since records may be sealed under it.
+- **Not yet:** nothing writes under a registered DID; no per-DID snapshot or
+  `getWritableDid` (§2); no unregistering (it waits until posts can be under a
+  DID, so it can refuse while any are).
 
 ### Which DID a write goes under
 
