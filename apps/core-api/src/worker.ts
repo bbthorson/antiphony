@@ -6,6 +6,7 @@ import { logger } from './lib/logger.js';
 import { dataPresence, isAudioBlackout, type R2ListLike } from './lib/data-presence.js';
 import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
+import { sweepRegisteredDids } from './adapters/outbound/postgres/registered-dids-sweep.js';
 import { installDurableDispatcher } from './lib/audio-processing.js';
 import { queueResolver } from './adapters/outbound/dispatch/queue.js';
 import { bindWorkersAi } from './adapters/outbound/workers-ai/binding.js';
@@ -212,6 +213,14 @@ export default {
             return;
         }
         await sweepExpired(sql, logger);
+
+        // The registry's half of the drift check above: DIDs tenants registered
+        // in `tenant_dids` are not in ANTIPHONY_APP_DIDS, so `revalidateAllPins`
+        // never reaches them. Reports and refreshes; swallows its own failures.
+        await sweepRegisteredDids(sql, logger, {
+            expectedPdsHost: APP_CONFIG.PDS_HOST,
+            kv: bindings?.PIN_CACHE as PinCacheKV | undefined,
+        });
 
         // Finish any blob deletion a delete call left queued: a crash between
         // its statement and the R2 call, or a drain that failed

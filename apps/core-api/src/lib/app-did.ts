@@ -697,6 +697,65 @@ export function resetDidCustodyCache(): void {
     validatedDids.clear();
 }
 
+/** A registered DID (`tenant_dids`) that stopped proving custody. */
+export interface RegisteredDidFailure {
+    did: string;
+    originAppId: string;
+    reason: string;
+    kind: AppDidFailureKind;
+}
+
+/**
+ * Revalidate registered DIDs off the request path, purely to report: the
+ * registry's half of the hourly drift cron (`revalidateAllPins` is the app
+ * DIDs' half). Without it a registered DID whose document stopped naming this
+ * deployment is only caught at its next write, which for a quiet group may be
+ * never (specs/did-plc-and-multi-did-tenancy.md §2, "Cron").
+ *
+ * A proof refreshes the cached snapshot, so the next write under the DID is
+ * served warm. A disproof evicts it everywhere, so that write fails closed
+ * without re-fetching. An unreachable document is reported and left alone:
+ * `ensureDidCustody`'s staleness rules decide what the next write gets.
+ *
+ * Requires an expected host for the reason `ensureDidCustody` does. Throws
+ * without one; otherwise reports rather than throws.
+ */
+export async function revalidateRegisteredDids(
+    dids: readonly { did: string; originAppId: string }[],
+    opts: EnsurePinOptions = {},
+): Promise<RegisteredDidFailure[]> {
+    if (!opts.expectedPdsHost) {
+        throw new Error('[app-did] cannot revalidate registered DIDs: no ANTIPHONY_PDS_HOST');
+    }
+    const failures: RegisteredDidFailure[] = [];
+    for (const { did, originAppId } of dids) {
+        const result = await validateAppDid(did, {
+            expectedPdsHost: opts.expectedPdsHost,
+            fetchImpl: opts.fetchImpl,
+            plcDirectoryUrl: opts.plcDirectoryUrl,
+        });
+        const key = `did:${did}`;
+        if (result.ok) {
+            const entry: CustodyProofEntry = {
+                did: result.did,
+                custody: result.custody,
+                document: result.document,
+                documentHash: result.documentHash,
+                validatedAt: opts.now?.() ?? Date.now(),
+            };
+            validatedDids.set(did, entry);
+            if (opts.kv) await writeKvEntry(opts.kv, key, entry, { did });
+            continue;
+        }
+        failures.push({ did, originAppId, reason: result.reason, kind: result.kind });
+        if (result.kind === 'disproof') {
+            validatedDids.delete(did);
+            if (opts.kv) await opts.kv.delete(key).catch(() => undefined);
+        }
+    }
+    return failures;
+}
+
 /** A pin that stopped proving custody. */
 export interface PinFailure {
     originAppId: string;

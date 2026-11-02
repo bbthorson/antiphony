@@ -228,9 +228,14 @@ What landed, and where it differs from the proposal above:
   nothing can be stored under a DID not registered to its own tenant, and
   `DELETE /api/v1/dids/{did}` is refused (409 `DID_IN_USE`) while anything is
   under it.
-- **Not built:** the hourly cron doesn't sweep registered DIDs yet; a moved DID
-  is caught at its next write instead. The app DID still lives in
-  `ANTIPHONY_APP_DIDS`.
+- **The hourly cron sweeps registered DIDs** (built 2026-11-02,
+  `sweepRegisteredDids` in `adapters/outbound/postgres/registered-dids-sweep.ts`,
+  `revalidateRegisteredDids` in `lib/app-did.ts`). It revalidates up to 500 per
+  run, a random sample past that, rather than oldest-first, because the proof's
+  age lives in the isolate and KV, not in `tenant_dids`. A proof refreshes the
+  cache; a disproof is logged as drift and evicted, so the next write fails
+  closed without re-fetching. A write still re-proves custody on its own.
+- **Not built:** the app DID still lives in `ANTIPHONY_APP_DIDS`.
 
 ### Which DID a write goes under
 
