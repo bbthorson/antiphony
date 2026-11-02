@@ -245,6 +245,16 @@ describe('postgresAudioProcessingDependencies', () => {
             expect(map.get(uri)?.transcript.text).toBe('second');
         });
 
+        it("keeps two tenants' transcripts of the same subject apart (migrations 0006, 0007)", async () => {
+            const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+            await deps.saveTranscript('app', transcript('t000000000005', uri, 'ours'));
+            await deps.saveTranscript('other-app', transcript('t000000000006', uri, 'theirs'));
+
+            expect(await db.query('select id from audio_transcripts')).toHaveLength(2);
+            const ours = await posts.getTranscriptsBySubjectUris([{ originAppId: 'app', uri }]);
+            expect(ours.get(uri)?.transcript.text).toBe('ours');
+        });
+
         it('keeps transcripts for different subjects side by side', async () => {
             await deps.saveTranscript(
                 'app',

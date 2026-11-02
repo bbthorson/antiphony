@@ -62,5 +62,8 @@ describe('migration 0006: transcripts get a tenant', () => {
             ]),
         ).rejects.toThrow(/origin_app_id/);
         await pg.close();
-    });
+        // A fresh PGlite replaying the chain, not the shared template, so it is
+        // slower than the other database suites: well past vitest's 5s default
+        // when the whole run is in parallel.
+    }, 60_000);
 });
