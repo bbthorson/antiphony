@@ -8,6 +8,56 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.6] — 2026-11-02
+
+Remote posts read on a delegation ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md),
+Phase C): Antiphony reads a space record and its blob from the writer's PDS itself, on a
+member's delegation the tenant passes, instead of taking the tenant's word for it.
+**Patch**: new optional fields, a new route and webhook, and one more value in
+`deletionCheck`. `@antiphony/shared` 0.13.0 carries Phase B's schemas and these.
+
+### Added
+
+- **`delegationToken`** (and optional **`clientAttestation`**) on
+  `PUT /api/v1/remote-posts` for a space record.
+  - Mint the token from a member's PDS (`com.atproto.space.getDelegationToken`) just before
+    the call: it's single use and lives 60 s. The member must hold a role that can read the
+    space. The attestation is for a space that only admits listed apps.
+  - Antiphony exchanges the token at the space's authority for a credential bound to a key
+    of its own. It reads the record from the writer's PDS, verifying the host's record MAC,
+    and then the blob, both checked as for a repo record (§3, §4.1).
+  - The audio is stored private for that space and plays from signed URLs only. The view
+    says `verified: "fetched"` and `deletionCheck: "recheck"`.
+  - A delegation the authority refuses is 403 **`REMOTE_DELEGATION_REFUSED`**. A host
+    answers a missing space the same way, so this never means "gone". A deleted space is 404
+    `REMOTE_RECORD_NOT_FOUND`, and an unreachable authority 503.
+  - A delegation for a row that was only pushed reads it and upgrades it to `fetched`.
+- **`POST /api/v1/remote-posts/recheck`** `{ space, delegationToken, clientAttestation? }`:
+  - It rechecks the tenant's records in one space on one fresh delegation, at most 100 rows
+    not checked in the last ten minutes per call, and returns
+    `{ space, checked, removed, changed, remaining }`.
+  - Unchanged rows are noted, and a pushed row becomes `fetched`. Edits are taken and
+    reprocessed (`remote.changed`). A record gone on two rechecks an hour apart is removed
+    (`remote.gone`), and a deleted space reads as gone for every row.
+- **`remote.recheck_requested`** webhook (`{ type, originAppId, uri, space, occurredAt }`).
+  - A space credential lasts ten minutes, so the hourly sweep never reads a space record
+    itself. It asks the tenant instead, for each space that's due and holds a row read on a
+    delegation.
+  - Spaces with pushed rows only aren't asked about; the tenant can still recheck them.
+- **`deletionCheck: "recheck"`** on `RemotePostView`, for a space record read on a
+  delegation.
+- Migration `0009_remote_space_rechecks.sql`: the sweep index covers repo records only, and a
+  per-space index serves rechecks.
+
+### Changed
+
+- `bytesFrom: "fetch"` is now accepted for a space record that has a `delegationToken`; it's
+  that registration's default. Without a delegation, a space record is still pushed
+  (Phase B).
+- core-api depends on `@atproto/space` and `@atproto/crypto` at
+  `0.0.0-spaces-alpha-20261029171913`, pinned exactly. `@atproto/syntax` moves to the same
+  alpha, with root `overrides` as `specs/audio-service-mode.md` §12 lists.
+
 ## [0.10.5] — 2026-11-02
 
 Remote posts in spaces ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md),

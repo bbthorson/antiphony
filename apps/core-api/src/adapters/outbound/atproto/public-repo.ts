@@ -4,7 +4,7 @@ import type {
     PublicRepoPort,
     RepoResult,
 } from '@antiphony/core/ports/public-repo';
-import { didPlcToUrl, didWebToUrl } from '../../../lib/app-did.js';
+import { didDocumentResolver, errorText, pdsEndpointOf, readCapped } from './did-document.js';
 
 /**
  * `PublicRepoPort` over plain HTTPS (specs/audio-service-mode.md §4.1): resolve
@@ -29,11 +29,8 @@ import { didPlcToUrl, didWebToUrl } from '../../../lib/app-did.js';
  * deactivated repo) is `unreachable`, because the sweep deletes on `gone`.
  */
 
-const DOC_TIMEOUT_MS = 5_000;
 const RECORD_TIMEOUT_MS = 10_000;
 const BLOB_TIMEOUT_MS = 30_000;
-/** How long a resolved PDS endpoint is reused within one isolate. */
-const PDS_CACHE_MS = 10 * 60 * 1000;
 
 const GONE_ERRORS = new Set(['RecordNotFound', 'RepoNotFound', 'BlobNotFound']);
 
@@ -45,45 +42,11 @@ export interface PublicRepoOptions {
 
 export function publicRepo(opts: PublicRepoOptions = {}): PublicRepoPort {
     const fetchImpl = opts.fetchImpl ?? fetch;
-    const now = opts.now ?? Date.now;
-    const pdsCache = new Map<string, { endpoint: string; at: number }>();
+    const resolveDoc = didDocumentResolver(opts);
 
     async function resolvePds(did: string): Promise<RepoResult<string>> {
-        const hit = pdsCache.get(did);
-        if (hit && now() - hit.at < PDS_CACHE_MS) return { ok: true, value: hit.endpoint };
-
-        const docUrl = did.startsWith('did:plc:') ? didPlcToUrl(did, opts.plcDirectoryUrl) : didWebToUrl(did);
-        if (!docUrl) return { ok: false, kind: 'invalid', reason: `unsupported or malformed DID: ${did}` };
-
-        let res: Response;
-        try {
-            res = await fetchImpl(docUrl, { redirect: 'manual', signal: AbortSignal.timeout(DOC_TIMEOUT_MS) });
-        } catch (err) {
-            return { ok: false, kind: 'unreachable', reason: `DID document: ${errorText(err)}` };
-        }
-        if (res.status === 404 || res.status === 410) {
-            return { ok: false, kind: 'gone', reason: `DID document answered ${res.status}` };
-        }
-        if (!res.ok) return { ok: false, kind: 'unreachable', reason: `DID document answered ${res.status}` };
-
-        const doc = (await res.json().catch(() => null)) as {
-            id?: unknown;
-            service?: { id?: unknown; serviceEndpoint?: unknown }[];
-        } | null;
-        if (!doc || doc.id !== did) return { ok: false, kind: 'unreachable', reason: 'DID document is not for this DID' };
-        const endpoint = doc.service?.find((s) => typeof s.id === 'string' && s.id.endsWith('#atproto_pds'))?.serviceEndpoint;
-        if (typeof endpoint !== 'string') return { ok: false, kind: 'gone', reason: 'DID document names no #atproto_pds' };
-        let url: URL;
-        try {
-            url = new URL(endpoint);
-        } catch {
-            return { ok: false, kind: 'invalid', reason: 'malformed #atproto_pds endpoint' };
-        }
-        if (url.protocol !== 'https:') return { ok: false, kind: 'invalid', reason: '#atproto_pds is not HTTPS' };
-
-        const value = url.origin;
-        pdsCache.set(did, { endpoint: value, at: now() });
-        return { ok: true, value };
+        const doc = await resolveDoc(did);
+        return doc.ok ? pdsEndpointOf(doc.value) : doc;
     }
 
     /** Classify a non-2xx XRPC answer by its status and error name. */
@@ -146,37 +109,4 @@ export function publicRepo(opts: PublicRepoOptions = {}): PublicRepoPort {
             return { ok: true, value: { bytes, contentType: res.headers.get('content-type') ?? undefined } };
         },
     };
-}
-
-/** Read a body, giving up as soon as it passes `maxBytes`. */
-async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array | 'too-large' | 'failed'> {
-    if (!res.body) return new Uint8Array();
-    const reader = res.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    try {
-        for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            total += value.byteLength;
-            if (total > maxBytes) {
-                await reader.cancel().catch(() => undefined);
-                return 'too-large';
-            }
-            chunks.push(value);
-        }
-    } catch {
-        return 'failed';
-    }
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-        out.set(chunk, offset);
-        offset += chunk.byteLength;
-    }
-    return out;
-}
-
-function errorText(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
 }

@@ -121,12 +121,34 @@ Antiphony rechecks each public remote post hourly. A record its repo reports gon
 
 ### Records in a space
 
-Antiphony can't read a space yet, so for a record in one (a player's reply in a group's campaign space, say) your app sends what it read:
+A record in a space (a player's reply in a group's campaign space, say) is in the player's own repo, readable only to the space's members. There are two ways to register one.
 
-1. **Upload the audio for the space** — `POST /api/v1/audio/upload` with `remoteSpace` set to the space's URI, `at://{authority}/space/{type}/{skey}`. The blob is stored private for that space; no Antiphony space is needed, and the authority is the group's DID.
-2. **Register the record with its body** — `PUT /api/v1/remote-posts` with the space record's URI (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`), `cid`, and `record`, the record as you read it. Antiphony checks that `record` hashes to `cid` and is an audio post (`422 REMOTE_RECORD_INVALID`), and that its audio is your upload for that same space (`422` if you never uploaded it, `409 REMOTE_BLOB_SPACE_MISMATCH` if it's stored for another space, or public with no public record using it).
+**On a delegation (recommended).** Antiphony reads the record itself, on a member's say-so:
 
-The view says `verified: "pushed"`: Antiphony checked the content, not that you can read the space. A space record's audio plays only from signed, expiring URLs, and a space record never makes audio public. **Antiphony can't see a space record deleted, so your `DELETE` is the only way its copy goes** (`deletionCheck: "tenant"`): send it when the member deletes the record. If your app can't commit to that, don't register members' space records this way.
+1. **Mint a delegation** from a member's PDS: `com.atproto.space.getDelegationToken?space=at://{authority}/space/{type}/{skey}`, using a session you hold for someone who can read the space. Your OAuth client needs a space read scope for the space type. The token is single use and lives 60 seconds, so mint it right before the next step.
+2. **Register** with `PUT /api/v1/remote-posts`, sending the space record's URI (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`), its `cid` and `delegationToken`. Add `clientAttestation` for a space that only admits listed apps.
+   - Antiphony exchanges the token at the space's authority for a credential bound to its own key. It reads the record from the writer's PDS (checking the host's record MAC) and then the audio, both checked as for a public record. The audio is stored private for the space.
+   - `403 REMOTE_DELEGATION_REFUSED` means the authority won't issue a credential: the member may not read the space, or the token was spent. A host gives the same answer for a space that doesn't exist, so this never means it's gone. A deleted space is `404 REMOTE_RECORD_NOT_FOUND`.
+
+   The view says `verified: "fetched"` and `deletionCheck: "recheck"`.
+
+**Pushed.** If you can't mint delegations yet, send what you read:
+
+1. **Upload the audio for the space** with `POST /api/v1/audio/upload`, setting `remoteSpace` to the space's URI. The blob is stored private for that space; no Antiphony space is needed, and the authority is the group's DID.
+2. **Register the record with its body**: `PUT /api/v1/remote-posts` with the URI, `cid`, and `record`, the record as you read it.
+   - Antiphony checks that `record` hashes to `cid` and is an audio post (`422 REMOTE_RECORD_INVALID`).
+   - It checks that the audio is your upload for that same space: `422` if you never uploaded it, and `409 REMOTE_BLOB_SPACE_MISMATCH` if it's stored for another space, or public with no public record using it.
+
+   The view says `verified: "pushed"`: Antiphony checked the content, not that you can read the space. **Antiphony can't see a pushed record deleted, so your `DELETE` is the only way its copy goes** (`deletionCheck: "tenant"`) until a recheck reads it. If your app can't commit to sending it, don't register members' records this way.
+
+Either way, a space record's audio plays only from signed, expiring URLs, and a space record never makes audio public.
+
+**Rechecks.** A space credential lasts ten minutes, so Antiphony can't hold one between its hourly checks.
+- Instead it asks you: a `remote.recheck_requested` webhook carrying the space's URI, sent hourly for each space that's due and has a record read on a delegation.
+- Answer with `POST /api/v1/remote-posts/recheck` and `{ "space": "…", "delegationToken": "…" }`, using a fresh delegation from any member session.
+- Antiphony reads every due record in that space with that one delegation. It takes edits (`remote.changed`) and removes records gone on two rechecks an hour apart (`remote.gone`). A pushed record that reads back unchanged becomes `fetched`.
+- One call reads at most 100 records; if the answer says `remaining: true`, call again with another delegation.
+- You can call it without being asked, for example to upgrade records you pushed.
 
 ## Envelope
 

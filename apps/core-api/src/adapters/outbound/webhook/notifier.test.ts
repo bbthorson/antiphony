@@ -115,6 +115,29 @@ describe('webhookNotifier', () => {
         expect((sent[1][1].headers as Record<string, string>)['X-Antiphony-Event-Id']).toBe(`${uri}:remote.gone`);
     });
 
+    it('sends remote.recheck_requested with the space, a new event id per request', async () => {
+        configureTenant();
+        const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+        const notifier = webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep);
+        const space = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+        const first = '2026-11-02T12:00:00.000Z';
+        const second = '2026-11-02T13:00:00.000Z';
+
+        await notifier.notifyRemote({ type: 'remote.recheck_requested', originAppId: 'vox-pop', uri: space, space, occurredAt: first });
+        await notifier.notifyRemote({ type: 'remote.recheck_requested', originAppId: 'vox-pop', uri: space, space, occurredAt: second });
+
+        const sent = fetchImpl.mock.calls.map((c) => c as unknown as [string, RequestInit]);
+        expect(JSON.parse(sent[0][1].body as string)).toEqual({
+            type: 'remote.recheck_requested',
+            originAppId: 'vox-pop',
+            uri: space,
+            space,
+            occurredAt: first,
+        });
+        const ids = sent.map(([, init]) => (init.headers as Record<string, string>)['X-Antiphony-Event-Id']);
+        expect(ids).toEqual([`${space}:remote.recheck_requested:${first}`, `${space}:remote.recheck_requested:${second}`]);
+    });
+
     it('sends post.deleted through the same signed channel, with its own type and event id', async () => {
         // specs/deletion.md § 8: one URL and secret per tenant, two event types.
         configureTenant();

@@ -9,8 +9,9 @@ import { SpaceKeySchema } from './spaces';
  * records that live in a repo Antiphony doesn't host, such as a player's PDS
  * or a group's repo on its group host. A tenant registers one by URI and CID;
  * Antiphony fetches the record from where the URI says it lives, copies and
- * processes its audio, and serves it. Phase A covers public repo records;
- * Phase B adds space records, whose body and bytes the tenant pushes.
+ * processes its audio, and serves it. Phase A covers public repo records.
+ * Phase B adds space records whose body and bytes the tenant pushes, and
+ * Phase C space records Antiphony reads itself on a member's delegation.
  *
  * Light checks only, so this package stays dependency-free; `@antiphony/core`
  * parses the URI with its own rules before anything is fetched.
@@ -36,15 +37,18 @@ export const RemoteSpaceSchema = SpaceKeySchema.extend({ authority: DidStringSch
 export type RemoteSpace = z.infer<typeof RemoteSpaceSchema>;
 
 /**
- * Where Antiphony gets a registered record and its bytes:
+ * Where Antiphony gets a registered record's bytes:
  *  - `fetch`: from the repo the URI names. The default for a repo record, and
- *    the only way a repo record is read.
+ *    for a space record registered with a `delegationToken`.
  *  - `upload`: the bytes are an earlier `POST /api/v1/audio/upload` of this
- *    tenant, and nothing is downloaded. The default for a space record, which
- *    Antiphony can't read: the tenant sends the record in `record` too.
+ *    tenant, and nothing is downloaded. The default for a space record pushed
+ *    with its `record` body.
  */
 export const RemoteBytesFromSchema = z.enum(['fetch', 'upload']);
 export type RemoteBytesFrom = z.infer<typeof RemoteBytesFromSchema>;
+
+/** A space token as it travels: a compact JWS. Checked by whoever verifies it. */
+const SpaceTokenSchema = z.string().min(16).max(8192).regex(/^[\w-]+\.[\w-]+\.[\w-]+$/, 'Must be a JWT');
 
 /** `PUT /api/v1/remote-posts`: register a record held elsewhere. */
 export const RegisterRemotePostRequestSchema = z.object({
@@ -62,10 +66,24 @@ export const RegisterRemotePostRequestSchema = z.object({
     bytesFrom: RemoteBytesFromSchema.optional(),
     /**
      * The record as the tenant read it, in atproto's JSON form (`$link` for
-     * the blob ref). Required for a space record and refused for a repo
-     * record, which Antiphony reads itself. It must hash to `cid`.
+     * the blob ref), for a space record the tenant pushes. It must hash to
+     * `cid`. Refused for a repo record, and beside a `delegationToken`:
+     * Antiphony reads the record itself then.
      */
     record: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * For a space record: a delegation token from a member's PDS
+     * (`com.atproto.space.getDelegationToken`), so Antiphony reads the record
+     * and its blob from the writer's PDS itself. Single use and short-lived
+     * (60 s), so send it as soon as it's minted. The member must hold a role
+     * that can read the space.
+     */
+    delegationToken: SpaceTokenSchema.optional(),
+    /**
+     * A client attestation from the tenant's OAuth client, for a space whose
+     * policy only admits listed apps. Sent with `delegationToken`.
+     */
+    clientAttestation: SpaceTokenSchema.optional(),
 });
 export type RegisterRemotePostRequest = z.infer<typeof RegisterRemotePostRequestSchema>;
 
@@ -134,13 +152,19 @@ export const RemotePostViewSchema = z.object({
      */
     verified: z.enum(['fetched', 'pushed']),
     /**
-     * How a deletion of the source record reaches Antiphony. `sweep`: Antiphony
-     * rechecks the record hourly, and the tenant's DELETE is faster. `tenant`:
-     * Antiphony can't read the record, so the tenant's DELETE is the only
-     * signal; a tenant that can't commit to sending it shouldn't register a
-     * member's record this way.
+     * How a deletion of the source record reaches Antiphony:
+     *  - `sweep`: Antiphony rechecks a repo record hourly by itself. The
+     *    tenant's DELETE is faster.
+     *  - `recheck`: a space record Antiphony read on a delegation. A credential
+     *    doesn't outlive ten minutes, so Antiphony asks the tenant for a fresh
+     *    delegation hourly (`remote.recheck_requested`) and rechecks when the
+     *    tenant answers (`POST /api/v1/remote-posts/recheck`).
+     *  - `tenant`: a pushed space record Antiphony hasn't read, so the
+     *    tenant's DELETE is the only signal until a recheck reads it. A tenant
+     *    that can't commit to sending it shouldn't register a member's record
+     *    this way.
      */
-    deletionCheck: z.enum(['sweep', 'tenant']),
+    deletionCheck: z.enum(['sweep', 'recheck', 'tenant']),
     record: PostRecordPublicSchema,
     /**
      * Playback, transcript and processing, as for a hosted post. Absent while
@@ -173,3 +197,35 @@ export const DeleteRemotePostResultSchema = z.object({
     deleted: z.boolean(),
 });
 export type DeleteRemotePostResult = z.infer<typeof DeleteRemotePostResultSchema>;
+
+/**
+ * `POST /api/v1/remote-posts/recheck`: recheck this tenant's registered
+ * records in one space against their writers' PDSes, on a fresh delegation.
+ */
+export const RecheckRemoteSpaceRequestSchema = z.object({
+    /** The space, `at://{authority}/space/{type}/{skey}`. */
+    space: RemoteSpaceUriSchema,
+    /** A fresh delegation from a member who can read the space. Single use. */
+    delegationToken: SpaceTokenSchema,
+    /** For a space that only admits listed apps. */
+    clientAttestation: SpaceTokenSchema.optional(),
+});
+export type RecheckRemoteSpaceRequest = z.infer<typeof RecheckRemoteSpaceRequestSchema>;
+
+/** What one recheck did. */
+export const RecheckRemoteSpaceResultSchema = z.object({
+    space: RemoteSpaceUriSchema,
+    /** Rows read against their source. */
+    checked: z.number().int().min(0),
+    /** Rows removed because their record (or the whole space) is gone. */
+    removed: z.number().int().min(0),
+    /** Rows that took an edit. */
+    changed: z.number().int().min(0),
+    /**
+     * Whether rows in this space are still due. A credential lasts ten
+     * minutes and one call checks a bounded number of rows, so call again
+     * with another delegation.
+     */
+    remaining: z.boolean(),
+});
+export type RecheckRemoteSpaceResult = z.infer<typeof RecheckRemoteSpaceResultSchema>;

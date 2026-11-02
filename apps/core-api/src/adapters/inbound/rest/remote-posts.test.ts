@@ -30,6 +30,7 @@ const remotePostService = {
     thread: vi.fn(),
     requestProcessing: vi.fn(),
     delete: vi.fn(),
+    recheckSpace: vi.fn(),
 };
 const dispatchRemoteProcessing = vi.fn(async () => undefined);
 
@@ -117,6 +118,23 @@ describe('/api/v1/remote-posts', () => {
             });
         });
 
+        it('passes a delegation and attestation on for a space record', async () => {
+            remotePostService.register.mockResolvedValue({ row: ROW, outcome: 'created', dispatch: false });
+            const spaced = `at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
+            await put({ uri: spaced, cid: 'bafyreirecord', delegationToken: 'eyJhbGciOiJFUzI1NiJ9.e30.c2ln', clientAttestation: 'eyJhbGciOiJFUzI1NiJ9.e30.YXR0' });
+            expect(remotePostService.register).toHaveBeenCalledWith('test-app', {
+                uri: spaced,
+                cid: 'bafyreirecord',
+                delegationToken: 'eyJhbGciOiJFUzI1NiJ9.e30.c2ln',
+                clientAttestation: 'eyJhbGciOiJFUzI1NiJ9.e30.YXR0',
+            });
+        });
+
+        it('refuses a delegation that is not a JWT', async () => {
+            expect((await put({ uri: URI, cid: 'bafyreirecord', delegationToken: 'not a token' })).status).toBe(400);
+            expect(remotePostService.register).not.toHaveBeenCalled();
+        });
+
         it('refuses an unknown bytesFrom', async () => {
             expect((await put({ uri: URI, cid: 'bafyreirecord', bytesFrom: 'proxy' })).status).toBe(400);
             expect(remotePostService.register).not.toHaveBeenCalled();
@@ -188,5 +206,51 @@ describe('/api/v1/remote-posts', () => {
         const res = await app().request(`/api/v1/remote-posts${q()}`, { method: 'DELETE', headers: auth });
         expect(res.status).toBe(200);
         expect((await res.json()).data).toEqual({ uri: URI, deleted: true });
+    });
+
+    describe('POST /recheck', () => {
+        const SPACE = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+        const TOKEN = 'eyJhbGciOiJFUzI1NiJ9.e30.c2ln';
+        const recheck = (body: unknown) =>
+            app().request('/api/v1/remote-posts/recheck', { method: 'POST', headers: json, body: JSON.stringify(body) });
+
+        it('rechecks the space, dispatches edits, and returns the counts', async () => {
+            remotePostService.recheckSpace.mockResolvedValue({
+                space: SPACE,
+                checked: 2,
+                removed: 0,
+                changed: 1,
+                remaining: false,
+                toDispatch: [{ originAppId: 'test-app', uri: URI }],
+            });
+            const res = await recheck({ space: SPACE, delegationToken: TOKEN });
+
+            expect(res.status).toBe(200);
+            expect((await res.json()).data).toEqual({ space: SPACE, checked: 2, removed: 0, changed: 1, remaining: false });
+            expect(remotePostService.recheckSpace).toHaveBeenCalledWith('test-app', SPACE, { delegationToken: TOKEN });
+            expect(dispatchRemoteProcessing).toHaveBeenCalledWith('test-app', URI, undefined);
+        });
+
+        it('passes a refusal through', async () => {
+            remotePostService.recheckSpace.mockRejectedValue(new ServiceError('refused', 403, undefined, 'REMOTE_DELEGATION_REFUSED'));
+            const res = await recheck({ space: SPACE, delegationToken: TOKEN });
+            expect(res.status).toBe(403);
+            expect((await res.json()).error).toMatchObject({ code: 'REMOTE_DELEGATION_REFUSED' });
+        });
+
+        it('refuses a body without a delegation, or a URI that is not a space', async () => {
+            expect((await recheck({ space: SPACE })).status).toBe(400);
+            expect((await recheck({ space: URI, delegationToken: TOKEN })).status).toBe(400);
+            expect(remotePostService.recheckSpace).not.toHaveBeenCalled();
+        });
+
+        it('refuses an unauthenticated call', async () => {
+            const res = await app().request('/api/v1/remote-posts/recheck', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ space: SPACE, delegationToken: TOKEN }),
+            });
+            expect(res.status).toBe(401);
+        });
     });
 });

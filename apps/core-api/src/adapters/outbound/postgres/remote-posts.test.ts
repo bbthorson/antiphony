@@ -4,6 +4,7 @@ import { RemotePostService, REMOTE_GONE_CONFIRM_MS } from '@antiphony/core/servi
 import { AudioProcessingService } from '@antiphony/core/services/audio-processing';
 import { makeStorageService } from '@antiphony/core/services/storage';
 import type { PublicRepoPort, RepoResult, FetchedRecord } from '@antiphony/core/ports/public-repo';
+import type { SpaceRepoPort } from '@antiphony/core/ports/space-repo';
 import { createTestDatabase, type TestDatabase } from './testing/pglite.js';
 import { postgresRemotePostDependencies } from './remote-posts-dependencies.js';
 import { postgresAudioPostDependencies } from './audio-posts-dependencies.js';
@@ -16,8 +17,8 @@ import { cidForBytes, cidForRepoRecord } from '../../../lib/cid.js';
 import { blobSpaceMetadata } from '../../../lib/blob-space.js';
 
 /**
- * Remote posts (migrations 0006 and 0008, specs/audio-service-mode.md Phases A
- * and B) through
+ * Remote posts (migrations 0006, 0008 and 0009, specs/audio-service-mode.md
+ * Phases A to C) through
  * the real service, against Postgres 18 (PGlite), a fake R2 bucket and a fake
  * repo serving real records with real CIDs.
  */
@@ -323,6 +324,94 @@ describe('remote posts (migration 0006)', () => {
             await expect(insert(null, 'pushed')).rejects.toThrow(/remote_posts_pushed_is_space/);
             await expect(insert({ type: 'a.b.c', skey: 'k' }, 'pushed')).rejects.toThrow(/remote_posts_space_shape/);
             await expect(insert({ authority: 'did:plc:g', type: 'a.b.c', skey: 'k' }, 'guessed')).rejects.toThrow(/remote_posts_verified_valid/);
+        });
+    });
+
+    describe('space records on a delegation (Phase C, migration 0009)', () => {
+        const GROUP = 'did:plc:groupaaaaaaaaaaaaaaaaaaa';
+        const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
+        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+        const SPACE_URI = `${SPACE_REF}/${DID}/dev.antiphony.audio.post/3kspace000001`;
+        const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
+        let spaceRecords: Map<string, RepoResult<FetchedRecord>>;
+        beforeEach(() => {
+            spaceRecords = new Map();
+        });
+
+        /** The group host and the writer's PDS, as the adapter presents them. */
+        const spaces: SpaceRepoPort = {
+            async open() {
+                return {
+                    ok: true,
+                    reader: {
+                        expiresAt: clock.now.getTime() + 10 * 60 * 1000,
+                        getRecord: async (ref) =>
+                            spaceRecords.get(`${SPACE_REF}/${ref.did}/${ref.collection}/${ref.rkey}`) ??
+                            { ok: false, kind: 'gone', reason: 'RecordNotFound' },
+                        getBlob: async (_did, cid) => {
+                            const bytes = blobs.get(cid);
+                            return bytes ? { ok: true, value: { bytes } } : { ok: false, kind: 'gone', reason: 'BlobNotFound' };
+                        },
+                    },
+                };
+            },
+        };
+        const spaced = () => new RemotePostService(deps(), repo, undefined, undefined, spaces);
+        async function publishInSpace(uri: string, bytes: Uint8Array) {
+            const value = await audioRecord(bytes);
+            const cid = await cidForRepoRecord(value);
+            spaceRecords.set(uri, { ok: true, value: { cid, value } });
+            blobs.set(await cidForBytes(bytes), bytes);
+            return cid;
+        }
+        const marking = async (bytes: Uint8Array) => bucket.objects.get(`blobs/${TENANT}/${await cidForBytes(bytes)}`)?.customMetadata;
+
+        it('stores the row as fetched in its space, and its audio private for the space', async () => {
+            const cid = await publishInSpace(SPACE_URI, MP4);
+            const { row } = await spaced().register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN });
+
+            expect(row).toMatchObject({ space: SPACE, verified: 'fetched', blobPrivate: true, repoDid: DID });
+            expect(await marking(MP4)).toEqual(blobSpaceMetadata(SPACE));
+            // The hourly sweep reads repo records only.
+            expect(await deps().listForSweep(10)).toEqual([]);
+        });
+
+        it('lists a space as due once its oldest check is old enough, fetched spaces only', async () => {
+            const cid = await publishInSpace(SPACE_URI, MP4);
+            await spaced().register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN });
+            // checked_at is the database's now() on save; ask about a time past it.
+            const future = new Date(Date.now() + 60 * 60 * 1000);
+            expect(await deps().listSpacesDue(new Date(Date.now() - 60 * 60 * 1000), 10)).toEqual([]);
+            const due = await deps().listSpacesDue(future, 10);
+            expect(due).toEqual([{ originAppId: TENANT, space: SPACE, oldestCheck: expect.any(Date) }]);
+            expect(await deps().listSpaceRows(TENANT, SPACE, future, 10)).toEqual([
+                expect.objectContaining({ uri: SPACE_URI, verified: 'fetched' }),
+            ]);
+            expect(await deps().listSpaceRows(TENANT, { ...SPACE, skey: 'other' }, future, 10)).toEqual([]);
+            expect(await deps().listSpaceRows('bardcast', SPACE, future, 10)).toEqual([]);
+
+            // A space with pushed rows only is never asked about.
+            await db.query(`update remote_posts set verified = 'pushed'`);
+            expect(await deps().listSpacesDue(future, 10)).toEqual([]);
+            await deps().markFetched(TENANT, SPACE_URI);
+            expect((await deps().getRemotePost(TENANT, SPACE_URI))?.verified).toBe('fetched');
+        });
+
+        it('rechecks a space: a gone record, twice an hour apart, is removed and its audio drained', async () => {
+            const cid = await publishInSpace(SPACE_URI, MP4);
+            await spaced().register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN });
+            spaceRecords.clear();
+            // Recheck as of an hour after registration, then an hour after that.
+            await db.query(`update remote_posts set checked_at = now() - interval '2 hours'`);
+            clock.now = new Date(Date.now() + 60 * 60 * 1000);
+            await spaced().recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect((await deps().getRemotePost(TENANT, SPACE_URI))?.goneAt).toEqual(clock.now);
+
+            clock.now = new Date(clock.now.getTime() + REMOTE_GONE_CONFIRM_MS);
+            expect(await spaced().recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN })).toMatchObject({ removed: 1 });
+            expect(await deps().getRemotePost(TENANT, SPACE_URI)).toBeNull();
+            await drain();
+            expect(await hasBlob(MP4)).toBe(false);
         });
     });
 });

@@ -231,15 +231,19 @@ export default {
 
         // Recheck remote posts against their repos (specs/audio-service-mode.md
         // §8): a record gone on two reads an hour apart is removed (its blob
-        // goes to the drain below), and an edit is taken and reprocessed.
+        // goes to the drain below), and an edit is taken and reprocessed. A
+        // space record takes a fresh delegation, so its tenant is asked for one
+        // (`remote.recheck_requested`) instead.
         // Bounded per run, oldest check first; swallowed, since a missed run
         // only delays the next.
         try {
-            const { checked, removed, changed, toDispatch } = await servicesFor(bindings).remotePostService.sweep(
-                REMOTE_SWEEP_LIMIT,
-            );
+            const { checked, removed, changed, toDispatch, rechecksRequested } = await servicesFor(
+                bindings,
+            ).remotePostService.sweep(REMOTE_SWEEP_LIMIT);
             for (const job of toDispatch) await dispatchRemoteProcessing(job.originAppId, job.uri, bindings);
-            if (checked > 0) logger.info({ checked, removed, changed }, '[remote-posts] swept');
+            if (checked > 0 || rechecksRequested > 0) {
+                logger.info({ checked, removed, changed, rechecksRequested }, '[remote-posts] swept');
+            }
         } catch (err) {
             logger.error({ err }, '[remote-posts] sweep failed; rows stay due for the next run');
         }

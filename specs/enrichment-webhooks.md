@@ -85,6 +85,14 @@ receivers should key on `uri`. The same URL also receives `remote.gone` and `rem
 (`{type, originAppId, uri, cid?, occurredAt}`) when the remote-post sweep removes or updates a
 registration.
 
+**Added 2026-11-02 (contract 0.10.6).** `remote.recheck_requested`
+(`{type, originAppId, uri, space, occurredAt}`, where `uri` and `space` are both the space's URI)
+asks the tenant for a fresh delegation to recheck the records it registered in a space
+([`audio-service-mode.md`](./audio-service-mode.md) §8.1, Phase C). The sweep sends it hourly
+for each space that's due and holds a record Antiphony read on a delegation. The tenant answers
+with `POST /api/v1/remote-posts/recheck`. Each request has its own event id, so an unanswered
+space is asked again on the next sweep rather than deduplicated away.
+
 ## Auth — HMAC over the raw body
 
 Each request carries:

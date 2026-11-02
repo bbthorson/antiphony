@@ -4,18 +4,24 @@ import { RemoteAudioPostRecordSchema, RemoteSpaceSchema, type RemoteSpace } from
 import type {
     RemotePostDependencies,
     RemotePostRow,
+    RemoteSpaceDue,
     RemoteSweepRow,
 } from '@antiphony/core/ports/remote-posts-dependencies';
 import type { StorageService } from '@antiphony/core/services/storage';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
-import { BLOB_SPACE_AUTHORITY_METADATA_KEY, BLOB_SPACE_METADATA_KEY, blobSpaceOf } from '../../../lib/blob-space.js';
+import {
+    BLOB_SPACE_AUTHORITY_METADATA_KEY,
+    BLOB_SPACE_METADATA_KEY,
+    blobSpaceMetadata,
+    blobSpaceOf,
+} from '../../../lib/blob-space.js';
 import { cidForBytes, cidForRepoRecord } from '../../../lib/cid.js';
 import { logger } from '../../../lib/logger.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
 
 /**
- * Postgres `RemotePostDependencies` over `remote_posts` (migrations 0006, 0008), with
+ * Postgres `RemotePostDependencies` over `remote_posts` (migrations 0006, 0008, 0009), with
  * blobs in the same store and at the same paths as uploads, so playback,
  * renditions and the processing pipeline read a remote post's audio exactly
  * as they read a hosted post's.
@@ -58,6 +64,17 @@ const COLS = `origin_app_id, uri, cid, repo_did, collection, rkey, space, verifi
 
 const date = (v: Date | string): Date => (v instanceof Date ? v : new Date(v));
 const maybeDate = (v: Date | string | null): Date | null => (v === null ? null : date(v));
+
+type SweepCols = Pick<RemoteRow, 'origin_app_id' | 'uri' | 'cid' | 'verified' | 'gone_at' | 'unreachable_since'>;
+const SWEEP_COLS = 'origin_app_id, uri, cid, verified, gone_at, unreachable_since';
+const toSweepRow = (r: SweepCols): RemoteSweepRow => ({
+    originAppId: r.origin_app_id,
+    uri: r.uri,
+    cid: r.cid,
+    verified: r.verified,
+    goneAt: maybeDate(r.gone_at),
+    unreachableSince: maybeDate(r.unreachable_since),
+});
 
 function toRow(r: RemoteRow): RemotePostRow | null {
     const record = RemoteAudioPostRecordSchema.safeParse(r.record);
@@ -258,20 +275,53 @@ export function postgresRemotePostDependencies(
         },
 
         async listForSweep(limit): Promise<RemoteSweepRow[]> {
-            const rows = await sql.query<Pick<RemoteRow, 'origin_app_id' | 'uri' | 'cid' | 'gone_at' | 'unreachable_since'>>(
-                // A pushed space record can't be read before Phase C (§8.1).
-                `select origin_app_id, uri, cid, gone_at, unreachable_since
-                   from remote_posts where verified = 'fetched'
+            // Repo records only: a space record takes a fresh delegation (§8.1).
+            const rows = await sql.query<SweepCols>(
+                `select ${SWEEP_COLS} from remote_posts where space is null
                   order by checked_at, origin_app_id, uri limit $1`,
                 [limit],
             );
+            return rows.map(toSweepRow);
+        },
+
+        async listSpaceRows(originAppId, space, checkedBefore, limit): Promise<RemoteSweepRow[]> {
+            const rows = await sql.query<SweepCols>(
+                `select ${SWEEP_COLS} from remote_posts
+                  where origin_app_id = $1 and space is not null
+                    and space ->> 'authority' = $2 and space ->> 'type' = $3 and space ->> 'skey' = $4
+                    and checked_at < $5
+                  order by checked_at, uri limit $6`,
+                [originAppId, space.authority, space.type, space.skey, checkedBefore, limit],
+            );
+            return rows.map(toSweepRow);
+        },
+
+        async listSpacesDue(checkedBefore, limit): Promise<RemoteSpaceDue[]> {
+            // Only spaces where the tenant has delegated before: one that only
+            // pushes (Phase B) isn't asked for what it never offered.
+            const rows = await sql.query<{ origin_app_id: string; authority: string; type: string; skey: string; oldest: Date | string }>(
+                `select origin_app_id, space ->> 'authority' as authority, space ->> 'type' as type,
+                        space ->> 'skey' as skey, min(checked_at) as oldest
+                   from remote_posts
+                  where space is not null
+                  group by 1, 2, 3, 4
+                 having bool_or(verified = 'fetched') and min(checked_at) < $1
+                  order by oldest
+                  limit $2`,
+                [checkedBefore, limit],
+            );
             return rows.map((r) => ({
                 originAppId: r.origin_app_id,
-                uri: r.uri,
-                cid: r.cid,
-                goneAt: maybeDate(r.gone_at),
-                unreachableSince: maybeDate(r.unreachable_since),
+                space: { authority: r.authority, type: r.type, skey: r.skey },
+                oldestCheck: date(r.oldest),
             }));
+        },
+
+        async markFetched(originAppId, uri) {
+            await sql.query(
+                `update remote_posts set verified = 'fetched' where origin_app_id = $1 and uri = $2 and space is not null`,
+                [originAppId, uri],
+            );
         },
 
         async recordCheck(originAppId, uri, outcome) {
@@ -310,15 +360,15 @@ export function postgresRemotePostDependencies(
             return stat ? { space: blobSpaceOf(stat.metadata) } : null;
         },
 
-        async storeBlob(originAppId, cid, bytes, mimeType) {
+        async storeBlob(originAppId, cid, bytes, mimeType, space) {
             const path = blobObjectPath(originAppId, cid);
             if (!path) throw new Error(`[remote-posts] no storage path for ${cid}`);
             // The first write wins, as for uploads (lib/blob-space.ts): bytes
             // stored meanwhile keep the visibility they have.
             const existing = await storage.stat(path);
             if (existing) return { space: blobSpaceOf(existing.metadata) };
-            await storage.uploadFile(bytes, path, mimeType);
-            return { space: null };
+            await storage.uploadFile(bytes, path, mimeType, space ? { metadata: blobSpaceMetadata(space) } : undefined);
+            return { space: space ?? null };
         },
 
         async hasVerifiedPublicReference(originAppId, blobCid) {
