@@ -12,7 +12,9 @@ second, as long as the first still works.
 > **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md). §3.1's role table, §4.2 (option A) and
 > Phase 3 with Antiphony as space host (§4.1, §4.3 steps 2–3 and 5–10) are replaced. Antiphony
 > becomes an audio service, and §4.2's option B, the player's DID as author, returns as
-> G5–G6. §3.2–3.3 (Vox Pop reply spaces) and §5 (shared code) stand.
+> G5–G6. §3.2–3.3 (Vox Pop reply spaces) and §5 (shared code) stand, except §3.3's
+> authority: *2026-11-02*, an org that is an opensocial group has a DID naming its group host,
+> not Antiphony, so its reply spaces can't be held here (see the note in §3.3).
 
 ## Decisions
 
@@ -129,6 +131,16 @@ reply:        at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}/{orgDi
 - **Prompts stay public, outside any space.** A prompt is like a tweet: the poster wants it
   seen and answered everywhere, so relays, AppViews, unfurls and the embed widget must all
   reach it. Replies from every surface converge in the prompt's reply space.
+> **Conflict found 2026-11-02.** The org-account bullet below puts the prompt and its reply
+> space under the org's DID, held by Antiphony. Since 2026-11-01 the org is an opensocial
+> group (`audio-service-and-groups.md` G4), and a group's DID names its group host as its PDS
+> (the finding in that record). So the org's DID never names Antiphony, can't be registered
+> through `/api/v1/dids`, and the prompt, the reply space and the replies in it live on the
+> group host. Antiphony processes and serves their audio through audio-service mode (step 6
+> there). The reply-space shape (type, key, one space per prompt) and personal prompts under
+> Vox Pop's DID are unaffected. Whether a group host accepts the `managing-app` policies below
+> is open question 2 in that record.
+
 - **Authority, by who posted the prompt:**
   - **From an org account:** the **org's own DID**, minted by Antiphony (D3) at the org's
     first kept post (`did-plc-and-multi-did-tenancy.md`: minted lazily). The org owns the
@@ -160,7 +172,8 @@ reply:        at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}/{orgDi
   work: protocol members are DIDs, and SMS repliers have none.
 - **Creation:** the BFF calls `PUT /api/v1/spaces/{type}/{promptRkey}` when it creates a
   prompt, then names the space on each reply's upload and post. Needs §3.2.
-- **What Antiphony must add for this:** minted `did:plc` for orgs (D3, with `#atproto_space_host`
+- **What Antiphony must add for this** (as written 2026-10-11; see the 2026-11-02 conflict
+  above: for an org that is a group, this becomes audio-service mode): minted `did:plc` for orgs (D3, with `#atproto_space_host`
   and `#atproto_space` at genesis); posts and spaces under an authority other than the tenant's
   pinned app DID, with the tenant asserting which of its DIDs a write uses (the multi-authority
   phases of `did-plc-and-multi-did-tenancy.md`); and §3.2.
