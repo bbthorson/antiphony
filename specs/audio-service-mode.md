@@ -1,15 +1,17 @@
 # Audio-service mode: processing audio whose record lives elsewhere
 
-**Status:** proposal, 2026-11-02. **Awaiting Brad's approval; nothing is built.** This is
+**Status:** **Phases A and B approved 2026-11-02 (Brad); Phase C held** until a running
+opensocial host confirms its credential flow (open question 2). Nothing is built. This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
 (G2), which the 2026-11-02 finding there (#227) made the critical path: an opensocial group's
 DID names its group host as its PDS, so Antiphony can't hold a group's records or members'
 records in a group's spaces. It can only process and serve the audio those records point to.
 This spec says how.
 
-Every **D-n** below is a decision for review. Each gives a recommendation and the main
-alternative. Nothing here seals a URI. Contract changes are additive and are listed in
-§11.
+Each **D-n** below gives a recommendation and the main alternative. Approving Phases A and B
+settled D-1, D-2, D-4 to D-7 and the Phase B half of D-3; D-3's Phase C (delegation
+hand-off) is held with Phase C. Nothing here seals a URI. Contract changes are additive and
+are listed in §11.
 
 ## 1. The shape
 
@@ -146,7 +148,7 @@ two steps:
   `bytesFrom: "upload"` and the record body. Antiphony checks that the blob ref's CID equals
   an uploaded blob of that tenant, marked private for that same space. Needs no
   `@atproto/space`.
-- **Phase C: delegation hand-off.** The tenant asks the member's PDS for a delegation token
+- **Phase C: delegation hand-off** (*held 2026-11-02*, see open question 2). The tenant asks the member's PDS for a delegation token
   for the space (`com.atproto.space.getDelegationToken`) and passes it with the registration
   (`delegationToken`). The token is single-use and lives 60 s, so it's spent at once.
   Antiphony exchanges it at the authority's `getSpaceCredential` for a credential bound to
@@ -227,8 +229,25 @@ suit audio, which is processed. The copy's lifetime is tied to the source record
   - The queue message carries the subject.
   - The `processing` opt-in comes on registration (and on a `PATCH` equivalent), as on
     create.
-- **Transcripts.** `audio_transcripts` is keyed by `subject_uri` already. A remote post's
-  transcript has the remote URI and CID as its subject. No schema change.
+- **Transcripts need a tenant column.** A remote post's transcript has the remote URI and
+  CID as its subject, but `audio_transcripts` has no `origin_app_id`, and its unique index is
+  on `subject_uri` alone (`0001_initial_schema.sql`). Two tenants that register the same URI
+  (D-1 allows it) would overwrite each other's transcript, and deleting one tenant's copy
+  would delete the other's. Hosted posts never hit this, because their URIs differ by
+  authority. The fix, in two migrations so the deploy stays expand-then-contract:
+  1. **Expand (with Phase A):** add `origin_app_id`, backfilled from `posts` (a hosted
+     subject URI ends in the post's rkey, which is `posts.id` and globally unique), then set
+     `not null` and add a unique index on `(origin_app_id, subject_uri)`. The code switches
+     `saveTranscript` to `on conflict (origin_app_id, subject_uri)`, and every read and delete
+     filters by tenant.
+  2. **Contract (the following deploy):** drop `transcripts_subject_uri_key`. It can't go in
+     the first migration, because the Worker still serving during the deploy upserts with
+     `on conflict (subject_uri)`, which needs that index.
+
+  Until the old index is dropped, a second tenant registering a URI another tenant already
+  holds a transcript for fails on that index, so the contract migration must land before
+  shared URIs are expected. Refusing a second tenant outright would also work, but its 409
+  would tell one tenant that another registered the post.
 - **Signed playback.** Exactly as for a post in a space today: a signed, expiring
   `/api/v1/audio` URL, minted when a view is hydrated or by `getPlaybackUrl`. The tenant
   makes the access decision first, as the managing app does today.
@@ -246,21 +265,31 @@ suit audio, which is processed. The copy's lifetime is tied to the source record
 
 ## 7. Visibility of a remote blob
 
-Today one CID has one visibility per tenant, decided by its first upload
-([`spaces.md`](./spaces.md), open question 3). For remote posts the record decides, not the
-upload:
+Today one CID is one R2 object per tenant, with one visibility, decided by its first upload
+([`spaces.md`](./spaces.md), open question 3). For remote posts the records that reference
+the blob decide it:
 
-- A blob referenced by any registered **space** record is private (signed playback only).
-- A blob referenced only by public records is public.
-- **The stricter one wins.** A blob already marked public turns private when a space record
-  that references it is registered. Public to private is safe, since public URLs simply stop
-  working. Private to public never happens implicitly.
-- This differs from hosted posts, which refuse a mismatch. A tenant can refuse its own
-  hosted writes; it can't refuse what a member already put in their own repo.
+- **Private** while every registered record referencing it is a space record. Its playback
+  URLs are signed only.
+- **Public** as soon as a **verified** public record references it: a hosted flat post, or a
+  public remote post Antiphony fetched itself (Phase A). Those bytes are already public in
+  that repo through `com.atproto.sync.getBlob`, so keeping Antiphony's copy private would
+  protect nothing.
+- **Private to public happens only on a verified public reference**, never on a record the
+  tenant pushed (Phase B). Otherwise a pushed record could expose a private blob.
+- **Public never turns private.** Hosted flat posts have had stable, unsigned URLs since
+  0.5.0, and a blob that stopped being public would break them. It would also protect
+  nothing: some public record already has the bytes.
+- **The derived variants follow the original.** Processing copies the original's marking
+  onto the denoised and trimmed variants and the renditions, so a private-to-public change
+  rewrites the metadata on each object listed in `derivedBlobCids` as well, in the same step.
+- This differs from hosted posts, which refuse a mismatch. A tenant can refuse its own hosted
+  writes; it can't refuse what a member already put in their own repo.
 
-The mark stays in R2 custom metadata. A remote space's authority goes in the existing
-`antiphony-space-authority` key. It names a group's DID that isn't in `tenant_dids`, which is
-fine because R2 metadata carries no foreign keys.
+The marking stays in R2 custom metadata (`antiphony-space`, `antiphony-space-authority`). A
+remote space's authority is a group DID that isn't in `tenant_dids`, which is fine because R2
+metadata carries no foreign keys. Changing it means copying the object onto itself with new
+metadata. The path and CID don't change.
 
 ## 8. Deletion and edits (D-6)
 
@@ -401,9 +430,9 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
 
 | Phase | Ships | Unblocks |
 | :--- | :--- | :--- |
-| **A** | `remote_posts`; register, read, thread and delete for **public** records; Antiphony fetches (§4.1); processing, transcripts, playback and webhooks keyed by subject (§6); the deletion sweep for public records (§8) | Vox Pop org prompts under an org group's DID |
-| **B** | Space records with **tenant-pushed bytes** (§4.2); `remoteSpace` on upload; stricter-wins visibility (§7) | Bardcast campaign posts and Vox Pop org reply spaces on a group host |
-| **C** | **Delegation hand-off**: Antiphony reads spaces itself; the sweep covers space records; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
+| **A** *(approved)* | `remote_posts`; the transcript tenant column (§6); register, read, thread and delete for **public** records; Antiphony fetches (§4.1); processing, transcripts, playback and webhooks keyed by subject (§6); the deletion sweep for public records (§8) | Vox Pop org prompts under an org group's DID |
+| **B** *(approved)* | Space records with **tenant-pushed bytes** (§4.2); `remoteSpace` on upload; visibility by reference (§7) | Bardcast campaign posts and Vox Pop org reply spaces on a group host |
+| **C** *(held)* | **Delegation hand-off**: Antiphony reads spaces itself; the sweep covers space records; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
 | **D** | Notifications (Jetstream, `registerNotify`) to make the sweep rarely needed | Latency of deletion |
 | **E** | Publishing derived records, once D-7 is revisited | Third-party readers of transcripts |
 
@@ -423,9 +452,19 @@ because it exercises the subject-key refactor (§6) on the simpler case.
    
    Verify against a running opensocial host before building Phase C. The conformance harness
    in `cross-repo-design.md` §4.3 step 4 is the place to do it.
-3. **Who may register a URI.** Any tenant may register any record it can name. For public
-   records that adds nothing anyone couldn't fetch. For space records it relies on Phase B's
-   push or Phase C's delegation, both of which prove the tenant could read the record. Is
-   that enough, or should a tenant also show it acts for the space's authority?
+3. **Who may register a URI.** Any tenant may register any record it can name.
+   - **Public records:** Antiphony fetches and checks the record itself, so a tenant learns
+     nothing it couldn't fetch.
+   - **Phase B proves nothing about access.** The tenant supplies the record body and the
+     bytes, and Antiphony checks only that they match their CIDs. A tenant could register a
+     record it never read, under a space it isn't in.
+   - **What contains that is tenant scoping.** A made-up registration exists only in that
+     tenant's index, views and webhooks. It can't reach another tenant, and it can't make a
+     blob public (§7). So the only party it can mislead is the tenant that made it up.
+   - **Phase C would add proof of access:** a delegation token shows a member of the space
+     authorized the read.
+   
+   Is tenant scoping enough until then, or should a Phase B registration also show the
+   tenant acts for the space's authority (for example, through a group session it holds)?
 4. **Retention when a PDS stays unreachable** (§8.1: kept but not served after 30 days). Is
    30 days right, and should the row then be deleted rather than kept?
