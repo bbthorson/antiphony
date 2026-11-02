@@ -22,6 +22,13 @@ changed here.
 > **Replaced in part 2026-11-01** by [`audio-service-and-groups.md`](./audio-service-and-groups.md): Antiphony stops minting DIDs (§4, §5).
 > Group DIDs come from a group host. §§2–3 (more than one DID per tenant) are still how a write
 > goes under a DID other than the app's while Antiphony hosts repos.
+>
+> **Narrowed 2026-11-02.** An opensocial group's DID names its group host as `#atproto_pds`
+> (the group host is the group's PDS; see the finding in `audio-service-and-groups.md`), so it
+> never names Antiphony and can't be registered here. §§2–3 serve only DIDs whose documents
+> name this Antiphony: app- or tenant-created DIDs that aren't opensocial groups. A group's
+> audio reaches Antiphony through audio-service mode instead. The registry and `authority`
+> stay as built; their future is open question 6 in that record.
 
 ## Decisions this builds on
 
@@ -185,7 +192,9 @@ What landed, and where it differs from the proposal above:
   `origin_app_id`, `role`, `subject_ref`, `created_at`. **`role` is `group` only**:
   Antiphony doesn't mint, so `provenance`, `top_key_holder` and `claimed_at` are
   gone, and there is no `user` role because a person's DID is never an authority
-  here (`audio-service-and-groups.md` G2, G4). The app DID stays in
+  here (`audio-service-and-groups.md` G2, G4). *2026-11-02:* `group` names a shared
+  context whose DID names this Antiphony. It can't be an opensocial group, whose DID
+  names its own group host. The app DID stays in
   `ANTIPHONY_APP_DIDS`, not in the table; moving it is a separate change.
 - **`PUT /api/v1/dids/{did}`** registers one; `GET /api/v1/dids/{did}` and
   `GET /api/v1/dids` read them (`DidRegistryService`,
@@ -208,7 +217,8 @@ What landed, and where it differs from the proposal above:
 - **A reply always has its parent's authority.** A post's URI and its parent's
   name the same repo, so a thread never straddles owners. A Vox Pop reply to an
   org's flat prompt, named into a reply space, lands in that space under the
-  org's DID.
+  org's DID, when that DID names this Antiphony. An org that is an opensocial group
+  can't be one (narrowed 2026-11-02, above).
 - **Parsing is generic, then checked.** `parsePostUri` accepts any authority;
   the reply path then requires the parsed authority to be the stored parent's
   own, after a tenant-scoped lookup. That replaces the old parse-time "must be
