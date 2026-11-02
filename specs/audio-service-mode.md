@@ -452,8 +452,9 @@ Where the build differs from the sections above, or settles what they left open:
   - the transcript tenant column (§6, the expand half), with its unique index.
   
   §5.2's `space` and `verified` columns wait for Phase B. The old unique index on
-  `audio_transcripts.subject_uri` is still there; the next migration drops it, and until then a
-  second tenant can't hold a transcript of a URI another tenant already transcribed.
+  `audio_transcripts.subject_uri` went in the next deploy
+  (`0007_transcripts_drop_subject_index.sql`), so two tenants can each hold a transcript of the
+  same remote URI.
 - **Record CIDs.** A record from a PDS is hashed in its IPLD form, with `$link` as a CID link and
   `$bytes` as bytes (`cidForRepoRecord`, checked against Bluesky's data-model interop vectors).
   Both the CID the repo reports and the CID the tenant registers must match it.
