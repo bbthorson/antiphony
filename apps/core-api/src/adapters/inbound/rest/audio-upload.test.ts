@@ -11,10 +11,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const uploadFile = vi.fn();
 const stat = vi.fn();
 const getSpace = vi.fn();
+const getTenantDid = vi.fn();
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         storage: { uploadFile, stat },
         spaceService: { getSpace },
+        didRegistryService: { get: getTenantDid },
     // The rate-limit middleware resolves its store from here. Under limit on every hit:
     // these suites assert route behaviour, not rate-limit policy (that is
     // middleware/rate-limit.test.ts).
@@ -228,6 +230,62 @@ describe('POST /api/v1/audio/upload', () => {
             const res = await post(spaced({ spaceType: SPACE.type, skey: SPACE.skey }));
 
             expect(res.status).toBe(404);
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('for a space held elsewhere (remoteSpace)', () => {
+        const GROUP = 'did:plc:group0000000000000000000';
+        const REMOTE = `at://${GROUP}/space/game.bardcast.space.campaign/thornwood`;
+        function remote(remoteSpace: string, extra: Record<string, string> = {}): FormData {
+            const fd = makeFormData(new File([new Uint8Array([9, 9])], 'a.m4a', { type: 'audio/m4a' }));
+            fd.append('remoteSpace', remoteSpace);
+            for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+            return fd;
+        }
+        const post = (body: FormData) =>
+            app().request('/api/v1/audio/upload', { method: 'POST', headers: AUTH, body });
+
+        it('marks the blob private for that space and its authority, with no Antiphony space', async () => {
+            const { NotFoundError } = await import('shared/errors');
+            getTenantDid.mockRejectedValue(new NotFoundError('DID not registered'));
+            stat.mockResolvedValue(null);
+
+            const res = await post(remote(REMOTE));
+
+            expect(res.status).toBe(200);
+            expect((await res.json()).data.space).toEqual({
+                type: 'game.bardcast.space.campaign',
+                skey: 'thornwood',
+                authority: GROUP,
+            });
+            expect(getSpace).not.toHaveBeenCalled();
+            expect(uploadFile.mock.calls[0][3]).toEqual({
+                metadata: { 'antiphony-space': 'game.bardcast.space.campaign/thornwood', 'antiphony-space-authority': GROUP },
+            });
+        });
+
+        it('keeps the first upload: bytes already public stay public', async () => {
+            const { NotFoundError } = await import('shared/errors');
+            getTenantDid.mockRejectedValue(new NotFoundError('DID not registered'));
+            stat.mockResolvedValue({ size: 2 });
+
+            const res = await post(remote(REMOTE));
+            expect((await res.json()).data.space).toBeUndefined();
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
+
+        it('400s a malformed URI, or one beside the hosted space fields', async () => {
+            expect((await post(remote('at://did:plc:x/space/campaign'))).status).toBe(400);
+            expect((await post(remote('at://not-a-did/space/game.bardcast.space.campaign/thornwood'))).status).toBe(400);
+            expect((await post(remote(REMOTE, { spaceType: 'game.bardcast.space.campaign', skey: 'x' }))).status).toBe(400);
+            expect(uploadFile).not.toHaveBeenCalled();
+        });
+
+        it('400s a space under a DID hosted here: the app DID, or one the tenant registered', async () => {
+            expect((await post(remote('at://did:web:antiphony.example/space/game.bardcast.space.campaign/t'))).status).toBe(400);
+            getTenantDid.mockResolvedValue({ did: GROUP });
+            expect((await post(remote(REMOTE))).status).toBe(400);
             expect(uploadFile).not.toHaveBeenCalled();
         });
     });

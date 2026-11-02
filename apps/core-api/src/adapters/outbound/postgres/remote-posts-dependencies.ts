@@ -1,6 +1,6 @@
 import { TranscriptEnrichmentRecordSchema, type TranscriptEnrichmentRecord } from 'shared/types/audio';
 import { ProcessingStateSchema, type ProcessingState } from 'shared/types/processing';
-import { RemoteAudioPostRecordSchema } from 'shared/types/remote-posts';
+import { RemoteAudioPostRecordSchema, RemoteSpaceSchema, type RemoteSpace } from 'shared/types/remote-posts';
 import type {
     RemotePostDependencies,
     RemotePostRow,
@@ -9,13 +9,13 @@ import type {
 import type { StorageService } from '@antiphony/core/services/storage';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
-import { blobSpaceOf } from '../../../lib/blob-space.js';
+import { BLOB_SPACE_AUTHORITY_METADATA_KEY, BLOB_SPACE_METADATA_KEY, blobSpaceOf } from '../../../lib/blob-space.js';
 import { cidForBytes, cidForRepoRecord } from '../../../lib/cid.js';
 import { logger } from '../../../lib/logger.js';
 import type { SqlClient } from '../../../ports/sql-client.js';
 
 /**
- * Postgres `RemotePostDependencies` over `remote_posts` (migration 0006), with
+ * Postgres `RemotePostDependencies` over `remote_posts` (migrations 0006, 0008), with
  * blobs in the same store and at the same paths as uploads, so playback,
  * renditions and the processing pipeline read a remote post's audio exactly
  * as they read a hosted post's.
@@ -24,6 +24,10 @@ import type { SqlClient } from '../../../ports/sql-client.js';
  * § 6.1): the row, its transcript and a ledger entry go together, and the
  * blob and its variants are queued for the drain, which keeps any object
  * another post still references.
+ *
+ * Turning a blob public (§7) rewrites R2 metadata, which can't be edited in
+ * place: each object is read and written back to the same path, without the
+ * space marking. The bytes, path and CID are the same.
  */
 
 interface RemoteRow {
@@ -33,6 +37,8 @@ interface RemoteRow {
     repo_did: string;
     collection: string;
     rkey: string;
+    space: unknown;
+    verified: 'fetched' | 'pushed';
     record: unknown;
     blob_cid: string;
     mime_type: string;
@@ -47,7 +53,7 @@ interface RemoteRow {
     unreachable_since: Date | string | null;
 }
 
-const COLS = `origin_app_id, uri, cid, repo_did, collection, rkey, record, blob_cid, mime_type, size, blob_private,
+const COLS = `origin_app_id, uri, cid, repo_did, collection, rkey, space, verified, record, blob_cid, mime_type, size, blob_private,
               processing, lease_until, created_at, registered_at, checked_at, gone_at, unreachable_since`;
 
 const date = (v: Date | string): Date => (v instanceof Date ? v : new Date(v));
@@ -58,6 +64,16 @@ function toRow(r: RemoteRow): RemotePostRow | null {
     if (!record.success) {
         logger.error({ uri: r.uri, issues: record.error.issues }, '[postgres] stored remote record failed validation; skipping');
         return null;
+    }
+    let space: RemoteSpace | null = null;
+    if (r.space !== null) {
+        const parsed = RemoteSpaceSchema.safeParse(r.space);
+        if (!parsed.success) {
+            // A space row read as a plain one would play unsigned. Skip it.
+            logger.error({ uri: r.uri, issues: parsed.error.issues }, '[postgres] stored remote space failed validation; skipping');
+            return null;
+        }
+        space = parsed.data;
     }
     let processing: ProcessingState | undefined;
     if (r.processing && typeof r.processing === 'object') {
@@ -75,6 +91,8 @@ function toRow(r: RemoteRow): RemotePostRow | null {
         repoDid: r.repo_did,
         collection: r.collection,
         rkey: r.rkey,
+        space,
+        verified: r.verified,
         record: record.data,
         blob: { cid: r.blob_cid, mimeType: r.mime_type, size: Number(r.size) },
         blobPrivate: r.blob_private,
@@ -117,11 +135,13 @@ export function postgresRemotePostDependencies(
                     select blob_cid, processing from remote_posts where origin_app_id = $1 and uri = $2
                 ), saved as (
                     insert into remote_posts (origin_app_id, uri, cid, repo_did, collection, rkey, record,
-                                              blob_cid, mime_type, size, blob_private, processing, created_at)
-                    values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::jsonb, $13)
+                                              blob_cid, mime_type, size, blob_private, processing, created_at,
+                                              space, verified)
+                    values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb, $15)
                     on conflict (origin_app_id, uri) do update
                         set cid = excluded.cid, repo_did = excluded.repo_did, collection = excluded.collection,
-                            rkey = excluded.rkey, record = excluded.record, blob_cid = excluded.blob_cid,
+                            rkey = excluded.rkey, space = excluded.space, verified = excluded.verified,
+                            record = excluded.record, blob_cid = excluded.blob_cid,
                             mime_type = excluded.mime_type, size = excluded.size,
                             blob_private = excluded.blob_private, processing = excluded.processing,
                             created_at = excluded.created_at,
@@ -157,6 +177,8 @@ export function postgresRemotePostDependencies(
                     w.blobPrivate,
                     processingJson(w.processing),
                     w.createdAt,
+                    w.space ? JSON.stringify(w.space) : null,
+                    w.verified,
                 ],
             );
         },
@@ -237,8 +259,10 @@ export function postgresRemotePostDependencies(
 
         async listForSweep(limit): Promise<RemoteSweepRow[]> {
             const rows = await sql.query<Pick<RemoteRow, 'origin_app_id' | 'uri' | 'cid' | 'gone_at' | 'unreachable_since'>>(
+                // A pushed space record can't be read before Phase C (§8.1).
                 `select origin_app_id, uri, cid, gone_at, unreachable_since
-                   from remote_posts order by checked_at, origin_app_id, uri limit $1`,
+                   from remote_posts where verified = 'fetched'
+                  order by checked_at, origin_app_id, uri limit $1`,
                 [limit],
             );
             return rows.map((r) => ({
@@ -283,7 +307,7 @@ export function postgresRemotePostDependencies(
             const path = blobObjectPath(originAppId, cid);
             if (!path) return null;
             const stat = await storage.stat(path);
-            return stat ? { private: blobSpaceOf(stat.metadata) !== null } : null;
+            return stat ? { space: blobSpaceOf(stat.metadata) } : null;
         },
 
         async storeBlob(originAppId, cid, bytes, mimeType) {
@@ -292,9 +316,68 @@ export function postgresRemotePostDependencies(
             // The first write wins, as for uploads (lib/blob-space.ts): bytes
             // stored meanwhile keep the visibility they have.
             const existing = await storage.stat(path);
-            if (existing) return { private: blobSpaceOf(existing.metadata) !== null };
+            if (existing) return { space: blobSpaceOf(existing.metadata) };
             await storage.uploadFile(bytes, path, mimeType);
-            return { private: false };
+            return { space: null };
+        },
+
+        async hasVerifiedPublicReference(originAppId, blobCid) {
+            // A hosted flat post (no space), or a public remote post Antiphony
+            // fetched. Pushed records, and posts in spaces, never count.
+            const [row] = await sql.query<{ found: boolean }>(
+                `
+                select exists (
+                    select 1 from posts
+                     where origin_app_id = $1 and audio_cid = $2 and space_type is null
+                ) or exists (
+                    select 1 from remote_posts
+                     where origin_app_id = $1 and blob_cid = $2 and space is null and verified = 'fetched'
+                ) as found
+                `,
+                [originAppId, blobCid],
+            );
+            return row?.found === true;
+        },
+
+        async makeBlobPublic(originAppId, blobCid) {
+            // The original, and every variant any post of this tenant derived
+            // from it, hosted or remote.
+            const rows = await sql.query<{ cid: string }>(
+                `
+                with sources as (
+                    select processing from posts where origin_app_id = $1 and audio_cid = $2
+                    union all
+                    select processing from remote_posts where origin_app_id = $1 and blob_cid = $2
+                )
+                select distinct c.cid
+                  from sources s
+                 cross join lateral (
+                     select s.processing ->> 'processedBlobCid' as cid
+                     union all select jsonb_array_elements_text(coalesce(s.processing -> 'derivedBlobCids', '[]'::jsonb))
+                 ) c
+                 where c.cid is not null
+                `,
+                [originAppId, blobCid],
+            );
+            // Variants first, the original last: a failure part way leaves the
+            // original private, so the registration fails and a retry redoes it.
+            for (const cid of [...rows.map((r) => r.cid).filter((c) => c !== blobCid), blobCid]) {
+                const path = blobObjectPath(originAppId, cid);
+                if (!path) continue;
+                const stat = await storage.stat(path);
+                if (!stat || blobSpaceOf(stat.metadata) === null) continue;
+                const bytes = await storage.download(path);
+                if (!bytes) continue;
+                const { [BLOB_SPACE_METADATA_KEY]: _space, [BLOB_SPACE_AUTHORITY_METADATA_KEY]: _authority, ...rest } =
+                    stat.metadata ?? {};
+                await storage.uploadFile(
+                    bytes,
+                    path,
+                    stat.mimeType ?? 'application/octet-stream',
+                    Object.keys(rest).length > 0 ? { metadata: rest } : undefined,
+                );
+                logger.info({ originAppId, cid, original: blobCid }, '[remote-posts] blob turned public by a verified public reference');
+            }
         },
 
         cidForBytes,

@@ -1,6 +1,6 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
-import type { SpaceKey } from 'shared/types/spaces';
+import type { ScopedSpaceKey } from 'shared/types/spaces';
 
 /** A post as the world names it: its URI, and its hosted id when it has one. */
 export interface ProcessingSubject {
@@ -56,7 +56,7 @@ export interface AudioProcessingDependencies {
      * `space` is the source post's space: a derivation of private audio is
      * stored as private to the same space, so its playback is signed too.
      */
-    writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string, space?: SpaceKey): Promise<string>;
+    writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string, space?: ScopedSpaceKey): Promise<string>;
 
     /** Persist a transcript enrichment record (last-write-wins by tenant and subject uri). */
     saveTranscript(originAppId: string, record: TranscriptEnrichmentRecord): Promise<void>;

@@ -2,6 +2,9 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
 import { ScopedSpaceKeySchema, type ScopedSpaceKey } from 'shared/types/spaces';
+import type { RemoteSpace } from 'shared/types/remote-posts';
+import { NotFoundError, ServiceError } from 'shared/errors';
+import { parseRemoteSpaceUri } from '@antiphony/core/services/remote-posts';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
@@ -36,6 +39,18 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * so renditions and processing need nothing new. An optional `spaceAuthority`
  * names a space under a DID the tenant registered rather than its app DID
  * (specs/did-plc-and-multi-did-tenancy.md §3); it is recorded beside the space.
+ *
+ * ## Uploading for a space held elsewhere
+ *
+ * Optional `remoteSpace` names a space Antiphony doesn't host, as a URI
+ * (`at://{authority}/space/{type}/{skey}`), typically a group's space on its
+ * group host (specs/audio-service-mode.md §4.2, Phase B). The tenant read the
+ * bytes from that space and pushes them here, then registers the space record
+ * with `PUT /api/v1/remote-posts`. The blob is private, marked with that space
+ * and its authority exactly as above, but no Antiphony space is looked up: the
+ * authority is a group's DID, which is never registered here, and R2 metadata
+ * has no foreign keys. A space under the tenant's own app DID, or a DID it
+ * registered, is hosted here and uses `spaceType` + `skey` instead.
  *
  * **The first upload wins.** The same bytes are the same object, so a second
  * upload never rewrites it, and never changes its visibility either way. The
@@ -96,7 +111,10 @@ const uploadRoute = createRoute({
         'the blob ref (`{ $type: "blob", ref: { $link: "<cid>" }, mimeType, size }`) to embed on a post. ' +
         'Optional `spaceType` + `skey` fields store it privately in one of the tenant\'s spaces, with an optional ' +
         '`spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes ' +
-        'decides where they live, and the response\'s `space` says which.',
+        'decides where they live, and the response\'s `space` says which. Optional `remoteSpace` ' +
+        '(`at://{authority}/space/{type}/{skey}`, instead of the other space fields) stores it privately for a space ' +
+        'held outside Antiphony, such as a group\'s space on its group host, before registering the space record with ' +
+        '`PUT /api/v1/remote-posts`; no Antiphony space is needed.',
     middleware: [
         requireAuth(),
         rateLimit(RATE_LIMITS.writeAggregate),
@@ -120,7 +138,9 @@ const uploadRoute = createRoute({
     ] as const,
     responses: {
         200: jsonResponse(UploadResponseSchema, 'Stored audio blob ref'),
-        400: errorResponse('Missing/oversized file, unsupported audio type, or an invalid space'),
+        400: errorResponse(
+            'Missing/oversized file, unsupported audio type, an invalid space, or a `remoteSpace` that is hosted here',
+        ),
         401: errorResponse('Not authenticated'),
         404: errorResponse('Space not found'),
     },
@@ -159,8 +179,31 @@ app.openapi(uploadRoute, async (c) => {
     const spaceType = formData.get('spaceType');
     const skey = formData.get('skey');
     const spaceAuthority = formData.get('spaceAuthority');
+    const remoteSpace = formData.get('remoteSpace');
     let requested: ScopedSpaceKey | undefined;
-    if (spaceType !== null || skey !== null || spaceAuthority !== null) {
+    if (remoteSpace !== null) {
+        if (spaceType !== null || skey !== null || spaceAuthority !== null) {
+            return c.json(errorEnvelope(c, 'Send "remoteSpace" or "spaceType" + "skey", not both'), 400);
+        }
+        let space: RemoteSpace;
+        try {
+            space = parseRemoteSpaceUri(typeof remoteSpace === 'string' ? remoteSpace : '');
+        } catch (err) {
+            if (err instanceof ServiceError) return c.json(errorEnvelope(c, err.message), 400);
+            throw err;
+        }
+        if (await isHostedAuthority(originAppId, space.authority, services)) {
+            return c.json(
+                errorEnvelope(
+                    c,
+                    'That space is under a DID this tenant hosts here; upload with "spaceType", "skey" and "spaceAuthority"',
+                ),
+                400,
+            );
+        }
+        // Recorded with its authority always: it is never the app DID.
+        requested = space;
+    } else if (spaceType !== null || skey !== null || spaceAuthority !== null) {
         const parsed = ScopedSpaceKeySchema.safeParse({
             type: spaceType,
             skey,
@@ -222,5 +265,21 @@ app.openapi(uploadRoute, async (c) => {
         },
     }, 200);
 });
+
+/** Whether `did` is the tenant's app DID or a DID it registered: its spaces are hosted here. */
+async function isHostedAuthority(
+    originAppId: string,
+    did: string,
+    services: ReturnType<typeof servicesFor>,
+): Promise<boolean> {
+    if (did === getAppDid(originAppId)) return true;
+    try {
+        await services.didRegistryService.get(originAppId, did);
+        return true;
+    } catch (err) {
+        if (err instanceof NotFoundError) return false;
+        throw err;
+    }
+}
 
 export { app as audioUploadRoute };

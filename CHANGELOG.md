@@ -8,6 +8,56 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.5] — 2026-11-02
+
+Remote posts in spaces ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md),
+Phase B): a record in a space Antiphony can't read, such as a player's reply in
+a Bardcast table's campaign space, registered with the record body and bytes the
+tenant read. **Patch**: new optional request fields, new view fields, and one
+refusal (`REMOTE_BLOB_PRIVATE`) that no longer happens.
+
+### Added
+
+- **`remoteSpace` on `POST /api/v1/audio/upload`**: a space URI,
+  `at://{authority}/space/{type}/{skey}`, for a space held outside Antiphony.
+  The blob is stored private, marked with that space and its authority, with no
+  Antiphony space needed. Not beside `spaceType` / `skey` / `spaceAuthority`,
+  and not for a space under the app DID or a DID the app registered (400: those
+  are hosted here). The first upload of the same bytes still decides where they
+  live.
+- **Space records on `PUT /api/v1/remote-posts`**:
+  `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`,
+  with `record` (the body as the tenant read it) and `bytesFrom: "upload"` (the
+  default for a space record). Antiphony checks the body hashes to `cid` and is
+  an audio post (422 `REMOTE_RECORD_INVALID`), and that its blob is an upload of
+  this tenant stored private for that same space (422 if never uploaded; 409
+  `REMOTE_BLOB_SPACE_MISMATCH` if it's private for another space, or public with
+  no verified public record referencing it). `bytesFrom: "fetch"` on a space
+  record is 400 `REMOTE_URI_UNSUPPORTED`; `record` missing for a space record or
+  sent for a repo record is 400 `REMOTE_REQUEST_INVALID`. A space record's audio
+  plays from signed, expiring URLs only.
+- **`bytesFrom`** on registration (`fetch` | `upload`). For a repo record,
+  `upload` means the bytes must already be this tenant's upload, and nothing is
+  downloaded.
+- **`RemotePostView`** gains `space` (for a space record), `verified`
+  (`fetched` | `pushed`) and `deletionCheck` (`sweep` | `tenant`). A pushed
+  record proves its content, not that the tenant can read the space. **Antiphony
+  can't see a space record deleted before Phase C: the tenant's `DELETE` is its
+  only deletion signal**, and the hourly sweep skips it.
+- Migration `0008_remote_space_records.sql`: `space` and `verified` on
+  `remote_posts`, and a sweep index over fetched rows only.
+
+### Changed
+
+- **Visibility by reference replaces 409 `REMOTE_BLOB_PRIVATE`.** A public repo
+  record whose audio is stored here as private (a space's) now turns that audio
+  public, on the original and every processed variant, once Antiphony has
+  downloaded the bytes from the record's repo and checked them. Private audio is
+  never made public by a pushed record, and public audio never turns private.
+  Hosted posts still refuse audio stored for another space.
+- A processed variant of audio in a space under a DID other than the app DID is
+  now marked with that authority too, as its original is.
+
 ## [0.10.4] — 2026-11-02
 
 Remote posts: audio whose `dev.antiphony.audio.post` record lives in a repo

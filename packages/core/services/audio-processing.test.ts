@@ -155,6 +155,23 @@ describe('AudioProcessingService.process', () => {
             expect(deps.writeDerivedBlob).toHaveBeenCalledWith('vox-pop', expect.any(Uint8Array), 'audio/mpeg', SPACE);
         });
 
+        it('carries the space’s authority onto the derived blob, as its original has it', async () => {
+            const GROUP = 'did:plc:group0000000000000000000';
+            const { deps } = makeDeps(
+                makePost({
+                    space: { ...SPACE, authorSegment: 'did:web:vox-pop.example' },
+                    authority: GROUP,
+                    processing: { denoise: 'pending', updatedAt: new Date() } as ProcessingState,
+                }),
+            );
+            await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
+
+            expect(deps.writeDerivedBlob).toHaveBeenCalledWith('vox-pop', expect.any(Uint8Array), 'audio/webm', {
+                ...SPACE,
+                authority: GROUP,
+            });
+        });
+
         it('writes a flat post’s derived blobs with no space', async () => {
             const { deps } = makeDeps(makePost({ processing: { denoise: 'pending', trim: 'pending', updatedAt: new Date() } }));
             await new AudioProcessingService(deps, p).process('vox-pop', 'p1');

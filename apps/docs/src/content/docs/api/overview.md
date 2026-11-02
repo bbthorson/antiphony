@@ -67,7 +67,7 @@ Audio uploaded outside a space is content-addressed and public by CID, including
 A **space** is an [atproto space](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md): a permissioned place for records, named by a type (an NSID) and a key, with your app's DID as its authority (or a DID your app registered; see [DIDs your app acts for](#dids-your-app-acts-for)). Posts in a space have space URIs (`at://{authority}/space/{type}/{skey}/{authorSegment}/dev.antiphony.audio.post/{rkey}`), and their audio plays only from **signed URLs that expire after an hour**. Your app decides who may listen: it's the space's managing app, and a signed URL is what Antiphony hands back when you ask on someone's behalf.
 
 1. **Create the space** — `PUT /api/v1/spaces/{spaceType}/{skey}` with `{ readPolicy?, writePolicy? }` (both default to `member-list`). Idempotent; the body replaces the policies. A DID is a valid `skey`, which is how you'd key a per-user space.
-2. **Upload into it** — add `spaceType` and `skey` fields to the `POST /api/v1/audio/upload` form. The response's `space` says where the blob lives. **The first upload of a given set of bytes decides this** and it never changes after, so re-uploading identical bytes can't make private audio public, or the reverse.
+2. **Upload into it** — add `spaceType` and `skey` fields to the `POST /api/v1/audio/upload` form. The response's `space` says where the blob lives. **The first upload of a given set of bytes decides this**, so re-uploading identical bytes can't make private audio public, or the reverse. One thing does make it public, for good: registering a public [remote post](#posts-held-in-another-repo) whose repo serves the same bytes, since they are public there already.
 3. **Post into it** — `POST /api/v1/posts` with `space: { type, skey }`. The space must exist (`404`), the audio must live in the same space, and a flat post can't use audio that lives in one (`400` either way). A reply's placement is never less private than its parent's:
    - a reply to a post in a space goes in that space, whether or not it names it; naming a different one is a `400`.
    - a reply to a public (flat) post may name a space, which is how a public prompt gets replies only some people can hear. Without one it's public too.
@@ -105,19 +105,28 @@ Once registered, name it as the **authority** of what you write:
 
 ## Posts held in another repo
 
-A **remote post** is a `dev.antiphony.audio.post` record that lives in a repo Antiphony doesn't host: a person's own PDS, or a group's repo on its group host. Your app writes the record there, then registers it here; Antiphony copies and processes its audio, plays it, and drops its copy once the record is gone. Today this covers public records; records in a space come next.
+A **remote post** is a `dev.antiphony.audio.post` record that lives in a repo Antiphony doesn't host: a person's own PDS, or a group's repo on its group host. Your app writes the record there, then registers it here; Antiphony copies and processes its audio, plays it, and drops its copy once the record is gone. Public records are read here; a record in a space is pushed by your app ([below](#records-in-a-space)).
 
 1. **Register it** — `PUT /api/v1/remote-posts` with `{ "uri": "at://{did}/dev.antiphony.audio.post/{rkey}", "cid": "<record CID>", "processing"?: { … } }`. Antiphony reads the record from the repo its URI names, never from your request:
    - its CID must be `cid` (`409 REMOTE_CID_MISMATCH` if the record changed since you read it);
    - it must be an audio post whose blob's bytes hash to the blob ref and are audio (`422 REMOTE_RECORD_INVALID`);
    - `404 REMOTE_RECORD_NOT_FOUND` if the repo says it doesn't exist, `503 REMOTE_REPO_UNREACHABLE` if the repo can't be read right now.
    
-   Repeating a registration is a no-op; a new `cid` takes the edit. If you uploaded the same bytes with `POST /api/v1/audio/upload` first, they aren't downloaded again.
-2. **Read it** — `GET /api/v1/remote-posts?uri=…`, and `GET /api/v1/remote-posts/thread?root=…` for the registered replies under a root (Antiphony doesn't crawl for replies). The view carries `uri`, `cid`, `authorDid` (the DID whose repo holds it), the record, and the same `embed` a hosted post gets: a playback URL, the transcript and the processing status.
+   Repeating a registration is a no-op; a new `cid` takes the edit. If you uploaded the same bytes with `POST /api/v1/audio/upload` first, they aren't downloaded again (`"bytesFrom": "upload"` requires that). Audio stored here as private for a space is the exception: Antiphony downloads it from the record's repo, checks it, and makes it public, original and processed variants, since a public record already makes it public there.
+2. **Read it** — `GET /api/v1/remote-posts?uri=…`, and `GET /api/v1/remote-posts/thread?root=…` for the registered replies under a root (Antiphony doesn't crawl for replies). The view carries `uri`, `cid`, `authorDid` (the DID whose repo holds it), `space` for a space record, `verified` and `deletionCheck` (below), the record, and the same `embed` a hosted post gets: a playback URL, the transcript and the processing status.
 3. **Process it** — `processing` on registration, or later with `PATCH /api/v1/remote-posts?uri=…`. Results arrive as `stage.settled` webhooks carrying the post's `uri` and no `postId`.
 4. **Remove it** — `DELETE /api/v1/remote-posts?uri=…` removes Antiphony's copy (the record in its repo is untouched); a later read is `410 REMOTE_POST_DELETED`.
 
-Antiphony rechecks each remote post hourly. A record its repo reports gone on two checks an hour apart is removed, and you get a `remote.gone` webhook; an edited record is taken and reprocessed, with a `remote.changed` webhook. A repo that can't be reached never causes a removal, but after 30 days the post reads `available: false` and stops playing.
+Antiphony rechecks each public remote post hourly. A record its repo reports gone on two checks an hour apart is removed, and you get a `remote.gone` webhook; an edited record is taken and reprocessed, with a `remote.changed` webhook. A repo that can't be reached never causes a removal, but after 30 days the post reads `available: false` and stops playing.
+
+### Records in a space
+
+Antiphony can't read a space yet, so for a record in one (a player's reply in a group's campaign space, say) your app sends what it read:
+
+1. **Upload the audio for the space** — `POST /api/v1/audio/upload` with `remoteSpace` set to the space's URI, `at://{authority}/space/{type}/{skey}`. The blob is stored private for that space; no Antiphony space is needed, and the authority is the group's DID.
+2. **Register the record with its body** — `PUT /api/v1/remote-posts` with the space record's URI (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`), `cid`, and `record`, the record as you read it. Antiphony checks that `record` hashes to `cid` and is an audio post (`422 REMOTE_RECORD_INVALID`), and that its audio is your upload for that same space (`422` if you never uploaded it, `409 REMOTE_BLOB_SPACE_MISMATCH` if it's stored for another space, or public with no public record using it).
+
+The view says `verified: "pushed"`: Antiphony checked the content, not that you can read the space. A space record's audio plays only from signed, expiring URLs, and a space record never makes audio public. **Antiphony can't see a space record deleted, so your `DELETE` is the only way its copy goes** (`deletionCheck: "tenant"`): send it when the member deletes the record. If your app can't commit to that, don't register members' space records this way.
 
 ## Envelope
 

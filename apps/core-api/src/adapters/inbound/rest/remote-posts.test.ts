@@ -16,6 +16,8 @@ const VIEW: RemotePostView = {
     cid: 'bafyreirecord',
     kind: 'prompt',
     authorDid: 'did:plc:abcdefghijklmnopqrstuvwx',
+    verified: 'fetched',
+    deletionCheck: 'sweep',
     record: { text: 'hi', createdAt: new Date('2026-11-02T10:00:00.000Z') },
     available: true,
     registeredAt: '2026-11-02T12:00:00.000Z',
@@ -97,6 +99,27 @@ describe('/api/v1/remote-posts', () => {
                 processing: { transcribe: 'pending' },
             });
             expect(dispatchRemoteProcessing).toHaveBeenCalledWith('test-app', URI, undefined);
+        });
+
+        it('passes a pushed space record on with its body and bytesFrom', async () => {
+            remotePostService.register.mockResolvedValue({ row: ROW, outcome: 'created', dispatch: false });
+            const spaced = `at://did:plc:group0000000000000000000/space/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
+            const record = { $type: 'dev.antiphony.audio.post', text: 'x'.repeat(3000), createdAt: '2026-11-02T10:00:00.000Z' };
+            const res = await put({ uri: spaced, cid: 'bafyreirecord', bytesFrom: 'upload', record });
+
+            // Bigger than Phase A's 8 KB: a pushed record carries its text and waveform.
+            expect(res.status).toBe(201);
+            expect(remotePostService.register).toHaveBeenCalledWith('test-app', {
+                uri: spaced,
+                cid: 'bafyreirecord',
+                bytesFrom: 'upload',
+                record,
+            });
+        });
+
+        it('refuses an unknown bytesFrom', async () => {
+            expect((await put({ uri: URI, cid: 'bafyreirecord', bytesFrom: 'proxy' })).status).toBe(400);
+            expect(remotePostService.register).not.toHaveBeenCalled();
         });
 
         it('answers 200 for a repeat or an edit', async () => {

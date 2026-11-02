@@ -13,9 +13,11 @@ import { postgresRemoteProcessingDependencies } from './remote-processing-depend
 import { r2BlobStore } from '../r2/blob-store.js';
 import { createFakeBucket, type FakeBucket } from '../r2/testing/fake-bucket.js';
 import { cidForBytes, cidForRepoRecord } from '../../../lib/cid.js';
+import { blobSpaceMetadata } from '../../../lib/blob-space.js';
 
 /**
- * Remote posts (migration 0006, specs/audio-service-mode.md Phase A) through
+ * Remote posts (migrations 0006 and 0008, specs/audio-service-mode.md Phases A
+ * and B) through
  * the real service, against Postgres 18 (PGlite), a fake R2 bucket and a fake
  * repo serving real records with real CIDs.
  */
@@ -214,5 +216,113 @@ describe('remote posts (migration 0006)', () => {
         await drain();
         expect(await hasBlob(MP4)).toBe(false);
         expect(await hasBlob(edited)).toBe(true);
+    });
+
+    describe('pushed space records (Phase B, migration 0008)', () => {
+        const GROUP = 'did:plc:group0000000000000000000';
+        const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
+        const SPACE_URI = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
+        const path = async (bytes: Uint8Array) => `blobs/${TENANT}/${await cidForBytes(bytes)}`;
+        const marking = async (bytes: Uint8Array) => bucket.objects.get(await path(bytes))?.customMetadata;
+
+        /** The tenant uploaded the bytes it read from the space, with `remoteSpace`. */
+        async function uploadForSpace(bytes: Uint8Array) {
+            await storage().uploadFile(bytes, await path(bytes), 'audio/mp4', { metadata: blobSpaceMetadata(SPACE) });
+        }
+        async function push(bytes: Uint8Array) {
+            const record = await audioRecord(bytes);
+            return service().register(TENANT, { uri: SPACE_URI, cid: await cidForRepoRecord(record), record });
+        }
+
+        it('stores the space, how it was verified, and the author as the repo; plays signed', async () => {
+            process.env.ANTIPHONY_PLAYBACK_SECRET = 'test-playback-secret-0123456789abcdef';
+            try {
+                await uploadForSpace(MP4);
+                const { row } = await push(MP4);
+
+                expect(row).toMatchObject({ uri: SPACE_URI, repoDid: DID, space: SPACE, verified: 'pushed', blobPrivate: true });
+                expect(await db.query('select space, verified, repo_did from remote_posts')).toEqual([
+                    { space: SPACE, verified: 'pushed', repo_did: DID },
+                ]);
+                const [view] = await service().hydrate(TENANT, [row]);
+                expect(view).toMatchObject({ space: SPACE, verified: 'pushed', deletionCheck: 'tenant' });
+                expect(view.embed?.url).toMatch(/sig=/);
+            } finally {
+                delete process.env.ANTIPHONY_PLAYBACK_SECRET;
+            }
+        });
+
+        it('is left out of the sweep, which can not read it', async () => {
+            await uploadForSpace(MP4);
+            await push(MP4);
+            expect(await deps().listForSweep(10)).toEqual([]);
+            expect(await service().sweep(10)).toMatchObject({ checked: 0 });
+            expect(await deps().getRemotePost(TENANT, SPACE_URI)).not.toBeNull();
+        });
+
+        it('counts only fetched public records as verified public references', async () => {
+            const cid = await cidForBytes(MP4);
+            await uploadForSpace(MP4);
+            await push(MP4);
+            expect(await deps().hasVerifiedPublicReference(TENANT, cid)).toBe(false);
+
+            const publicCid = await publish(URI, MP4);
+            await service().register(TENANT, { uri: URI, cid: publicCid });
+            expect(await deps().hasVerifiedPublicReference(TENANT, cid)).toBe(true);
+            expect(await deps().hasVerifiedPublicReference('bardcast', cid)).toBe(false);
+        });
+
+        it("turns private audio and its variants public on a verified public record, and keeps the space's playback signed", async () => {
+            await uploadForSpace(MP4);
+            await push(MP4);
+            // Processing made a variant, marked like its original.
+            const variant = new Uint8Array([...MP4, 42]);
+            await storage().uploadFile(variant, await path(variant), 'audio/mp4', { metadata: blobSpaceMetadata(SPACE) });
+            const variantCid = await cidForBytes(variant);
+            await db.query(`update remote_posts set processing = $1::jsonb`, [
+                JSON.stringify({ denoise: 'ready', processedBlobCid: variantCid, derivedBlobCids: [variantCid], updatedAt: clock.now }),
+            ]);
+
+            const publicCid = await publish(URI, MP4);
+            await service().register(TENANT, { uri: URI, cid: publicCid });
+
+            expect(await marking(MP4)).toBeUndefined();
+            expect(await marking(variant)).toBeUndefined();
+            expect(bucket.objects.get(await path(variant))?.bytes).toEqual(variant);
+            expect(bucket.objects.get(await path(MP4))?.contentType).toBe('audio/mp4');
+            expect((await deps().getRemotePost(TENANT, SPACE_URI))?.blobPrivate).toBe(true);
+            expect((await deps().getRemotePost(TENANT, URI))?.blobPrivate).toBe(false);
+        });
+
+        it("marks a space record's processed variants for its space, authority included", async () => {
+            await uploadForSpace(MP4);
+            const record = await audioRecord(MP4);
+            await service().register(TENANT, {
+                uri: SPACE_URI,
+                cid: await cidForRepoRecord(record),
+                record,
+                processing: { denoise: 'pending' },
+            });
+            const cleaned = new Uint8Array([...MP4, 7]);
+
+            await new AudioProcessingService(postgresRemoteProcessingDependencies(db, storage()), {
+                denoiser: { denoise: async () => ({ bytes: cleaned, mimeType: 'audio/mp4', model: 'stub' }) },
+            }).process(TENANT, SPACE_URI);
+
+            expect(await marking(cleaned)).toEqual(blobSpaceMetadata(SPACE));
+        });
+
+        it('refuses a pushed row with no space, and a space with no authority', async () => {
+            const insert = (space: unknown, verified: string) =>
+                db.query(
+                    `insert into remote_posts (origin_app_id, uri, cid, repo_did, collection, rkey, record, blob_cid,
+                                               mime_type, size, created_at, space, verified)
+                     values ('t', 'at://x', 'c', 'did:plc:x', 'c', 'r', '{}', 'b', 'audio/mp4', 1, now(), $1::jsonb, $2)`,
+                    [space === null ? null : JSON.stringify(space), verified],
+                );
+            await expect(insert(null, 'pushed')).rejects.toThrow(/remote_posts_pushed_is_space/);
+            await expect(insert({ type: 'a.b.c', skey: 'k' }, 'pushed')).rejects.toThrow(/remote_posts_space_shape/);
+            await expect(insert({ authority: 'did:plc:g', type: 'a.b.c', skey: 'k' }, 'guessed')).rejects.toThrow(/remote_posts_verified_valid/);
+        });
     });
 });

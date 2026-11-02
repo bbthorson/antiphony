@@ -1,9 +1,10 @@
 import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState, ResolvedProcessing } from 'shared/types/processing';
-import type { RemoteAudioPostRecord } from 'shared/types/remote-posts';
+import type { RemoteAudioPostRecord, RemoteSpace } from 'shared/types/remote-posts';
+import type { ScopedSpaceKey } from 'shared/types/spaces';
 
 /**
- * A registered remote post as stored (`remote_posts`, migration 0006). The
+ * A registered remote post as stored (`remote_posts`, migrations 0006, 0008). The
  * record lives in another repo; this is Antiphony's index of it, its copy of
  * the blob, and the processing state of that copy.
  */
@@ -11,12 +12,17 @@ export interface RemotePostRow {
     originAppId: string;
     uri: string;
     cid: string;
+    /** The DID whose repo holds the record: the URI's authority, or a space record's author segment. */
     repoDid: string;
     collection: string;
     rkey: string;
+    /** The space the record is in; null for a plain repo record. */
+    space: RemoteSpace | null;
+    /** `fetched`: read from the source by Antiphony. `pushed`: sent by the tenant (Phase B). */
+    verified: 'fetched' | 'pushed';
     record: RemoteAudioPostRecord;
     blob: { cid: string; mimeType: string; size: number };
-    /** The stored blob plays from signed URLs only (see the migration). */
+    /** The post plays from signed URLs only: always for a space record (see migration 0006). */
     blobPrivate: boolean;
     processing?: ProcessingState;
     createdAt: Date;
@@ -71,7 +77,11 @@ export interface RemotePostDependencies {
     /** Merge requested stages onto the stored state (stamps `updatedAt`). */
     mergeProcessing(originAppId: string, uri: string, resolved: ResolvedProcessing): Promise<void>;
 
-    /** The rows least recently checked, for the deletion sweep. */
+    /**
+     * The rows least recently checked, for the deletion sweep. Only rows
+     * Antiphony can read (`verified: 'fetched'`): a pushed space record's only
+     * deletion signal is the tenant's DELETE (§8.1).
+     */
     listForSweep(limit: number): Promise<RemoteSweepRow[]>;
 
     /**
@@ -85,16 +95,36 @@ export interface RemotePostDependencies {
     getTranscripts(originAppId: string, uris: string[]): Promise<Map<string, TranscriptEnrichmentRecord>>;
 
     /**
-     * Whether the tenant already stores these bytes, and whether privately.
-     * A stored blob is never re-downloaded or re-marked (§7, Phase B).
+     * Whether the tenant already stores these bytes, and the space they are
+     * marked private for (null ⇒ public). A stored blob is never re-downloaded.
      */
-    getStoredBlob(originAppId: string, cid: string): Promise<{ private: boolean } | null>;
+    getStoredBlob(originAppId: string, cid: string): Promise<{ space: ScopedSpaceKey | null } | null>;
 
     /**
      * Store downloaded bytes under their CID, public. If an object with that
-     * CID appeared meanwhile it is kept as it is, and its visibility returned.
+     * CID appeared meanwhile it is kept as it is, and its marking returned.
      */
-    storeBlob(originAppId: string, cid: string, bytes: Uint8Array, mimeType: string): Promise<{ private: boolean }>;
+    storeBlob(
+        originAppId: string,
+        cid: string,
+        bytes: Uint8Array,
+        mimeType: string,
+    ): Promise<{ space: ScopedSpaceKey | null }>;
+
+    /**
+     * Whether a **verified** public record of this tenant references the blob
+     * as its audio: a hosted flat post, or a remote post Antiphony fetched
+     * from a public repo (§7). Pushed records never count.
+     */
+    hasVerifiedPublicReference(originAppId: string, blobCid: string): Promise<boolean>;
+
+    /**
+     * Turn a private blob public (§7): rewrite the marking off the original
+     * and off every derived variant any of the tenant's posts made from it
+     * (`processedBlobCid`, `derivedBlobCids`), in one step. Paths and CIDs
+     * don't change. Idempotent; never the other way.
+     */
+    makeBlobPublic(originAppId: string, blobCid: string): Promise<void>;
 
     /** The CID of raw bytes (CIDv1, raw, sha2-256), as atproto blob refs use. */
     cidForBytes(bytes: Uint8Array): Promise<string>;

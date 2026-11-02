@@ -62,6 +62,14 @@ export function postgresRemoteProcessingDependencies(
                 ...(record.langs ? { langs: record.langs } : {}),
                 createdAt: row.createdAt,
                 ...(row.processing ? { processing: row.processing } : {}),
+                // A space record's variants are marked private for its space,
+                // authority included, exactly as its original is (§7).
+                ...(row.space
+                    ? {
+                          space: { type: row.space.type, skey: row.space.skey, authorSegment: row.repoDid },
+                          authority: row.space.authority,
+                      }
+                    : {}),
             };
         },
 
