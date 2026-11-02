@@ -490,7 +490,7 @@ Where the build differs from the sections above, or settles what they left open:
 Where the build differs from the sections above, or settles what they left open:
 
 - **Contract 0.10.5, a patch.** New optional request fields, new view fields, and a refusal
-  that no longer happens. `@antiphony/shared` goes to 0.13.0 with it.
+  that no longer happens. The `@antiphony/shared` release waits for Phase C, so the schemas ship in one bump.
 - **Migration `0008_remote_space_records.sql`** adds §5.2's `space` (jsonb,
   `{authority, type, skey}`) and `verified` (`fetched` | `pushed`). Checks: a pushed row is
   always a space row, and a space names a DID authority, a type and a key. `repo_did` is the
