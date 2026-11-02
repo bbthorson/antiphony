@@ -76,7 +76,7 @@ One POST per stage that settles, `Content-Type: application/json`:
 }
 ```
 
-- `type` is `stage.settled` for these events. The same URL also receives `post.deleted` (below), and `remote.gone` and `remote.changed` for [remote posts](/api/overview/#posts-held-in-another-repo), so branch on it.
+- `type` is `stage.settled` for these events. The same URL also receives `post.deleted` (below), and `remote.gone`, `remote.changed` and `remote.recheck_requested` for [remote posts](/api/overview/#posts-held-in-another-repo), so branch on it.
 - `uri` names the post on every event. `postId` is there for a post Antiphony holds and absent for a remote post, whose record key alone isn't unique.
 - `stage` ∈ `denoise | trim | transcribe | waveform`; `status` ∈ `ready | failed | skipped` (`pending` never fires — it isn't a settle).
 - `occurredAt` is the server settle time, for ordering and replay detection.

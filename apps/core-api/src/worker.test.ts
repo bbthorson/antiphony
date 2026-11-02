@@ -30,7 +30,13 @@ const sqlQuery = vi.fn(async (_text?: string): Promise<Record<string, unknown>[]
     { swept_table: 'rate_limits', deleted: 3 },
 ]);
 const process_ = vi.fn(async () => true);
-const remoteSweep = vi.fn(async () => ({ checked: 0, removed: 0, changed: 0, toDispatch: [] as { originAppId: string; uri: string }[] }));
+const remoteSweep = vi.fn(async () => ({
+    checked: 0,
+    removed: 0,
+    changed: 0,
+    toDispatch: [] as { originAppId: string; uri: string }[],
+    rechecksRequested: 0,
+}));
 const dispatchRemoteProcessing = vi.fn(async () => undefined);
 const ensureTenantPin = vi.fn(async () => undefined);
 let services: Record<string, unknown> = {};
@@ -196,7 +202,7 @@ describe('worker scheduled — the TTL sweep', () => {
 
     it('rechecks remote posts on the same trigger, and dispatches the ones an edit left pending', async () => {
         const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
-        remoteSweep.mockResolvedValueOnce({ checked: 3, removed: 1, changed: 1, toDispatch: [{ originAppId: 'vox-pop', uri }] });
+        remoteSweep.mockResolvedValueOnce({ checked: 3, removed: 1, changed: 1, toDispatch: [{ originAppId: 'vox-pop', uri }], rechecksRequested: 0 });
         const worker = await freshWorker();
         await worker.scheduled(cron, {}, ctx);
 

@@ -1,11 +1,14 @@
 # Audio-service mode: processing audio whose record lives elsewhere
 
-**Status:** **Phases A and B approved and built 2026-11-02** (contracts 0.10.4 and 0.10.5;
-"Phase A as built" and "Phase B as built", below). Open question 3 settled for Phase B:
-tenant scoping is enough (Brad, 2026-11-02). **Phase C verified 2026-11-02 against the
-reference implementation and the opensocial proposal's text, not yet a running opensocial
-host** ("Phase C verification", below; open question 2 answered). The recommendation is go, with the changes listed there. Phase C
-is held for Brad's approval. This is
+**Status:** **Phases A, B and C approved and built 2026-11-02** (contracts 0.10.4, 0.10.5
+and 0.10.6; "Phase A as built", "Phase B as built" and "Phase C as built", below).
+- Open question 3 is settled: tenant scoping for Phase B (Brad, 2026-11-02), and a delegation's
+  proof of access for Phase C.
+- Phase C was verified against the reference implementation and the opensocial proposal's
+  text, **not yet against a running opensocial host** ("Phase C verification", below; open
+  question 2 answered). Rerun that against `opensocial.fyi` before the first group uses it.
+
+This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
 (G2), which the 2026-11-02 finding there (#227) made the critical path: an opensocial group's
 DID names its group host as its PDS, so Antiphony can't hold a group's records or members'
@@ -160,7 +163,7 @@ two steps:
   an uploaded blob of that tenant, marked private for that same space. Needs no
   `@atproto/space`.
 - **Phase C: delegation hand-off** (*verified 2026-11-02 against the reference
-  implementation; held for approval*). The tenant asks the member's PDS for a delegation token
+  implementation; built 2026-11-02, "Phase C as built"*). The tenant asks the member's PDS for a delegation token
   for the space (`com.atproto.space.getDelegationToken`) and passes it with the registration
   (`delegationToken`). The token is single-use and lives 60 s, so it's spent at once.
   - **The exchange.** Antiphony posts the token to `com.atproto.space.getSpaceCredential` at
@@ -468,7 +471,8 @@ Why not publish them now:
 | `PUT /api/v1/remote-posts`, `GET ?uri=`, `GET /thread?root=`, `DELETE ?uri=`; `PATCH ?uri=` for `processing` | new routes, `RemotePost*` schemas in `@antiphony/shared` |
 | `dev.antiphony.audio.registerPost` (XRPC) | new lexicon. Published lexicons can't take breaking changes, so this one waits until the REST shape has settled in use (see `xrpc-surface.md`). |
 | `remoteSpace` on `POST /api/v1/audio/upload` | Phase B |
-| `delegationToken` on registration | Phase C |
+| `delegationToken` (and `clientAttestation`) on registration | Phase C, built as 0.10.6 |
+| `POST /api/v1/remote-posts/recheck`; `remote.recheck_requested`; `deletionCheck: "recheck"` | Phase C, built as 0.10.6 (§8.1's revision) |
 | `uri` on every webhook payload; `remote.gone` and `remote.changed` events | `enrichment-webhooks.md` |
 | `RemotePostView` | new schema, sharing the record and embed schemas. `AudioPostView` is unchanged (§5.3) |
 
@@ -526,7 +530,7 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
 | :--- | :--- | :--- |
 | **A** *(built, 0.10.4)* | `remote_posts`; the transcript tenant column (§6); register, read, thread and delete for **public** records; Antiphony fetches (§4.1); processing, transcripts, playback and webhooks keyed by subject (§6); the deletion sweep for public records (§8) | Vox Pop org prompts under an org group's DID |
 | **B** *(built, 0.10.5)* | Space records with **tenant-pushed bytes** (§4.2); `remoteSpace` on upload; visibility by reference (§7) | Bardcast campaign posts and Vox Pop org reply spaces on a group host |
-| **C** *(verified; held for approval)* | **Delegation hand-off**: Antiphony reads spaces itself, with the record MAC; the sweep covers space records through tenant-supplied (or, opt-in, Antiphony's own) delegations; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
+| **C** *(built, 0.10.6)* | **Delegation hand-off**: Antiphony reads spaces itself, with the record MAC; the sweep covers space records through tenant-supplied (or, opt-in, Antiphony's own) delegations; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
 | **D** | Notifications (Jetstream, `registerNotify`) to make the sweep rarely needed | Latency of deletion |
 | **E** | Publishing derived records, once D-7 is revisited | Third-party readers of transcripts |
 
@@ -776,6 +780,76 @@ changes from the design above:
    group. A refusal reads `SpaceNotFound`, as above. The tenant picks the session; Antiphony
    only reports the refusal.
 
+## Phase C as built (2026-11-02, contract 0.10.6)
+
+Built as "Phase C verification" recommends. Where the build differs from the sections above, or
+settles what they left open:
+
+- **Contract 0.10.6, a patch.**
+  - New optional request fields, a new route and a new webhook;
+  - `recheck` added to `deletionCheck`, a response enum. That's additive under
+    `specs/api-versioning.md`, though a client with an exhaustive switch has to add the case.
+
+  `@antiphony/shared` 0.13.0 ships Phase B's and Phase C's schemas together.
+- **Dependencies, as §12 says.**
+  - `@atproto/space` and `@atproto/crypto` at `0.0.0-spaces-alpha-20261029171913`, exact, in
+    core-api. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
+    and converts KEM keys with it.
+  - `@atproto/syntax` moved to the same alpha in core-api and `packages/core`.
+  - Root `overrides` pin `lex-data`, `lex-cbor`, `car`, `crypto`, `common` and `syntax`.
+    Overrides apply to the whole tree, so `@atproto/lex-schema`'s copies (under
+    `lex-document`, the lexicon check) move to the alpha too. `test:lexicons` still passes.
+  - zod 3 comes in under `@atproto/space` only, and no schema crosses into it.
+  - The lockfile was written with npm 12.0.2 (the root `packageManager`). An older npm drops
+    `libc` fields throughout it.
+  - The Worker bundle grew from 1624 to 1976 KiB, and `check:worker-bundle` stays clean.
+- **The adapter** (`adapters/outbound/atproto/space-repo.ts`) behind a new `SpaceRepoPort`:
+  - one `getSpaceCredential` exchange per call, at the authority's `#atproto_pds`, with a
+    fresh P-256 key that is never exported;
+  - requests signed per writer, with `getRecord`'s record MAC encapsulated against the
+    writer's `#atproto_kem`. Both key spellings are read (`did-document.ts`, shared with the
+    public-repo adapter, which moved onto it);
+  - the URI and the MAC are verified, then the record's CID is recomputed as for a repo
+    record.
+
+  Classification:
+  - `SpaceDeleted` is `deleted`;
+  - `SpaceNotFound`, the token errors and `AppNotAuthorized` are `refused`;
+  - a writer's 401 is `unreachable`.
+
+  Tested against a fake host built from `@atproto/space`'s own primitives. It was also run
+  once, outside the suite, against the reference stack from "Phase C verification":
+  exchange, MAC-checked record, blob, `gone`, `refused` and `deleted` all passed.
+- **Registration.**
+  - `delegationToken` makes `bytesFrom: "fetch"` the default for a space URI.
+  - `record` beside a delegation, a delegation for a repo record, or an attestation without
+    a delegation is 400 `REMOTE_REQUEST_INVALID`.
+  - The bytes are stored private for the space. Bytes already stored follow the Phase B rule:
+    marked for exactly that space, or public with a verified public reference.
+  - A delegation for a row that was only pushed is not a repeat: it reads the row and makes
+    it `fetched`.
+  - Exchange answers map to 403 `REMOTE_DELEGATION_REFUSED`, 404 `REMOTE_RECORD_NOT_FOUND`
+    (space deleted), 503 or 422.
+- **Rechecks (§8.1).**
+  - `POST /api/v1/remote-posts/recheck` spends one delegation on up to 100 of a space's rows
+    not checked in the last ten minutes. It stops a minute before the credential expires and
+    says `remaining`.
+  - The hourly sweep reads repo records only (`space is null`, migration 0009's index). It
+    sends `remote.recheck_requested` per space whose oldest check is over an hour old, **only
+    for spaces holding a `fetched` row**: a tenant that only pushes isn't asked. Each request
+    has its own event id, so an unanswered space is asked again hourly.
+  - A space unanswered past 30 days is logged. Its rows are **not** marked unavailable, since
+    a tenant that stops answering shouldn't make its own posts stop playing. That differs
+    from an unreachable public repo, and open question 4 covers both.
+  - A deleted space reads as gone for every row, under the same two-reads rule.
+- **Not built:**
+  - Antiphony's own service DID as a member (§4.2's alternative; it needs a decision and a DID);
+  - `registerNotify` (Phase D);
+  - acting on group moderation labels (open question 5);
+  - the conformance harness in this repo. Its dependencies need overrides for the whole
+    `@atproto` alpha tree, which don't belong in the workspace lockfile, so it ran from a
+    scratch project. Adding it as a standalone project is a follow-up.
+
 ## 14. Open questions
 
 1. **Players without spaces support** (§10). That's Bardcast's call, and it should be made
@@ -802,11 +876,6 @@ changes from the design above:
    Before Phase C ships to a group on a real opensocial host, rerun the conformance script
    against that host (`opensocial.fyi`). That is the one step the reference run and the
    proposal's text can't stand in for.
-5. **Group moderation labels.** Under the proposal a group is a moderation service: it writes
-   `label` records into the space its subject is in, including `!hide` and `!takedown`. Once
-   Antiphony reads spaces (Phase C), should it honor a takedown on a registered record (stop
-   serving it, or remove it), or leave that to the tenant? Not needed for Phase C. Decide
-   before the first group moderates audio.
 3. **Who may register a URI.** Any tenant may register any record it can name.
    - **Public records:** Antiphony fetches and checks the record itself, so a tenant learns
      nothing it couldn't fetch.
@@ -823,6 +892,20 @@ changes from the design above:
    tenant acts for the space's authority (for example, through a group session it holds)?
 
    **Settled for Phase B (Brad, 2026-11-02): tenant scoping is enough** ("Phase B as built").
-   Revisit with Phase C, which brings proof of access.
+
+   **Phase C (2026-11-02): a delegation proves access.** A record registered with a
+   `delegationToken` was read on a credential the space's authority issued for a member who can
+   read the space. So the tenant must hold that member's session, and the record is what the
+   writer's host serves, checked by its MAC and CID.
+   - What a delegation doesn't prove is that the tenant is an app the space wants. A space
+     that cares lists `allowedApps`, and the tenant sends a `clientAttestation`.
+   - Pushed registrations keep Phase B's answer. A pushed row becomes `fetched` once a recheck
+     reads it on a delegation.
+   - Neither kind can make a blob public (§7).
 4. **Retention when a PDS stays unreachable** (§8.1: kept but not served after 30 days). Is
    30 days right, and should the row then be deleted rather than kept?
+5. **Group moderation labels.** Under the proposal a group is a moderation service: it writes
+   `label` records into the space its subject is in, including `!hide` and `!takedown`. Once
+   Antiphony reads spaces (Phase C), should it honor a takedown on a registered record (stop
+   serving it, or remove it), or leave that to the tenant? Not needed for Phase C. Decide
+   before the first group moderates audio.

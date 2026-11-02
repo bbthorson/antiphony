@@ -30,6 +30,7 @@ import { postgresAudioProcessingDependencies } from './adapters/outbound/postgre
 import { postgresRemotePostDependencies } from './adapters/outbound/postgres/remote-posts-dependencies.js';
 import { postgresRemoteProcessingDependencies } from './adapters/outbound/postgres/remote-processing-dependencies.js';
 import { publicRepo } from './adapters/outbound/atproto/public-repo.js';
+import { spaceRepo } from './adapters/outbound/atproto/space-repo.js';
 import { postgresRateLimitStore } from './adapters/outbound/postgres/rate-limit-store.js';
 import { postgresIdempotencyStore } from './adapters/outbound/postgres/idempotency-store.js';
 
@@ -256,6 +257,7 @@ export function createServices(env: RuntimeEnv): Services {
             publicRepo(),
             notifier,
             logger,
+            spaceRepo(),
         ),
         storage,
         audioPostDeps,

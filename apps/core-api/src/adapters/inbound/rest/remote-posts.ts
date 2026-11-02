@@ -3,6 +3,8 @@ import { bodyLimit } from 'hono/body-limit';
 import {
     DeleteRemotePostResultSchema,
     PatchRemotePostRequestSchema,
+    RecheckRemoteSpaceRequestSchema,
+    RecheckRemoteSpaceResultSchema,
     RegisterRemotePostRequestSchema,
     RemotePostUriSchema,
     RemotePostViewSchema,
@@ -20,15 +22,17 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * Remote posts, mounted at `/api/v1/remote-posts` (specs/audio-service-mode.md):
  * audio whose `dev.antiphony.audio.post` record lives in a repo Antiphony
  * doesn't host, such as a player's PDS or a group's repo on its group host.
- * Public repo records are fetched here (Phase A). Space records are pushed by
- * the tenant, record body and bytes, because Antiphony can't read a space
- * before Phase C; for those the tenant's DELETE is the only deletion signal.
+ * Public repo records are fetched here (Phase A). A space record is read here
+ * on a member's delegation the tenant passes (Phase C), or pushed by the
+ * tenant, record body and bytes (Phase B); for a pushed one the tenant's
+ * DELETE is the only deletion signal until a recheck reads it.
  *
  *   PUT    /                 — register a record by URI and CID
  *   GET    /?uri=            — one registered post
  *   GET    /thread?root=     — the registered replies under a root
  *   PATCH  /?uri=            — request processing
  *   DELETE /?uri=            — remove a registration and Antiphony's copy
+ *   POST   /recheck          — recheck a space's records on a fresh delegation
  *
  * The URI goes in the query, because an `at://` URI doesn't fit in a path
  * segment. Tenant-level, like `/api/v1/dids`: a remote post has no author
@@ -68,17 +72,27 @@ const putRoute = createRoute({
         "record's repo and checked, then turned public: a verified public record makes its audio public here, for " +
         'good, on the original and every processed variant.\n\n' +
         '**Space records** (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`) are ' +
-        "pushed, because Antiphony can't read a space yet. Send `record`, the body as the tenant read it, and first " +
-        'upload its audio with `remoteSpace` naming the same space (`POST /api/v1/audio/upload`). Antiphony checks ' +
-        'that `record` hashes to `cid` and is an audio post (422 `REMOTE_RECORD_INVALID`), and that its blob is an ' +
-        'upload of this tenant stored private for that space (422 if not uploaded; 409 `REMOTE_BLOB_SPACE_MISMATCH` ' +
-        'if it is private for another space, or public with no verified public record referencing it). That proves ' +
-        "content, not that the tenant can read the space: the view says `verified: \"pushed\"`. A pushed record's " +
-        'audio stays private and plays from signed, expiring URLs only. **Antiphony cannot see a space record ' +
-        "deleted, so the tenant's `DELETE` is the only signal** (`deletionCheck: \"tenant\"` in the view): a " +
-        "tenant that can't commit to sending it shouldn't register members' records this way. `bytesFrom: " +
-        '"fetch"` on a space record is 400 `REMOTE_URI_UNSUPPORTED`; `record` missing for a space record, or sent ' +
-        'for a repo record, is 400 `REMOTE_REQUEST_INVALID`.\n\n' +
+        'registered one of two ways.\n\n' +
+        "**On a delegation** (Phase C): send `delegationToken`, minted from a member's PDS with " +
+        '`com.atproto.space.getDelegationToken` just before the call (single use, 60 s), and `clientAttestation` for ' +
+        "a space that only admits listed apps. Antiphony exchanges it at the space's authority for a credential bound " +
+        "to its own key, then reads the record and its blob from the writer's PDS, checked as for a repo record. The " +
+        'view says `verified: "fetched"` and `deletionCheck: "recheck"`. A delegation the authority refuses is 403 ' +
+        '`REMOTE_DELEGATION_REFUSED`: the member may not read the space, or the token was spent, and a host answers ' +
+        'a missing space the same way. A deleted space is 404 `REMOTE_RECORD_NOT_FOUND`. A delegation for a row that ' +
+        'was only pushed reads it, and upgrades it to `fetched`.\n\n' +
+        '**Pushed** (Phase B): send `record`, the body as the tenant read it, and first upload its audio with ' +
+        '`remoteSpace` naming the same space (`POST /api/v1/audio/upload`). Antiphony checks that `record` hashes to ' +
+        '`cid` and is an audio post (422 `REMOTE_RECORD_INVALID`), and that its blob is an upload of this tenant ' +
+        'stored private for that space (422 if not uploaded; 409 `REMOTE_BLOB_SPACE_MISMATCH` if it is private for ' +
+        'another space, or public with no verified public record referencing it). That proves content, not that the ' +
+        'tenant can read the space: the view says `verified: "pushed"`. **Antiphony cannot see a pushed record ' +
+        "deleted until a recheck reads it, so the tenant's `DELETE` is the only signal** (`deletionCheck: " +
+        '"tenant"`): a tenant that can\'t commit to sending it shouldn\'t register members\' records this way.\n\n' +
+        "Either way, a space record's audio stays private and plays from signed, expiring URLs only. A space record " +
+        'with neither `delegationToken` nor `record`, or both, is 400 `REMOTE_REQUEST_INVALID`, and `bytesFrom: ' +
+        '"fetch"` without a delegation is 400 `REMOTE_URI_UNSUPPORTED`; `record` or `delegationToken` for a repo ' +
+        'record is 400 `REMOTE_REQUEST_INVALID`.\n\n' +
         'Repeating a registration is a no-op (200); a new `cid` for the same URI takes the edit (200). ' +
         '`processing` opts into stages as on `POST /api/v1/posts`; stage results arrive by webhook ' +
         '(`stage.settled`, with `uri` and no `postId`).',
@@ -98,11 +112,12 @@ const putRoute = createRoute({
         200: jsonResponse(RemotePostViewSchema, 'Already registered (unchanged, or updated to the new CID)'),
         201: jsonResponse(RemotePostViewSchema, 'Registered'),
         400: errorResponse(
-            'Invalid body; a URI that is not an audio post record, or a space record to fetch (`REMOTE_URI_UNSUPPORTED`); ' +
-                '`record` missing for a space record or sent for a repo record (`REMOTE_REQUEST_INVALID`)',
+            'Invalid body; a URI that is not an audio post record, or a space record to fetch without a delegation ' +
+                '(`REMOTE_URI_UNSUPPORTED`); fields that do not fit the URI (`REMOTE_REQUEST_INVALID`)',
         ),
         401: errorResponse('Not authenticated'),
-        404: errorResponse('The repo says the record does not exist (`REMOTE_RECORD_NOT_FOUND`)'),
+        403: errorResponse("The space's authority refused the delegation (`REMOTE_DELEGATION_REFUSED`)"),
+        404: errorResponse('The repo says the record does not exist, or the space was deleted (`REMOTE_RECORD_NOT_FOUND`)'),
         409: errorResponse(
             "The record's CID is not `cid` (`REMOTE_CID_MISMATCH`), or a space record's audio is not stored private for " +
                 'its space (`REMOTE_BLOB_SPACE_MISMATCH`)',
@@ -126,6 +141,8 @@ app.openapi(putRoute, async (c) => {
         ...(resolved ? { processing: resolved } : {}),
         ...(body.bytesFrom ? { bytesFrom: body.bytesFrom } : {}),
         ...(body.record ? { record: body.record } : {}),
+        ...(body.delegationToken ? { delegationToken: body.delegationToken } : {}),
+        ...(body.clientAttestation ? { clientAttestation: body.clientAttestation } : {}),
     });
     if (dispatch) await dispatchRemoteProcessing(originAppId, body.uri, env(c));
     // Re-read so the view reflects any inline processing results.
@@ -279,8 +296,9 @@ const deleteRoute = createRoute({
         'audio and its variants, unless another post still uses them. The record in its own repo is untouched. A ' +
         'content-free ledger entry is kept, so a later read is 410. Idempotent: `deleted` is false when there was ' +
         'no registration. For a repo record Antiphony also removes a registration on its own once the record is gone ' +
-        "from its repo, and sends `remote.gone`. **A space record can't be read here before Phase C, so this DELETE " +
-        'is the only way its copy goes**: send it when the member deletes the record.',
+        "from its repo, and sends `remote.gone`; for a space record read on a delegation it does the same when a " +
+        "recheck finds it gone. **For a pushed space record no recheck has read, this DELETE is the only way its " +
+        'copy goes**: send it when the member deletes the record.',
     middleware: [
         requireServiceToken(),
         rateLimit(RATE_LIMITS.writeAggregate),
@@ -298,6 +316,57 @@ app.openapi(deleteRoute, async (c) => {
     const { uri } = c.req.valid('query');
     const deleted = await servicesFor(c.env).remotePostService.delete(getOriginAppId(c), uri);
     return c.json({ success: true as const, data: { uri, deleted } }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// POST /recheck — recheck a space on a fresh delegation
+// ---------------------------------------------------------------------------
+
+const recheckRoute = createRoute({
+    method: 'post',
+    path: '/recheck',
+    tags: ['Remote posts'],
+    summary: "Recheck a space's records on a fresh delegation",
+    description:
+        "Rechecks the calling tenant's registered records in one space against their writers' PDSes, as the hourly " +
+        'sweep does for repo records. A space credential lasts ten minutes, so the sweep never holds one: it sends ' +
+        '`remote.recheck_requested` (with the space URI) for each space due, and the tenant answers here with a ' +
+        'fresh `delegationToken` from any member session that can read the space. Antiphony spends it at once.\n\n' +
+        'Each due row is read: unchanged, noted (and a pushed row becomes `verified: "fetched"`); edited, taken and ' +
+        'reprocessed (`remote.changed`); gone, noted, and removed once a second read an hour later agrees ' +
+        '(`remote.gone`). A deleted space reads as gone for every row. One call reads at most 100 rows not checked in ' +
+        'the last ten minutes; `remaining` says to call again with another delegation. A refused delegation is 403 ' +
+        '`REMOTE_DELEGATION_REFUSED` and changes nothing; an unreachable authority is 503. A tenant that only pushes ' +
+        'records may call this too, to upgrade them.',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        bodyLimit({
+            maxSize: 32 * 1024,
+            onError: (c) => c.json(errorEnvelope(c, 'Request body too large'), 413),
+        }),
+    ] as const,
+    request: { body: { content: { 'application/json': { schema: RecheckRemoteSpaceRequestSchema } } } },
+    responses: {
+        200: jsonResponse(RecheckRemoteSpaceResultSchema, 'What the recheck did'),
+        400: errorResponse('Invalid body or space URI (`REMOTE_URI_UNSUPPORTED`)'),
+        401: errorResponse('Not authenticated'),
+        403: errorResponse("The space's authority refused the delegation (`REMOTE_DELEGATION_REFUSED`)"),
+        422: errorResponse("The space's authority could not be read as a space host (`REMOTE_RECORD_INVALID`)"),
+        503: errorResponse("The space's authority could not be reached (`REMOTE_REPO_UNREACHABLE`)"),
+    },
+});
+
+app.openapi(recheckRoute, async (c) => {
+    const body = c.req.valid('json');
+    const originAppId = getOriginAppId(c);
+    const { toDispatch, ...result } = await servicesFor(c.env).remotePostService.recheckSpace(originAppId, body.space, {
+        delegationToken: body.delegationToken,
+        ...(body.clientAttestation ? { clientAttestation: body.clientAttestation } : {}),
+    });
+    for (const job of toDispatch) await dispatchRemoteProcessing(job.originAppId, job.uri, env(c));
+    return c.json({ success: true as const, data: result }, 200);
 });
 
 export { app as remotePostsRoute };

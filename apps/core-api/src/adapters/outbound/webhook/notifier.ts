@@ -107,8 +107,8 @@ export function webhookNotifier(
             );
         },
 
-        // What the deletion sweep did to a remote post
-        // (specs/audio-service-mode.md §6, §8).
+        // What the deletion sweep did to a remote post, or a space it needs a
+        // fresh delegation to recheck (specs/audio-service-mode.md §6, §8).
         async notifyRemote(event: RemotePostEvent): Promise<void> {
             const config = resolveWebhookConfig(event.originAppId);
             if (!config) return;
@@ -119,11 +119,16 @@ export function webhookNotifier(
                     originAppId: event.originAppId,
                     uri: event.uri,
                     ...(event.cid !== undefined ? { cid: event.cid } : {}),
+                    ...(event.space !== undefined ? { space: event.space } : {}),
                     occurredAt: event.occurredAt,
                 },
                 {
-                    // Gone happens once; each edit has its own CID.
-                    eventId: `${event.uri}:${event.type}${event.cid ? `:${event.cid}` : ''}`,
+                    // Gone happens once; each edit has its own CID; each
+                    // request for a recheck is its own sweep's.
+                    eventId:
+                        event.type === 'remote.recheck_requested'
+                            ? `${event.uri}:${event.type}:${event.occurredAt}`
+                            : `${event.uri}:${event.type}${event.cid ? `:${event.cid}` : ''}`,
                     timestamp: event.occurredAt,
                     context: { originAppId: event.originAppId, uri: event.uri },
                     label: event.type,

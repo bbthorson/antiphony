@@ -31,8 +31,8 @@ literal to drift.
 
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
-divergence. For example, `@antiphony/shared` (at `0.12.0`) and `@antiphony/capture-kit`
-(at `0.1.0`) track their own release lines while the contract sits at `0.10.5` and
+divergence. For example, `@antiphony/shared` (at `0.13.0`) and `@antiphony/capture-kit`
+(at `0.1.0`) track their own release lines while the contract sits at `0.10.6` and
 internal packages sit at `0.1.0`. That is correct: a package bump for an export
 or dependency change is a different event from a breaking *contract* change.
 The two lines briefly agreed at `0.9.2` by coincidence: the contract reached it
@@ -75,6 +75,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.10.2` | `PUT`/`GET /api/v1/dids`: a tenant registers DIDs it acts for besides its app DID, custody proven first ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). New routes, so patch. |
 | `0.10.3` | Posts and spaces under a registered DID: `authority` on post create, `?authority=` on spaces, `spaceAuthority` on upload, `DELETE /api/v1/dids/{did}` ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). All optional and defaulting to the app DID, so patch. |
 | `0.10.4` | Remote posts ([`audio-service-mode.md`](./audio-service-mode.md), Phase A): `/api/v1/remote-posts` routes, `uri` on every `stage.settled` webhook, and the `remote.gone` and `remote.changed` webhooks. New routes and an added field, so patch. |
+| `0.10.6` | Remote posts read on a delegation ([`audio-service-mode.md`](./audio-service-mode.md), Phase C): `delegationToken` and `clientAttestation` on registration, `POST /api/v1/remote-posts/recheck`, the `remote.recheck_requested` webhook, `recheck` as a `deletionCheck` value, and 403 `REMOTE_DELEGATION_REFUSED`. New optional fields, a new route and event, and one more value in a response enum, so patch. `@antiphony/shared` 0.13.0 carries Phases B and C. |
 | `0.10.5` | Remote posts in spaces ([`audio-service-mode.md`](./audio-service-mode.md), Phase B): `remoteSpace` on upload, space-record URIs with `record` and `bytesFrom` on registration, `space` / `verified` / `deletionCheck` on `RemotePostView`, and visibility by reference in place of 409 `REMOTE_BLOB_PRIVATE`. Optional fields, added view fields and a refusal lifted, so patch. |
 
 ### Next: the enrichment pipeline

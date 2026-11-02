@@ -52,5 +52,13 @@
   },
   "volta": {
     "node": "22.23.2"
+  },
+  "overrides": {
+    "@atproto/lex-data": "0.0.0-spaces-alpha-20261029171913",
+    "@atproto/lex-cbor": "0.0.0-spaces-alpha-20261029171913",
+    "@atproto/car": "0.0.0-spaces-alpha-20261029171913",
+    "@atproto/crypto": "0.0.0-spaces-alpha-20261029171913",
+    "@atproto/common": "0.0.0-spaces-alpha-20261029171913",
+    "@atproto/syntax": "0.0.0-spaces-alpha-20261029171913"
   }
 }

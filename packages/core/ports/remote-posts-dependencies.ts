@@ -18,7 +18,10 @@ export interface RemotePostRow {
     rkey: string;
     /** The space the record is in; null for a plain repo record. */
     space: RemoteSpace | null;
-    /** `fetched`: read from the source by Antiphony. `pushed`: sent by the tenant (Phase B). */
+    /**
+     * `fetched`: read from the source by Antiphony (a repo record, or a space
+     * record on a delegation, Phase C). `pushed`: sent by the tenant (Phase B).
+     */
     verified: 'fetched' | 'pushed';
     record: RemoteAudioPostRecord;
     blob: { cid: string; mimeType: string; size: number };
@@ -40,8 +43,16 @@ export interface RemoteSweepRow {
     originAppId: string;
     uri: string;
     cid: string;
+    verified: 'fetched' | 'pushed';
     goneAt: Date | null;
     unreachableSince: Date | null;
+}
+
+/** A space with rows due for a recheck, and when the oldest was last checked. */
+export interface RemoteSpaceDue {
+    originAppId: string;
+    space: RemoteSpace;
+    oldestCheck: Date;
 }
 
 /** The outcome of one recheck, recorded on the row. */
@@ -78,11 +89,26 @@ export interface RemotePostDependencies {
     mergeProcessing(originAppId: string, uri: string, resolved: ResolvedProcessing): Promise<void>;
 
     /**
-     * The rows least recently checked, for the deletion sweep. Only rows
-     * Antiphony can read (`verified: 'fetched'`): a pushed space record's only
-     * deletion signal is the tenant's DELETE (§8.1).
+     * The repo records least recently checked, for the deletion sweep. Never a
+     * space record: reading one takes a fresh delegation (§8.1).
      */
     listForSweep(limit: number): Promise<RemoteSweepRow[]>;
+
+    /**
+     * This tenant's rows in `space` last checked before `checkedBefore`, least
+     * recently checked first, pushed and fetched alike.
+     */
+    listSpaceRows(originAppId: string, space: RemoteSpace, checkedBefore: Date, limit: number): Promise<RemoteSweepRow[]>;
+
+    /**
+     * Spaces whose oldest row was last checked before `checkedBefore`, oldest
+     * first, among spaces holding at least one row Antiphony read on a
+     * delegation (`fetched`).
+     */
+    listSpacesDue(checkedBefore: Date, limit: number): Promise<RemoteSpaceDue[]>;
+
+    /** A pushed row read back on a credential with the same CID: it is now `fetched`. */
+    markFetched(originAppId: string, uri: string): Promise<void>;
 
     /**
      * Record a recheck. `present` clears `goneAt` and `unreachableSince`;
@@ -101,14 +127,16 @@ export interface RemotePostDependencies {
     getStoredBlob(originAppId: string, cid: string): Promise<{ space: ScopedSpaceKey | null } | null>;
 
     /**
-     * Store downloaded bytes under their CID, public. If an object with that
-     * CID appeared meanwhile it is kept as it is, and its marking returned.
+     * Store downloaded bytes under their CID: public, or private for `space`
+     * when they came from a space record. If an object with that CID appeared
+     * meanwhile it is kept as it is, and its marking returned.
      */
     storeBlob(
         originAppId: string,
         cid: string,
         bytes: Uint8Array,
         mimeType: string,
+        space?: RemoteSpace,
     ): Promise<{ space: ScopedSpaceKey | null }>;
 
     /**

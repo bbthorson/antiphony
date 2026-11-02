@@ -19,6 +19,7 @@
     "POST /api/v1/audio/upload",
     "POST /api/v1/authors/{authorId}/erase",
     "POST /api/v1/posts",
+    "POST /api/v1/remote-posts/recheck",
     "PUT /api/v1/dids/{did}",
     "PUT /api/v1/remote-posts",
     "PUT /api/v1/spaces/{spaceType}/{skey}"

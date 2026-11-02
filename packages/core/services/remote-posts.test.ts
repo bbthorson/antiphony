@@ -5,6 +5,8 @@ import type { PublicRepoPort, RepoResult, FetchedRecord, FetchedBlob } from '../
 import type { RemotePostDependencies, RemotePostRow, RemoteCheckOutcome } from '../ports/remote-posts-dependencies';
 import type { RemoteNotifierPort, RemotePostEvent } from '../ports/remote-notifier';
 import type { ScopedSpaceKey } from 'shared/types/spaces';
+import type { RemoteSpace } from 'shared/types/remote-posts';
+import type { SpaceRepoPort, SpaceOpenResult } from '../ports/space-repo';
 import {
     RemotePostService,
     parseRemotePostUri,
@@ -12,6 +14,8 @@ import {
     sniffAudioMime,
     REMOTE_GONE_CONFIRM_MS,
     REMOTE_UNAVAILABLE_AFTER_MS,
+    REMOTE_RECHECK_DUE_AFTER_MS,
+    REMOTE_RECHECK_REQUEST_AFTER_MS,
 } from './remote-posts';
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
@@ -58,6 +62,62 @@ function fakeRepo() {
     return { repo, records, blobs, publish };
 }
 
+const sweepRow = (r: RemotePostRow) => ({
+    originAppId: r.originAppId,
+    uri: r.uri,
+    cid: r.cid,
+    verified: r.verified,
+    goneAt: r.goneAt,
+    unreachableSince: r.unreachableSince,
+});
+const sameSpace = (a: RemoteSpace, b: RemoteSpace) => a.authority === b.authority && a.type === b.type && a.skey === b.skey;
+
+/**
+ * A space on a group host (Phase C): records and blobs by URI and CID, and the
+ * authority's answer to a delegation. The reader is the fake repo's, scoped to
+ * the space: a record outside it isn't there.
+ */
+function fakeSpaces(clock: { now: Date }) {
+    const records = new Map<string, RepoResult<FetchedRecord>>();
+    const blobs = new Map<string, RepoResult<FetchedBlob>>();
+    let answer: Extract<SpaceOpenResult, { ok: false }> | null = null;
+    let lifeMs = 10 * 60 * 1000;
+    const opened: { space: RemoteSpace; token: string }[] = [];
+    const spaces: SpaceRepoPort = {
+        open: vi.fn(async (space, delegation) => {
+            opened.push({ space, token: delegation.delegationToken });
+            if (answer) return answer;
+            const prefix = `at://${space.authority}/space/${space.type}/${space.skey}/`;
+            return {
+                ok: true,
+                reader: {
+                    expiresAt: clock.now.getTime() + lifeMs,
+                    getRecord: vi.fn(async (ref) => {
+                        const uri = `${prefix}${ref.did}/${ref.collection}/${ref.rkey}`;
+                        return records.get(uri) ?? { ok: false, kind: 'gone', reason: 'RecordNotFound' };
+                    }),
+                    getBlob: vi.fn(async (_did, cid) => blobs.get(cid) ?? { ok: false, kind: 'gone', reason: 'BlobNotFound' }),
+                },
+            };
+        }),
+    };
+    const publish = (uri: string, value: unknown, bytes = MP4) => {
+        records.set(uri, { ok: true, value: { cid: recordCid(value), value } });
+        blobs.set(bytesCid(bytes), { ok: true, value: { bytes } });
+        return recordCid(value);
+    };
+    return {
+        spaces,
+        records,
+        blobs,
+        opened,
+        publish,
+        refuse: (kind: Extract<SpaceOpenResult, { ok: false }>['kind'], reason = kind) => (answer = { ok: false, kind, reason }),
+        accept: () => (answer = null),
+        credentialLife: (ms: number) => (lifeMs = ms),
+    };
+}
+
 function fakeDeps(clock: { now: Date }) {
     const rows = new Map<string, RemotePostRow>();
     const ledger = new Map<string, { deletedAt: Date; reason: 'tenant' | 'gone' }>();
@@ -101,10 +161,36 @@ function fakeDeps(clock: { now: Date }) {
         },
         async listForSweep(limit) {
             return [...rows.values()]
-                .filter((r) => r.verified === 'fetched')
+                .filter((r) => !r.space)
                 .sort((a, b) => a.checkedAt.getTime() - b.checkedAt.getTime())
                 .slice(0, limit)
-                .map((r) => ({ originAppId: r.originAppId, uri: r.uri, cid: r.cid, goneAt: r.goneAt, unreachableSince: r.unreachableSince }));
+                .map(sweepRow);
+        },
+        async listSpaceRows(o, space, before, limit) {
+            return [...rows.values()]
+                .filter((r) => r.originAppId === o && r.space && sameSpace(r.space, space) && r.checkedAt < before)
+                .sort((a, b) => a.checkedAt.getTime() - b.checkedAt.getTime())
+                .slice(0, limit)
+                .map(sweepRow);
+        },
+        async listSpacesDue(before, limit) {
+            const bySpace = new Map<string, { originAppId: string; space: RemoteSpace; oldest: Date; fetched: boolean }>();
+            for (const r of rows.values()) {
+                if (!r.space) continue;
+                const k = `${r.originAppId} ${JSON.stringify(r.space)}`;
+                const e = bySpace.get(k) ?? { originAppId: r.originAppId, space: r.space, oldest: r.checkedAt, fetched: false };
+                if (r.checkedAt < e.oldest) e.oldest = r.checkedAt;
+                e.fetched ||= r.verified === 'fetched';
+                bySpace.set(k, e);
+            }
+            return [...bySpace.values()]
+                .filter((e) => e.fetched && e.oldest < before)
+                .slice(0, limit)
+                .map((e) => ({ originAppId: e.originAppId, space: e.space, oldestCheck: e.oldest }));
+        },
+        async markFetched(o, u) {
+            const r = rows.get(key(o, u));
+            if (r?.space) r.verified = 'fetched';
         },
         async recordCheck(o, u, outcome: RemoteCheckOutcome) {
             const r = rows.get(key(o, u))!;
@@ -126,11 +212,11 @@ function fakeDeps(clock: { now: Date }) {
         async getStoredBlob(o, cid) {
             return stored.get(key(o, cid)) ?? null;
         },
-        async storeBlob(o, cid) {
+        async storeBlob(o, cid, _bytes, _mime, space) {
             const existing = stored.get(key(o, cid));
             if (existing) return existing;
-            stored.set(key(o, cid), { space: null });
-            return { space: null };
+            stored.set(key(o, cid), { space: space ?? null });
+            return { space: space ?? null };
         },
         async hasVerifiedPublicReference(o, cid) {
             return (
@@ -222,6 +308,7 @@ describe('RemotePostService', () => {
     let r: ReturnType<typeof fakeRepo>;
     let events: RemotePostEvent[];
     let service: RemotePostService;
+    let sp: ReturnType<typeof fakeSpaces>;
     const quietLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
     beforeEach(() => {
@@ -230,7 +317,8 @@ describe('RemotePostService', () => {
         r = fakeRepo();
         events = [];
         const notifier: RemoteNotifierPort = { notifyRemote: async (e) => void events.push(e) };
-        service = new RemotePostService(f.deps, r.repo, notifier, quietLogger);
+        sp = fakeSpaces(clock);
+        service = new RemotePostService(f.deps, r.repo, notifier, quietLogger, sp.spaces);
     });
 
     describe('register', () => {
@@ -486,6 +574,234 @@ describe('RemotePostService', () => {
             expect(result.checked).toBe(0);
             expect(r.repo.getRecord).not.toHaveBeenCalled();
             await expect(service.delete(TENANT, SPACE_URI)).resolves.toBe(true);
+        });
+    });
+
+    describe('register: a space record on a delegation (Phase C)', () => {
+        const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
+        const delegate = (over: Partial<Parameters<RemotePostService['register']>[1]> = {}) => {
+            const cid = sp.publish(SPACE_URI, audioRecord());
+            return service.register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN, ...over });
+        };
+
+        it("exchanges the delegation, reads the record and blob from the writer's host, and stores them private", async () => {
+            const { row, outcome } = await delegate();
+
+            expect(outcome).toBe('created');
+            expect(sp.opened).toEqual([{ space: SPACE, token: TOKEN }]);
+            expect(row).toMatchObject({ repoDid: DID, space: SPACE, verified: 'fetched', blobPrivate: true });
+            expect(f.stored.get(`${TENANT} ${bytesCid(MP4)}`)).toEqual({ space: SPACE });
+            // Nothing public was asked, and nothing turned public.
+            expect(r.repo.getRecord).not.toHaveBeenCalled();
+            expect(f.madePublic).toEqual([]);
+
+            const [view] = await service.hydrate(TENANT, [row]);
+            expect(view).toMatchObject({ verified: 'fetched', deletionCheck: 'recheck', space: SPACE });
+            expect(view.embed?.url).toContain('?sig=');
+        });
+
+        it('passes a client attestation through with the delegation', async () => {
+            await delegate({ clientAttestation: 'eyJhdHRlc3QiOjF9.payload.sig' });
+            expect(sp.spaces.open).toHaveBeenCalledWith(SPACE, { delegationToken: TOKEN, clientAttestation: 'eyJhdHRlc3QiOjF9.payload.sig' });
+        });
+
+        it('uses bytes already uploaded for the space, without downloading', async () => {
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+            const { row } = await delegate();
+            expect(row.verified).toBe('fetched');
+            expect(sp.blobs.size).toBe(1);
+        });
+
+        it('refuses bytes stored for another space (409)', async () => {
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: { ...SPACE, skey: 'elsewhere' } });
+            await expect(delegate()).rejects.toMatchObject({ status: 409, code: 'REMOTE_BLOB_SPACE_MISMATCH' });
+        });
+
+        it("refuses a CID that isn't the record's current one (409)", async () => {
+            sp.publish(SPACE_URI, audioRecord());
+            await expect(service.register(TENANT, { uri: SPACE_URI, cid: 'bafyold', delegationToken: TOKEN })).rejects.toMatchObject({
+                status: 409,
+                code: 'REMOTE_CID_MISMATCH',
+            });
+        });
+
+        it.each([
+            ['refused', 403, 'REMOTE_DELEGATION_REFUSED'],
+            ['deleted', 404, 'REMOTE_RECORD_NOT_FOUND'],
+            ['unreachable', 503, 'REMOTE_REPO_UNREACHABLE'],
+            ['invalid', 422, 'REMOTE_RECORD_INVALID'],
+        ] as const)('maps an exchange that answers %s to %i', async (kind, status, code) => {
+            sp.refuse(kind);
+            await expect(delegate()).rejects.toMatchObject({ status, code });
+            expect(f.rows.size).toBe(0);
+        });
+
+        it('answers 404 for a record its writer says is gone', async () => {
+            await expect(service.register(TENANT, { uri: SPACE_URI, cid: 'bafyx', delegationToken: TOKEN })).rejects.toMatchObject({
+                status: 404,
+                code: 'REMOTE_RECORD_NOT_FOUND',
+            });
+        });
+
+        it.each([
+            ['a delegation for a repo record', { uri: URI, cid: 'bafyx', delegationToken: TOKEN }],
+            ['a delegation and a record body', { uri: SPACE_URI, cid: 'bafyx', delegationToken: TOKEN, record: audioRecord() }],
+            ['an attestation without a delegation', { uri: SPACE_URI, cid: 'bafyx', record: audioRecord(), clientAttestation: 'a.b.c' }],
+        ])('refuses %s (400)', async (_label, input) => {
+            await expect(service.register(TENANT, input)).rejects.toMatchObject({ status: 400, code: 'REMOTE_REQUEST_INVALID' });
+            expect(sp.spaces.open).not.toHaveBeenCalled();
+        });
+
+        it('upgrades a pushed row on a delegation for the same CID', async () => {
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+            const record = audioRecord();
+            await service.register(TENANT, { uri: SPACE_URI, cid: recordCid(record), record });
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.verified).toBe('pushed');
+
+            const { row, outcome } = await delegate();
+            expect(outcome).toBe('updated');
+            expect(row.verified).toBe('fetched');
+        });
+
+        it('treats a delegation for a row it already read as a repeat', async () => {
+            await delegate();
+            const again = await delegate();
+            expect(again.outcome).toBe('unchanged');
+            expect(sp.opened).toHaveLength(1);
+        });
+
+    });
+
+    describe('recheckSpace (Phase C)', () => {
+        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+        const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
+        const later = (ms: number) => (clock.now = new Date(clock.now.getTime() + ms));
+        async function registered() {
+            const cid = sp.publish(SPACE_URI, audioRecord());
+            await service.register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN });
+            later(REMOTE_RECHECK_REQUEST_AFTER_MS);
+        }
+
+        it('notes an unchanged record, on one exchange for the space', async () => {
+            await registered();
+            sp.opened.length = 0;
+            const result = await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(result).toMatchObject({ space: SPACE_REF, checked: 1, removed: 0, changed: 0, remaining: false });
+            expect(sp.opened).toHaveLength(1);
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.checkedAt).toEqual(clock.now);
+        });
+
+        it('upgrades a pushed row that reads back unchanged', async () => {
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+            const record = audioRecord();
+            sp.publish(SPACE_URI, record);
+            await service.register(TENANT, { uri: SPACE_URI, cid: recordCid(record), record });
+            later(REMOTE_RECHECK_DUE_AFTER_MS + 1);
+
+            await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.verified).toBe('fetched');
+        });
+
+        it('removes a record gone on two rechecks an hour apart, and says so', async () => {
+            await registered();
+            sp.records.clear();
+            await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.goneAt).toEqual(clock.now);
+
+            later(REMOTE_GONE_CONFIRM_MS);
+            const result = await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(result.removed).toBe(1);
+            expect(f.ledger.get(`${TENANT} ${SPACE_URI}`)?.reason).toBe('gone');
+            expect(events.map((e) => e.type)).toContain('remote.gone');
+        });
+
+        it('reads a deleted space as a "gone" read of every row in it', async () => {
+            await registered();
+            sp.refuse('deleted', 'SpaceDeleted');
+            await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.goneAt).not.toBeNull();
+            later(REMOTE_GONE_CONFIRM_MS);
+            expect((await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN })).removed).toBe(1);
+        });
+
+        it('takes an edit, and announces it', async () => {
+            await registered();
+            const newBytes = new Uint8Array([...MP4, 3]);
+            sp.publish(SPACE_URI, audioRecord({ text: 'edited' }, newBytes), newBytes);
+            const result = await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(result.changed).toBe(1);
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.blob.cid).toBe(bytesCid(newBytes));
+            expect(f.stored.get(`${TENANT} ${bytesCid(newBytes)}`)).toEqual({ space: SPACE });
+            expect(events.map((e) => e.type)).toContain('remote.changed');
+        });
+
+        it('changes nothing on a refused delegation (403)', async () => {
+            await registered();
+            const before = f.rows.get(`${TENANT} ${SPACE_URI}`)!.checkedAt;
+            sp.refuse('refused', 'SpaceNotFound');
+            await expect(service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN })).rejects.toMatchObject({
+                status: 403,
+                code: 'REMOTE_DELEGATION_REFUSED',
+            });
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.checkedAt).toEqual(before);
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.goneAt).toBeNull();
+        });
+
+        it('skips the exchange when nothing is due', async () => {
+            await registered();
+            await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            sp.opened.length = 0;
+            const result = await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN });
+            expect(result).toMatchObject({ checked: 0, remaining: false });
+            expect(sp.opened).toHaveLength(0);
+        });
+
+        it('pages: reports what is left past the limit, or past the credential', async () => {
+            for (const rkey of ['3kspace000001', '3kspace000002', '3kspace000003']) {
+                const uri = SPACE_URI.replace('3kspace000001', rkey);
+                const cid = sp.publish(uri, audioRecord());
+                await service.register(TENANT, { uri, cid, delegationToken: TOKEN });
+            }
+            later(REMOTE_RECHECK_REQUEST_AFTER_MS);
+            expect(await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN }, 2)).toMatchObject({ checked: 2, remaining: true });
+            expect(await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN }, 2)).toMatchObject({ checked: 1, remaining: false });
+
+            later(REMOTE_RECHECK_REQUEST_AFTER_MS);
+            sp.credentialLife(30_000);
+            expect(await service.recheckSpace(TENANT, SPACE_REF, { delegationToken: TOKEN })).toMatchObject({ checked: 0, remaining: true });
+        });
+
+        it('refuses a URI that is not a space (400)', async () => {
+            await expect(service.recheckSpace(TENANT, URI, { delegationToken: TOKEN })).rejects.toMatchObject({ status: 400 });
+        });
+    });
+
+    describe('sweep: recheck requests (Phase C)', () => {
+        const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
+        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+
+        it('asks for a recheck of a space with a row read on a delegation, once due', async () => {
+            const cid = sp.publish(SPACE_URI, audioRecord());
+            await service.register(TENANT, { uri: SPACE_URI, cid, delegationToken: TOKEN });
+
+            expect((await service.sweep(10)).rechecksRequested).toBe(0);
+            clock.now = new Date(clock.now.getTime() + REMOTE_RECHECK_REQUEST_AFTER_MS + 1);
+            const result = await service.sweep(10);
+
+            expect(result).toMatchObject({ checked: 0, rechecksRequested: 1 });
+            expect(events).toContainEqual(
+                expect.objectContaining({ type: 'remote.recheck_requested', originAppId: TENANT, uri: SPACE_REF, space: SPACE_REF }),
+            );
+            // The sweep never reads a space record itself.
+            expect(r.repo.getRecord).not.toHaveBeenCalled();
+        });
+
+        it("doesn't ask about a space whose rows were only pushed", async () => {
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+            const record = audioRecord();
+            await service.register(TENANT, { uri: SPACE_URI, cid: recordCid(record), record });
+            clock.now = new Date(clock.now.getTime() + REMOTE_RECHECK_REQUEST_AFTER_MS + 1);
+            expect((await service.sweep(10)).rechecksRequested).toBe(0);
         });
     });
 
