@@ -1,9 +1,11 @@
 # Audio-service mode: processing audio whose record lives elsewhere
 
-**Status:** **Phases A and B approved 2026-11-02 (Brad); Phase C held** until a running
-opensocial host confirms its credential flow (open question 2). **Phases A and B built
-2026-11-02** (contracts 0.10.4 and 0.10.5; "Phase A as built" and "Phase B as built", below).
-Open question 3 settled for Phase B: tenant scoping is enough (Brad, 2026-11-02). This is
+**Status:** **Phases A and B approved and built 2026-11-02** (contracts 0.10.4 and 0.10.5;
+"Phase A as built" and "Phase B as built", below). Open question 3 settled for Phase B:
+tenant scoping is enough (Brad, 2026-11-02). **Phase C verified 2026-11-02 against the
+reference implementation, not a running opensocial host** ("Phase C verification", below;
+open question 2 answered). The recommendation is go, with the changes listed there. Phase C
+is held for Brad's approval. This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
 (G2), which the 2026-11-02 finding there (#227) made the critical path: an opensocial group's
 DID names its group host as its PDS, so Antiphony can't hold a group's records or members'
@@ -59,7 +61,8 @@ referenced from a record in the author's repo. Antiphony never writes into anoth
     PDS). The authority exchanges it at `com.atproto.space.getSpaceCredential` for a
     **credential** (about 10 min) bound to a key the requester names (`credentialKid`). Every
     request then carries an HTTP message signature over the credential and the repo it's
-    addressed to.
+    addressed to. A `getRecord` also carries a MAC request against the writer's
+    `#atproto_kem` key (`mac.ts`), which the reference host requires (checked 2026-11-02).
   - **Public spaces.** A space whose read policy is public gets a credential with no
     delegation (`mintPublicSpaceCredential`).
   - **Space blobs** (`blob.ts`). They are served only through an authorized proxy and never
@@ -150,20 +153,55 @@ two steps:
   `bytesFrom: "upload"` and the record body. Antiphony checks that the blob ref's CID equals
   an uploaded blob of that tenant, marked private for that same space. Needs no
   `@atproto/space`.
-- **Phase C: delegation hand-off** (*held 2026-11-02*, see open question 2). The tenant asks the member's PDS for a delegation token
+- **Phase C: delegation hand-off** (*verified 2026-11-02 against the reference
+  implementation; held for approval*). The tenant asks the member's PDS for a delegation token
   for the space (`com.atproto.space.getDelegationToken`) and passes it with the registration
   (`delegationToken`). The token is single-use and lives 60 s, so it's spent at once.
-  Antiphony exchanges it at the authority's `getSpaceCredential` for a credential bound to
-  **a key Antiphony generates and holds** for that credential's life. With it, Antiphony
-  reads the record from the writer's PDS (`com.atproto.space.getRecord`) and the blob
-  (`com.atproto.space.getBlob`), signing each request. This removes the trust gap in Phase B,
-  and lets Antiphony recheck a private record for deletion (§8) while a credential lives.
+  - **The exchange.** Antiphony posts the token to `com.atproto.space.getSpaceCredential` at
+    the authority's `#atproto_pds` (its group host). The token names its audience as
+    `{authority}#atproto_pds`, but it doesn't name a key. So Antiphony names **a P-256 key it
+    generates and holds** (`credentialKid`, a `did:key`), and the credential is bound to that
+    key. The tenant never sees the key, and the credential is useless without it.
+  - **The credential** is signed with the authority's `#atproto` key and lives 600 s (the
+    library's cap is an hour). It can't be renewed: a fresh one needs a fresh delegation,
+    unless the space is publicly readable.
+  - **Reads.** Antiphony signs every request for the repo it's addressed to
+    (`atproto-space-audience`, an RFC 9421 signature over the credential and that DID), and
+    sends it to the **writer's** PDS.
+    - `com.atproto.space.getRecord` **also requires a MAC request**
+      (`atproto-space-want-mac`). Antiphony encapsulates a fresh key share against the
+      writer's `#atproto_kem` key, and verifies the `atproto-space-mac` the host answers with.
+      Without the request, the host refuses with `BadSpaceMac`. The spec before this
+      verification missed this.
+    - `com.atproto.space.getBlob` needs no MAC. It serves only a blob that a record in that
+      repo in that space references.
+  - **What it fixes.** It removes the trust gap in Phase B: Antiphony reads what a member was
+    authorized to read, and checks it as §3 and §4.1 do. It also lets Antiphony recheck a
+    private record for deletion (§8.1) while a credential lives.
+  - **A space that restricts apps** (`allowedApps` on a member-list policy) also wants a
+    `clientAttestation`: a 60 s, single-use `private_key_jwt` from the tenant's OAuth client.
+    The tenant passes it beside `delegationToken` when it has one.
+  - **The tenant's OAuth session needs a space read scope** for the space type
+    (`space:{type}?authority=*&skey=*&action=read`, in Grain's spelling). The member's PDS has
+    to be able to resolve that space type's declaration, or the login fails with
+    `invalid_scope`. That's tenant work, Bardcast's first.
 
-*Alternative:* the group admits Antiphony's own DID (a `service` role, or `appAccess`), so
-Antiphony mints credentials without anyone's delegation. That would put Antiphony in every
-group's roster and needs an Antiphony account on a spaces-capable PDS. Revisit if group hosts
-grow a notion of service readers. The proposal is unverified on this (open question 2 in the
-decision record).
+*Alternative (revised 2026-11-02):* the group admits Antiphony's own DID as a read-only
+member, and Antiphony mints its own delegations. On the reference implementation this needs
+**no PDS account**. A delegation token is checked against its issuer's `#atproto` key, read from
+the DID document, so a service DID that publishes one can sign its own. The conformance run did
+exactly that: a `did:plc` with no PDS was refused until the space admitted it, then got a
+credential on every try and read a writer's blob. Antiphony would then need no one's session at
+all, and its sweep could renew credentials on its own (§8.1). What it costs:
+- Antiphony appears on every group's member list, and on its published roster when a policy
+  sets `publishMembers`.
+- It holds standing read access to each such space, which is a larger trust footprint than a
+  per-registration delegation.
+- Each group host has to admit a non-person DID, which an opensocial host may not allow
+  (unverified, open question 2).
+- Antiphony needs its own service DID with an `#atproto` key.
+
+Recommended as an **opt-in per space**, beside delegation rather than instead of it.
 
 **D-4. Bytes are copied, not proxied.** Antiphony keeps its own copy of each blob, in R2 at
 `blobs/{originAppId}/{cid}` as today. Processing reads it many times (denoise, trim,
@@ -307,23 +345,50 @@ copy and everything derived from it must go too, within a stated bound.
 - **A sweep backs that up**, hourly in the existing cron, bounded like the registered-DID
   sweep (#229). It rechecks rows whose `checked_at` is oldest:
   - **Public:** `com.atproto.repo.getRecord` on the record's PDS.
-  - **Space (Phase C):** `com.atproto.space.getRecord`, while a credential is held.
-  - **Space, before Phase C:** Antiphony can't read the record, so the tenant's `DELETE` is
-    the only signal. Phase B's registration says so, and a tenant that can't commit to
-    sending it shouldn't use Phase B for member records.
+  - **Space (Phase C):** a signed `com.atproto.space.getRecord`, with its MAC, while a
+    credential is held. **A credential lives 10 minutes and can't be renewed without a fresh
+    delegation** (verified 2026-11-02). So the hourly sweep can't hold one between runs. One
+    credential covers a whole space, though: every writer's repo in it, signed per audience.
+    So one delegation per space buys a recheck of every registered record in that space. A
+    sweep gets that delegation one of two ways:
+    - **The tenant supplies it** (recommended default). Antiphony asks per space, with a
+      `remote.recheck_requested` webhook carrying the space URI. The tenant answers with
+      `POST /api/v1/remote-posts/recheck { space, delegationToken, clientAttestation? }`,
+      using any member session it holds. Antiphony spends the token at once and rechecks that
+      space's rows within the credential's life. A tenant can also call `recheck` on its own
+      schedule. A space whose rechecks go unanswered keeps its rows and is reported, as an
+      unreachable repo is.
+    - **Antiphony delegates as itself**, where a space admits Antiphony's service DID
+      (§4.2's alternative). Then the sweep needs nothing from the tenant.
+  - **Space, before Phase C, or a space row whose tenant never supplies a delegation:**
+    Antiphony can't read the record, so the tenant's `DELETE` is the only signal. Phase B's
+    registration says so, and a tenant that can't commit to sending it shouldn't use Phase B
+    for member records.
 - **Gone vs unreachable** follows the pin validator:
-  - **gone** is `RecordNotFound`, a tombstoned or deactivated DID, or a space that has been
-    deleted;
+  - **gone** is `RecordNotFound` (for a space record, read with a valid credential), a
+    tombstoned or deactivated DID, or `SpaceDeleted` from `getSpaceCredential`. The reference
+    host answers `SpaceDeleted` for a deleted space with or without a delegation;
+  - **not gone: `SpaceNotFound` from `getSpaceCredential`.** The reference host gives that
+    same answer to a delegation from someone who isn't, or is no longer, a member, so that a
+    refusal says nothing about the space. It means "this delegation can't read it", never "the
+    space is gone". The recheck waits for another delegation;
   - anything else is **unreachable**.
   
   A row is removed only after it reads **gone** on two sweeps at least an hour apart, or at
   once on the tenant's `DELETE`. An unreachable PDS never deletes anything. If a PDS stays
   unreachable for 30 days, the row is kept but stops being served (the view says
   `unavailable`), and it is reported.
+- **Revocation lags by up to a credential's life.** A credential issued before a member's
+  removal kept reading the writer's blob afterwards in the conformance run. Hosts can cut it
+  short with `notifyCredentialRevoked`. A Phase C read is therefore as fresh as the 10 minutes
+  before it. That's the same order as signed playback's hour, and fine for a deletion sweep.
 - **Later: notifications instead of polling.** For public records, a Jetstream subscription
   filtered to `dev.antiphony.audio.post` and the repo DIDs in the index. For spaces,
-  `registerNotify` with the authority (hatk `notify.ts`). Both are best-effort, so the sweep
-  stays as the guarantee (hatk's "nothing here may be load-bearing").
+  `registerNotify` with the authority (hatk `notify.ts`). On the reference host it needs a
+  credential and a `service` DID with a resolvable endpoint, and a registration lasts a day,
+  so Antiphony needs a service DID for it as well. A `notifyWrite` carries no records: it says
+  when to ask for a delegation, not what changed. Both kinds of notification are best-effort,
+  so the sweep stays as the guarantee (hatk's "nothing here may be load-bearing").
 
 ### 8.2 Removing, and edits
 
@@ -406,21 +471,39 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
   exist (`lib/cid.ts`), and `getRecord` / `getBlob` are plain XRPC GETs. Recomputing a
   record's CID is `cidForRecord` (`lib/cid.ts`, `@ipld/dag-cbor`), already used for
   Antiphony's own records.
-- **Phase C needs `@atproto/space`**, for `getSpaceCredential`'s key binding and HTTP message
-  signatures (`createSpaceSigHeaders`). [`spaces.md`](./spaces.md) ("Update 2026-10-07")
-  recorded what adding it takes, and that still holds:
-  - **Pin an exact alpha.** Grain notes the reference alpha renamed the management methods
-    at `0.0.0-spaces-alpha-20261029171913` (`com.atproto.simplespace.*` became
-    `com.atproto.space.createSpace` and `com.atproto.memberspace.*`). Phase C only uses
-    `getDelegationToken`, `getSpaceCredential`, `getRecord` and `getBlob`, under
-    `com.atproto.space.*` in both, but pin a version at or after that one so the wire names
-    match what hosts serve.
+- **Phase C needs `@atproto/space`**, for:
+  - `getSpaceCredential`'s key binding and HTTP message signatures (`createSpaceSigHeaders`);
+  - the record MAC: `encapsulate`, `formatWantMacHeader`, `parseMacHeader` and
+    `verifyRecordMac`, using the header names `WANT_MAC_HEADER` and `MAC_HEADER`.
+
+  [`spaces.md`](./spaces.md) ("Update 2026-10-07") recorded what adding it takes. Checked again
+  2026-11-02:
+  - **Pin `0.0.0-spaces-alpha-20261029171913` exactly.** It is still the newest alpha of
+    `@atproto/space` and `@atproto/pds`. It renamed the management methods
+    (`com.atproto.simplespace.*` became `com.atproto.space.createSpace` and
+    `com.atproto.memberspace.*`). Phase C only uses `getDelegationToken`,
+    `getSpaceCredential`, `getRecord` and `getBlob`, which are `com.atproto.space.*` in both.
+    hatk pins the older `20261022141228`.
   - **Root `overrides`** for `@atproto/lex-data`, `lex-cbor`, `car`, `crypto`, `common` and
-    `syntax` at the same alpha. Without them npm dies mid-resolve on the `0.0.0` trap.
+    `syntax` at the same alpha. These six are enough for `@atproto/space` alone: a clean
+    install with them resolved in 5 s. Anything that pulls in the wider alpha tree (the
+    reference PDS, `@atproto/dev-env`) dies mid-resolve on the `0.0.0` trap unless every
+    `@atproto/*` package in it is overridden. Three of them (`jwk`, `jwk-jose`, `ws-client`)
+    have no alpha. That only matters for a test harness, never for core-api.
   - **`nodejs_compat`**, which core-api has.
-  - **zod 3 bundled beside zod 4.** Never pass a schema across the boundary.
-  - **Re-run the Workers probe** (mint, sign, verify) at the chosen version before relying on
-    it.
+  - **zod 3 bundled beside zod 4**: the alpha still depends on `zod ^3.23.8`. Never pass a
+    schema across the boundary.
+  - **Workers probe rerun 2026-11-02** at this pin, under core-api's settings
+    (`compatibility_date` 2025-11-01, `nodejs_compat`), in `wrangler dev`. All of these passed:
+    - a delegation (60 s) and a credential (600 s, `cnf.kid` set) minted and verified;
+    - a request signed, verified against its key, and refused against another key;
+    - the record MAC: encapsulation, the host's decapsulation, and the MAC verified;
+    - a space URI with a DID `skey` round-tripped through `AtUri.makeSpace`.
+  - **KEM keys in DID documents.** PLC publishes `#atproto_kem` the legacy way
+    (`EcdsaSecp256r1VerificationKey2019`, with a raw multibase key). Prefixing it with
+    `did:key:` fails, so convert it as `@atproto/identity`'s `getDidKeyFromMultibase` does.
+    Antiphony's DID resolver (`lib/app-did.ts`) has to learn the same conversion, without
+    taking `@atproto/identity` as a dependency.
   - `@atproto/syntax` is already at an exact alpha in core-api and `packages/core`. It moves
     with it, to one version.
 - **Not needed:** `@atproto/repo` to verify commit signatures on public records. Checking the
@@ -434,7 +517,7 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
 | :--- | :--- | :--- |
 | **A** *(built, 0.10.4)* | `remote_posts`; the transcript tenant column (§6); register, read, thread and delete for **public** records; Antiphony fetches (§4.1); processing, transcripts, playback and webhooks keyed by subject (§6); the deletion sweep for public records (§8) | Vox Pop org prompts under an org group's DID |
 | **B** *(built, 0.10.5)* | Space records with **tenant-pushed bytes** (§4.2); `remoteSpace` on upload; visibility by reference (§7) | Bardcast campaign posts and Vox Pop org reply spaces on a group host |
-| **C** *(held)* | **Delegation hand-off**: Antiphony reads spaces itself; the sweep covers space records; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
+| **C** *(verified; held for approval)* | **Delegation hand-off**: Antiphony reads spaces itself, with the record MAC; the sweep covers space records through tenant-supplied (or, opt-in, Antiphony's own) delegations; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
 | **D** | Notifications (Jetstream, `registerNotify`) to make the sweep rarely needed | Latency of deletion |
 | **E** | Publishing derived records, once D-7 is revisited | Third-party readers of transcripts |
 
@@ -553,19 +636,114 @@ Where the build differs from the sections above, or settles what they left open:
 - **Not built in Phase B:** Phase C (delegation hand-off, the sweep for space records,
   `@atproto/space`), the XRPC `registerPost`, and notifications.
 
+## Phase C verification (2026-11-02)
+
+Stage 1 of Phase C: checking its assumptions before any product code. There are three sources,
+in order of strength.
+
+1. **A conformance run of the reference implementation at the pin.** `@atproto/dev-env`
+   `0.0.0-spaces-alpha-20261029171913` ran in-process: one PLC and two PDS hosts, with the
+   reference PDS's own handlers.
+   - Host A holds a group, the space's authority, with a member-list space
+     (`game.bardcast.space.campaign/thornwood`).
+   - Host B holds a player, who is a member, and an outsider.
+   - "Antiphony" is a script holding no session, only a key it generated.
+
+   This is the conformance harness of `cross-repo-design.md` §4.3 step 4 without containers.
+   Docker was available but its VM (colima) was stopped, and dev-env made it unnecessary.
+   **25 of 25 checks passed:**
+
+   | Check | Result |
+   | :--- | :--- |
+   | Member's PDS mints a delegation (session auth) | 200 |
+   | **(a)** Authority issues a credential for it, bound to Antiphony's own key | 200 |
+   | The same delegation again | 400 `InvalidDelegationToken` (single use) |
+   | An outsider's delegation | 400 `SpaceNotFound` |
+   | No delegation, non-public space | 400 `SpaceNotFound` |
+   | Writer's DID document has `#atproto_kem` | yes, in the legacy key form (§12) |
+   | Signed `getRecord` on the **writer's** host, without a MAC request | 400 `BadSpaceMac` |
+   | The same with a MAC request: record returned, MAC verified | 200 |
+   | The record hashes to the CID the host reports (`$link` blob refs) | yes, so §3's check carries over |
+   | A signature for the wrong audience | 401 `BadSpaceAudience` |
+   | **(c)** `getBlob` on the writer's host, with the authority's credential | 200 |
+   | `getBlob` for a blob no space record references | 400 `BlobNotFound` |
+   | **(b)** A service DID with no PDS, not yet admitted, delegating as itself | 400 `SpaceNotFound` |
+   | **(b)** Admitted as a read-only member: two self-minted delegations | 200, 200 |
+   | **(b)** That credential reads the writer's blob | 200 |
+   | A credential issued before the member's removal, used after it | 200 (lags until expiry) |
+   | The removed member's new delegation | 400 `SpaceNotFound` (same as a missing space) |
+   | Record deleted, read with a valid credential | 400 `RecordNotFound` |
+   | Space deleted, credential asked for | 400 `SpaceDeleted` |
+
+2. **The reference PDS's source** at the pin (`getSpaceCredential`, `getDelegationToken`,
+   `getRecord`, `getBlob`, `registerNotify`, the auth verifier, the space policy manager) and
+   `@atproto/space` (`credential.js`, `kem.js`, `mac.js`). These give the reasons behind the
+   results:
+   - token lifetimes: delegation 60 s and single use, credential 600 s with a 3600 s cap;
+   - a member-list policy admits any member with read, and its `allowedApps` gates on a
+     verified client attestation;
+   - a managed space defers to its managing app's `checkUserAccess`, which denies when the app
+     can't be reached;
+   - a refused user is answered `SpaceNotFound` on purpose.
+3. **Grain and hatk** at the commits §2 cites (`0eb252c`, `2174631`; neither has moved).
+   - hatk's `credential.ts` and `mac.ts` match the reference flow, and hatk already sends the
+     MAC request on `getRecord`.
+   - Grain reads opensocial group pools and checks membership through member delegations,
+     against the opensocial host in its dev stack and in production.
+   - Grain's `groups.test.ts` runs against a mocked server, so it shows Grain's assumptions,
+     not the host's behaviour.
+
+**What it can't show.** That an opensocial group host behaves like the reference PDS. Its code
+is in the unreachable proposal repo, and its dev stack can't be stood up from Grain alone: the
+group host is `apps/group` there. Grain's production use is the evidence that it does, for
+member delegations at least. The managed-space case, where a host defers to a managing app,
+behaves differently: there the app's `checkUserAccess` answers for Antiphony too.
+
+**Recommendation: go for Phase C**, built against the reference behaviour. These are the
+changes from the design above:
+
+1. **The record MAC on every space `getRecord`**, with KEM keys read from DID documents in
+   both key forms (§12).
+2. **`clientAttestation`, optional, beside `delegationToken`** on registration and on recheck,
+   for spaces that restrict apps.
+3. **The sweep for space rows runs on delegations**, never on a held credential (§8.1):
+   - by default, a `remote.recheck_requested` webhook per space, answered by
+     `POST /api/v1/remote-posts/recheck`;
+   - opt-in, Antiphony's own service DID as a read-only member.
+
+   The second needs a decision (§4.2's alternative) and a service DID. It can follow Phase C.
+4. **`SpaceNotFound` at the exchange is never "gone"**; `SpaceDeleted` and `RecordNotFound` are.
+5. **Registration answers what the exchange says.** A refused delegation is a 403. It keeps the
+   host's ambiguity and doesn't claim the space is missing. An unreachable host is a 503, as
+   today.
+6. **Phase B stays** for tenants that can't mint delegations (no space scope yet), and a pushed
+   row upgrades to `fetched` on its first successful credentialed read.
+7. **Rerun the conformance script against a real opensocial host** before the first group uses
+   it. The script is not in this repo yet; Phase C adds it as the harness.
+
 ## 14. Open questions
 
 1. **Players without spaces support** (§10). That's Bardcast's call, and it should be made
    before the first table becomes a group.
-2. **The opensocial proposal**, still unreachable. Specifically:
-   - whether a group host issues credentials for its spaces to a delegation from any admitted
-     member (what Phase C assumes, and what hatk does);
-   - whether a service can be admitted as a reader (D-3's alternative);
-   - whether `getBlob` on a writer's PDS serves a blob to a credential the group's host
-     issued.
-   
-   Verify against a running opensocial host before building Phase C. The conformance harness
-   in `cross-repo-design.md` §4.3 step 4 is the place to do it.
+2. **The opensocial proposal.** **Answered 2026-11-02 for the reference implementation**
+   ("Phase C verification"). Still open for an opensocial group host itself. The proposal is
+   still unreachable: `tangled.org/opensocial.group/proposal` answered 502 over HTTP and git.
+   - **Credentials for any admitted member's delegation:** yes, on the reference host for a
+     member-list space, as hatk and Grain assume. Grain's membership check against the
+     opensocial host is exactly this exchange, so the opensocial host behaves the same way at
+     least for its members space.
+   - **A service admitted as a reader:** yes on the reference host, as a read-only member,
+     with no PDS account (§4.2's alternative). Whether an opensocial host will admit a
+     non-person DID is unverified.
+   - **`getBlob` on a writer's PDS for a credential the authority's host issued:** yes. The
+     writer's host checks the signature against the authority's `#atproto` key and the request
+     signature against the bound key, and serves only blobs that a record in that space
+     references.
+   - **The sweep within a credential's life:** no. Credentials last 10 minutes and need a new
+     delegation each time (§8.1's revision).
+
+   Before Phase C ships to a group on a real opensocial host, rerun the conformance script
+   against that host. That is the one step the reference run can't stand in for.
 3. **Who may register a URI.** Any tenant may register any record it can name.
    - **Public records:** Antiphony fetches and checks the record itself, so a tenant learns
      nothing it couldn't fetch.
