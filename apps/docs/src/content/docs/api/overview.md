@@ -84,7 +84,11 @@ A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` 
 
 ## DIDs your app acts for
 
-Your app writes under its own DID, pinned when it was onboarded. To also act for a group, such as a game table or an organization with a DID of its own, register that DID with `PUT /api/v1/dids/{did}` and `{ "role": "group", "subjectRef": "<your id for it>" }`.
+Your app writes under its own DID, pinned when it was onboarded. To also act for another DID whose document names this Antiphony, such as one your app created for a game table or an organization, register it with `PUT /api/v1/dids/{did}` and `{ "role": "group", "subjectRef": "<your id for it>" }`.
+
+:::note[Not for opensocial groups]
+An [opensocial](https://tangled.org/opensocial.group/proposal) group's DID names its group host as its PDS, never Antiphony, so it can't be registered here, and records under it live on the group's host. Processing audio that lives in another repo, such as a group's or a member's, is planned as audio-service mode; see [the decision record](https://github.com/bbthorson/antiphony/blob/master/specs/audio-service-and-groups.md).
+:::
 
 - **The DID's document must name this Antiphony as its space host** (`#atproto_space_host`), as your app DID's does. Antiphony checks before keeping the registration: `400 DID_CUSTODY_DISPROVED` if it doesn't, `503 DID_UNREACHABLE` if the document can't be read right now.
 - **A DID belongs to one app.** Another app's DID is `409 DID_TAKEN`.

@@ -12,6 +12,9 @@ import {
     validateAppDid,
     ensureTenantPin,
     revalidateAllPins,
+    revalidateRegisteredDids,
+    ensureDidCustody,
+    resetDidCustodyCache,
 } from './app-did.js';
 import { didDocumentHash } from './did-document-hash.js';
 
@@ -776,5 +779,52 @@ describe('revalidateAllPins — the drift cron', () => {
         const { changes } = await revalidateAllPins({ fetchImpl: okFetch() });
         expect(changes).toHaveLength(1);
         expect(changes[0].acknowledgement.status).toBe('no-baseline');
+    });
+});
+
+describe('revalidateRegisteredDids — the registry half of the drift cron', () => {
+    afterEach(() => resetDidCustodyCache());
+
+    const HOST = 'api.antiphony.dev';
+    const registered = [{ did: DID, originAppId: 'bardcast' }];
+
+    it('refuses to run without an expected host, as the write path does', async () => {
+        await expect(revalidateRegisteredDids(registered, { fetchImpl: okFetch() })).rejects.toThrow(/ANTIPHONY_PDS_HOST/);
+    });
+
+    it('refreshes the snapshot for a DID that still proves custody, so its next write is served warm', async () => {
+        const { kv, store } = fakeKv();
+        await expect(revalidateRegisteredDids(registered, { fetchImpl: okFetch(), expectedPdsHost: HOST, kv })).resolves.toEqual([]);
+        expect(store.has(`did:${DID}`)).toBe(true);
+
+        // A write now needs no fetch at all.
+        const fetchImpl = deadFetch();
+        await ensureDidCustody(DID, { fetchImpl, expectedPdsHost: HOST });
+        expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('reports a DID that moved and evicts it, so its next write fails closed', async () => {
+        const { kv, store } = fakeKv();
+        await revalidateRegisteredDids(registered, { fetchImpl: okFetch(), expectedPdsHost: HOST, kv });
+
+        const failures = await revalidateRegisteredDids(registered, {
+            fetchImpl: okFetch(doc('group-host.example')),
+            expectedPdsHost: HOST,
+            kv,
+        });
+        expect(failures).toEqual([expect.objectContaining({ did: DID, originAppId: 'bardcast', kind: 'disproof' })]);
+        expect(store.has(`did:${DID}`)).toBe(false);
+        await expect(
+            ensureDidCustody(DID, { fetchImpl: okFetch(doc('group-host.example')), expectedPdsHost: HOST }),
+        ).rejects.toThrow();
+    });
+
+    it('reports an unreachable document without evicting the last proof', async () => {
+        const { kv, store } = fakeKv();
+        await revalidateRegisteredDids(registered, { fetchImpl: okFetch(), expectedPdsHost: HOST, kv });
+
+        const failures = await revalidateRegisteredDids(registered, { fetchImpl: deadFetch(), expectedPdsHost: HOST, kv });
+        expect(failures).toEqual([expect.objectContaining({ did: DID, kind: 'unreachable' })]);
+        expect(store.has(`did:${DID}`)).toBe(true);
     });
 });
