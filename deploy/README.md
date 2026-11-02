@@ -175,6 +175,20 @@ applied in order with a `schema_migrations` ledger, one transaction per file,
 and a checksum per file so an already-applied migration cannot be edited. Run
 it with `-- --dry-run` first to see what is pending.
 
+**The DID registry (contract 0.10.2–0.10.3) needs migrations 0004 and 0005**
+(`tenant_dids`, and the `authority` columns and foreign keys) and
+`ANTIPHONY_PDS_HOST`. In production both are in place: the `Deploy core-api`
+workflow applies pending migrations before it deploys (step "Apply pending
+schema migrations"; it ran for #225 and #226 on 2026-11-01), and
+`ANTIPHONY_PDS_HOST` is a var in `apps/core-api/wrangler.jsonc`, which the Worker
+refuses to start without (`assertRequiredConfig`). A self-hosted deploy must do
+both itself. Without the migrations, `/api/v1/dids` and any write naming an
+`authority` fail on the missing table or column. Outside the Worker (a Node
+harness or tests, where the startup check doesn't run) a missing
+`ANTIPHONY_PDS_HOST` makes `/api/v1/dids` answer `503 DIDS_UNAVAILABLE` and
+writes under a registered DID `503 AUTHORITY_CUSTODY_UNPROVEN`, because without
+an expected host a tenant could register anyone's DID.
+
 ⚠️ On a database that ALREADY has the schema — anything applied with the old
 `psql -f db/schema.sql` — run `-- --baseline` once instead, which records the
 chain as applied without executing it. See `apps/core-api/db/README.md`.
