@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.10.4",
+    "version": "0.10.5",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read. Deletes are the exception: who may delete is the app's decision, so they need only the service token.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -4078,7 +4078,7 @@
           "Remote posts"
         ],
         "summary": "Register a post held in another repo",
-        "description": "Registers a `dev.antiphony.audio.post` record that lives in a repo Antiphony does not host, so its audio can be processed and played here. Antiphony reads the record from the repo its URI names (the DID's `#atproto_pds`), never from the request: it recomputes the record CID and requires it to equal `cid` (409 `REMOTE_CID_MISMATCH` if the record changed), checks it is an audio post, then copies the blob after checking its bytes hash to the blob ref and are audio (422 `REMOTE_RECORD_INVALID` otherwise). A record the repo says does not exist is 404 `REMOTE_RECORD_NOT_FOUND`; a repo that cannot be read right now is 503 `REMOTE_REPO_UNREACHABLE`. Phase A takes public repo records only: a space record URI is 400 `REMOTE_URI_UNSUPPORTED`. Repeating a registration is a no-op (200); a new `cid` for the same URI takes the edit (200). If the tenant already uploaded the same bytes, they aren't downloaded again; bytes stored as private audio in a space are refused (409 `REMOTE_BLOB_PRIVATE`). `processing` opts into stages as on `POST /api/v1/posts`; stage results arrive by webhook (`stage.settled`, with `uri` and no `postId`).",
+        "description": "Registers a `dev.antiphony.audio.post` record that lives in a repo Antiphony does not host, so its audio can be processed and played here. Antiphony reads the record from the repo its URI names (the DID's `#atproto_pds`), never from the request: it recomputes the record CID and requires it to equal `cid` (409 `REMOTE_CID_MISMATCH` if the record changed), checks it is an audio post, then copies the blob after checking its bytes hash to the blob ref and are audio (422 `REMOTE_RECORD_INVALID` otherwise). A record the repo says does not exist is 404 `REMOTE_RECORD_NOT_FOUND`; a repo that cannot be read right now is 503 `REMOTE_REPO_UNREACHABLE`. If the tenant already uploaded the same bytes they are not downloaded again (`bytesFrom: \"upload\"` requires that), except that bytes stored private for a space are downloaded from the record's repo and checked, then turned public: a verified public record makes its audio public here, for good, on the original and every processed variant.\n\n**Space records** (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`) are pushed, because Antiphony can't read a space yet. Send `record`, the body as the tenant read it, and first upload its audio with `remoteSpace` naming the same space (`POST /api/v1/audio/upload`). Antiphony checks that `record` hashes to `cid` and is an audio post (422 `REMOTE_RECORD_INVALID`), and that its blob is an upload of this tenant stored private for that space (422 if not uploaded; 409 `REMOTE_BLOB_SPACE_MISMATCH` if it is private for another space, or public with no verified public record referencing it). That proves content, not that the tenant can read the space: the view says `verified: \"pushed\"`. A pushed record's audio stays private and plays from signed, expiring URLs only. **Antiphony cannot see a space record deleted, so the tenant's `DELETE` is the only signal** (`deletionCheck: \"tenant\"` in the view): a tenant that can't commit to sending it shouldn't register members' records this way. `bytesFrom: \"fetch\"` on a space record is 400 `REMOTE_URI_UNSUPPORTED`; `record` missing for a space record, or sent for a repo record, is 400 `REMOTE_REQUEST_INVALID`.\n\nRepeating a registration is a no-op (200); a new `cid` for the same URI takes the edit (200). `processing` opts into stages as on `POST /api/v1/posts`; stage results arrive by webhook (`stage.settled`, with `uri` and no `postId`).",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4113,6 +4113,19 @@
                       "reprocess": {
                         "type": "boolean"
                       }
+                    }
+                  },
+                  "bytesFrom": {
+                    "type": "string",
+                    "enum": [
+                      "fetch",
+                      "upload"
+                    ]
+                  },
+                  "record": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
                     }
                   }
                 },
@@ -4160,6 +4173,47 @@
                           "type": "string",
                           "maxLength": 2048,
                           "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "space": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 317,
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                            },
+                            "skey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[A-Za-z0-9._:~-]+$"
+                            },
+                            "authority": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "skey",
+                            "authority"
+                          ]
+                        },
+                        "verified": {
+                          "type": "string",
+                          "enum": [
+                            "fetched",
+                            "pushed"
+                          ]
+                        },
+                        "deletionCheck": {
+                          "type": "string",
+                          "enum": [
+                            "sweep",
+                            "tenant"
+                          ]
                         },
                         "record": {
                           "type": "object",
@@ -4372,6 +4426,8 @@
                         "cid",
                         "kind",
                         "authorDid",
+                        "verified",
+                        "deletionCheck",
                         "record",
                         "available",
                         "registeredAt"
@@ -4422,6 +4478,47 @@
                           "maxLength": 2048,
                           "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
                         },
+                        "space": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 317,
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                            },
+                            "skey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[A-Za-z0-9._:~-]+$"
+                            },
+                            "authority": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "skey",
+                            "authority"
+                          ]
+                        },
+                        "verified": {
+                          "type": "string",
+                          "enum": [
+                            "fetched",
+                            "pushed"
+                          ]
+                        },
+                        "deletionCheck": {
+                          "type": "string",
+                          "enum": [
+                            "sweep",
+                            "tenant"
+                          ]
+                        },
                         "record": {
                           "type": "object",
                           "properties": {
@@ -4633,6 +4730,8 @@
                         "cid",
                         "kind",
                         "authorDid",
+                        "verified",
+                        "deletionCheck",
                         "record",
                         "available",
                         "registeredAt"
@@ -4648,7 +4747,7 @@
             }
           },
           "400": {
-            "description": "Invalid body, or a URI that is not a plain audio post record (`REMOTE_URI_UNSUPPORTED`)",
+            "description": "Invalid body; a URI that is not an audio post record, or a space record to fetch (`REMOTE_URI_UNSUPPORTED`); `record` missing for a space record or sent for a repo record (`REMOTE_REQUEST_INVALID`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4786,7 +4885,7 @@
             }
           },
           "409": {
-            "description": "The record's CID is not `cid` (`REMOTE_CID_MISMATCH`), or its audio is private here (`REMOTE_BLOB_PRIVATE`)",
+            "description": "The record's CID is not `cid` (`REMOTE_CID_MISMATCH`), or a space record's audio is not stored private for its space (`REMOTE_BLOB_SPACE_MISMATCH`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4832,7 +4931,7 @@
             }
           },
           "422": {
-            "description": "Not an audio post, or its blob does not check out (`REMOTE_RECORD_INVALID`)",
+            "description": "Not an audio post, a pushed record that does not hash to `cid`, or a blob that does not check out or was not uploaded (`REMOTE_RECORD_INVALID`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4937,10 +5036,10 @@
               "type": "string",
               "maxLength": 512,
               "pattern": "^at:\\/\\/.+",
-              "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`."
+              "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`."
             },
             "required": true,
-            "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`.",
+            "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.",
             "name": "uri",
             "in": "query"
           }
@@ -4981,6 +5080,47 @@
                           "type": "string",
                           "maxLength": 2048,
                           "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "space": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 317,
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                            },
+                            "skey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[A-Za-z0-9._:~-]+$"
+                            },
+                            "authority": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "skey",
+                            "authority"
+                          ]
+                        },
+                        "verified": {
+                          "type": "string",
+                          "enum": [
+                            "fetched",
+                            "pushed"
+                          ]
+                        },
+                        "deletionCheck": {
+                          "type": "string",
+                          "enum": [
+                            "sweep",
+                            "tenant"
+                          ]
                         },
                         "record": {
                           "type": "object",
@@ -5193,6 +5333,8 @@
                         "cid",
                         "kind",
                         "authorDid",
+                        "verified",
+                        "deletionCheck",
                         "record",
                         "available",
                         "registeredAt"
@@ -5405,10 +5547,10 @@
               "type": "string",
               "maxLength": 512,
               "pattern": "^at:\\/\\/.+",
-              "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`."
+              "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`."
             },
             "required": true,
-            "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`.",
+            "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.",
             "name": "uri",
             "in": "query"
           }
@@ -5483,6 +5625,47 @@
                           "type": "string",
                           "maxLength": 2048,
                           "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                        },
+                        "space": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 317,
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                            },
+                            "skey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[A-Za-z0-9._:~-]+$"
+                            },
+                            "authority": {
+                              "type": "string",
+                              "maxLength": 2048,
+                              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "skey",
+                            "authority"
+                          ]
+                        },
+                        "verified": {
+                          "type": "string",
+                          "enum": [
+                            "fetched",
+                            "pushed"
+                          ]
+                        },
+                        "deletionCheck": {
+                          "type": "string",
+                          "enum": [
+                            "sweep",
+                            "tenant"
+                          ]
                         },
                         "record": {
                           "type": "object",
@@ -5695,6 +5878,8 @@
                         "cid",
                         "kind",
                         "authorDid",
+                        "verified",
+                        "deletionCheck",
                         "record",
                         "available",
                         "registeredAt"
@@ -5900,17 +6085,17 @@
           "Remote posts"
         ],
         "summary": "Remove a registered remote post",
-        "description": "Removes the calling tenant's registration and Antiphony's copy: the index entry, the transcript, and the audio and its variants, unless another post still uses them. The record in its own repo is untouched. A content-free ledger entry is kept, so a later read is 410. Idempotent: `deleted` is false when there was no registration. Antiphony also removes a registration on its own once the record is gone from its repo, and sends `remote.gone`.",
+        "description": "Removes the calling tenant's registration and Antiphony's copy: the index entry, the transcript, and the audio and its variants, unless another post still uses them. The record in its own repo is untouched. A content-free ledger entry is kept, so a later read is 410. Idempotent: `deleted` is false when there was no registration. For a repo record Antiphony also removes a registration on its own once the record is gone from its repo, and sends `remote.gone`. **A space record can't be read here before Phase C, so this DELETE is the only way its copy goes**: send it when the member deletes the record.",
         "parameters": [
           {
             "schema": {
               "type": "string",
               "maxLength": 512,
               "pattern": "^at:\\/\\/.+",
-              "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`."
+              "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`."
             },
             "required": true,
-            "description": "The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`.",
+            "description": "The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.",
             "name": "uri",
             "in": "query"
           }
@@ -6135,6 +6320,47 @@
                               "maxLength": 2048,
                               "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
                             },
+                            "space": {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "minLength": 3,
+                                  "maxLength": 317,
+                                  "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                                },
+                                "skey": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 512,
+                                  "pattern": "^[A-Za-z0-9._:~-]+$"
+                                },
+                                "authority": {
+                                  "type": "string",
+                                  "maxLength": 2048,
+                                  "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "skey",
+                                "authority"
+                              ]
+                            },
+                            "verified": {
+                              "type": "string",
+                              "enum": [
+                                "fetched",
+                                "pushed"
+                              ]
+                            },
+                            "deletionCheck": {
+                              "type": "string",
+                              "enum": [
+                                "sweep",
+                                "tenant"
+                              ]
+                            },
                             "record": {
                               "type": "object",
                               "properties": {
@@ -6346,6 +6572,8 @@
                             "cid",
                             "kind",
                             "authorDid",
+                            "verified",
+                            "deletionCheck",
                             "record",
                             "available",
                             "registeredAt"
@@ -6375,6 +6603,47 @@
                                 "type": "string",
                                 "maxLength": 2048,
                                 "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                              },
+                              "space": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 317,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                                  },
+                                  "skey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 512,
+                                    "pattern": "^[A-Za-z0-9._:~-]+$"
+                                  },
+                                  "authority": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "skey",
+                                  "authority"
+                                ]
+                              },
+                              "verified": {
+                                "type": "string",
+                                "enum": [
+                                  "fetched",
+                                  "pushed"
+                                ]
+                              },
+                              "deletionCheck": {
+                                "type": "string",
+                                "enum": [
+                                  "sweep",
+                                  "tenant"
+                                ]
                               },
                               "record": {
                                 "type": "object",
@@ -6587,6 +6856,8 @@
                               "cid",
                               "kind",
                               "authorDid",
+                              "verified",
+                              "deletionCheck",
                               "record",
                               "available",
                               "registeredAt"
@@ -6936,7 +7207,7 @@
           "Audio"
         ],
         "summary": "Upload audio (authenticated)",
-        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post. Optional `spaceType` + `skey` fields store it privately in one of the tenant's spaces, with an optional `spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes decides where they live, and the response's `space` says which.",
+        "description": "Authenticated multipart/form-data upload with a single `file` field (max 25MB; types: m4a, mp4, mpeg, webm, ogg, wav). Stores the bytes content-addressed and returns the blob ref (`{ $type: \"blob\", ref: { $link: \"<cid>\" }, mimeType, size }`) to embed on a post. Optional `spaceType` + `skey` fields store it privately in one of the tenant's spaces, with an optional `spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes decides where they live, and the response's `space` says which. Optional `remoteSpace` (`at://{authority}/space/{type}/{skey}`, instead of the other space fields) stores it privately for a space held outside Antiphony, such as a group's space on its group host, before registering the space record with `PUT /api/v1/remote-posts`; no Antiphony space is needed.",
         "responses": {
           "200": {
             "description": "Stored audio blob ref",
@@ -7033,7 +7304,7 @@
             }
           },
           "400": {
-            "description": "Missing/oversized file, unsupported audio type, or an invalid space",
+            "description": "Missing/oversized file, unsupported audio type, an invalid space, or a `remoteSpace` that is hosted here",
             "content": {
               "application/json": {
                 "schema": {

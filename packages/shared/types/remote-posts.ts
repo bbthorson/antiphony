@@ -2,32 +2,70 @@ import { z } from 'zod';
 import { AudioEmbedViewSchema, PostRecordPublicSchema, ReplyRefSchema, StrongRefSchema } from './audio';
 import { DidStringSchema } from './dids';
 import { ProcessingRequestSchema } from './processing';
+import { SpaceKeySchema } from './spaces';
 
 /**
  * **Remote posts** (specs/audio-service-mode.md): `dev.antiphony.audio.post`
  * records that live in a repo Antiphony doesn't host, such as a player's PDS
  * or a group's repo on its group host. A tenant registers one by URI and CID;
  * Antiphony fetches the record from where the URI says it lives, copies and
- * processes its audio, and serves it. Phase A covers public repo records.
+ * processes its audio, and serves it. Phase A covers public repo records;
+ * Phase B adds space records, whose body and bytes the tenant pushes.
  *
  * Light checks only, so this package stays dependency-free; `@antiphony/core`
  * parses the URI with its own rules before anything is fetched.
  */
 
-/** A plain record URI, `at://{did}/{collection}/{rkey}`. Phase A has no space records. */
+/**
+ * A remote post's URI: a repo record, `at://{did}/{collection}/{rkey}`, or a
+ * space record, `at://{authority}/space/{type}/{skey}/{authorDid}/{collection}/{rkey}`.
+ */
 export const RemotePostUriSchema = StrongRefSchema.shape.uri;
+
+/**
+ * A space held outside Antiphony, as a URI: `at://{authority}/space/{type}/{skey}`.
+ * The authority is the group's DID; it is never registered here.
+ */
+export const RemoteSpaceUriSchema = z
+    .string()
+    .max(512)
+    .regex(/^at:\/\/did:[a-z]+:[^/]+\/space\/[^/]+\/[^/]+$/, 'Must be at://{did}/space/{type}/{skey}');
+
+/** A space held outside Antiphony: its authority's DID, type and key. */
+export const RemoteSpaceSchema = SpaceKeySchema.extend({ authority: DidStringSchema });
+export type RemoteSpace = z.infer<typeof RemoteSpaceSchema>;
+
+/**
+ * Where Antiphony gets a registered record and its bytes:
+ *  - `fetch`: from the repo the URI names. The default for a repo record, and
+ *    the only way a repo record is read.
+ *  - `upload`: the bytes are an earlier `POST /api/v1/audio/upload` of this
+ *    tenant, and nothing is downloaded. The default for a space record, which
+ *    Antiphony can't read: the tenant sends the record in `record` too.
+ */
+export const RemoteBytesFromSchema = z.enum(['fetch', 'upload']);
+export type RemoteBytesFrom = z.infer<typeof RemoteBytesFromSchema>;
 
 /** `PUT /api/v1/remote-posts`: register a record held elsewhere. */
 export const RegisterRemotePostRequestSchema = z.object({
-    /** The record's URI. Antiphony fetches it from the repo the URI names. */
+    /** The record's URI. Antiphony fetches a repo record from the repo the URI names. */
     uri: RemotePostUriSchema,
     /**
      * The record CID the tenant expects. Antiphony recomputes the CID of the
-     * record it fetched, and refuses a mismatch (the record changed since).
+     * record it fetched (or, for a space record, of `record`), and refuses a
+     * mismatch.
      */
     cid: z.string().min(1).max(128),
     /** Opt into processing stages, as on `POST /api/v1/posts`. */
     processing: ProcessingRequestSchema.optional(),
+    /** Where the bytes come from; defaults by URI (see `RemoteBytesFromSchema`). */
+    bytesFrom: RemoteBytesFromSchema.optional(),
+    /**
+     * The record as the tenant read it, in atproto's JSON form (`$link` for
+     * the blob ref). Required for a space record and refused for a repo
+     * record, which Antiphony reads itself. It must hash to `cid`.
+     */
+    record: z.record(z.string(), z.unknown()).optional(),
 });
 export type RegisterRemotePostRequest = z.infer<typeof RegisterRemotePostRequestSchema>;
 
@@ -84,8 +122,25 @@ export const RemotePostViewSchema = z.object({
     uri: RemotePostUriSchema,
     cid: z.string(),
     kind: z.enum(['prompt', 'reply']),
-    /** The DID whose repo holds the record. */
+    /** The DID whose repo holds the record: the URI's authority, or a space record's author segment. */
     authorDid: DidStringSchema,
+    /** The space the record is in, when it's a space record. Its audio plays from signed URLs only. */
+    space: RemoteSpaceSchema.optional(),
+    /**
+     * How Antiphony checked the record. `fetched`: it read the record and its
+     * blob from the source itself. `pushed`: the tenant sent them, and
+     * Antiphony checked only that they hash to the registered CID and blob
+     * ref. That proves content, not that the tenant could read the space.
+     */
+    verified: z.enum(['fetched', 'pushed']),
+    /**
+     * How a deletion of the source record reaches Antiphony. `sweep`: Antiphony
+     * rechecks the record hourly, and the tenant's DELETE is faster. `tenant`:
+     * Antiphony can't read the record, so the tenant's DELETE is the only
+     * signal; a tenant that can't commit to sending it shouldn't register a
+     * member's record this way.
+     */
+    deletionCheck: z.enum(['sweep', 'tenant']),
     record: PostRecordPublicSchema,
     /**
      * Playback, transcript and processing, as for a hosted post. Absent while

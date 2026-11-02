@@ -1,4 +1,5 @@
 import type { AudioPostRecord } from 'shared/types/audio';
+import type { ScopedSpaceKey } from 'shared/types/spaces';
 import {
     BYTE_MUTATING_STAGES,
     DERIVED_STAGES,
@@ -427,7 +428,7 @@ export class AudioProcessingService {
                         originAppId,
                         cleaned.bytes,
                         cleaned.mimeType,
-                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
+                        derivedSpace(post),
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     variantChanged = true;
@@ -474,7 +475,7 @@ export class AudioProcessingService {
                         originAppId,
                         trimmed.bytes,
                         trimmed.mimeType,
-                        post.space ? { type: post.space.type, skey: post.space.skey } : undefined,
+                        derivedSpace(post),
                     );
                     working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
                     variantChanged = true;
@@ -654,4 +655,19 @@ export class AudioProcessingService {
             await this.settle(originAppId, postId, subject, patch);
         }
     }
+}
+
+/**
+ * The marking a derived variant carries: the original's space, authority
+ * included, so a variant is private exactly where the original is and turns
+ * public with it (specs/audio-service-mode.md §7). An absent authority is the
+ * app DID, as on upload.
+ */
+function derivedSpace(post: AudioPostRecord): ScopedSpaceKey | undefined {
+    if (!post.space) return undefined;
+    return {
+        type: post.space.type,
+        skey: post.space.skey,
+        ...(post.authority !== undefined ? { authority: post.authority } : {}),
+    };
 }

@@ -4,9 +4,11 @@ import type { ResolvedProcessing } from 'shared/types/processing';
 import type { PublicRepoPort, RepoResult, FetchedRecord, FetchedBlob } from '../ports/public-repo';
 import type { RemotePostDependencies, RemotePostRow, RemoteCheckOutcome } from '../ports/remote-posts-dependencies';
 import type { RemoteNotifierPort, RemotePostEvent } from '../ports/remote-notifier';
+import type { ScopedSpaceKey } from 'shared/types/spaces';
 import {
     RemotePostService,
     parseRemotePostUri,
+    parseRemoteSpaceUri,
     sniffAudioMime,
     REMOTE_GONE_CONFIRM_MS,
     REMOTE_UNAVAILABLE_AFTER_MS,
@@ -15,6 +17,11 @@ import {
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 const URI = `at://${DID}/dev.antiphony.audio.post/3kremote00001`;
 const TENANT = 'vox-pop';
+
+/** A Bardcast table's group DID, and a player's record in its campaign space (Phase B). */
+const GROUP = 'did:plc:group0000000000000000000';
+const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
+const SPACE_URI = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
 
 /** Stand-in hashes: the real ones are DAG-CBOR and raw sha2-256 (core-api lib/cid.ts). */
 const recordCid = (value: unknown) => `bafyrec-${JSON.stringify(value).length}-${JSON.stringify(value).slice(-12)}`;
@@ -54,7 +61,10 @@ function fakeRepo() {
 function fakeDeps(clock: { now: Date }) {
     const rows = new Map<string, RemotePostRow>();
     const ledger = new Map<string, { deletedAt: Date; reason: 'tenant' | 'gone' }>();
-    const stored = new Map<string, { private: boolean }>();
+    const stored = new Map<string, { space: ScopedSpaceKey | null }>();
+    /** Blobs a verified public record references, by `${tenant} ${cid}`. */
+    const publicRefs = new Set<string>();
+    const madePublic: string[] = [];
     const transcripts = new Map<string, TranscriptEnrichmentRecord>();
     const key = (o: string, u: string) => `${o} ${u}`;
     const deps: RemotePostDependencies = {
@@ -91,6 +101,7 @@ function fakeDeps(clock: { now: Date }) {
         },
         async listForSweep(limit) {
             return [...rows.values()]
+                .filter((r) => r.verified === 'fetched')
                 .sort((a, b) => a.checkedAt.getTime() - b.checkedAt.getTime())
                 .slice(0, limit)
                 .map((r) => ({ originAppId: r.originAppId, uri: r.uri, cid: r.cid, goneAt: r.goneAt, unreachableSince: r.unreachableSince }));
@@ -118,29 +129,71 @@ function fakeDeps(clock: { now: Date }) {
         async storeBlob(o, cid) {
             const existing = stored.get(key(o, cid));
             if (existing) return existing;
-            stored.set(key(o, cid), { private: false });
-            return { private: false };
+            stored.set(key(o, cid), { space: null });
+            return { space: null };
+        },
+        async hasVerifiedPublicReference(o, cid) {
+            return (
+                publicRefs.has(key(o, cid)) ||
+                [...rows.values()].some((r) => r.originAppId === o && r.blob.cid === cid && r.verified === 'fetched' && !r.space)
+            );
+        },
+        async makeBlobPublic(o, cid) {
+            const s = stored.get(key(o, cid));
+            if (s) s.space = null;
+            madePublic.push(cid);
         },
         cidForBytes: async (bytes) => bytesCid(bytes),
         cidForRepoRecord: async (value) => recordCid(value),
         resolveAudioUrl: async (o, cid, isPrivate) => (isPrivate ? `https://api.example/audio/${cid}?sig=x` : `https://api.example/audio/${o}/${cid}`),
         now: () => clock.now,
     };
-    return { deps, rows, ledger, stored, transcripts };
+    return { deps, rows, ledger, stored, transcripts, publicRefs, madePublic };
 }
 
 describe('parseRemotePostUri', () => {
     it('accepts a plain audio post URI', () => {
-        expect(parseRemotePostUri(URI)).toEqual({ did: DID, collection: 'dev.antiphony.audio.post', rkey: '3kremote00001' });
+        expect(parseRemotePostUri(URI)).toEqual({
+            did: DID,
+            collection: 'dev.antiphony.audio.post',
+            rkey: '3kremote00001',
+            space: null,
+        });
+    });
+
+    it("accepts a space record, with the author segment as the record's repo", () => {
+        expect(parseRemotePostUri(SPACE_URI)).toEqual({
+            did: DID,
+            collection: 'dev.antiphony.audio.post',
+            rkey: '3kspace000001',
+            space: SPACE,
+        });
     });
 
     it.each([
-        ['a space record (Phase B)', `at://${DID}/space/game.bardcast.space.campaign/c1/${DID}/dev.antiphony.audio.post/3k`],
+        ['a space record whose author is not a DID', `at://${GROUP}/space/${SPACE.type}/c1/alice/dev.antiphony.audio.post/3k`],
+        ['a space record with a bad type', `at://${GROUP}/space/campaign/c1/${DID}/dev.antiphony.audio.post/3k`],
+        ['a space record in another collection', `at://${GROUP}/space/${SPACE.type}/c1/${DID}/app.bsky.feed.post/3k`],
         ['another collection', `at://${DID}/app.bsky.feed.post/3k`],
         ['a handle authority', 'at://alice.example/dev.antiphony.audio.post/3k'],
         ['not an at URI', 'https://example.com/x'],
     ])('refuses %s', (_label, uri) => {
         expect(() => parseRemotePostUri(uri)).toThrow(expect.objectContaining({ status: 400, code: 'REMOTE_URI_UNSUPPORTED' }));
+    });
+});
+
+describe('parseRemoteSpaceUri', () => {
+    it('parses at://{authority}/space/{type}/{skey}', () => {
+        expect(parseRemoteSpaceUri(`at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`)).toEqual(SPACE);
+    });
+
+    it.each([
+        `at://${GROUP}/space/${SPACE.type}`,
+        `at://alice.example/space/${SPACE.type}/t`,
+        `at://${GROUP}/space/notannsid/t`,
+        `at://${GROUP}/notspace/${SPACE.type}/t`,
+    ])('refuses %s', (uri) => {
+        expect(() => parseRemoteSpaceUri(uri)).toThrow(expect.objectContaining({ status: 400 }));
     });
 });
 
@@ -264,12 +317,45 @@ describe('RemotePostService', () => {
             });
         });
 
-        it('refuses bytes already stored as private: Phase A never changes visibility (409)', async () => {
+        it('turns private bytes public on a verified public record, after its repo serves them (§7)', async () => {
             const cid = r.publish(URI, audioRecord());
-            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { private: true });
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+
+            const { row } = await service.register(TENANT, { uri: URI, cid, bytesFrom: 'upload' });
+
+            // Downloaded and checked even with bytesFrom "upload": a public record
+            // naming a CID proves nothing until its repo has those bytes.
+            expect(r.repo.getBlob).toHaveBeenCalledWith(DID, bytesCid(MP4), expect.any(Number));
+            expect(f.madePublic).toEqual([bytesCid(MP4)]);
+            expect(row.blobPrivate).toBe(false);
+        });
+
+        it("leaves private bytes private when the public record's repo doesn't serve them", async () => {
+            const cid = r.publish(URI, audioRecord());
+            r.blobs.clear();
+            f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+
             await expect(service.register(TENANT, { uri: URI, cid })).rejects.toMatchObject({
-                status: 409,
-                code: 'REMOTE_BLOB_PRIVATE',
+                status: 422,
+                code: 'REMOTE_RECORD_INVALID',
+            });
+            expect(f.madePublic).toEqual([]);
+        });
+
+        it('with bytesFrom "upload", refuses a repo record whose bytes were never uploaded', async () => {
+            const cid = r.publish(URI, audioRecord());
+            await expect(service.register(TENANT, { uri: URI, cid, bytesFrom: 'upload' })).rejects.toMatchObject({
+                status: 422,
+                code: 'REMOTE_RECORD_INVALID',
+            });
+            expect(r.repo.getBlob).not.toHaveBeenCalled();
+        });
+
+        it('refuses a record body for a repo record, which Antiphony reads itself (400)', async () => {
+            const cid = r.publish(URI, audioRecord());
+            await expect(service.register(TENANT, { uri: URI, cid, record: audioRecord() })).rejects.toMatchObject({
+                status: 400,
+                code: 'REMOTE_REQUEST_INVALID',
             });
         });
 
@@ -285,6 +371,121 @@ describe('RemotePostService', () => {
             expect(result.outcome).toBe('updated');
             expect(result.row.processing).toMatchObject({ transcribe: 'pending', waveform: 'pending' });
             expect(result.dispatch).toBe(true);
+        });
+    });
+
+    describe('register: a pushed space record (Phase B)', () => {
+        const uploaded = (space: ScopedSpaceKey | null = SPACE) => f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space });
+        const push = (over: Partial<Parameters<RemotePostService['register']>[1]> = {}) => {
+            const record = audioRecord();
+            return service.register(TENANT, { uri: SPACE_URI, cid: recordCid(record), record, ...over });
+        };
+
+        it('indexes a record whose body hashes to its CID and whose bytes were uploaded for its space', async () => {
+            uploaded();
+            const { row, outcome } = await push();
+
+            expect(outcome).toBe('created');
+            expect(row).toMatchObject({ repoDid: DID, space: SPACE, verified: 'pushed', blobPrivate: true });
+            // Antiphony can't read the space: nothing is fetched.
+            expect(r.repo.getRecord).not.toHaveBeenCalled();
+            expect(r.repo.getBlob).not.toHaveBeenCalled();
+
+            const [view] = await service.hydrate(TENANT, [row]);
+            expect(view).toMatchObject({ authorDid: DID, space: SPACE, verified: 'pushed', deletionCheck: 'tenant' });
+            expect(view.embed?.url).toContain('?sig=');
+        });
+
+        it('defaults to bytesFrom "upload", and refuses "fetch" until Antiphony can read spaces (400)', async () => {
+            uploaded();
+            await expect(push({ bytesFrom: 'fetch' })).rejects.toMatchObject({ status: 400, code: 'REMOTE_URI_UNSUPPORTED' });
+        });
+
+        it('requires the record body (400)', async () => {
+            await expect(service.register(TENANT, { uri: SPACE_URI, cid: 'bafyx' })).rejects.toMatchObject({
+                status: 400,
+                code: 'REMOTE_REQUEST_INVALID',
+            });
+        });
+
+        it('refuses a body that does not hash to the CID, or is not an audio post (422)', async () => {
+            uploaded();
+            await expect(push({ cid: 'bafyother' })).rejects.toMatchObject({ status: 422, code: 'REMOTE_RECORD_INVALID' });
+            const notAudio = { $type: 'dev.antiphony.audio.post', text: 'hi', createdAt: '2026-11-02T10:00:00.000Z' };
+            await expect(push({ record: notAudio, cid: recordCid(notAudio) })).rejects.toMatchObject({
+                status: 422,
+                code: 'REMOTE_RECORD_INVALID',
+            });
+        });
+
+        it('refuses audio this tenant never uploaded (422)', async () => {
+            await expect(push()).rejects.toMatchObject({ status: 422, code: 'REMOTE_RECORD_INVALID' });
+        });
+
+        it("refuses audio another tenant uploaded: blobs are per tenant", async () => {
+            f.stored.set(`bardcast ${bytesCid(MP4)}`, { space: SPACE });
+            await expect(push()).rejects.toMatchObject({ status: 422 });
+        });
+
+        it('refuses audio stored private for another space (409)', async () => {
+            uploaded({ ...SPACE, skey: 'elsewhere' });
+            await expect(push()).rejects.toMatchObject({ status: 409, code: 'REMOTE_BLOB_SPACE_MISMATCH' });
+            uploaded({ type: SPACE.type, skey: SPACE.skey });
+            await expect(push()).rejects.toMatchObject({ status: 409, code: 'REMOTE_BLOB_SPACE_MISMATCH' });
+        });
+
+        it('refuses audio stored public that no verified public record references (409)', async () => {
+            uploaded(null);
+            await expect(push()).rejects.toMatchObject({ status: 409, code: 'REMOTE_BLOB_SPACE_MISMATCH' });
+        });
+
+        it('accepts public audio a verified public record references, and still plays it signed', async () => {
+            uploaded(null);
+            f.publicRefs.add(`${TENANT} ${bytesCid(MP4)}`);
+            const { row } = await push();
+            expect(row.blobPrivate).toBe(true);
+            const [view] = await service.hydrate(TENANT, [row]);
+            expect(view.embed?.url).toContain('?sig=');
+        });
+
+        it('never turns a blob public', async () => {
+            uploaded();
+            await push();
+            expect(f.madePublic).toEqual([]);
+            expect(f.stored.get(`${TENANT} ${bytesCid(MP4)}`)).toEqual({ space: SPACE });
+        });
+
+        it('is a no-op for a repeat, and takes an edit with new audio', async () => {
+            uploaded();
+            await push({ processing: { transcribe: 'pending' } });
+            await expect(push()).resolves.toMatchObject({ outcome: 'unchanged' });
+
+            const newBytes = new Uint8Array([...MP4, 7]);
+            f.stored.set(`${TENANT} ${bytesCid(newBytes)}`, { space: SPACE });
+            const edited = audioRecord({ text: 'edited' }, newBytes);
+            const result = await push({ record: edited, cid: recordCid(edited) });
+            expect(result.outcome).toBe('updated');
+            expect(result.row.blob.cid).toBe(bytesCid(newBytes));
+            expect(result.row.processing).toMatchObject({ transcribe: 'pending' });
+        });
+
+        it('turns public when a verified public record with the same audio is registered after it', async () => {
+            uploaded();
+            await push();
+            const cid = r.publish(URI, audioRecord());
+            await service.register(TENANT, { uri: URI, cid });
+            expect(f.madePublic).toEqual([bytesCid(MP4)]);
+            // The space record still plays signed.
+            expect(f.rows.get(`${TENANT} ${SPACE_URI}`)!.blobPrivate).toBe(true);
+        });
+
+        it('is skipped by the sweep: the tenant DELETE is its only deletion signal', async () => {
+            uploaded();
+            await push();
+            const result = await service.sweep(10);
+            expect(result.checked).toBe(0);
+            expect(r.repo.getRecord).not.toHaveBeenCalled();
+            await expect(service.delete(TENANT, SPACE_URI)).resolves.toBe(true);
         });
     });
 

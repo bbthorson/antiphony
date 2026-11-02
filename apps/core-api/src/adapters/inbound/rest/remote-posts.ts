@@ -17,10 +17,12 @@ import { dispatchRemoteProcessing, resolveInitialProcessing } from '../../../lib
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 
 /**
- * Remote posts, mounted at `/api/v1/remote-posts` (specs/audio-service-mode.md,
- * Phase A): audio whose `dev.antiphony.audio.post` record lives in a repo
- * Antiphony doesn't host, such as a player's PDS or a group's repo on its
- * group host. Phase A covers public repo records.
+ * Remote posts, mounted at `/api/v1/remote-posts` (specs/audio-service-mode.md):
+ * audio whose `dev.antiphony.audio.post` record lives in a repo Antiphony
+ * doesn't host, such as a player's PDS or a group's repo on its group host.
+ * Public repo records are fetched here (Phase A). Space records are pushed by
+ * the tenant, record body and bytes, because Antiphony can't read a space
+ * before Phase C; for those the tenant's DELETE is the only deletion signal.
  *
  *   PUT    /                 — register a record by URI and CID
  *   GET    /?uri=            — one registered post
@@ -36,7 +38,11 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
 
 const UriQuerySchema = z.object({
-    uri: RemotePostUriSchema.openapi({ description: 'The record URI, `at://{did}/dev.antiphony.audio.post/{rkey}`.' }),
+    uri: RemotePostUriSchema.openapi({
+        description:
+            'The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record ' +
+            '`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.',
+    }),
 });
 
 const env = (c: { env: unknown }) => c.env as Record<string, unknown> | undefined;
@@ -57,17 +63,33 @@ const putRoute = createRoute({
         '`REMOTE_CID_MISMATCH` if the record changed), checks it is an audio post, then copies the blob after checking ' +
         'its bytes hash to the blob ref and are audio (422 `REMOTE_RECORD_INVALID` otherwise). A record the repo says ' +
         'does not exist is 404 `REMOTE_RECORD_NOT_FOUND`; a repo that cannot be read right now is 503 ' +
-        '`REMOTE_REPO_UNREACHABLE`. Phase A takes public repo records only: a space record URI is 400 ' +
-        '`REMOTE_URI_UNSUPPORTED`. Repeating a registration is a no-op (200); a new `cid` for the same URI takes the ' +
-        "edit (200). If the tenant already uploaded the same bytes, they aren't downloaded again; bytes stored as " +
-        'private audio in a space are refused (409 `REMOTE_BLOB_PRIVATE`). `processing` opts into stages as on ' +
-        '`POST /api/v1/posts`; stage results arrive by webhook (`stage.settled`, with `uri` and no `postId`).',
+        '`REMOTE_REPO_UNREACHABLE`. If the tenant already uploaded the same bytes they are not downloaded again ' +
+        '(`bytesFrom: "upload"` requires that), except that bytes stored private for a space are downloaded from the ' +
+        "record's repo and checked, then turned public: a verified public record makes its audio public here, for " +
+        'good, on the original and every processed variant.\n\n' +
+        '**Space records** (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`) are ' +
+        "pushed, because Antiphony can't read a space yet. Send `record`, the body as the tenant read it, and first " +
+        'upload its audio with `remoteSpace` naming the same space (`POST /api/v1/audio/upload`). Antiphony checks ' +
+        'that `record` hashes to `cid` and is an audio post (422 `REMOTE_RECORD_INVALID`), and that its blob is an ' +
+        'upload of this tenant stored private for that space (422 if not uploaded; 409 `REMOTE_BLOB_SPACE_MISMATCH` ' +
+        'if it is private for another space, or public with no verified public record referencing it). That proves ' +
+        "content, not that the tenant can read the space: the view says `verified: \"pushed\"`. A pushed record's " +
+        'audio stays private and plays from signed, expiring URLs only. **Antiphony cannot see a space record ' +
+        "deleted, so the tenant's `DELETE` is the only signal** (`deletionCheck: \"tenant\"` in the view): a " +
+        "tenant that can't commit to sending it shouldn't register members' records this way. `bytesFrom: " +
+        '"fetch"` on a space record is 400 `REMOTE_URI_UNSUPPORTED`; `record` missing for a space record, or sent ' +
+        'for a repo record, is 400 `REMOTE_REQUEST_INVALID`.\n\n' +
+        'Repeating a registration is a no-op (200); a new `cid` for the same URI takes the edit (200). ' +
+        '`processing` opts into stages as on `POST /api/v1/posts`; stage results arrive by webhook ' +
+        '(`stage.settled`, with `uri` and no `postId`).',
     middleware: [
         requireServiceToken(),
         rateLimit(RATE_LIMITS.writeAggregate),
         rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        // Room for a pushed space record: up to 3000 characters of text and a
+        // 1000-point waveform, with headroom for escaping and unknown fields.
         bodyLimit({
-            maxSize: 8 * 1024,
+            maxSize: 64 * 1024,
             onError: (c) => c.json(errorEnvelope(c, 'Request body too large'), 413),
         }),
     ] as const,
@@ -75,11 +97,20 @@ const putRoute = createRoute({
     responses: {
         200: jsonResponse(RemotePostViewSchema, 'Already registered (unchanged, or updated to the new CID)'),
         201: jsonResponse(RemotePostViewSchema, 'Registered'),
-        400: errorResponse('Invalid body, or a URI that is not a plain audio post record (`REMOTE_URI_UNSUPPORTED`)'),
+        400: errorResponse(
+            'Invalid body; a URI that is not an audio post record, or a space record to fetch (`REMOTE_URI_UNSUPPORTED`); ' +
+                '`record` missing for a space record or sent for a repo record (`REMOTE_REQUEST_INVALID`)',
+        ),
         401: errorResponse('Not authenticated'),
         404: errorResponse('The repo says the record does not exist (`REMOTE_RECORD_NOT_FOUND`)'),
-        409: errorResponse("The record's CID is not `cid` (`REMOTE_CID_MISMATCH`), or its audio is private here (`REMOTE_BLOB_PRIVATE`)"),
-        422: errorResponse('Not an audio post, or its blob does not check out (`REMOTE_RECORD_INVALID`)'),
+        409: errorResponse(
+            "The record's CID is not `cid` (`REMOTE_CID_MISMATCH`), or a space record's audio is not stored private for " +
+                'its space (`REMOTE_BLOB_SPACE_MISMATCH`)',
+        ),
+        422: errorResponse(
+            'Not an audio post, a pushed record that does not hash to `cid`, or a blob that does not check out or was ' +
+                'not uploaded (`REMOTE_RECORD_INVALID`)',
+        ),
         503: errorResponse('The repo could not be read right now (`REMOTE_REPO_UNREACHABLE`)'),
     },
 });
@@ -93,6 +124,8 @@ app.openapi(putRoute, async (c) => {
         uri: body.uri,
         cid: body.cid,
         ...(resolved ? { processing: resolved } : {}),
+        ...(body.bytesFrom ? { bytesFrom: body.bytesFrom } : {}),
+        ...(body.record ? { record: body.record } : {}),
     });
     if (dispatch) await dispatchRemoteProcessing(originAppId, body.uri, env(c));
     // Re-read so the view reflects any inline processing results.
@@ -245,8 +278,9 @@ const deleteRoute = createRoute({
         "Removes the calling tenant's registration and Antiphony's copy: the index entry, the transcript, and the " +
         'audio and its variants, unless another post still uses them. The record in its own repo is untouched. A ' +
         'content-free ledger entry is kept, so a later read is 410. Idempotent: `deleted` is false when there was ' +
-        'no registration. Antiphony also removes a registration on its own once the record is gone from its repo, ' +
-        'and sends `remote.gone`.',
+        'no registration. For a repo record Antiphony also removes a registration on its own once the record is gone ' +
+        "from its repo, and sends `remote.gone`. **A space record can't be read here before Phase C, so this DELETE " +
+        'is the only way its copy goes**: send it when the member deletes the record.',
     middleware: [
         requireServiceToken(),
         rateLimit(RATE_LIMITS.writeAggregate),
