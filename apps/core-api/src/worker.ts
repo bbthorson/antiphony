@@ -7,7 +7,7 @@ import { dataPresence, isAudioBlackout, type R2ListLike } from './lib/data-prese
 import { servicesFor } from './composition.js';
 import { sweepExpired } from './adapters/outbound/postgres/sweep.js';
 import { sweepRegisteredDids } from './adapters/outbound/postgres/registered-dids-sweep.js';
-import { installDurableDispatcher } from './lib/audio-processing.js';
+import { dispatchRemoteProcessing, installDurableDispatcher } from './lib/audio-processing.js';
 import { queueResolver } from './adapters/outbound/dispatch/queue.js';
 import { bindWorkersAi } from './adapters/outbound/workers-ai/binding.js';
 import { runProcessingJob, shouldRetry } from './lib/process-audio-job.js';
@@ -87,6 +87,13 @@ function workerApp(): OpenAPIHono {
     return cachedApp;
 }
 
+
+/**
+ * Remote posts rechecked per hourly run. Each is one getRecord against its
+ * repo, so the sweep is bounded; the least recently checked go first, so every
+ * row is reached in turn (specs/audio-service-mode.md §8.1).
+ */
+const REMOTE_SWEEP_LIMIT = 200;
 
 /** Drain batches the hourly cron runs before handing the rest to the next hour. */
 const BLOB_DRAIN_PASSES = 10;
@@ -221,6 +228,21 @@ export default {
             expectedPdsHost: APP_CONFIG.PDS_HOST,
             kv: bindings?.PIN_CACHE as PinCacheKV | undefined,
         });
+
+        // Recheck remote posts against their repos (specs/audio-service-mode.md
+        // §8): a record gone on two reads an hour apart is removed (its blob
+        // goes to the drain below), and an edit is taken and reprocessed.
+        // Bounded per run, oldest check first; swallowed, since a missed run
+        // only delays the next.
+        try {
+            const { checked, removed, changed, toDispatch } = await servicesFor(bindings).remotePostService.sweep(
+                REMOTE_SWEEP_LIMIT,
+            );
+            for (const job of toDispatch) await dispatchRemoteProcessing(job.originAppId, job.uri, bindings);
+            if (checked > 0) logger.info({ checked, removed, changed }, '[remote-posts] swept');
+        } catch (err) {
+            logger.error({ err }, '[remote-posts] sweep failed; rows stay due for the next run');
+        }
 
         // Finish any blob deletion a delete call left queued: a crash between
         // its statement and the R2 call, or a drain that failed

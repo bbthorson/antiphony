@@ -8,6 +8,7 @@ import { audioRoute } from './adapters/inbound/rest/audio.js';
 import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { spacesRoute } from './adapters/inbound/rest/spaces.js';
 import { didsRoute } from './adapters/inbound/rest/dids.js';
+import { remotePostsRoute } from './adapters/inbound/rest/remote-posts.js';
 import { authorsRoute } from './adapters/inbound/rest/authors.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
@@ -133,6 +134,8 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/spaces', spacesRoute);
     // DIDs a tenant may write under besides its app DID (specs/did-plc-and-multi-did-tenancy.md §3).
     a.route('/api/v1/dids', didsRoute);
+    // Audio whose record lives in a repo Antiphony doesn't host (specs/audio-service-mode.md).
+    a.route('/api/v1/remote-posts', remotePostsRoute);
     a.route('/api/v1/authors', authorsRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
     // more-specific upload sub-route BEFORE the proxy so it takes

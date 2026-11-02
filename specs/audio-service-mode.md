@@ -1,7 +1,8 @@
 # Audio-service mode: processing audio whose record lives elsewhere
 
 **Status:** **Phases A and B approved 2026-11-02 (Brad); Phase C held** until a running
-opensocial host confirms its credential flow (open question 2). Nothing is built. This is
+opensocial host confirms its credential flow (open question 2). **Phase A built 2026-11-02**
+(contract 0.10.4; "Phase A as built", below). Phase B is not. This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
 (G2), which the 2026-11-02 finding there (#227) made the critical path: an opensocial group's
 DID names its group host as its PDS, so Antiphony can't hold a group's records or members'
@@ -385,7 +386,7 @@ Why not publish them now:
   space. That's Bardcast's call, and it should be made before the first table becomes a
   group.
 
-## 11. Contract changes (all additive; a 0.11.0 minor)
+## 11. Contract changes (all additive; built as the 0.10.4 patch)
 
 | Change | Where |
 | :--- | :--- |
@@ -438,6 +439,49 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
 
 A and B can ship as one change if Bardcast needs B first. A is still worth landing on its own,
 because it exercises the subject-key refactor (§6) on the simpler case.
+
+## Phase A as built (2026-11-02, contract 0.10.4)
+
+Where the build differs from the sections above, or settles what they left open:
+
+- **Contract 0.10.4, a patch, not the 0.11.0 §11 named.** New routes and an added webhook field
+  are additive, and `specs/api-versioning.md` makes additive changes a patch before 1.0.
+- **Migration `0006_remote_posts.sql`.** It creates:
+  - `remote_posts`, keyed `(origin_app_id, uri)`;
+  - `deleted_remote_posts`, the ledger behind the 410;
+  - the transcript tenant column (§6, the expand half), with its unique index.
+  
+  §5.2's `space` and `verified` columns wait for Phase B. The old unique index on
+  `audio_transcripts.subject_uri` is still there; the next migration drops it, and until then a
+  second tenant can't hold a transcript of a URI another tenant already transcribed.
+- **Record CIDs.** A record from a PDS is hashed in its IPLD form, with `$link` as a CID link and
+  `$bytes` as bytes (`cidForRepoRecord`, checked against Bluesky's data-model interop vectors).
+  Both the CID the repo reports and the CID the tenant registers must match it.
+- **The blob.** Its type is sniffed from its leading bytes: mp4, webm, ogg, wav and mp3, the
+  types upload accepts. Size is capped at upload's 25 MB, enforced while reading. If the tenant
+  already stores the bytes, nothing is downloaded, which makes "upload, then publish" cheap.
+- **Bytes stored as private** (a hosted post in a space with the same audio) are refused with 409
+  `REMOTE_BLOB_PRIVATE`, rather than turned public. Turning them public is §7's rule, which ships
+  with Phase B.
+- **Routes:** `PUT`, `GET`, `PATCH` and `DELETE /api/v1/remote-posts` (`?uri=` on all but `PUT`),
+  and `GET /api/v1/remote-posts/thread?root=`. They are tenant-level (service token), like
+  `/dids`: a remote post has no author facet to check.
+- **Processing.** `AudioProcessingService` asks its deps for the post's subject: the URI, plus
+  `postId` for a hosted post. The queue job is either `{ postId }` or `{ remoteUri }`. A remote job
+  skips the app-DID custody proof, because it builds no URI under the app DID.
+- **The sweep** runs hourly over 200 rows, least recently checked first:
+  - a record found gone is removed on the next check at least an hour later;
+  - an edit is taken: new audio re-requests every stage that had been requested, and the old
+    blob goes to the drain;
+  - an edit that leaves no acceptable audio post removes the registration as gone.
+  
+  The blob drain counts a remote post's blob and variants as references, so deleting a hosted
+  post never removes audio a remote post uses.
+- **Not built in Phase A:**
+  - an XRPC `registerPost` (§11 keeps it until the REST shape settles);
+  - Phase B (space records, tenant-pushed bytes, visibility by reference);
+  - Phase C;
+  - notifications in place of polling.
 
 ## 14. Open questions
 

@@ -8,6 +8,39 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.4] — 2026-11-02
+
+Remote posts: audio whose `dev.antiphony.audio.post` record lives in a repo
+Antiphony doesn't host, such as a person's PDS or a group's repo on its group
+host ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md), Phase A:
+public repo records). **Patch**: new routes, and one added webhook field.
+
+### Added
+
+- **`PUT /api/v1/remote-posts`** registers a record by `{ uri, cid, processing? }`.
+  Antiphony reads it from the repo its URI names, recomputes its CID (409
+  `REMOTE_CID_MISMATCH` if it isn't `cid`), checks it is an audio post, and copies
+  its blob after checking the bytes hash to the blob ref and are audio (422
+  `REMOTE_RECORD_INVALID`). 404 `REMOTE_RECORD_NOT_FOUND` when the repo says the
+  record doesn't exist, 503 `REMOTE_REPO_UNREACHABLE` when it can't be read, 400
+  `REMOTE_URI_UNSUPPORTED` for anything but `at://{did}/dev.antiphony.audio.post/{rkey}`,
+  409 `REMOTE_BLOB_PRIVATE` for bytes stored here as private audio. A repeat is a
+  no-op (200, `201` the first time); a new `cid` takes the edit.
+- **`GET /api/v1/remote-posts?uri=`** (404 `REMOTE_POST_NOT_FOUND`, 410
+  `REMOTE_POST_DELETED`), **`GET /api/v1/remote-posts/thread?root=`** (the
+  registered replies under a root, oldest first, paged), **`PATCH
+  /api/v1/remote-posts?uri=`** (request processing) and **`DELETE
+  /api/v1/remote-posts?uri=`**. The view is `RemotePostView`: `uri`, `cid`,
+  `kind`, `authorDid`, the record, the hydrated `embed`, `available` and
+  `registeredAt`.
+- **`uri` on every `stage.settled` webhook**, hosted and remote. `postId` is
+  absent for a remote post.
+- **`remote.gone`** and **`remote.changed`** webhooks, sent when the hourly sweep
+  removes a registration whose record is gone from its repo (two checks an hour
+  apart) or takes an edit.
+- Migration `0006_remote_posts.sql`: `remote_posts`, `deleted_remote_posts`,
+  and a tenant column on `audio_transcripts`.
+
 ## [0.10.3] — 2026-11-01
 
 Posts and spaces under a DID the app registered, such as a group's
