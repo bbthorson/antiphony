@@ -1,7 +1,8 @@
 import { AudioProcessingService } from '@antiphony/core/services/audio-processing';
-import type {
-    ProcessingDispatchPort,
-    ProcessingJob,
+import {
+    processingKeyOf,
+    type ProcessingDispatchPort,
+    type ProcessingJob,
 } from '@antiphony/core/ports/processing-dispatch';
 import type { ProcessingProviders } from '@antiphony/core/services/audio-processing';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
@@ -46,11 +47,15 @@ export function inlineDispatcher(
     providers: ProcessingProviders,
     logger: Logger,
     notifier: ProcessingNotifierPort,
+    /** The binding for remote posts (specs/audio-service-mode.md §6). Required to run a remote job. */
+    remoteDeps?: AudioProcessingDependencies,
 ): ProcessingDispatchPort {
     return {
         async dispatch(job: ProcessingJob): Promise<void> {
-            const service = new AudioProcessingService(deps, providers, logger, notifier);
-            await service.process(job.originAppId, job.postId);
+            const remote = 'remoteUri' in job;
+            if (remote && !remoteDeps) throw new Error('[audio-processing] inline dispatcher has no remote-post binding');
+            const service = new AudioProcessingService(remote ? remoteDeps! : deps, providers, logger, notifier);
+            await service.process(job.originAppId, processingKeyOf(job));
         },
     };
 }

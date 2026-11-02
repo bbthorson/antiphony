@@ -31,9 +31,26 @@
  * originating request, so there is no tenant context to inherit and every
  * storage read is tenant-scoped.
  */
-export interface ProcessingJob {
+export type ProcessingJob = HostedProcessingJob | RemoteProcessingJob;
+
+/** A hosted post, by its id. */
+export interface HostedProcessingJob {
     originAppId: string;
     postId: string;
+}
+
+/**
+ * A remote post, by its URI (specs/audio-service-mode.md §6): a remote post
+ * has no hosted id, and its rkey alone isn't unique across repos.
+ */
+export interface RemoteProcessingJob {
+    originAppId: string;
+    remoteUri: string;
+}
+
+/** The key the processing deps take: a hosted id, or a remote URI. */
+export function processingKeyOf(job: ProcessingJob): string {
+    return 'remoteUri' in job ? job.remoteUri : job.postId;
 }
 
 export interface ProcessingDispatchPort {

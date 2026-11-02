@@ -221,6 +221,7 @@ function resolveDispatcher(
                 resolveProviders(originAppId),
                 logger,
                 resolveNotifier(),
+                servicesFor(env).remoteProcessingDeps,
             );
         }
     }
@@ -252,5 +253,21 @@ export async function dispatchProcessing(
         await resolveDispatcher(originAppId, env).dispatch({ originAppId, postId });
     } catch (err) {
         logger.error({ err, postId, originAppId }, '[audio-processing] dispatch failed');
+    }
+}
+
+/**
+ * Dispatch processing for a remote post (specs/audio-service-mode.md §6),
+ * keyed by its URI. Never throws, for the reason `dispatchProcessing` gives.
+ */
+export async function dispatchRemoteProcessing(
+    originAppId: string,
+    remoteUri: string,
+    env?: Record<string, unknown>,
+): Promise<void> {
+    try {
+        await resolveDispatcher(originAppId, env).dispatch({ originAppId, remoteUri });
+    } catch (err) {
+        logger.error({ err, remoteUri, originAppId }, '[audio-processing] dispatch failed');
     }
 }

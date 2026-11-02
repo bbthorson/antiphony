@@ -78,6 +78,13 @@ artifact is worth fetching; the view is where it fetches it. (If a future consum
 the cheap scalars inlined — e.g. `processedDurationMs` on `trim: ready` — that is an
 additive change to revisit then, not a v1 commitment.)
 
+**Added 2026-11-02 (contract 0.10.4).** Every `stage.settled` payload also carries `uri`, the
+post's URI. `postId` stays for posts Antiphony holds and is absent for a remote post
+([`audio-service-mode.md`](./audio-service-mode.md) §6), whose rkey alone isn't unique, so
+receivers should key on `uri`. The same URL also receives `remote.gone` and `remote.changed`
+(`{type, originAppId, uri, cid?, occurredAt}`) when the remote-post sweep removes or updates a
+registration.
+
 ## Auth — HMAC over the raw body
 
 Each request carries:

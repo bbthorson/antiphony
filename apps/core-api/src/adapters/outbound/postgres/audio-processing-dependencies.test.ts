@@ -235,21 +235,23 @@ describe('postgresAudioProcessingDependencies', () => {
             // The port documents this. The unique index on the generated
             // subject_uri column makes it true.
             const uri = 'at://did:web:example.com/c/post1';
-            await deps.saveTranscript(transcript('t000000000001', uri, 'first'));
-            await deps.saveTranscript(transcript('t000000000002', uri, 'second'));
+            await deps.saveTranscript('app', transcript('t000000000001', uri, 'first'));
+            await deps.saveTranscript('app', transcript('t000000000002', uri, 'second'));
 
             const rows = await db.query<{ id: string }>('select id from audio_transcripts');
             expect(rows).toHaveLength(1);
 
-            const map = await posts.getTranscriptsBySubjectUris([uri]);
+            const map = await posts.getTranscriptsBySubjectUris([{ originAppId: 'app', uri }]);
             expect(map.get(uri)?.transcript.text).toBe('second');
         });
 
         it('keeps transcripts for different subjects side by side', async () => {
             await deps.saveTranscript(
+                'app',
                 transcript('t000000000003', 'at://did:web:example.com/c/a', 'a'),
             );
             await deps.saveTranscript(
+                'app',
                 transcript('t000000000004', 'at://did:web:example.com/c/b', 'b'),
             );
             const rows = await db.query('select id from audio_transcripts');

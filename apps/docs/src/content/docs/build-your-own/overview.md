@@ -68,6 +68,7 @@ One POST per stage that settles, `Content-Type: application/json`:
 {
   "type": "stage.settled",
   "postId": "3kb2…",
+  "uri": "at://did:web:voxpop.audio/dev.antiphony.audio.post/3kb2…",
   "originAppId": "voxpop",
   "stage": "transcribe",
   "status": "ready",
@@ -75,7 +76,8 @@ One POST per stage that settles, `Content-Type: application/json`:
 }
 ```
 
-- `type` is `stage.settled` for these events. The same URL also receives `post.deleted` (below), so branch on it.
+- `type` is `stage.settled` for these events. The same URL also receives `post.deleted` (below), and `remote.gone` and `remote.changed` for [remote posts](/api/overview/#posts-held-in-another-repo), so branch on it.
+- `uri` names the post on every event. `postId` is there for a post Antiphony holds and absent for a remote post, whose record key alone isn't unique.
 - `stage` ∈ `denoise | trim | transcribe | waveform`; `status` ∈ `ready | failed | skipped` (`pending` never fires — it isn't a settle).
 - `occurredAt` is the server settle time, for ordering and replay detection.
 - The **artifact itself** (transcript text, signed URL, waveform peaks) is deliberately **not** included. The status tells you whether it's worth fetching; the hydrated view (`GET /api/v1/posts/{postId}`) is where you fetch it. A `waveform: skipped` needs no follow-up at all; a `transcribe: ready` invites one, on your terms.
@@ -100,7 +102,7 @@ Sign and compare over the **raw body**, before any JSON parse and re-serialize �
 
 ### Dedupe by "latest wins", not "seen before"
 
-The same stage's webhook can arrive more than once, and "already saw this" is the wrong test: a byte-mutating stage re-running legitimately settles a derived stage (`transcribe` / `waveform`) a second time — `ready → pending → ready` — and that second `ready` describes the **recomputed** artifact, a new correct event, not a duplicate to suppress. Treat each event as **latest-wins for `(postId, stage)`**, using `occurredAt` as the tiebreaker, rather than ignoring anything you've seen before.
+The same stage's webhook can arrive more than once, and "already saw this" is the wrong test: a byte-mutating stage re-running legitimately settles a derived stage (`transcribe` / `waveform`) a second time — `ready → pending → ready` — and that second `ready` describes the **recomputed** artifact, a new correct event, not a duplicate to suppress. Treat each event as **latest-wins for `(uri, stage)`**, using `occurredAt` as the tiebreaker, rather than ignoring anything you've seen before.
 
 ### Deleted posts
 

@@ -29,3 +29,35 @@ export async function cidForRecord(record: Record<string, unknown>): Promise<str
     const digest = await sha256.digest(bytes);
     return CID.createV1(dagCbor.code, digest).toString();
 }
+
+/**
+ * Convert a record in atproto's JSON form to the IPLD data model its CID is
+ * computed over: `{ "$link": "<cid>" }` is a CID link and `{ "$bytes": "<b64>" }`
+ * is bytes (the atproto data model's JSON encoding). A blob ref's `ref` is a
+ * `$link`, so without this a record fetched from a PDS never hashes to its CID.
+ */
+export function repoJsonToIpld(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(repoJsonToIpld);
+    if (value === null || typeof value !== 'object') return value;
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.length === 1 && keys[0] === '$link' && typeof obj.$link === 'string') return CID.parse(obj.$link);
+    if (keys.length === 1 && keys[0] === '$bytes' && typeof obj.$bytes === 'string') {
+        return Uint8Array.from(atob(obj.$bytes.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+    }
+    const out: Record<string, unknown> = {};
+    for (const k of keys) out[k] = repoJsonToIpld(obj[k]);
+    return out;
+}
+
+/**
+ * CID for a record as a PDS returns it from `com.atproto.repo.getRecord`
+ * (CIDv1, dag-cbor, sha2-256 over its IPLD form). Throws on a value that
+ * can't be encoded (a float, or a malformed `$link`), which no valid atproto
+ * record contains.
+ */
+export async function cidForRepoRecord(value: unknown): Promise<string> {
+    const bytes = dagCbor.encode(repoJsonToIpld(value));
+    const digest = await sha256.digest(bytes);
+    return CID.createV1(dagCbor.code, digest).toString();
+}

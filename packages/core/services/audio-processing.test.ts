@@ -44,7 +44,7 @@ function makeDeps(post: AudioPostRecord | null, over: Partial<AudioProcessingDep
         getAppDid: vi.fn((originAppId: string) => appDidFor(originAppId)),
         readBlobBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
         writeDerivedBlob: vi.fn(async () => (derivedCounter++ === 0 ? CLEANED_CID : `bafkrei${derivedCounter}`)),
-        saveTranscript: vi.fn(async (r: TranscriptEnrichmentRecord) => { saved.push(r); }),
+        saveTranscript: vi.fn(async (_originAppId: string, r: TranscriptEnrichmentRecord) => { saved.push(r); }),
         patchProcessingState: vi.fn(async (_app, _id, patch) => { patches.push(patch); }),
         // Uncontended by default, so every existing case exercises the work
         // rather than the declined-claim path. The lease's own behaviour is

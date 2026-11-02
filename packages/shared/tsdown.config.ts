@@ -45,6 +45,7 @@ const entry = [
   // re-exports belongs here.
   'types/processing.ts',
   'types/records.ts',
+  'types/remote-posts.ts',
   'types/spaces.ts',
   'types/url.ts',
 ];

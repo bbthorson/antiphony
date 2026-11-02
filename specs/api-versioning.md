@@ -74,6 +74,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.10.1` | `spaceAuthor` on post create ([`audio-service-and-groups.md`](./audio-service-and-groups.md) G5): a member's own post in a space carries their DID in its author segment. A new optional field, defaulting to the old behaviour, so patch. |
 | `0.10.2` | `PUT`/`GET /api/v1/dids`: a tenant registers DIDs it acts for besides its app DID, custody proven first ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). New routes, so patch. |
 | `0.10.3` | Posts and spaces under a registered DID: `authority` on post create, `?authority=` on spaces, `spaceAuthority` on upload, `DELETE /api/v1/dids/{did}` ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md) §3). All optional and defaulting to the app DID, so patch. |
+| `0.10.4` | Remote posts ([`audio-service-mode.md`](./audio-service-mode.md), Phase A): `/api/v1/remote-posts` routes, `uri` on every `stage.settled` webhook, and the `remote.gone` and `remote.changed` webhooks. New routes and an added field, so patch. |
 
 ### Next: the enrichment pipeline
 

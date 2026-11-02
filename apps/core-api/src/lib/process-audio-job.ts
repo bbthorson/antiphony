@@ -52,10 +52,11 @@ import { logger } from './logger.js';
  *     it immediately rather than waiting out the TTL.
  */
 
-const ProcessAudioJobSchema = z.object({
-    originAppId: z.string().min(1),
-    postId: z.string().min(1),
-});
+const ProcessAudioJobSchema = z.union([
+    z.object({ originAppId: z.string().min(1), postId: z.string().min(1) }),
+    // A remote post, by URI (specs/audio-service-mode.md §6).
+    z.object({ originAppId: z.string().min(1), remoteUri: z.string().min(1).max(512) }),
+]);
 
 export type ProcessingJobOutcome =
     | { outcome: 'ran'; ran: boolean }
@@ -97,7 +98,12 @@ export async function runProcessingJob(
         return { outcome: 'invalid' };
     }
 
-    const { originAppId, postId } = parsed.data;
+    const job = parsed.data;
+    const { originAppId } = job;
+    // The log context names the post the way the job does: `postId` for a
+    // hosted post, `remoteUri` for a remote one (specs/audio-service-mode.md §6).
+    const subject = 'remoteUri' in job ? { remoteUri: job.remoteUri } : { postId: job.postId };
+    const key = 'remoteUri' in job ? job.remoteUri : job.postId;
 
     // Prove custody before doing any work. A processing pass mints `at://` uris
     // — `AudioProcessingService.process` reaches `getAppDid` through
@@ -110,17 +116,22 @@ export async function runProcessingJob(
     // attempts and then the dead letter queue puts the job somewhere visible,
     // where acking it would silently drop a post's processing over a
     // configuration error. Losing work is the worse failure.
-    try {
-        await ensureTenantPin(originAppId, {
-            expectedPdsHost: APP_CONFIG.PDS_HOST,
-            kv: env?.PIN_CACHE as PinCacheKV | undefined,
-        });
-    } catch (err) {
-        logger.error(
-            { ...context, err, postId, originAppId },
-            '[audio-processing] worker: app-DID custody unproven; asking for redelivery',
-        );
-        return { outcome: 'threw', err };
+    //
+    // A remote post's URI was minted elsewhere: a pass over it builds no URI
+    // under the app DID, so there is no custody to prove first.
+    if (!('remoteUri' in job)) {
+        try {
+            await ensureTenantPin(originAppId, {
+                expectedPdsHost: APP_CONFIG.PDS_HOST,
+                kv: env?.PIN_CACHE as PinCacheKV | undefined,
+            });
+        } catch (err) {
+            logger.error(
+                { ...context, err, ...subject, originAppId },
+                '[audio-processing] worker: app-DID custody unproven; asking for redelivery',
+            );
+            return { outcome: 'threw', err };
+        }
     }
 
     // Built per job, not per module, for the same reason `resolveProviders` is
@@ -131,19 +142,20 @@ export async function runProcessingJob(
     // the queue, so the tenancy is the one named in the payload — wiring
     // anything else here would run one tenant's post through another tenant's
     // pinned provider.
+    const services = servicesFor(env);
     const service = new AudioProcessingService(
-        servicesFor(env).audioProcessingDeps,
+        'remoteUri' in job ? services.remoteProcessingDeps : services.audioProcessingDeps,
         resolveProviders(originAppId),
         logger,
         resolveNotifier(),
     );
 
     try {
-        const ran = await service.process(originAppId, postId);
+        const ran = await service.process(originAppId, key);
         return { outcome: 'ran', ran };
     } catch (err) {
         logger.error(
-            { ...context, err, postId, originAppId },
+            { ...context, err, ...subject, originAppId },
             '[audio-processing] worker: pass threw; asking for redelivery',
         );
         return { outcome: 'threw', err };

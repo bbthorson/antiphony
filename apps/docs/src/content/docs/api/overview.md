@@ -87,7 +87,7 @@ A deployment without `ANTIPHONY_PLAYBACK_SECRET` answers `503` to `PUT /spaces` 
 Your app writes under its own DID, pinned when it was onboarded. To also act for another DID whose document names this Antiphony, such as one your app created for a game table or an organization, register it with `PUT /api/v1/dids/{did}` and `{ "role": "group", "subjectRef": "<your id for it>" }`.
 
 :::note[Not for opensocial groups]
-An [opensocial](https://tangled.org/opensocial.group/proposal) group's DID names its group host as its PDS, never Antiphony, so it can't be registered here, and records under it live on the group's host. Processing audio that lives in another repo, such as a group's or a member's, is planned as audio-service mode; see [the decision record](https://github.com/bbthorson/antiphony/blob/master/specs/audio-service-and-groups.md).
+An [opensocial](https://tangled.org/opensocial.group/proposal) group's DID names its group host as its PDS, never Antiphony, so it can't be registered here, and records under it live on the group's host. To process audio whose record lives in another repo, such as a group's or a member's, register it as a [remote post](#posts-held-in-another-repo).
 :::
 
 - **The DID's document must name this Antiphony as its space host** (`#atproto_space_host`), as your app DID's does. Antiphony checks before keeping the registration: `400 DID_CUSTODY_DISPROVED` if it doesn't, `503 DID_UNREACHABLE` if the document can't be read right now.
@@ -102,6 +102,22 @@ Once registered, name it as the **authority** of what you write:
 - `POST /api/v1/audio/upload` takes `spaceAuthority` beside `spaceType` and `skey`.
 - **A reply always has its parent's authority.** Omit it, or name the same one.
 - Each write under a registered DID re-checks that its document still names this Antiphony (`503 AUTHORITY_CUSTODY_UNPROVEN` if not); an unregistered one is `400 AUTHORITY_NOT_REGISTERED`.
+
+## Posts held in another repo
+
+A **remote post** is a `dev.antiphony.audio.post` record that lives in a repo Antiphony doesn't host: a person's own PDS, or a group's repo on its group host. Your app writes the record there, then registers it here; Antiphony copies and processes its audio, plays it, and drops its copy once the record is gone. Today this covers public records; records in a space come next.
+
+1. **Register it** — `PUT /api/v1/remote-posts` with `{ "uri": "at://{did}/dev.antiphony.audio.post/{rkey}", "cid": "<record CID>", "processing"?: { … } }`. Antiphony reads the record from the repo its URI names, never from your request:
+   - its CID must be `cid` (`409 REMOTE_CID_MISMATCH` if the record changed since you read it);
+   - it must be an audio post whose blob's bytes hash to the blob ref and are audio (`422 REMOTE_RECORD_INVALID`);
+   - `404 REMOTE_RECORD_NOT_FOUND` if the repo says it doesn't exist, `503 REMOTE_REPO_UNREACHABLE` if the repo can't be read right now.
+   
+   Repeating a registration is a no-op; a new `cid` takes the edit. If you uploaded the same bytes with `POST /api/v1/audio/upload` first, they aren't downloaded again.
+2. **Read it** — `GET /api/v1/remote-posts?uri=…`, and `GET /api/v1/remote-posts/thread?root=…` for the registered replies under a root (Antiphony doesn't crawl for replies). The view carries `uri`, `cid`, `authorDid` (the DID whose repo holds it), the record, and the same `embed` a hosted post gets: a playback URL, the transcript and the processing status.
+3. **Process it** — `processing` on registration, or later with `PATCH /api/v1/remote-posts?uri=…`. Results arrive as `stage.settled` webhooks carrying the post's `uri` and no `postId`.
+4. **Remove it** — `DELETE /api/v1/remote-posts?uri=…` removes Antiphony's copy (the record in its repo is untouched); a later read is `410 REMOTE_POST_DELETED`.
+
+Antiphony rechecks each remote post hourly. A record its repo reports gone on two checks an hour apart is removed, and you get a `remote.gone` webhook; an edited record is taken and reprocessed, with a `remote.changed` webhook. A repo that can't be reached never causes a removal, but after 30 days the post reads `available: false` and stops playing.
 
 ## Envelope
 

@@ -15,6 +15,7 @@ import { webhookNotifier } from './notifier.js';
 const EVENT: StageSettledEvent = {
     originAppId: 'vox-pop',
     postId: 'p1',
+    uri: 'at://did:web:voxpop.example/dev.antiphony.audio.post/p1',
     stage: 'transcribe',
     status: 'ready',
     occurredAt: '2026-07-19T14:03:11.204Z',
@@ -69,11 +70,49 @@ describe('webhookNotifier', () => {
         expect(JSON.parse(body)).toEqual({
             type: 'stage.settled',
             postId: 'p1',
+            uri: 'at://did:web:voxpop.example/dev.antiphony.audio.post/p1',
             originAppId: 'vox-pop',
             stage: 'transcribe',
             status: 'ready',
             occurredAt: '2026-07-19T14:03:11.204Z',
         });
+    });
+
+    it('names a remote post by its URI alone (specs/audio-service-mode.md §6)', async () => {
+        configureTenant();
+        const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+        const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        const { postId: _hosted, ...remote } = EVENT;
+
+        await webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep).notify({ ...remote, uri });
+
+        const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+        expect(JSON.parse(init.body as string)).not.toHaveProperty('postId');
+        expect(JSON.parse(init.body as string)).toMatchObject({ type: 'stage.settled', uri });
+        expect((init.headers as Record<string, string>)['X-Antiphony-Event-Id']).toBe(`${uri}:transcribe:ready`);
+    });
+
+    it('sends remote.gone and remote.changed through the same signed channel', async () => {
+        configureTenant();
+        const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+        const notifier = webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep);
+        const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        const occurredAt = '2026-11-02T12:00:00.000Z';
+
+        await notifier.notifyRemote({ type: 'remote.changed', originAppId: 'vox-pop', uri, cid: 'bafyreinew', occurredAt });
+        await notifier.notifyRemote({ type: 'remote.gone', originAppId: 'vox-pop', uri, occurredAt });
+
+        const sent = fetchImpl.mock.calls.map((c) => c as unknown as [string, RequestInit]);
+        expect(JSON.parse(sent[0][1].body as string)).toEqual({
+            type: 'remote.changed',
+            originAppId: 'vox-pop',
+            uri,
+            cid: 'bafyreinew',
+            occurredAt,
+        });
+        expect(JSON.parse(sent[1][1].body as string)).toEqual({ type: 'remote.gone', originAppId: 'vox-pop', uri, occurredAt });
+        expect((sent[0][1].headers as Record<string, string>)['X-Antiphony-Event-Id']).toBe(`${uri}:remote.changed:bafyreinew`);
+        expect((sent[1][1].headers as Record<string, string>)['X-Antiphony-Event-Id']).toBe(`${uri}:remote.gone`);
     });
 
     it('sends post.deleted through the same signed channel, with its own type and event id', async () => {

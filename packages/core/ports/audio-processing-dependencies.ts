@@ -2,6 +2,12 @@ import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/a
 import type { ProcessingState } from 'shared/types/processing';
 import type { SpaceKey } from 'shared/types/spaces';
 
+/** A post as the world names it: its URI, and its hosted id when it has one. */
+export interface ProcessingSubject {
+    uri: string;
+    postId?: string;
+}
+
 /**
  * Data/storage port the `AudioProcessingService` uses to run one post's audio
  * processing. The Postgres binding lives in
@@ -13,7 +19,18 @@ import type { SpaceKey } from 'shared/types/spaces';
  * processing state — are an explicit, self-contained contract.
  */
 export interface AudioProcessingDependencies {
-    /** Load the post to process, scoped to its origin app. Null if gone/cross-tenant. */
+    /**
+     * What the post is called outside: its URI and, for a hosted post, its
+     * `postId`. Optional; absent means a hosted post, whose URI is built from
+     * its authority (`postUriOf`). A remote post's binding supplies it, since
+     * its URI was minted elsewhere (specs/audio-service-mode.md §6).
+     */
+    subjectOf?(post: AudioPostRecord): ProcessingSubject;
+
+    /**
+     * Load the post to process, scoped to its origin app. Null if gone/cross-tenant.
+     * The key is opaque here: a hosted post's id, or a remote post's URI.
+     */
     getPostById(originAppId: string, postId: string): Promise<AudioPostRecord | null>;
 
     /**
@@ -41,8 +58,8 @@ export interface AudioProcessingDependencies {
      */
     writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string, space?: SpaceKey): Promise<string>;
 
-    /** Persist a transcript enrichment record (last-write-wins by subject uri). */
-    saveTranscript(record: TranscriptEnrichmentRecord): Promise<void>;
+    /** Persist a transcript enrichment record (last-write-wins by tenant and subject uri). */
+    saveTranscript(originAppId: string, record: TranscriptEnrichmentRecord): Promise<void>;
 
     /**
      * Merge a partial processing-state patch onto the post (sets `updatedAt`).

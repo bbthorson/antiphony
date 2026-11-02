@@ -79,7 +79,7 @@ function recordingNotifier() {
 }
 
 describe('AudioProcessingService — stage-settled notifications', () => {
-    it('fires exactly one event with {postId, stage, status} when a stage settles', async () => {
+    it('fires exactly one event with {postId, uri, stage, status} when a stage settles', async () => {
         const { deps } = makeDeps(makePost({ transcribe: 'pending', updatedAt: NOW }));
         const { notifier, events } = recordingNotifier();
 
@@ -89,10 +89,29 @@ describe('AudioProcessingService — stage-settled notifications', () => {
         expect(events[0]).toEqual({
             originAppId: 'vox-pop',
             postId: 'p1',
+            uri: 'at://did:web:vox-pop.example/dev.antiphony.audio.post/p1',
             stage: 'transcribe',
             status: 'ready',
             occurredAt: NOW.toISOString(),
         });
+    });
+
+    it('names a remote post by the URI its binding gives, with no postId (specs/audio-service-mode.md §6)', async () => {
+        const remoteUri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        const { deps } = makeDeps({ ...makePost({ transcribe: 'pending', updatedAt: NOW }), id: remoteUri });
+        deps.subjectOf = (post) => ({ uri: post.id });
+        const { notifier, events } = recordingNotifier();
+
+        await new AudioProcessingService(deps, providers(), undefined, notifier).process('vox-pop', remoteUri);
+
+        expect(events).toEqual([expect.objectContaining({ uri: remoteUri, stage: 'transcribe', status: 'ready' })]);
+        expect(events[0]).not.toHaveProperty('postId');
+        // The transcript's subject is that URI too, not one built under the app DID.
+        expect(deps.saveTranscript).toHaveBeenCalledWith(
+            'vox-pop',
+            expect.objectContaining({ subject: { uri: remoteUri, cid: 'bafyreipost' } }),
+        );
+        expect(deps.getAppDid).not.toHaveBeenCalled();
     });
 
     it('fires one event per terminal stage when a single patch settles several', async () => {

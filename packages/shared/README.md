@@ -34,7 +34,7 @@ The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, 
 | `@antiphony/shared/errors` | Shared error types and helpers. |
 | `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers). |
 | `@antiphony/shared/observability` | Logging/error-reporting helpers (`./observability/report-error` for just the reporter). |
-| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `dids`, `processing`, `records`, `spaces`, `url`. |
+| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `dids`, `processing`, `records`, `remote-posts`, `spaces`, `url`. |
 
 ## The records this models
 

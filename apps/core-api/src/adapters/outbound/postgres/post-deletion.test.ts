@@ -128,7 +128,7 @@ describe('post deletion (migration 0003)', () => {
             derivedBlobCids: ['bafyintermediate', 'bafyprocessed'],
         });
         const uri = buildPostUri(DID, p.id);
-        await postgresAudioProcessingDependencies(db, storage()).saveTranscript({
+        await postgresAudioProcessingDependencies(db, storage()).saveTranscript(TENANT, {
             id: '3ktranscript01',
             subject: { uri, cid: p.cid },
             transcript: { segments: [{ startMs: 0, endMs: 10, text: 'hello' }] },
@@ -172,6 +172,22 @@ describe('post deletion (migration 0003)', () => {
         await service().deletePost(TENANT, b.id, 'delete');
         expect(hasBlob('bafyshared')).toBe(false);
         expect(hasRendition('bafyshared')).toBe(false);
+    });
+
+    it('never deletes a blob a remote post in the tenant references (migration 0006)', async () => {
+        const a = prompt({ audioCid: 'bafyremoteshared' });
+        await save(a);
+        await storeBlob('bafyremoteshared');
+        await db.query(
+            `insert into remote_posts (origin_app_id, uri, cid, repo_did, collection, rkey, record, blob_cid, mime_type, size, created_at)
+             values ($1, 'at://did:plc:remote/dev.antiphony.audio.post/3kr', 'bafyreirecord', 'did:plc:remote',
+                     'dev.antiphony.audio.post', '3kr', '{}'::jsonb, 'bafyremoteshared', 'audio/webm', 1, now())`,
+            [TENANT],
+        );
+
+        await service().deletePost(TENANT, a.id, 'delete');
+        expect(hasBlob('bafyremoteshared')).toBe(true);
+        expect(await queued()).toEqual([]);
     });
 
     it("counts another post's processed and derived variants as references", async () => {

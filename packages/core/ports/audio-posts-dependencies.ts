@@ -102,12 +102,17 @@ export interface AudioPostDependencies {
     ): Promise<AudioPostRecord[]>;
 
     /**
-     * Batch-fetch transcript enrichment records by their subject post uris.
-     * Returned Map is keyed by `subject.uri`; posts without a transcript are
-     * simply absent. The platform-enrichment lift (transcript → embed view)
-     * reads from here — never from the canonical record.
+     * Batch-fetch transcript enrichment records by their subject post uris,
+     * each within its own tenant (a transcript is keyed by tenant and subject,
+     * migration 0006). Returned Map is keyed by `subject.uri`, which is unique
+     * within one batch: hosted URIs differ by authority across tenants, and a
+     * remote-post batch is one tenant's. Posts without a transcript are simply
+     * absent. The platform-enrichment lift (transcript → embed view) reads from
+     * here — never from the canonical record.
      */
-    getTranscriptsBySubjectUris(uris: string[]): Promise<Map<string, TranscriptEnrichmentRecord>>;
+    getTranscriptsBySubjectUris(
+        subjects: { originAppId: string; uri: string }[],
+    ): Promise<Map<string, TranscriptEnrichmentRecord>>;
 
     /**
      * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a playable URL,

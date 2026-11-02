@@ -235,18 +235,23 @@ export function postgresAudioPostDependencies(
             return hydrateRows(rows);
         },
 
-        async getTranscriptsBySubjectUris(
-            uris: string[],
-        ): Promise<Map<string, TranscriptEnrichmentRecord>> {
+        async getTranscriptsBySubjectUris(subjects): Promise<Map<string, TranscriptEnrichmentRecord>> {
             const map = new Map<string, TranscriptEnrichmentRecord>();
-            const unique = Array.from(new Set(uris.filter((u) => u?.trim())));
+            const unique = Array.from(
+                new Map(subjects.filter((s) => s.uri?.trim()).map((s) => [`${s.originAppId} ${s.uri}`, s])).values(),
+            );
             if (unique.length === 0) return map;
 
-            // One statement: `= any($1)` has no item cap, so no chunking or
-            // fan-out is needed.
+            // One statement over (tenant, subject) pairs: a transcript is keyed
+            // by both (migration 0006), so one tenant never reads another's.
             const rows = await sql.query<{ record: unknown }>(
-                `select record from audio_transcripts where subject_uri = any($1)`,
-                [unique],
+                `
+                select t.record
+                  from audio_transcripts t
+                  join unnest($1::text[], $2::text[]) as s(origin_app_id, uri)
+                    on t.origin_app_id = s.origin_app_id and t.subject_uri = s.uri
+                `,
+                [unique.map((s) => s.originAppId), unique.map((s) => s.uri)],
             );
 
             for (const row of rows) {

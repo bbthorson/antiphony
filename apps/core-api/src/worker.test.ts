@@ -30,6 +30,8 @@ const sqlQuery = vi.fn(async (_text?: string): Promise<Record<string, unknown>[]
     { swept_table: 'rate_limits', deleted: 3 },
 ]);
 const process_ = vi.fn(async () => true);
+const remoteSweep = vi.fn(async () => ({ checked: 0, removed: 0, changed: 0, toDispatch: [] as { originAppId: string; uri: string }[] }));
+const dispatchRemoteProcessing = vi.fn(async () => undefined);
 const ensureTenantPin = vi.fn(async () => undefined);
 let services: Record<string, unknown> = {};
 
@@ -53,6 +55,11 @@ vi.mock('./lib/app-did.js', () => ({
     getAppDid: () => 'did:web:test-app.example',
 }));
 
+vi.mock('./lib/audio-processing.js', async (importOriginal) => ({
+    ...((await importOriginal()) as object),
+    dispatchRemoteProcessing,
+}));
+
 vi.mock('./composition.js', () => ({
     servicesFor: () => services,
 }));
@@ -73,7 +80,14 @@ beforeEach(() => {
     revalidateAllPins.mockImplementation(async () => ({ failures: [], changes: [] }));
     ensureTenantPin.mockImplementation(async () => undefined);
     process_.mockImplementation(async () => true);
-    services = { backend: 'postgres', sql: { query: sqlQuery }, audioProcessingDeps: {} };
+    remoteSweep.mockClear();
+    dispatchRemoteProcessing.mockClear();
+    services = {
+        backend: 'postgres',
+        sql: { query: sqlQuery },
+        audioProcessingDeps: {},
+        remotePostService: { sweep: remoteSweep },
+    };
 });
 
 /** One queue message, with its settlement recorded. */
@@ -180,6 +194,23 @@ describe('worker scheduled — the TTL sweep', () => {
         await expect(worker.scheduled(cron, {}, ctx)).resolves.toBeUndefined();
     });
 
+    it('rechecks remote posts on the same trigger, and dispatches the ones an edit left pending', async () => {
+        const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        remoteSweep.mockResolvedValueOnce({ checked: 3, removed: 1, changed: 1, toDispatch: [{ originAppId: 'vox-pop', uri }] });
+        const worker = await freshWorker();
+        await worker.scheduled(cron, {}, ctx);
+
+        expect(remoteSweep).toHaveBeenCalledWith(200);
+        expect(dispatchRemoteProcessing).toHaveBeenCalledWith('vox-pop', uri, {});
+    });
+
+    it('keeps sweeping when the remote-post sweep fails', async () => {
+        remoteSweep.mockRejectedValueOnce(new Error('database unreachable'));
+        const worker = await freshWorker();
+        await expect(worker.scheduled(cron, {}, ctx)).resolves.toBeUndefined();
+        expect(sqlQuery).toHaveBeenCalledWith('select * from antiphony_sweep_expired()');
+    });
+
     it('probes data presence on the same trigger', async () => {
         // The incident this exists for: for ~20 minutes every surface read green
         // over an empty Neon and an empty R2, and nothing was watching. `/health`
@@ -208,6 +239,17 @@ describe('worker queue — the audio-processing consumer', () => {
         await worker.queue(batch([m.msg]).value, {}, ctx);
 
         expect(process_).toHaveBeenCalledWith('vox-pop', 'p1');
+        expect(m.settled).toEqual(['ack']);
+    });
+
+    it('runs a remote post by its URI, with no app-DID custody to prove (specs/audio-service-mode.md §6)', async () => {
+        const worker = await freshWorker();
+        const remoteUri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        const m = message({ originAppId: 'vox-pop', remoteUri });
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(process_).toHaveBeenCalledWith('vox-pop', remoteUri);
+        expect(ensureTenantPin).not.toHaveBeenCalled();
         expect(m.settled).toEqual(['ack']);
     });
 

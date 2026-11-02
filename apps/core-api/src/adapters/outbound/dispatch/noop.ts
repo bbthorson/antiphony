@@ -25,7 +25,7 @@ export function noopDispatcher(logger: Logger): ProcessingDispatchPort {
     return {
         async dispatch(job: ProcessingJob): Promise<void> {
             logger.warn(
-                { postId: job.postId, originAppId: job.originAppId },
+                { ...job },
                 '[audio-processing] no dispatcher configured — stages left pending',
             );
         },

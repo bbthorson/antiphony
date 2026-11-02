@@ -200,7 +200,9 @@ describe('postgresAudioPostDependencies', () => {
     });
 
     describe('getTranscriptsBySubjectUris', () => {
-        async function insertTranscript(id: string, uri: string) {
+        const at = (uri: string, originAppId = 'app') => ({ originAppId, uri });
+
+        async function insertTranscript(id: string, uri: string, tenant = 'app') {
             const record = {
                 id,
                 subject: { uri, cid: 'bafyreisubject' },
@@ -208,8 +210,8 @@ describe('postgresAudioPostDependencies', () => {
                 createdAt: new Date('2026-08-01T00:00:00.000Z'),
             };
             await db.query(
-                'insert into audio_transcripts (id, record, created_at) values ($1, $2::jsonb, $3)',
-                [id, JSON.stringify(record), record.createdAt],
+                'insert into audio_transcripts (id, origin_app_id, record, created_at) values ($1, $4, $2::jsonb, $3)',
+                [id, JSON.stringify(record), record.createdAt, tenant],
             );
         }
 
@@ -221,20 +223,26 @@ describe('postgresAudioPostDependencies', () => {
                 uris.push(uri);
                 await insertTranscript(`t${String(i).padStart(12, '0')}`, uri);
             }
-            const map = await deps.getTranscriptsBySubjectUris(uris);
+            const map = await deps.getTranscriptsBySubjectUris(uris.map((u) => at(u)));
             expect(map.size).toBe(75);
         });
 
         it('omits subjects with no transcript and dedupes the input', async () => {
             await insertTranscript('t00000000000a', 'at://did:web:example.com/c/has');
             const map = await deps.getTranscriptsBySubjectUris([
-                'at://did:web:example.com/c/has',
-                'at://did:web:example.com/c/has',
-                'at://did:web:example.com/c/none',
-                '',
+                at('at://did:web:example.com/c/has'),
+                at('at://did:web:example.com/c/has'),
+                at('at://did:web:example.com/c/none'),
+                at(''),
             ]);
             expect(map.size).toBe(1);
             expect(map.has('at://did:web:example.com/c/has')).toBe(true);
+        });
+
+        it("never reads another tenant's transcript of the same subject (migration 0006)", async () => {
+            await insertTranscript('t00000000000b', 'at://did:plc:remote/c/shared', 'other');
+            const map = await deps.getTranscriptsBySubjectUris([at('at://did:plc:remote/c/shared')]);
+            expect(map.size).toBe(0);
         });
 
         it('returns an empty map for no input without querying', async () => {
