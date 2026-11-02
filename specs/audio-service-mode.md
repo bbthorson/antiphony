@@ -3,8 +3,8 @@
 **Status:** **Phases A and B approved and built 2026-11-02** (contracts 0.10.4 and 0.10.5;
 "Phase A as built" and "Phase B as built", below). Open question 3 settled for Phase B:
 tenant scoping is enough (Brad, 2026-11-02). **Phase C verified 2026-11-02 against the
-reference implementation, not a running opensocial host** ("Phase C verification", below;
-open question 2 answered). The recommendation is go, with the changes listed there. Phase C
+reference implementation and the opensocial proposal's text, not yet a running opensocial
+host** ("Phase C verification", below; open question 2 answered). The recommendation is go, with the changes listed there. Phase C
 is held for Brad's approval. This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
 (G2), which the 2026-11-02 finding there (#227) made the critical path: an opensocial group's
@@ -71,6 +71,12 @@ referenced from a record in the author's repo. Antiphony never writes into anoth
     than trusting the writer's.
   - **Write notices** (`notify.ts`). `notifyWrite` is best-effort and carries no records.
     "Nothing here may be load-bearing": a reconcile sweep is what makes sync correct.
+- **The opensocial proposal** (a copy Brad supplied on 2026-11-02; its tangled.org repo is
+  still 502) and the atproto team's two posts about it
+  ([intro](https://atproto.com/blog/atmospheric-groups-intro),
+  [vision](https://atproto.com/blog/open-social-groups-vision)). A group is a DID with spaces
+  under it, hosted by an opensocial host that enforces role-based read access when it issues
+  credentials. "Phase C verification" has what that settles.
 - **HappyView** ([`spaces.md`](./spaces.md) "Prior art"). It confirms the wire names
   (`com.atproto.space.getBlob`, `getSpaceCredential`, `getDelegationToken`), and that
   `<audio src>` can't carry an HTTP message signature. So **signed playback URLs stay** for
@@ -193,12 +199,15 @@ the DID document, so a service DID that publishes one can sign its own. The conf
 exactly that: a `did:plc` with no PDS was refused until the space admitted it, then got a
 credential on every try and read a writer's blob. Antiphony would then need no one's session at
 all, and its sweep could renew credentials on its own (§8.1). What it costs:
-- Antiphony appears on every group's member list, and on its published roster when a policy
-  sets `publishMembers`.
+- Antiphony holds a `membership` record in every such group. Under the opensocial proposal a
+  member is listed on the roster only once it writes its own `acceptance`, and acceptance
+  doesn't gate access. So a service that never writes one would read without being listed.
+  That is the proposal's text; no host has been checked. On the reference PDS the member list
+  is published when a policy sets `publishMembers`.
 - It holds standing read access to each such space, which is a larger trust footprint than a
   per-registration delegation.
-- Each group host has to admit a non-person DID, which an opensocial host may not allow
-  (unverified, open question 2).
+- Each group host has to grant a non-person DID a role that can read the space. The proposal
+  neither provides for that nor forbids it, and no host has been checked (open question 2).
 - Antiphony needs its own service DID with an `#atproto` key.
 
 Recommended as an **opt-in per space**, beside delegation rather than instead of it.
@@ -638,8 +647,8 @@ Where the build differs from the sections above, or settles what they left open:
 
 ## Phase C verification (2026-11-02)
 
-Stage 1 of Phase C: checking its assumptions before any product code. There are three sources,
-in order of strength.
+Stage 1 of Phase C: checking its assumptions before any product code. There are four sources.
+The first three are in order of strength; the fourth is the proposal itself, read afterwards.
 
 1. **A conformance run of the reference implementation at the pin.** `@atproto/dev-env`
    `0.0.0-spaces-alpha-20261029171913` ran in-process: one PLC and two PDS hosts, with the
@@ -693,11 +702,50 @@ in order of strength.
    - Grain's `groups.test.ts` runs against a mocked server, so it shows Grain's assumptions,
      not the host's behaviour.
 
-**What it can't show.** That an opensocial group host behaves like the reference PDS. Its code
-is in the unreachable proposal repo, and its dev stack can't be stood up from Grain alone: the
-group host is `apps/group` there. Grain's production use is the evidence that it does, for
-member delegations at least. The managed-space case, where a host defers to a managing app,
-behaves differently: there the app's `checkUserAccess` answers for Antiphony too.
+4. **The opensocial proposal and the atproto team's posts about it.** The proposal's repo on
+   tangled.org still answers 502. Brad supplied a copy on 2026-11-02, and it matches the
+   definition quoted in the atproto blog's
+   [introduction to atmospheric groups](https://atproto.com/blog/atmospheric-groups-intro).
+   Its companion post is [the open social groups vision](https://atproto.com/blog/open-social-groups-vision).
+   What they settle:
+   - **An opensocial host is not the reference PDS's member-list policy.** It is a peer of the
+     reference policies, with its own authorization:
+     - flat role-based access, where a member's actions are the union of their roles';
+     - an `access` record in each space naming the roles that may read it;
+     - read access enforced by the host **when it issues space credentials**, per the intro
+       post.
+
+     The wire is the same Spaces protocol (`com.atproto.space.*`). So the exchange, the
+     signatures, the MAC and `getBlob` above apply. What decides who gets a credential is the
+     host's roles, not a member list.
+   - **Writer sets are as Phase C assumes.** The intro post walks through Grain reading a
+     group space: Grain asks the group's host which repos are in the space, then reads each one
+     from its own PDS. The host tracks the repos and routes notifications, but doesn't hold
+     members' records. That is (c) in the protocol's own account.
+   - **Each app gets its own modality space under the group DID.** Bardcast's campaign space is
+     one, created through the host's `createSpace`, listed in the group's space index, and
+     given an `access` record. The tenant needs a role that allows `space.create` for that. The
+     two well-known spaces, `meta` and `members`, are for records about the group, not app data.
+   - **A third way to delegate.** The group host is also an OAuth authorization server for the
+     group DID: an admin signs in with their own account and acts as the group within their
+     roles. On the reference PDS the authority can always read its own spaces, so a tenant
+     holding such a session could mint delegations as the group itself. That doesn't depend on
+     any one member staying in the group. On an opensocial host this is unverified.
+   - **There's a live host.** `opensocial.fyi` is the atproto team's prototype host, and
+     `bsky.network` offers spaces-enabled accounts. A conformance run against them is possible.
+     It needs test accounts that Brad would create (Claude can't create accounts), and a group
+     that admits them.
+   - **Churn.** The vision post says Spaces still gets breaking changes weekly. The pin
+     discipline in §12 matters more, not less.
+   - **Namespaces.** The proposal names everything `group.opensocial.*`, while the live host
+     and Grain use `fyi.opensocial.*` (the intro post calls it an early revision). Phase C names
+     neither: it only reads modality spaces through `com.atproto.space.*`.
+
+**What it can't show.** How an opensocial host maps roles to credentials in practice, and
+whether it grants one to a service DID or to the group DID's own delegation. Its code is still
+unreachable, and the conformance run used the reference PDS. Grain's production use is the
+evidence that member delegations work. A managed space, where a host defers to a managing app,
+behaves differently again: there the app's `checkUserAccess` answers for Antiphony too.
 
 **Recommendation: go for Phase C**, built against the reference behaviour. These are the
 changes from the design above:
@@ -709,9 +757,12 @@ changes from the design above:
 3. **The sweep for space rows runs on delegations**, never on a held credential (§8.1):
    - by default, a `remote.recheck_requested` webhook per space, answered by
      `POST /api/v1/remote-posts/recheck`;
-   - opt-in, Antiphony's own service DID as a read-only member.
+   - opt-in, Antiphony's own service DID as a member with a reading role.
 
    The second needs a decision (§4.2's alternative) and a service DID. It can follow Phase C.
+   A delegation as the group DID (source 4) needs nothing new from Antiphony, since the tenant
+   mints it like any other. It's the tenant's best default where it holds an admin's group
+   session.
 4. **`SpaceNotFound` at the exchange is never "gone"**; `SpaceDeleted` and `RecordNotFound` are.
 5. **Registration answers what the exchange says.** A refused delegation is a 403. It keeps the
    host's ambiguity and doesn't claim the space is missing. An unreachable host is a 503, as
@@ -719,31 +770,43 @@ changes from the design above:
 6. **Phase B stays** for tenants that can't mint delegations (no space scope yet), and a pushed
    row upgrades to `fetched` on its first successful credentialed read.
 7. **Rerun the conformance script against a real opensocial host** before the first group uses
-   it. The script is not in this repo yet; Phase C adds it as the harness.
+   it: `opensocial.fyi`, with test accounts on `bsky.network`. The script is not in this repo
+   yet; Phase C adds it as the harness.
+8. **The delegating member must hold a role that reads that space**, not just belong to the
+   group. A refusal reads `SpaceNotFound`, as above. The tenant picks the session; Antiphony
+   only reports the refusal.
 
 ## 14. Open questions
 
 1. **Players without spaces support** (§10). That's Bardcast's call, and it should be made
    before the first table becomes a group.
-2. **The opensocial proposal.** **Answered 2026-11-02 for the reference implementation**
-   ("Phase C verification"). Still open for an opensocial group host itself. The proposal is
-   still unreachable: `tangled.org/opensocial.group/proposal` answered 502 over HTTP and git.
-   - **Credentials for any admitted member's delegation:** yes, on the reference host for a
-     member-list space, as hatk and Grain assume. Grain's membership check against the
-     opensocial host is exactly this exchange, so the opensocial host behaves the same way at
-     least for its members space.
-   - **A service admitted as a reader:** yes on the reference host, as a read-only member,
-     with no PDS account (§4.2's alternative). Whether an opensocial host will admit a
-     non-person DID is unverified.
+2. **The opensocial proposal.** **Answered 2026-11-02**, for the reference implementation by
+   running it, and for an opensocial host by the proposal's text ("Phase C verification",
+   sources 1 and 4). Its repo on tangled.org still answers 502; Brad supplied a copy, which
+   the atproto blog's intro post corroborates.
+   - **Credentials for a member's delegation:** yes, **if the member holds a role the space's
+     `access` record names**. The proposal has the host enforce that at credential issuance.
+     It's not every member. On the reference host, any member with read gets one. Grain's
+     membership check against the opensocial host is this same exchange.
+   - **A service admitted as a reader:** yes on the reference host, as a read-only member with
+     no PDS account (§4.2's alternative). The proposal neither provides for it nor forbids it:
+     it would be a `membership` with a reading role and no `acceptance`, so the service would
+     stay off the roster. Unverified on a host.
    - **`getBlob` on a writer's PDS for a credential the authority's host issued:** yes. The
      writer's host checks the signature against the authority's `#atproto` key and the request
      signature against the bound key, and serves only blobs that a record in that space
-     references.
+     references. The intro post describes the same writer-set model.
    - **The sweep within a credential's life:** no. Credentials last 10 minutes and need a new
      delegation each time (§8.1's revision).
 
    Before Phase C ships to a group on a real opensocial host, rerun the conformance script
-   against that host. That is the one step the reference run can't stand in for.
+   against that host (`opensocial.fyi`). That is the one step the reference run and the
+   proposal's text can't stand in for.
+5. **Group moderation labels.** Under the proposal a group is a moderation service: it writes
+   `label` records into the space its subject is in, including `!hide` and `!takedown`. Once
+   Antiphony reads spaces (Phase C), should it honor a takedown on a registered record (stop
+   serving it, or remove it), or leave that to the tenant? Not needed for Phase C. Decide
+   before the first group moderates audio.
 3. **Who may register a URI.** Any tenant may register any record it can name.
    - **Public records:** Antiphony fetches and checks the record itself, so a tenant learns
      nothing it couldn't fetch.
