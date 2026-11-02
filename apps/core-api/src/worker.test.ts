@@ -211,6 +211,17 @@ describe('worker queue — the audio-processing consumer', () => {
         expect(m.settled).toEqual(['ack']);
     });
 
+    it('runs a remote post by its URI, with no app-DID custody to prove (specs/audio-service-mode.md §6)', async () => {
+        const worker = await freshWorker();
+        const remoteUri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+        const m = message({ originAppId: 'vox-pop', remoteUri });
+        await worker.queue(batch([m.msg]).value, {}, ctx);
+
+        expect(process_).toHaveBeenCalledWith('vox-pop', remoteUri);
+        expect(ensureTenantPin).not.toHaveBeenCalled();
+        expect(m.settled).toEqual(['ack']);
+    });
+
     it('retries a declined lease with backoff rather than acking immediately', async () => {
         // When another runner holds the post (or a dead runner's lease hasn't expired yet),
         // acking immediately would lose the job if the previous runner crashed without completing.

@@ -2,6 +2,7 @@ import { AudioPostService } from '@antiphony/core/services/audio-posts';
 import { SpaceService } from '@antiphony/core/services/spaces';
 import { DidRegistryService } from '@antiphony/core/services/did-registry';
 import { PostDeletionService } from '@antiphony/core/services/post-deletion';
+import { RemotePostService } from '@antiphony/core/services/remote-posts';
 import { makeStorageService, type StorageService } from '@antiphony/core/services/storage';
 import type { AudioPostDependencies } from '@antiphony/core/ports/audio-posts-dependencies';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
@@ -26,6 +27,9 @@ import { postgresDidRegistryDependencies } from './adapters/outbound/postgres/di
 import { postgresPostDeletionDependencies } from './adapters/outbound/postgres/post-deletion-dependencies.js';
 import { webhookNotifier } from './adapters/outbound/webhook/notifier.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
+import { postgresRemotePostDependencies } from './adapters/outbound/postgres/remote-posts-dependencies.js';
+import { postgresRemoteProcessingDependencies } from './adapters/outbound/postgres/remote-processing-dependencies.js';
+import { publicRepo } from './adapters/outbound/atproto/public-repo.js';
 import { postgresRateLimitStore } from './adapters/outbound/postgres/rate-limit-store.js';
 import { postgresIdempotencyStore } from './adapters/outbound/postgres/idempotency-store.js';
 
@@ -77,9 +81,13 @@ export interface Services {
     didRegistryService: DidRegistryService;
     /** Deleting posts and their audio (specs/deletion.md). */
     postDeletionService: PostDeletionService;
+    /** Audio whose record lives in another repo (specs/audio-service-mode.md). */
+    remotePostService: RemotePostService;
     storage: StorageService;
     audioPostDeps: AudioPostDependencies;
     audioProcessingDeps: AudioProcessingDependencies;
+    /** The processing binding for remote posts, keyed by URI (specs/audio-service-mode.md §6). */
+    remoteProcessingDeps: AudioProcessingDependencies;
     rateLimitStore: RateLimitStore;
     idempotencyStore: IdempotencyStore;
     /**
@@ -230,6 +238,7 @@ export function createServices(env: RuntimeEnv): Services {
     }
 
     const audioPostDeps = postgresAudioPostDependencies(sql, storage);
+    const notifier = webhookNotifier(logger);
 
     return {
         audioPostService: new AudioPostService(audioPostDeps),
@@ -239,12 +248,19 @@ export function createServices(env: RuntimeEnv): Services {
         ),
         postDeletionService: new PostDeletionService(
             postgresPostDeletionDependencies(sql, audioPostDeps, storage),
-            webhookNotifier(logger),
+            notifier,
+            logger,
+        ),
+        remotePostService: new RemotePostService(
+            postgresRemotePostDependencies(sql, storage),
+            publicRepo(),
+            notifier,
             logger,
         ),
         storage,
         audioPostDeps,
         audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),
+        remoteProcessingDeps: postgresRemoteProcessingDependencies(sql, storage),
         idempotencyStore: postgresIdempotencyStore(sql),
         sql,
         backend: 'postgres',

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { PostDeletionService } from '@antiphony/core/services/post-deletion';
 import { RemotePostService, REMOTE_GONE_CONFIRM_MS } from '@antiphony/core/services/remote-posts';
+import { AudioProcessingService } from '@antiphony/core/services/audio-processing';
 import { makeStorageService } from '@antiphony/core/services/storage';
 import type { PublicRepoPort, RepoResult, FetchedRecord } from '@antiphony/core/ports/public-repo';
 import { createTestDatabase, type TestDatabase } from './testing/pglite.js';
@@ -8,6 +9,7 @@ import { postgresRemotePostDependencies } from './remote-posts-dependencies.js';
 import { postgresAudioPostDependencies } from './audio-posts-dependencies.js';
 import { postgresAudioProcessingDependencies } from './audio-processing-dependencies.js';
 import { postgresPostDeletionDependencies } from './post-deletion-dependencies.js';
+import { postgresRemoteProcessingDependencies } from './remote-processing-dependencies.js';
 import { r2BlobStore } from '../r2/blob-store.js';
 import { createFakeBucket, type FakeBucket } from '../r2/testing/fake-bucket.js';
 import { cidForBytes, cidForRepoRecord } from '../../../lib/cid.js';
@@ -168,6 +170,34 @@ describe('remote posts (migration 0006)', () => {
         expect(await service().sweep(10)).toMatchObject({ removed: 1 });
         expect(await deps().getRemotePost(TENANT, URI)).toBeNull();
         expect((await deps().getDeletedRemotePost(TENANT, URI))?.reason).toBe('gone');
+    });
+
+    it('processes a remote post through the same service, keyed by URI, and the view shows the result', async () => {
+        const cid = await publish(URI, MP4);
+        await service().register(TENANT, { uri: URI, cid, processing: { transcribe: 'pending' } });
+        const events: { uri: string; postId?: string }[] = [];
+
+        const ran = await new AudioProcessingService(
+            postgresRemoteProcessingDependencies(db, storage()),
+            {
+                transcriber: {
+                    transcribe: async () => ({
+                        transcript: { segments: [{ startMs: 0, endMs: 10, text: 'hi' }], text: 'hi' },
+                        model: 'stub',
+                    }),
+                },
+            },
+            undefined,
+            { notify: async (e) => void events.push(e) },
+        ).process(TENANT, URI);
+
+        expect(ran).toBe(true);
+        expect(events).toEqual([expect.objectContaining({ uri: URI, stage: 'transcribe', status: 'ready' })]);
+        expect(events[0]).not.toHaveProperty('postId');
+        const [view] = await service().hydrate(TENANT, [await service().get(TENANT, URI)]);
+        expect(view.embed).toMatchObject({ transcript: { text: 'hi' }, processing: { transcribe: 'ready' } });
+        // The lease was given back.
+        expect(await db.query('select lease_until from remote_posts')).toEqual([{ lease_until: null }]);
     });
 
     it('takes an edit with new audio: the old blob goes, unless something still uses it', async () => {

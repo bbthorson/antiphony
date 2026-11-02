@@ -38,7 +38,10 @@ import type { ProcessingStage, ProcessingStageStatus } from 'shared/types/proces
 export interface StageSettledEvent {
     /** The tenant. A multi-tenant receiver routes on it; a single-tenant one ignores it. */
     originAppId: string;
-    postId: string;
+    /** The hosted post's id. Absent for a remote post, whose rkey alone isn't unique. */
+    postId?: string;
+    /** The post's URI, hosted or remote (specs/audio-service-mode.md §6). */
+    uri: string;
     stage: ProcessingStage;
     /** The terminal states only — `pending` is not a settle and never fires. */
     status: Exclude<ProcessingStageStatus, 'pending'>;

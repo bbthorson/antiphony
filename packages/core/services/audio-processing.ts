@@ -7,7 +7,7 @@ import {
     type ProcessingStageMap,
     type ProcessingState,
 } from 'shared/types/processing';
-import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
+import type { AudioProcessingDependencies, ProcessingSubject } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
 import type { TrimmerPort } from '../ports/audio-trimmer';
@@ -207,6 +207,7 @@ export class AudioProcessingService {
     private async settle(
         originAppId: string,
         postId: string,
+        subject: ProcessingSubject,
         patch: Partial<Omit<ProcessingState, 'updatedAt'>>,
     ): Promise<void> {
         await this.deps.patchProcessingState(originAppId, postId, patch);
@@ -216,7 +217,14 @@ export class AudioProcessingService {
                 const status = patch[stage];
                 if (status !== 'ready' && status !== 'failed' && status !== 'skipped') return;
                 try {
-                    await this.notifier.notify({ originAppId, postId, stage, status, occurredAt });
+                    await this.notifier.notify({
+                        originAppId,
+                        ...(subject.postId !== undefined ? { postId: subject.postId } : {}),
+                        uri: subject.uri,
+                        stage,
+                        status,
+                        occurredAt,
+                    });
                 } catch (err) {
                     this.logger.error(
                         { err, originAppId, postId, stage, status },
@@ -274,6 +282,7 @@ export class AudioProcessingService {
         const post = await this.deps.getPostById(originAppId, postId);
         // Nothing to do: post gone/cross-tenant, or no processing was requested.
         if (!post || !post.processing) return;
+        const subject = this.subjectOf(post);
 
         const audioCid = post.embed?.audio?.ref?.$link;
         // A post with processing requested but no audio: settle every pending
@@ -340,7 +349,7 @@ export class AudioProcessingService {
             }
         }
         if (Object.keys(unrunnable).length > 0) {
-            await this.settle(originAppId, postId, unrunnable);
+            await this.settle(originAppId, postId, subject, unrunnable);
         }
 
         // A `ready` link the chain would re-apply but cannot run is left alone,
@@ -396,7 +405,7 @@ export class AudioProcessingService {
             if (post.processing[stage] === 'ready') reapplied[stage] = 'pending';
         }
         if (Object.keys(reapplied).length > 0) {
-            await this.settle(originAppId, postId, reapplied);
+            await this.settle(originAppId, postId, subject, reapplied);
         }
 
         // --- Denoise (first, so transcription can use the cleaned audio) ---
@@ -406,7 +415,7 @@ export class AudioProcessingService {
             // `skipped` above.
             const denoiser = this.providers.denoiser!;
             if (!working) {
-                await this.settle(originAppId, postId, { denoise: 'failed' });
+                await this.settle(originAppId, postId, subject, { denoise: 'failed' });
             } else {
                 try {
                     const cleaned = await denoiser.denoise({
@@ -422,7 +431,7 @@ export class AudioProcessingService {
                     );
                     working = { bytes: cleaned.bytes, mimeType: cleaned.mimeType };
                     variantChanged = true;
-                    await this.settle(originAppId, postId, {
+                    await this.settle(originAppId, postId, subject, {
                         denoise: 'ready',
                         processedBlobCid,
                         derivedBlobCids: recordDerived(processedBlobCid),
@@ -439,7 +448,7 @@ export class AudioProcessingService {
                         denoiseModel: cleaned.model ?? UNNAMED_DENOISER,
                     });
                 } catch {
-                    await this.settle(originAppId, postId, { denoise: 'failed' });
+                    await this.settle(originAppId, postId, subject, { denoise: 'failed' });
                 }
             }
         }
@@ -454,7 +463,7 @@ export class AudioProcessingService {
             // Non-null for the same reason as the denoiser above.
             const trimmer = this.providers.trimmer!;
             if (!working) {
-                await this.settle(originAppId, postId, { trim: 'failed' });
+                await this.settle(originAppId, postId, subject, { trim: 'failed' });
             } else {
                 try {
                     const trimmed = await trimmer.trim({
@@ -469,7 +478,7 @@ export class AudioProcessingService {
                     );
                     working = { bytes: trimmed.bytes, mimeType: trimmed.mimeType };
                     variantChanged = true;
-                    await this.settle(originAppId, postId, {
+                    await this.settle(originAppId, postId, subject, {
                         trim: 'ready',
                         processedBlobCid,
                         derivedBlobCids: recordDerived(processedBlobCid),
@@ -480,7 +489,7 @@ export class AudioProcessingService {
                         processedDurationMs: trimmed.durationMs,
                     });
                 } catch {
-                    await this.settle(originAppId, postId, { trim: 'failed' });
+                    await this.settle(originAppId, postId, subject, { trim: 'failed' });
                 }
             }
         }
@@ -538,15 +547,15 @@ export class AudioProcessingService {
             // Written BEFORE the re-run, not after. If this pass dies here, a
             // retry must find outstanding work rather than a `ready` transcript
             // of audio that no longer exists.
-            await this.settle(originAppId, postId, patch);
+            await this.settle(originAppId, postId, subject, patch);
         }
 
         // --- Transcribe (uses the cleaned audio when denoise produced it) ---
         if (post.processing.transcribe === 'pending' || recompute.includes('transcribe')) {
             if (!this.providers.transcriber) {
-                await this.settle(originAppId, postId, { transcribe: 'skipped' });
+                await this.settle(originAppId, postId, subject, { transcribe: 'skipped' });
             } else if (!working) {
-                await this.settle(originAppId, postId, { transcribe: 'failed' });
+                await this.settle(originAppId, postId, subject, { transcribe: 'failed' });
             } else {
                 try {
                     const result = await this.providers.transcriber.transcribe({
@@ -557,15 +566,15 @@ export class AudioProcessingService {
                     });
                     await this.deps.saveTranscript(originAppId, {
                         id: this.deps.newTranscriptId(),
-                        subject: { uri: postUriOf(post, (id) => this.deps.getAppDid(id)), cid: post.cid },
+                        subject: { uri: subject.uri, cid: post.cid },
                         transcript: result.transcript,
                         lang: result.lang,
                         model: result.model,
                         createdAt: this.deps.now(),
                     });
-                    await this.settle(originAppId, postId, { transcribe: 'ready' });
+                    await this.settle(originAppId, postId, subject, { transcribe: 'ready' });
                 } catch {
-                    await this.settle(originAppId, postId, { transcribe: 'failed' });
+                    await this.settle(originAppId, postId, subject, { transcribe: 'failed' });
                 }
             }
         }
@@ -578,9 +587,9 @@ export class AudioProcessingService {
         // add concurrency to a path that is about to move behind a queue.
         if (post.processing.waveform === 'pending' || recompute.includes('waveform')) {
             if (!this.providers.waveform) {
-                await this.settle(originAppId, postId, { waveform: 'skipped' });
+                await this.settle(originAppId, postId, subject, { waveform: 'skipped' });
             } else if (!working) {
-                await this.settle(originAppId, postId, { waveform: 'failed' });
+                await this.settle(originAppId, postId, subject, { waveform: 'failed' });
             } else {
                 try {
                     const result = await this.providers.waveform.waveform({
@@ -592,12 +601,12 @@ export class AudioProcessingService {
                     // the view would read as "processed waveform available"
                     // and then find nothing, with no pending stage left to
                     // make a retry fix it.
-                    await this.settle(originAppId, postId, {
+                    await this.settle(originAppId, postId, subject, {
                         waveform: 'ready',
                         waveformPeaks: result.peaks,
                     });
                 } catch {
-                    await this.settle(originAppId, postId, { waveform: 'failed' });
+                    await this.settle(originAppId, postId, subject, { waveform: 'failed' });
                 }
             }
         }
@@ -616,6 +625,16 @@ export class AudioProcessingService {
         return this.capabilities[stage];
     }
 
+    /**
+     * What this post is called outside: its URI (the transcript's subject, and
+     * every webhook's `uri`) and, for a hosted post, its `postId`. The deps say,
+     * because a remote post's URI is a fact read from elsewhere while a hosted
+     * post's is built from its authority (specs/audio-service-mode.md §6).
+     */
+    private subjectOf(post: AudioPostRecord): ProcessingSubject {
+        return this.deps.subjectOf?.(post) ?? { uri: postUriOf(post, (id) => this.deps.getAppDid(id)), postId: post.id };
+    }
+
     /** Settle any still-pending stage as skipped (used when the post has no audio). */
     private async settlePendingAsSkipped(
         originAppId: string,
@@ -624,6 +643,7 @@ export class AudioProcessingService {
     ): Promise<void> {
         const state = post.processing;
         if (!state) return;
+        const subject = this.subjectOf(post);
         // Every stage, not just the implemented ones — a stage this deployment
         // cannot run must still settle rather than sit `pending` forever.
         const patch: ProcessingStageMap = {};
@@ -631,7 +651,7 @@ export class AudioProcessingService {
             if (state[stage] === 'pending') patch[stage] = 'skipped';
         }
         if (Object.keys(patch).length > 0) {
-            await this.settle(originAppId, postId, patch);
+            await this.settle(originAppId, postId, subject, patch);
         }
     }
 }

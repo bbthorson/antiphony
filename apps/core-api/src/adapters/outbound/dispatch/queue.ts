@@ -62,9 +62,13 @@ export function queueDispatcher(
             // It can still reject — the port's contract says so — and the
             // dispatch site catches, because the post is already committed by
             // the time we get here.
-            await queue.send({ originAppId: job.originAppId, postId: job.postId });
+            await queue.send(
+                'remoteUri' in job
+                    ? { originAppId: job.originAppId, remoteUri: job.remoteUri }
+                    : { originAppId: job.originAppId, postId: job.postId },
+            );
             logger.info(
-                { postId: job.postId, originAppId: job.originAppId },
+                { ...job },
                 '[audio-processing] job enqueued',
             );
         },

@@ -96,6 +96,7 @@ describe('inlineDispatcher', () => {
         };
         const deps = {
             getPostById: vi.fn(async () => post),
+            getAppDid: vi.fn(() => 'did:web:app-1.example'),
             readBlobBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
             patchProcessingState: vi.fn(async () => undefined),
             writeDerivedBlob: vi.fn(async () => 'bafkreinew'),

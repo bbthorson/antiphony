@@ -5,6 +5,7 @@ import type {
     StageSettledEvent,
 } from '@antiphony/core/ports/processing-notifier';
 import type { DeletionNotifierPort, PostDeletedEvent } from '@antiphony/core/ports/deletion-notifier';
+import type { RemoteNotifierPort, RemotePostEvent } from '@antiphony/core/ports/remote-notifier';
 import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-config.js';
 
 /**
@@ -46,7 +47,7 @@ export function webhookNotifier(
     // Injected only so tests exercise the retry path without real wall-clock
     // delay; production uses the real timer.
     sleep: (ms: number) => Promise<void> = defaultSleep,
-): ProcessingNotifierPort & DeletionNotifierPort {
+): ProcessingNotifierPort & DeletionNotifierPort & RemoteNotifierPort {
     return {
         async notify(event: StageSettledEvent): Promise<void> {
             const config = resolveWebhookConfig(event.originAppId);
@@ -55,16 +56,23 @@ export function webhookNotifier(
                 config,
                 {
                     type: 'stage.settled',
-                    postId: event.postId,
+                    // `postId` for a hosted post; a remote post has none (its
+                    // rkey alone isn't unique). `uri` names either.
+                    ...(event.postId !== undefined ? { postId: event.postId } : {}),
+                    uri: event.uri,
                     originAppId: event.originAppId,
                     stage: event.stage,
                     status: event.status,
                     occurredAt: event.occurredAt,
                 },
                 {
-                    eventId: `${event.postId}:${event.stage}:${event.status}`,
+                    eventId: `${event.postId ?? event.uri}:${event.stage}:${event.status}`,
                     timestamp: event.occurredAt,
-                    context: { originAppId: event.originAppId, postId: event.postId, stage: event.stage },
+                    context: {
+                        originAppId: event.originAppId,
+                        ...(event.postId !== undefined ? { postId: event.postId } : { uri: event.uri }),
+                        stage: event.stage,
+                    },
                     label: 'stage-settled',
                 },
                 logger,
@@ -92,6 +100,33 @@ export function webhookNotifier(
                     timestamp: event.occurredAt,
                     context: { originAppId: event.originAppId, postId: event.postId },
                     label: 'post-deleted',
+                },
+                logger,
+                fetchImpl,
+                sleep,
+            );
+        },
+
+        // What the deletion sweep did to a remote post
+        // (specs/audio-service-mode.md §6, §8).
+        async notifyRemote(event: RemotePostEvent): Promise<void> {
+            const config = resolveWebhookConfig(event.originAppId);
+            if (!config) return;
+            await deliver(
+                config,
+                {
+                    type: event.type,
+                    originAppId: event.originAppId,
+                    uri: event.uri,
+                    ...(event.cid !== undefined ? { cid: event.cid } : {}),
+                    occurredAt: event.occurredAt,
+                },
+                {
+                    // Gone happens once; each edit has its own CID.
+                    eventId: `${event.uri}:${event.type}${event.cid ? `:${event.cid}` : ''}`,
+                    timestamp: event.occurredAt,
+                    context: { originAppId: event.originAppId, uri: event.uri },
+                    label: event.type,
                 },
                 logger,
                 fetchImpl,
