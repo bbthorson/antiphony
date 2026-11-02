@@ -41,8 +41,8 @@ export interface AudioProcessingDependencies {
      */
     writeDerivedBlob(originAppId: string, bytes: Uint8Array, mimeType: string, space?: SpaceKey): Promise<string>;
 
-    /** Persist a transcript enrichment record (last-write-wins by subject uri). */
-    saveTranscript(record: TranscriptEnrichmentRecord): Promise<void>;
+    /** Persist a transcript enrichment record (last-write-wins by tenant and subject uri). */
+    saveTranscript(originAppId: string, record: TranscriptEnrichmentRecord): Promise<void>;
 
     /**
      * Merge a partial processing-state patch onto the post (sets `updatedAt`).

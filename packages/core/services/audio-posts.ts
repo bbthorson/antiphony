@@ -720,9 +720,12 @@ export class AudioPostService {
 
         // Resolve authority per-record: a hydration batch can span tenants, and
         // each record's uri is keyed on its own authority (or its tenant's app DID).
-        const uris = records.map((r) => postUriOf(r, (id) => this.deps.getAppDid(id)));
+        const subjects = records.map((r) => ({
+            originAppId: r.originAppId,
+            uri: postUriOf(r, (id) => this.deps.getAppDid(id)),
+        }));
 
-        const transcriptMap = await this.deps.getTranscriptsBySubjectUris(uris);
+        const transcriptMap = await this.deps.getTranscriptsBySubjectUris(subjects);
 
         return Promise.all(
             records.map((record) => this.hydrateOne(record, transcriptMap, viewerUid)),

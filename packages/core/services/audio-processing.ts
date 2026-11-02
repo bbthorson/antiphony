@@ -555,7 +555,7 @@ export class AudioProcessingService {
                         durationMs: post.embed?.durationMs,
                         langHint: post.langs?.[0],
                     });
-                    await this.deps.saveTranscript({
+                    await this.deps.saveTranscript(originAppId, {
                         id: this.deps.newTranscriptId(),
                         subject: { uri: postUriOf(post, (id) => this.deps.getAppDid(id)), cid: post.cid },
                         transcript: result.transcript,

@@ -103,7 +103,7 @@ export function postgresPostDeletionDependencies(
                 ), transcripts as (
                     delete from audio_transcripts t
                      using removed r
-                     where t.subject_uri = r.uri
+                     where t.origin_app_id = $1 and t.subject_uri = r.uri
                 ), queued as (
                     insert into blob_deletions (origin_app_id, cid)
                     select distinct $1::text, c.cid
@@ -129,7 +129,8 @@ export function postgresPostDeletionDependencies(
             // The reference check runs NOW, not when the CID was queued, so a
             // post created in between keeps its audio. A blob is referenced as a
             // post's original audio, its processed variant, or any variant
-            // processing wrote for it; each is indexed (0003).
+            // processing wrote for it; each is indexed (0003), and the same for
+            // a remote post (0006).
             const queued = await sql.query<QueuedRow>(
                 `
                 select q.origin_app_id, q.cid, q.enqueued_at::text as enqueued_at,
@@ -139,6 +140,14 @@ export function postgresPostDeletionDependencies(
                               and (p.audio_cid = q.cid
                                    or p.processed_blob_cid = q.cid
                                    or (p.processing -> 'derivedBlobCids') ? q.cid)
+                       ) or exists (
+                           -- A remote post's copy of the same bytes, or a
+                           -- variant processing wrote for it (migration 0006).
+                           select 1 from remote_posts r
+                            where r.origin_app_id = q.origin_app_id
+                              and (r.blob_cid = q.cid
+                                   or r.processed_blob_cid = q.cid
+                                   or (r.processing -> 'derivedBlobCids') ? q.cid)
                        ) as referenced
                   from blob_deletions q
                  where ($1::text is null or q.origin_app_id = $1)

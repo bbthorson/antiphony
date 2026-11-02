@@ -63,21 +63,21 @@ export function postgresAudioProcessingDependencies(
             return cid;
         },
 
-        async saveTranscript(record: TranscriptEnrichmentRecord): Promise<void> {
-            // Last-write-wins by subject uri, as the port documents. `subject_uri` is a generated
-            // column with a UNIQUE index (migrations/0001_initial_schema.sql), so the contract is
-            // now enforced by the store: a second transcript for a post
-            // REPLACES the first instead of quietly coexisting with it.
+        async saveTranscript(originAppId: string, record: TranscriptEnrichmentRecord): Promise<void> {
+            // Last-write-wins by tenant and subject uri, as the port documents,
+            // enforced by the unique index on (origin_app_id, subject_uri)
+            // (migration 0006): a second transcript for a post REPLACES the
+            // first instead of quietly coexisting with it.
             await sql.query(
                 `
-                insert into audio_transcripts (id, record, created_at)
-                values ($1, $2::jsonb, $3)
-                on conflict (subject_uri) do update
+                insert into audio_transcripts (id, origin_app_id, record, created_at)
+                values ($1, $4, $2::jsonb, $3)
+                on conflict (origin_app_id, subject_uri) do update
                     set id         = excluded.id,
                         record     = excluded.record,
                         created_at = excluded.created_at
                 `,
-                [record.id, JSON.stringify(record), record.createdAt],
+                [record.id, JSON.stringify(record), record.createdAt, originAppId],
             );
         },
 

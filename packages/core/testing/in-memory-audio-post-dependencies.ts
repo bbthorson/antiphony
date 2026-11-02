@@ -136,9 +136,9 @@ export function inMemoryAudioPostDependencies(
             return page(rows, originAppId, 'asc', limit, cursorId, posts).map(clone);
         },
 
-        async getTranscriptsBySubjectUris(uris) {
+        async getTranscriptsBySubjectUris(subjects) {
             const map = new Map<string, TranscriptEnrichmentRecord>();
-            for (const uri of uris) {
+            for (const { uri } of subjects) {
                 const t = transcripts.get(uri);
                 if (t) map.set(uri, t);
             }

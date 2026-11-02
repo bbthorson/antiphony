@@ -192,7 +192,7 @@ describe('createPost in a space', () => {
         const [view] = await svc.hydrateAudioPosts([prompt], null);
         const expected = buildPostUri(APP, prompt.id, CAMPAIGN);
         expect(view?.uri).toBe(expected);
-        expect(deps.getTranscriptsBySubjectUris).toHaveBeenCalledWith([expected]);
+        expect(deps.getTranscriptsBySubjectUris).toHaveBeenCalledWith([{ originAppId: expect.any(String), uri: expected }]);
     });
 
     it("refuses a prompt in a space the tenant doesn't have", async () => {
