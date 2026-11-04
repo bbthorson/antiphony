@@ -26,6 +26,7 @@ export type {
     Recording,
     RecorderStatus,
     RecorderErrorKind,
+    RecorderInterruption,
     UseAudioRecorderOptions,
 } from './use-audio-recorder';
 

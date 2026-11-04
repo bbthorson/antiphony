@@ -24,7 +24,7 @@ That boundary is the same one the platform draws everywhere else. Antiphony owns
 
 | | |
 |---|---|
-| `useAudioRecorder(options?)` | MediaRecorder as a state machine. `{ status, recording, elapsedMs, error, errorKind, analyser, start, stop, reset }`. `maxDurationMs` auto-stops; `analyser: true` opts into a live `AnalyserNode`; the mic is released on unmount. |
+| `useAudioRecorder(options?)` | MediaRecorder as a state machine. `{ status, recording, elapsedMs, error, errorKind, analyser, start, stop, reset }`. `maxDurationMs` auto-stops, and holds in a background tab. `analyser: true` opts into a live `AnalyserNode`. A screen wake lock is held during a take (`wakeLock: false` to opt out). A muted or lost input ends the take, with `recording.interruption` set. The mic is released on unmount. |
 | `useAudioPlayer({ url, durationMs?, crossOrigin? })` | Playback without an `<audio>` element in your tree. `{ status, currentTimeMs, durationMs, progress, error, play, pause, toggle, seek, seekToProgress }`. |
 | `computeWaveform(blob, buckets?)` | 0–100 integer peaks, lexicon-shaped. Also at `@antiphony/capture-kit/waveform`, which imports **no React**. |
 | `AudioPlayer` | A minimal transport UI built from `useAudioPlayer`. A demonstration, not a design system. |
