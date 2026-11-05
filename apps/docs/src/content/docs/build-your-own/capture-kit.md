@@ -59,16 +59,35 @@ function Recorder({ onDone }: { onDone: (blob: Blob) => void }) {
 | Returns | |
 |---|---|
 | `status` | `'idle' \| 'recording' \| 'recorded' \| 'error'` |
-| `recording` | `{ blob, mimeType, durationMs, previewUrl }` once stopped, else `null` |
+| `recording` | `{ blob, mimeType, durationMs, previewUrl, interruption }` once stopped, else `null` |
 | `elapsedMs` | Live counter during the take. Renders your timer without a second clock. |
 | `error` | A denied microphone arrives here as a string, not a thrown exception. |
-| `errorKind` | `'permission-denied' \| 'no-device' \| 'unsupported' \| 'unknown'` |
+| `errorKind` | `'permission-denied' \| 'no-device' \| 'unsupported' \| 'interrupted' \| 'unknown'` |
 | `analyser` | A live `AnalyserNode`, when opted in. See below. |
 | `start` / `stop` / `reset` | `reset` revokes the preview object URL for you. |
 
 `maxDurationMs` stops the take automatically — every consumer has an upload ceiling, and without it each one writes the same timer. The hook also releases the microphone if your component unmounts mid-take, so the browser's recording indicator never outlives the UI.
 
 `mimeType` is the *clean* type (`audio/webm`, not `audio/webm;codecs=opus`), which is what the upload allowlist matches on.
+
+### When the page loses focus
+
+Takes get interrupted more often than a demo suggests. A phone auto-locks partway through a reply, a tab gets switched, a call comes in, a headset drops. The hook handles each of these itself.
+
+- **Screen wake lock.** While recording, the hook holds a [Screen Wake Lock](https://developer.mozilla.org/docs/Web/API/Screen_Wake_Lock_API) so a phone doesn't auto-lock. The browser drops the lock whenever the page is hidden, and the hook takes it again when the page comes back. Pass `wakeLock: false` to opt out. It's best-effort: if the API is missing or the browser refuses, recording goes ahead without it.
+- **Interruptions end the take honestly.** If the input track ends or mutes, or `MediaRecorder` errors, the hook stops and hands back what it captured, with `recording.interruption` set. Before, a take that ended this way looked like one the user had stopped, or it carried on recording silence.
+
+  | `interruption` | What happened |
+  |---|---|
+  | `null` | Your `stop()`, or `maxDurationMs`. A normal take. |
+  | `'muted'` | The input went silent. The page was backgrounded or the screen locked on a browser that won't capture in the background (every iOS browser), a call took the microphone, or the OS mic switch was flipped. |
+  | `'device-lost'` | The input track ended: unplugged, permission revoked, or taken by the OS. |
+  | `'recorder-error'` | `MediaRecorder` raised an error. |
+
+  If nothing was captured before the interruption, there's no take to offer, so you get `status: 'error'` with `errorKind: 'interrupted'`.
+- **`maxDurationMs` holds in a background tab.** Browsers throttle timers in hidden tabs, so the cap is also checked on every `MediaRecorder` chunk (`timesliceMs`, default 1000) and when the page becomes visible again. A capped take overshoots by about one chunk at most.
+
+The hook can't keep a microphone open where the browser won't. On iOS, capture stops when the page is backgrounded or the screen locks. The hook notices and reports `'muted'`, and the duration is measured to the moment the page was hidden. What to tell the person is your call.
 
 ### Errors: the kit classifies, you write the copy
 

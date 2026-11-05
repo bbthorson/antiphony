@@ -1,6 +1,6 @@
 {
   "name": "@antiphony/capture-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Headless browser audio primitives for Antiphony clients \u2014 a microphone recorder, a playback hook, and client-side waveform peaks. Renders nothing, styles nothing, uploads nothing.",
   "license": "MIT",
   "homepage": "https://docs.antiphony.dev",
