@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@antiphony/shared": "*",
-    "@atproto/syntax": "0.0.0-spaces-alpha-20261029171913"
+    "@atproto/syntax": "0.7.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
