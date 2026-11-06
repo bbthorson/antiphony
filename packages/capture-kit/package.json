@@ -1,6 +1,6 @@
 {
   "name": "@antiphony/capture-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Headless browser audio primitives for Antiphony clients \u2014 a microphone recorder, a playback hook, and client-side waveform peaks. Renders nothing, styles nothing, uploads nothing.",
   "license": "MIT",
   "homepage": "https://docs.antiphony.dev",
@@ -68,9 +68,9 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run"
   },
-  "//peerDependencies": "React is a peer, not a dependency, so a consumer's own React is the one the hooks run on. Two React copies in one tree means two dispatchers and 'invalid hook call' at runtime \u2014 the standard failure mode for a hooks library that gets this wrong. The range matches what apps/reference and the Vox Pop clients are on.",
+  "//peerDependencies": "React is a peer, not a dependency, so a consumer's own React is the one the hooks run on. Two React copies in one tree means two dispatchers and 'invalid hook call' at runtime \u2014 the standard failure mode for a hooks library that gets this wrong. The range is as wide as the code allows: the hooks use only useState, useRef, useCallback and useEffect, so nothing needs a recent minor. Do not tighten it to whatever this repo's devDependency happens to be. 0.2.0 shipped `^19.3.1`, which strict-peer consumers on React 19.3.0 (Vox Pop's Expo app pins exactly 19.3.0) could not install. The tests run on React 19 (the devDependency); the 18 half of the range is the one 0.1.0 shipped with.",
   "peerDependencies": {
-    "react": "^19.3.1"
+    "react": "^18 || ^19"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
