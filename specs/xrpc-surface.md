@@ -67,7 +67,7 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.getPlaybackUrl` | query | URL minting | tenant | exists |
 | `dev.antiphony.audio.getAudio` | query, binary output | `GET /audio` (proxy) | capability (signed URL) | new, or stays a plain media route (D-8) |
 | space management | procedure / query | `PUT`/`GET /spaces/{type}/{skey}` | tenant | new (D-9) |
-| `dev.antiphony.tenant.getStats` | query | proposed `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | new, if built |
+| `dev.antiphony.tenant.getStats` | query | `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | exists |
 | `dev.antiphony.server.describeServer` | query | `GET /` service info | public | new |
 
 Inputs and outputs reuse `defs.json` (`postView`, `threadView`, `embed` views, `spaceKey`).

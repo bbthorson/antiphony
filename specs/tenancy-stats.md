@@ -1,18 +1,23 @@
-# Tenancy stats — `GET /api/v1/stats`
+# Tenancy stats — `dev.antiphony.tenant.getStats`
 
-**Status:** Proposed 2026-08-10, not implemented. Adds one read-only route that
-answers corpus-level questions about the calling tenancy's own posts. Originates
+**Status:** Implemented 2026-11-11, contract 0.10.8. Proposed 2026-08-10. Adds one read-only
+query that answers corpus-level questions about the calling tenancy's own posts, built
+**XRPC-first** ([`xrpc-surface.md`](./xrpc-surface.md)): the lexicon
+`dev.antiphony.tenant.getStats` is the contract, `GET /xrpc/dev.antiphony.tenant.getStats` is the
+primary surface, and `GET /api/v1/stats` is a REST twin over the same service method. Originates
 from a Vox Pop proposal written against the deployed surface (`specs/admin-dashboard.md`
-§ 6.5–6.6 in `bbthorson/vox-pop`); this document is the Antiphony-side decision,
-and it **diverges from that proposal in four places** — see § 9.
+§ 6.5–6.6 in `bbthorson/vox-pop`); this document is the Antiphony-side decision, and it
+**diverges from that proposal in four places**, listed in § 9. The proposal and the first
+version of this spec were written for Firestore; § 4 describes what was built on Postgres, and
+§ 9 records the one addition made on the way (`remotePosts`).
 
 ## The ask
 
 | | |
 |---|---|
-| **Add** | One route — `GET /api/v1/stats`, service-token gated, actor-less. |
-| **Returns** | Post counts for the calling tenancy: totals plus fixed 24h and 7d windows. |
-| **Costs** | **Two** new composite indexes. No new fields, no counters, no backfill. |
+| **Add** | One query, `dev.antiphony.tenant.getStats` (`GET /xrpc/dev.antiphony.tenant.getStats`), and its REST twin `GET /api/v1/stats`. Service-token gated, actor-less. |
+| **Returns** | Post counts for the calling tenancy: totals plus fixed 24h and 7d windows, for hosted posts (`posts`) and for registered remote posts (`remotePosts`). |
+| **Costs** | No new indexes, fields, counters or backfill; the existing indexes serve every count (§ 4.2). |
 | **Does not** | Enumerate posts, break down by author, accept arbitrary date ranges, or return any user data. |
 
 ---
@@ -25,7 +30,7 @@ Verified against the deployed surface:
   `listRoute`), so an acting actor is mandatory, and both slices it serves are
   actor-scoped by construction — `queryByAuthor` (posts authored by the viewer)
   and `queryByRootAuthor` (replies whose thread root that author wrote), both in
-  `adapters/outbound/firebase/audio-posts-dependencies.ts`.
+  `adapters/outbound/postgres/audio-posts-dependencies.ts` (written against the Firestore binding it replaced).
 - `GET /api/v1/posts/{postId}` and `/{postId}/replies` are single-document and
   single-thread respectively.
 
@@ -62,31 +67,58 @@ tempting additions are exactly the ones that would cross it:
 
 ## 3. Contract
 
-Standard envelope. `requireServiceToken()` — the request is tenancy-scoped and
-viewer-less, the same posture as an anonymous read, and any
-`X-Antiphony-Acting-Actor` present is ignored rather than rejected.
-`rateLimit(RATE_LIMITS.read)`.
+`dev.antiphony.tenant.getStats` is a query with **no parameters**; the tenancy is the credential's.
+`requireServiceToken()`: the request is tenancy-scoped and viewer-less, the same posture as an
+anonymous read, and any `X-Antiphony-Acting-Actor` present is ignored rather than rejected.
+`rateLimit(RATE_LIMITS.read)` on both surfaces. XRPC answers the bare body and errors as
+`{ error, message }`; REST wraps the same body in the standard envelope.
 
 ```jsonc
-// GET /api/v1/stats
+// GET /xrpc/dev.antiphony.tenant.getStats
 // Authorization: Bearer <service-token>
 {
-  "success": true,
-  "data": {
-    "posts": {
-      "totals":  { "posts": 4182, "prompts": 1204, "replies": 2978 },
-      "windows": {
-        "last24h": { "posts": 37,  "prompts": 4,  "replies": 33 },
-        "last7d":  { "posts": 291, "prompts": 26, "replies": 265 }
-      }
-    },
-    // The single read time all six aggregations were taken at (§ 4.2).
-    // Required — a caller must be able to show staleness rather than imply
-    // live truth, and a cached response must be able to say so honestly.
-    "asOf": "2026-08-10T14:02:11Z"
-  }
+  "posts": {
+    "totals":  { "posts": 4182, "prompts": 1204, "replies": 2978 },
+    "windows": {
+      "last24h": { "posts": 37,  "prompts": 4,  "replies": 33 },
+      "last7d":  { "posts": 291, "prompts": 26, "replies": 265 }
+    }
+  },
+  // The same structure over the remote posts the tenant registered
+  // (specs/audio-service-mode.md). Never counted in `posts`.
+  "remotePosts": {
+    "totals":  { "posts": 52, "prompts": 9, "replies": 43 },
+    "windows": {
+      "last24h": { "posts": 3,  "prompts": 0, "replies": 3 },
+      "last7d":  { "posts": 20, "prompts": 2, "replies": 18 }
+    }
+  },
+  // The single read time every number was taken at (§ 4.1), and the end of
+  // both windows. Required: a caller must be able to show staleness rather
+  // than imply live truth, and a cached response must be able to say so.
+  "asOf": "2026-11-11T14:02:11.000Z"
 }
+// GET /api/v1/stats answers { "success": true, "data": <the above> }
 ```
+
+The lexicons are `lexicons/dev/antiphony/tenant/getStats.json` and `defs.json` (`counts`,
+`windows`, `postStats`), held to the Zod schemas in `packages/shared/types/stats.ts` by the
+lexicon-parity test. A tenancy with no rows returns zeros, not 404.
+
+### What a count is
+
+- **`posts`** counts the tenant's rows in `posts`: hosted posts, in a space or not. A prompt is a
+  row with no reply reference and a reply one with, which is the `kind` column.
+- **`remotePosts`** counts the tenant's rows in `remote_posts` (migration 0006): the records it
+  registered from other repos. A reply is a row with `reply_root_uri is not null`. This is the one
+  addition to the August proposal, made by the owner when it was built: a tenant whose prompts live
+  in other repos (a Vox Pop org on a group host) would otherwise see a total that leaves them out.
+- **A window is by `created_at`**, counted back from `asOf`, and a row **exactly at the edge is
+  inside it** (`created_at >= asOf - 24h`). For a hosted post `created_at` is when it was posted.
+  For a remote post it is the `createdAt` its record claims, which is not when it was
+  registered here, so a registration of an old record does not move a window. A reader who
+  wants "registered recently" needs a different figure, which this is not.
+- `windows.last7d` includes `windows.last24h`; neither is a disjoint bucket.
 
 ### Why the counts nest under `posts`
 
@@ -109,7 +141,8 @@ future-proofing against a third `kind`, which the data model forbids — `kind` 
 denormalized from `reply` presence (`AudioPostRecordSchema`) and is binary by
 construction. Two better reasons stand:
 
-1. It is the only aggregation that needs no composite index (§ 4.1).
+1. A caller can check the arithmetic: `prompts + replies = posts` holds in every figure because all
+   are counted in one read (§ 4.1), which a total derived client-side could not show.
 2. It is the number a dashboard actually renders, and deriving a headline figure
    client-side invites each caller to derive it slightly differently.
 
@@ -120,120 +153,138 @@ construction. Two better reasons stand:
 
 ## 4. Implementation
 
-Post documents hold `originAppId`, `kind`, `createdAt`, `authorId`, and
-`rootAuthorId`. `createdAt` is written as `deps.now()` — a `Date`, stored as a
-Firestore `Timestamp` — and only two adapters ever write the `posts` collection
-(`audio-posts-dependencies.ts`, `audio-processing-dependencies.ts`), so range
-filters on it are sound. Every number above is therefore a Firestore `count()`
-aggregation over an equality-plus-range query the collection is already shaped for.
+Built lexicon-first on Postgres, in the layers the other methods use:
 
-The port stays **count-shaped**, never enumeration-shaped, so the "no tenancy-wide
-enumeration primitive" property holds at the port boundary and not merely at the
-route:
+| Layer | Where |
+|---|---|
+| Lexicon | `lexicons/dev/antiphony/tenant/getStats.json`, `defs.json` |
+| Schema | `packages/shared/types/stats.ts` (`TenantStatsSchema`), `XRPC_NSID.GetStats` |
+| Port and service | `packages/core/ports/tenant-stats-dependencies.ts`, `services/tenant-stats.ts` |
+| Postgres binding | `apps/core-api/src/adapters/outbound/postgres/tenant-stats-dependencies.ts` |
+| Surfaces | the XRPC route in `adapters/inbound/xrpc/index.ts`; `adapters/inbound/rest/stats.ts` (OpenAPI tag `Tenant`) |
+
+The port stays **count-shaped**, never enumeration-shaped, so the "no tenancy-wide enumeration
+primitive" property holds at the port boundary and not merely at the route:
 
 ```ts
-// packages/core/ports/audio-posts-dependencies.ts
-/**
- * Count posts in a tenancy. Deliberately returns a scalar: adding a
- * tenancy-wide LIST primitive here would re-open the enumeration surface
- * that core-surface.md closed, for a question that only needs a number.
- */
-countPosts(
+// packages/core/ports/tenant-stats-dependencies.ts
+countTenantPosts(
     originAppId: string,
-    options?: { kind?: 'prompt' | 'reply'; since?: Date },
-): Promise<number>;
+    edges: { since24h: Date; since7d: Date },
+): Promise<{ posts: PostStats; remotePosts: PostStats }>;
 ```
 
-### 4.1 Two indexes, not one
+`TenantStatsService.getStats` reads its clock once, derives both edges from that instant, passes
+them to the port and reports the instant as `asOf`. The clock is injected, which is how the
+window-edge tests pin it.
 
-`firestore.indexes.json` currently has four composites on `posts`. Each leads with
-`originAppId` followed by a per-record facet (`authorId`; `authorId, kind`;
-`reply.parent.uri`; `rootAuthorId`), so none can serve a tenancy-wide query.
+### 4.1 One read time for every figure
 
-The originating proposal added one index and claimed it covered all six
-aggregations. **It covers four.** Firestore requires a composite index's equality
-fields to form a *prefix* and has no index-skip-scan over an unconstrained middle
-field, so an index of `(originAppId, kind, createdAt)` cannot serve a query that
-constrains `originAppId` and `createdAt` but leaves `kind` open:
-
-| Aggregation | Query shape | Served by |
-|---|---|---|
-| `totals.posts` | `originAppId ==` | automatic single-field index |
-| `totals.prompts` / `.replies` | `originAppId ==`, `kind ==` | index **A** (equality prefix) |
-| `windows.*.prompts` / `.replies` | `originAppId ==`, `kind ==`, `createdAt >=` | index **A** |
-| `windows.last24h.posts` / `last7d.posts` | `originAppId ==`, `createdAt >=` | index **B** |
-
-```json
-// A — the kind-scoped aggregations, windowed and unwindowed
-{
-  "collectionGroup": "posts",
-  "queryScope": "COLLECTION",
-  "fields": [
-    { "fieldPath": "originAppId", "order": "ASCENDING" },
-    { "fieldPath": "kind",        "order": "ASCENDING" },
-    { "fieldPath": "createdAt",   "order": "DESCENDING" }
-  ]
-},
-// B — the kind-less windowed totals
-{
-  "collectionGroup": "posts",
-  "queryScope": "COLLECTION",
-  "fields": [
-    { "fieldPath": "originAppId", "order": "ASCENDING" },
-    { "fieldPath": "createdAt",   "order": "DESCENDING" }
-  ]
-}
-```
-
-**This is the one defect in this design that local testing cannot catch.** The
-Firestore emulator does not enforce composite index requirements, so with index B
-missing every unit test and every local run passes, and the two window totals fail
-only against production Firestore, as `FAILED_PRECONDITION`, after the route ships.
-
-The tempting one-index workaround — `kind in ['prompt', 'reply']`, which fans out
-into equality queries index A can serve — is refused. It re-introduces exactly the
-enumerate-the-kinds coupling that carrying `posts` explicitly exists to avoid, to
-save an index that costs nothing until it is written to.
-
-### 4.2 One read time for all six
-
-Six independent `count()` calls execute at six read times. A post created mid-flight
-makes `prompts + replies ≠ posts`, and because `posts` is carried as its own
-aggregation (§ 3) a caller that sanity-checks the arithmetic will see it fail
+Twelve independent counts would execute at twelve read times. A post created mid-flight makes
+`prompts + replies ≠ posts`, and a caller that sanity-checks the arithmetic would see it fail
 intermittently and file a bug against the endpoint.
 
-Issue all six inside a **read-only transaction at a pinned read time**. That makes
-the numbers internally consistent and makes `asOf` a single honest value rather
-than an approximation over a spread of six.
+The binding therefore issues **one SQL statement**, and a statement reads one snapshot. (The
+`SqlClient` port has no interactive transaction on purpose; none is needed here.) Everything is
+scoped by `origin_app_id`:
+
+```sql
+select
+    h.prompts       as h_prompts,
+    h.replies       as h_replies,
+    h.prompts_24h   as h_prompts_24h,
+    h.replies_24h   as h_replies_24h,
+    h.prompts_7d    as h_prompts_7d,
+    h.replies_7d    as h_replies_7d,
+    (select count(*) from remote_posts
+      where origin_app_id = $1)                                           as r_posts,
+    (select count(*) from remote_posts
+      where origin_app_id = $1 and reply_root_uri is not null)            as r_replies,
+    (select count(*) from remote_posts
+      where origin_app_id = $1 and created_at >= $2::timestamptz)         as r_posts_24h,
+    (select count(*) from remote_posts
+      where origin_app_id = $1 and reply_root_uri is not null
+        and created_at >= $2::timestamptz)                                as r_replies_24h,
+    (select count(*) from remote_posts
+      where origin_app_id = $1 and created_at >= $3::timestamptz)         as r_posts_7d,
+    (select count(*) from remote_posts
+      where origin_app_id = $1 and reply_root_uri is not null
+        and created_at >= $3::timestamptz)                                as r_replies_7d
+  from (
+    select
+        count(*) filter (where kind = 'prompt')                                      as prompts,
+        count(*) filter (where kind = 'reply')                                       as replies,
+        count(*) filter (where kind = 'prompt' and created_at >= $2::timestamptz)    as prompts_24h,
+        count(*) filter (where kind = 'reply'  and created_at >= $2::timestamptz)    as replies_24h,
+        count(*) filter (where kind = 'prompt' and created_at >= $3::timestamptz)    as prompts_7d,
+        count(*) filter (where kind = 'reply'  and created_at >= $3::timestamptz)    as replies_7d
+      from posts
+     where origin_app_id = $1
+  ) h
+```
+
+`$1` is the tenant, `$2` and `$3` the 24h and 7d edges. `posts` is the sum of a split, and a remote
+post's prompts are its rows less its replies, both computed from the same snapshot. `asOf` is the
+service's clock, not the database's, for the reason `recordCheck` gives: it compares these
+timestamps with its own `now()`. Rows created after `asOf` by a writer with a faster clock are
+in the totals and the windows alike, so `windows` never exceeds `totals`.
+
+### 4.2 No new index
+
+The Firestore version of this spec needed two composite indexes, because Firestore wants a
+query's equality fields to form an index prefix. The count queries here filter by `origin_app_id`,
+sometimes `kind`, sometimes a `created_at` range, and the obvious port would add a Postgres index
+for the windows. **Migration 0011 was considered and not written**, because the statement is
+already served:
+
+- Every index on `posts` and `remote_posts` that matters here leads with `origin_app_id`, so a
+  count scoped to a tenant is a range scan on that prefix, and a filter on a later column in the
+  same index is checked inside the index. Postgres needs no second index for the kind-less
+  windowed counts that Firestore did.
+- Hosted posts are **one index-only pass** over `posts_author_kind_created_idx`
+  `(origin_app_id, author_id, kind, created_at, id)`, which holds every column the counts read.
+  The window counts ride along in that pass. The totals need a pass over the tenant's entries
+  whatever the indexes are, so an `(origin_app_id, created_at)` index would save the windows
+  nothing while the totals are counted in the same statement, and would cost a write on every post.
+- Each remote count is an index-only scan that starts at the tenant's entries. The windows range
+  on `created_at` through `remote_posts_list_idx` and its per-repo sibling (migration 0010), and
+  the reply counts read the partial `remote_posts_reply_root_idx` (migration 0006), which holds
+  replies only.
+
+Checked with `EXPLAIN (ANALYZE)` on PGlite over 30,000 posts and 20,000 remote posts for each of
+two tenants, after `VACUUM ANALYZE`: every scan was index-only with `Heap Fetches: 0`, scoped
+by `origin_app_id`, and none read the table. An index-only scan depends on the visibility map
+being current, which autovacuum keeps; a table that is not vacuumed would fetch from the heap,
+which is slower but not wrong.
+
+**When this changes:** if the totals are ever cached (§ 4.3), the windows become the only
+live counts, and an `(origin_app_id, created_at desc) include (kind)` index on `posts` is
+then what makes them cheap. Add it with that change.
 
 ### 4.3 Cost, and when to cache
 
-`count()` bills as **one document read per 1,000 index entries scanned** (minimum
-one) — not per matched document, and not free. Concretely, for a full six-aggregation
-call, dominated by the three unwindowed totals that scan the whole corpus:
+The cost is linear in the tenant's own row count and nothing else: one pass over the tenant's
+`posts` index entries (about 300 buffers for 30,000 posts in the check above) and a handful of
+narrower scans over its remote ones. There is no per-read billing as there was under Firestore,
+so the cost is latency and database compute.
 
-| `totals.posts` | reads per call (approx.) |
-|---|---|
-| 4,000 | 15 |
-| 100,000 | 330 |
-| 1,000,000 | 3,000 |
+**Cache when `totals.posts` crosses roughly 100,000**, as a short server-side TTL, which the
+required `asOf` field already makes honest to expose. The figure is carried over from the
+Firestore version's billing arithmetic and has not been measured on Neon; treat it as the
+point at which to measure, and write down what the measurement says. Writing a threshold at
+all is the point: "the moment the totals become uncomfortable" is not a number anyone can act on.
 
-Cheap now, linear in corpus size forever. **Cache when `totals.posts` crosses
-~100,000**, as a short server-side TTL — which the required `asOf` field already
-makes honest to expose. Writing the threshold down is the point: the proposal said
-"the moment the totals become uncomfortable," which is not a number anyone can act
-on.
-
-Precomputed counter documents remain the wrong first move: they add write-path work
-and contention plus a backfill, to optimize a query that is currently cheap.
+Precomputed counter rows remain the wrong first move: they add write-path work and contention
+plus a backfill, to optimize a query that is currently cheap.
 
 ### 4.4 Rate limiting
 
-`rateLimit(RATE_LIMITS.read)` is 60/min keyed by **client IP**
-(`middleware/rate-limit.ts`), not by token. A BFF egresses from a handful of
-addresses, so a polling dashboard shares one bucket with all of that tenant's other
-reads. Fine at a sane poll interval; document it so nobody sets the dashboard to 5s
-and rate-limits their own product.
+`rateLimit(RATE_LIMITS.read)` is 60/min keyed by **client IP** (`middleware/rate-limit.ts`),
+not by token, on both surfaces. A BFF egresses from a handful of addresses, so a polling
+dashboard shares one bucket with all of that tenant's other reads from that address. Fine at a sane
+poll interval; document it so nobody sets the dashboard to 5s and rate-limits their own product.
+It is not paired with the aggregate IP bucket the actor-keyed reads use, since it is not keyed
+by anything a caller can mint.
 
 ---
 
@@ -316,31 +367,31 @@ The originating proposal left three open. Resolved here:
 3. **Yes, it goes in the published OpenAPI document.** It is a legitimate part of the
    tenant contract rather than an internal callback, so it inherits the versioning
    commitments in [`api-versioning.md`](./api-versioning.md). Additive → **patch**:
-   contract `0.4.0` → `0.4.1`.
+   contract `0.10.7` → `0.10.8` (it was `0.4.0` → `0.4.1` when this was proposed).
 
 ---
 
-## 8. Execution checklist
+## 8. What shipped
 
-Ports-and-adapters with a CI-locked surface, so "one route" is more than one file:
+Ports-and-adapters with a CI-locked surface, so "one query" was more than one file. In the order
+it was built, as one commit (contract 0.10.8):
 
-1. `countPosts(originAppId, { kind?, since? })` on `AudioPostDependencies`
-   (`packages/core/ports/audio-posts-dependencies.ts`), count-shaped per § 4.
-2. Firestore binding in
-   `apps/core-api/src/adapters/outbound/firebase/audio-posts-dependencies.ts`,
-   with the read-only pinned-read-time transaction of § 4.2.
-3. Service method on `AudioPostService` (`packages/core/services/audio-posts.ts`)
-   composing the six aggregations; fake binding in the core service tests.
-4. Route module `adapters/inbound/rest/stats.ts` + mount in `app.ts` alongside
-   `/api/v1/posts`. Document the § 2 boundary in the route's own description.
-5. **Both** index entries in `firestore.indexes.json` (§ 4.1). Deploy indexes
-   *before* the route — the emulator will not catch a missing one.
-6. `npm run gen:openapi -w @antiphony/core-api`; commit the regenerated
-   `openapi.json` **and** `openapi.surface.json` in the same PR, or
-   `openapi-surface.test.ts` fails CI.
-7. Bump `OPENAPI_INFO.version` (`lib/openapi-info.ts`) `0.4.0` → `0.4.1`.
-8. `CHANGELOG.md` entry under `[0.4.1]`, additive, not breaking.
-9. After merge, confirm the docs redeploy serves the new `openapi.json`.
+1. The lexicons `tenant/getStats.json` and `tenant/defs.json`, with parity cases for `counts`,
+   `windows`, `postStats` and the output in `lexicon-parity.test.ts`.
+2. `packages/shared/types/stats.ts`, exported from the index and the build entries, and
+   `XRPC_NSID.GetStats`.
+3. `TenantStatsDependencies` and `TenantStatsService` in `packages/core`, with a fake in the
+   service test.
+4. The Postgres binding (§ 4.1) and its PGlite suite: zeros, tenant isolation, the split, the window
+   edges under an injected clock, remote posts counted apart.
+5. The XRPC route and `rest/stats.ts` (tag `Tenant`), each with a route test; wiring in
+   `composition.ts`.
+6. `OPENAPI_INFO.version` `0.10.7` → `0.10.8`, `npm run gen:openapi` (`openapi.json` and
+   `openapi.surface.json`), and the `[0.10.8]` CHANGELOG entry.
+7. No migration (§ 4.2).
+
+**Still to do:** after merge, confirm the docs redeploy serves the new `openapi.json`. The
+`@antiphony/shared` release waits with the other remote-post XRPC schemas.
 
 ---
 
@@ -350,21 +401,26 @@ Recorded so the reasoning is not re-litigated at PR time:
 
 | # | Proposal | This spec | § |
 |---|---|---|---|
-| 1 | One composite index covers all six aggregations | **Two** indexes; one index leaves the two kind-less windowed totals unserved, and the emulator will not catch it | 4.1 |
-| 2 | Six independent `count()` calls | One read-only transaction at a pinned read time, so the arithmetic ties out and `asOf` is a single value | 4.2 |
-| 3 | `totals`/`windows` at the payload root; route name left open | Nested under `posts`; `/api/v1/stats` settled | 3 |
+| 1 | One composite index covers all six aggregations | Moot on Postgres: **no new index**, because the existing ones lead with `origin_app_id` and serve every count (the Firestore draft of this spec said two, since one leaves the kind-less windowed totals unserved there) | 4.2 |
+| 2 | Six independent `count()` calls | One statement, so one snapshot: the arithmetic ties out and `asOf` is a single value | 4.1 |
+| 3 | `totals`/`windows` at the payload root; route name left open | Nested under `posts`, with `remotePosts` a sibling; XRPC `dev.antiphony.tenant.getStats` is primary and `/api/v1/stats` its twin | 3 |
 | 4 | Reconciliation is the primary value | Reconciliation *detection* is; localization needs `post.created`, which the alternatives table did not consider | 5, 6 |
 
-Two smaller corrections carried inline: `count()` bills per 1,000 index entries as
-document reads (not "per index entries matched"), which is what makes the § 4.3
-caching threshold statable; and the "future third `kind`" argument for carrying
-`totals.posts` explicitly is unsound — the field is kept for the two reasons in § 3.
+Two smaller corrections carried inline: the "future third `kind`" argument for carrying
+`totals.posts` explicitly is unsound, so the field is kept for the reasons in § 3; and the
+§ 4.3 caching threshold was derived from Firestore billing and is now a point to measure,
+not a measured limit.
+
+**Added since the proposal, not a divergence from it:** `remotePosts` (§ 3), by the owner's decision
+when it was built.
 
 ---
 
-*Verified against the deployed surface:
-`apps/core-api/src/adapters/inbound/rest/posts.ts`,
-`apps/core-api/src/adapters/outbound/firebase/audio-posts-dependencies.ts`,
-`apps/core-api/src/middleware/auth.ts`, `packages/shared/types/audio.ts`,
-`firestore.indexes.json`, `specs/service-auth.md`, `specs/core-surface.md`,
+*Verified against the tree at contract 0.10.8:
+`apps/core-api/src/adapters/inbound/rest/stats.ts`,
+`apps/core-api/src/adapters/inbound/xrpc/index.ts`,
+`apps/core-api/src/adapters/outbound/postgres/tenant-stats-dependencies.ts`,
+`apps/core-api/migrations/0001_initial_schema.sql`, `0006_remote_posts.sql`,
+`0010_remote_posts_list.sql`, `packages/shared/types/stats.ts`,
+`lexicons/dev/antiphony/tenant/`, `specs/service-auth.md`, `specs/core-surface.md`,
 `specs/api-versioning.md`, `specs/enrichment-webhooks.md`.*

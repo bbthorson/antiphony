@@ -283,6 +283,19 @@ export function xrpcRoute(): Hono {
     );
 
     // -----------------------------------------------------------------------
+    // Query: dev.antiphony.tenant.getStats
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.GetStats}`,
+        // Tenant-level and viewer-less: the service token names the tenant, and
+        // an acting actor, if one is sent, is ignored. The read limit is keyed
+        // by client IP, as the spec has it, since there is no actor to key on.
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.read),
+        async (c) => c.json(await servicesFor(c.env as Record<string, unknown> | undefined).tenantStatsService.getStats(getOriginAppId(c))),
+    );
+
+    // -----------------------------------------------------------------------
     // Procedure: dev.antiphony.audio.createPost
     // -----------------------------------------------------------------------
     app.post(

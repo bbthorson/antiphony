@@ -58,6 +58,8 @@ export const XRPC_NSID = {
     // Remote posts (specs/audio-service-mode.md): records held in other repos.
     ListRemotePosts: 'dev.antiphony.audio.listRemotePosts',
     GetRemotePosts: 'dev.antiphony.audio.getRemotePosts',
+    // Counts for the calling tenancy (specs/tenancy-stats.md).
+    GetStats: 'dev.antiphony.tenant.getStats',
     // Procedures (POST).
     CreatePost: 'dev.antiphony.audio.createPost',
     ReprocessPost: 'dev.antiphony.audio.reprocessPost',

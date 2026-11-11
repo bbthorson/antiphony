@@ -1,0 +1,63 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.tenant.defs",
+    "description": "Shared shapes for the dev.antiphony.tenant.* methods: counts about the calling tenant's own posts. READ-TIME shapes, not records. Mirrors the Zod schemas in @antiphony/shared (types/stats.ts), which the lexicon-parity oracle holds to these definitions. Counts only: no per-author figure, no date-range parameter and no other tenant's number is part of this contract.",
+    "defs": {
+        "counts": {
+            "type": "object",
+            "description": "How many posts, and how many of them are prompts and how many replies, over one set of rows. `posts` is always `prompts` plus `replies`.",
+            "required": ["posts", "prompts", "replies"],
+            "properties": {
+                "posts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Every post in the set. Equal to `prompts` plus `replies`."
+                },
+                "prompts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Posts that start a thread: those with no reply reference."
+                },
+                "replies": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Posts that answer another: those with a reply reference."
+                }
+            }
+        },
+        "windows": {
+            "type": "object",
+            "description": "Counts of the rows created within two fixed windows ending at the answer's `asOf`. A row is in a window when its creation time is at or after `asOf` minus the window's length. The windows are fixed: there is no way to ask for another.",
+            "required": ["last24h", "last7d"],
+            "properties": {
+                "last24h": {
+                    "type": "ref",
+                    "ref": "#counts",
+                    "description": "Rows created in the 24 hours up to `asOf`."
+                },
+                "last7d": {
+                    "type": "ref",
+                    "ref": "#counts",
+                    "description": "Rows created in the 7 days up to `asOf`. Includes the 24 hour window."
+                }
+            }
+        },
+        "postStats": {
+            "type": "object",
+            "description": "Counts over one kind of post: every row, and the rows inside each window. All of its figures were counted in the same read.",
+            "required": ["totals", "windows"],
+            "properties": {
+                "totals": {
+                    "type": "ref",
+                    "ref": "#counts",
+                    "description": "Every row the tenant has, whenever it was created."
+                },
+                "windows": {
+                    "type": "ref",
+                    "ref": "#windows",
+                    "description": "The rows created recently."
+                }
+            }
+        }
+    }
+}

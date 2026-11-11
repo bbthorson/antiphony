@@ -3,6 +3,7 @@ import { SpaceService } from '@antiphony/core/services/spaces';
 import { DidRegistryService } from '@antiphony/core/services/did-registry';
 import { PostDeletionService } from '@antiphony/core/services/post-deletion';
 import { RemotePostService } from '@antiphony/core/services/remote-posts';
+import { TenantStatsService } from '@antiphony/core/services/tenant-stats';
 import { makeStorageService, type StorageService } from '@antiphony/core/services/storage';
 import type { AudioPostDependencies } from '@antiphony/core/ports/audio-posts-dependencies';
 import type { AudioProcessingDependencies } from '@antiphony/core/ports/audio-processing-dependencies';
@@ -28,6 +29,7 @@ import { postgresPostDeletionDependencies } from './adapters/outbound/postgres/p
 import { webhookNotifier } from './adapters/outbound/webhook/notifier.js';
 import { postgresAudioProcessingDependencies } from './adapters/outbound/postgres/audio-processing-dependencies.js';
 import { postgresRemotePostDependencies } from './adapters/outbound/postgres/remote-posts-dependencies.js';
+import { postgresTenantStatsDependencies } from './adapters/outbound/postgres/tenant-stats-dependencies.js';
 import { postgresRemoteProcessingDependencies } from './adapters/outbound/postgres/remote-processing-dependencies.js';
 import { publicRepo } from './adapters/outbound/atproto/public-repo.js';
 import { spaceRepo } from './adapters/outbound/atproto/space-repo.js';
@@ -84,6 +86,8 @@ export interface Services {
     postDeletionService: PostDeletionService;
     /** Audio whose record lives in another repo (specs/audio-service-mode.md). */
     remotePostService: RemotePostService;
+    /** Counts of the tenant's own posts (specs/tenancy-stats.md). */
+    tenantStatsService: TenantStatsService;
     storage: StorageService;
     audioPostDeps: AudioPostDependencies;
     audioProcessingDeps: AudioProcessingDependencies;
@@ -259,6 +263,7 @@ export function createServices(env: RuntimeEnv): Services {
             logger,
             spaceRepo(),
         ),
+        tenantStatsService: new TenantStatsService(postgresTenantStatsDependencies(sql)),
         storage,
         audioPostDeps,
         audioProcessingDeps: postgresAudioProcessingDependencies(sql, storage),

@@ -17,6 +17,7 @@ import {
 } from './audio';
 import { ProcessingRequestSchema, ProcessingViewSchema } from './processing';
 import { SpaceKeySchema } from './spaces';
+import { PostStatsSchema, StatCountsSchema, StatWindowsSchema, TenantStatsSchema } from './stats';
 import { RemotePostListViewSchema, RemotePostsViewSchema, RemotePostViewSchema, RemoteSpaceSchema } from './remote-posts';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
 
@@ -339,6 +340,13 @@ const CASES: ParityCase[] = [
     { lexicon: 'dev.antiphony.audio.defs#remotePostView', schema: RemotePostViewSchema },
     { lexicon: 'dev.antiphony.audio.listRemotePosts#main', part: 'output', schema: RemotePostListViewSchema },
     { lexicon: 'dev.antiphony.audio.getRemotePosts#main', part: 'output', schema: RemotePostsViewSchema },
+
+    // Tenancy stats (specs/tenancy-stats.md): the counts, and the output of the
+    // one query that answers them.
+    { lexicon: 'dev.antiphony.tenant.defs#counts', schema: StatCountsSchema },
+    { lexicon: 'dev.antiphony.tenant.defs#windows', schema: StatWindowsSchema },
+    { lexicon: 'dev.antiphony.tenant.defs#postStats', schema: PostStatsSchema },
+    { lexicon: 'dev.antiphony.tenant.getStats#main', part: 'output', schema: TenantStatsSchema },
 
     // Procedure inputs: the body each XRPC procedure validates with.
     {

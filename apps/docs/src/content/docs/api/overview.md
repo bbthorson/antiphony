@@ -16,6 +16,7 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment), and [`DELETE`](/api/deleting/) one with its audio. One record type; `reply` presence is prompt-vs-reply.
+- **`/stats`** — [Count your posts](#counting-your-posts): hosted and remote, in total and over the last day and week.
 - **`/spaces`** — Create, replace, read and delete your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
 - **`/authors`** — [Erase](/api/deleting/#erase-everything-one-author-wrote) every post one author wrote, for an account-erasure request.
 - **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and stream stored audio back (`GET /api/v1/audio`, with range support and optional mp3 renditions): from a stable, non-expiring URL for public audio, and a signed one that expires in an hour for audio in a space.
@@ -151,6 +152,10 @@ Either way, a space record's audio plays only from signed, expiring URLs, and a 
 - Antiphony reads every due record in that space with that one delegation. It takes edits (`remote.changed`) and removes records gone on two rechecks an hour apart (`remote.gone`). A pushed record that reads back unchanged becomes `fetched`.
 - One call reads at most 100 records; if the answer says `remaining: true`, call again with another delegation.
 - You can call it without being asked, for example to upgrade records you pushed.
+
+## Counting your posts
+
+`GET /xrpc/dev.antiphony.tenant.getStats` (or `GET /api/v1/stats`) answers how many posts your app has, with no parameters: the service token names the tenant, and no acting actor is needed. The answer has `posts` (hosted posts) and `remotePosts` (the [remote posts](#posts-held-in-another-repo) you registered), each with `totals` and `windows.last24h` / `windows.last7d`, every one split into `posts`, `prompts` and `replies`, plus `asOf`, the one read time all of them were counted at. A window is by creation time (for a remote post, its record's own `createdAt`) and includes a row exactly at its edge. An app with no posts gets zeros. These are counts only: no per-author figures, no date ranges, and nothing about other tenants. Keep `asOf` if you cache the answer. The call is rate limited as a read, 60 per minute per client IP, so poll at an interval of a minute or more.
 
 ## Envelope
 

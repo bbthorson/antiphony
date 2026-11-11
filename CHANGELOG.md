@@ -8,6 +8,36 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.8] — 2026-11-11
+
+Counting a tenant's own posts ([`specs/tenancy-stats.md`](./specs/tenancy-stats.md)). Until now
+a tenant could not ask how many posts it has: `GET /posts` is actor-scoped, and no route
+counted. **Patch**: one new query on both surfaces, no new migration.
+
+Built lexicon-first like 0.10.7: the lexicon is the contract, XRPC is the primary surface, and
+the REST route is a twin over the same service method.
+
+### Added
+
+- **`dev.antiphony.tenant.getStats`** (`GET /xrpc/dev.antiphony.tenant.getStats`, and
+  `GET /api/v1/stats`): post counts for the calling tenant. No parameters; the service token
+  names the tenant, no acting actor is needed (one sent is ignored), and the read rate limit
+  applies (60 per minute per client IP).
+  - The answer is `{ posts, remotePosts, asOf }`. `posts` counts hosted posts and
+    `remotePosts` the remote posts the tenant registered, never in `posts`. Each is
+    `{ totals, windows: { last24h, last7d } }`, and each of those is `{ posts, prompts,
+    replies }`, where `posts` is `prompts + replies` and a reply is a post with a reply reference.
+  - `asOf` (ISO datetime) is the one read time every figure was counted at, and the end of both
+    windows. A window is by creation time and includes a row exactly at its edge; for a remote post
+    that is its record's own `createdAt`, not when it was registered. `last7d` includes `last24h`.
+  - A tenant with no posts gets zeros, not 404. XRPC answers the bare body; REST wraps it in the
+    envelope. Counts only: there are no per-author figures, date ranges or other tenants' numbers.
+- **Lexicons** `dev.antiphony.tenant.getStats` and `dev.antiphony.tenant.defs` (`counts`,
+  `windows`, `postStats`), and OpenAPI tag `Tenant`.
+- `@antiphony/shared` gains `TenantStatsSchema` (with `PostStatsSchema`, `StatWindowsSchema` and
+  `StatCountsSchema`) and `XRPC_NSID.GetStats`. Its release waits for the rest of the remote-post
+  XRPC methods, so the schemas ship in one bump.
+
 ## [0.10.7] — 2026-11-11
 
 Listing remote posts. Until now a remote post could be read only by its URI or as part of a

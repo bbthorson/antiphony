@@ -16,6 +16,7 @@
     "GET /api/v1/remote-posts/list",
     "GET /api/v1/remote-posts/thread",
     "GET /api/v1/spaces/{spaceType}/{skey}",
+    "GET /api/v1/stats",
     "PATCH /api/v1/posts/{postId}",
     "PATCH /api/v1/remote-posts",
     "POST /api/v1/audio/upload",
