@@ -227,6 +227,32 @@
                     "description": "Whether a completed byte-mutating stage invalidates and recomputes the derived artifacts describing the superseded audio. Defaults to true — a transcript of replaced audio is wrong, not merely stale. Names no stage, so a request carrying only this asks for no work."
                 }
             }
+        },
+        "processingView": {
+            "type": "object",
+            "description": "Per-stage status of the asynchronous audio processing requested for a post. A property is present if and only if that stage was requested, so an absent stage means \"not requested\" and `pending` means \"still working\". A stage can return to `pending` after it was `ready`, when a completed byte-mutating stage invalidates the derived artifacts that describe the old audio; clients treat any `pending` stage as still working. Status only: the processed variant and its provenance are internal and never appear here.",
+            "properties": {
+                "transcribe": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Machine transcription. `pending` until requested work completes, `ready` when the transcript is available, `failed` when the attempt errored, `skipped` when this deployment has no provider for it."
+                },
+                "denoise": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Noise reduction (byte-mutating). Same values as `transcribe`; `ready` means playback now resolves to the cleaned variant."
+                },
+                "trim": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Leading and trailing silence removal (byte-mutating; runs after denoise). Same values as `transcribe`; `ready` means playback resolves to the trimmed variant."
+                },
+                "waveform": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Waveform peak extraction (derived). Same values as `transcribe`; `ready` means the view's peaks describe the audio being played."
+                }
+            }
         }
     }
 }

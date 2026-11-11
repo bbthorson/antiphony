@@ -15,7 +15,7 @@ import {
     TranscriptSegmentSchema,
     ViewerStateSchema,
 } from './audio';
-import { ProcessingRequestSchema } from './processing';
+import { ProcessingRequestSchema, ProcessingViewSchema } from './processing';
 import { SpaceKeySchema } from './spaces';
 import { RemotePostListViewSchema, RemotePostsViewSchema, RemotePostViewSchema, RemoteSpaceSchema } from './remote-posts';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
@@ -274,7 +274,6 @@ const CASES: ParityCase[] = [
         schema: AudioEmbedViewSchema,
         extras: {
             $type: 'union discriminator, carried on the wire but not a lexicon property',
-            processing: 'per-stage processing status — a hosted-deployment concern, not part of the portable view',
         },
     },
     {
@@ -331,6 +330,7 @@ const CASES: ParityCase[] = [
         lexicon: 'dev.antiphony.audio.defs#processingRequest',
         schema: ProcessingRequestSchema,
     },
+    { lexicon: 'dev.antiphony.audio.defs#processingView', schema: ProcessingViewSchema },
     { lexicon: 'dev.antiphony.audio.defs#spaceKey', schema: SpaceKeySchema },
 
     // Remote posts (specs/audio-service-mode.md): the view, and the outputs of

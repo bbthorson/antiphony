@@ -41,6 +41,7 @@ the same code. Their shapes follow atproto's own lists (`com.atproto.repo.listRe
   `MAX_REMOTE_POSTS_BATCH` and the two method NSIDs in `XRPC_NSID`. Its release waits for
   the rest of the remote-post XRPC methods, so the schemas ship in one bump.
 - Migration `0010_remote_posts_list.sql`: indexes for the listing, tenant-wide and per repo.
+- **Lexicon `processing` on `dev.antiphony.embed.audio#view`**, with the new def `dev.antiphony.audio.defs#processingView`: the per-stage status the API already returned, now stated in the lexicons so a generated client keeps it. No wire change.
 
 ## [0.10.6] — 2026-11-02
 
