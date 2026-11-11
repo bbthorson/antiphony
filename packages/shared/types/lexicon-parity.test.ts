@@ -15,8 +15,22 @@ import {
     TranscriptSegmentSchema,
     ViewerStateSchema,
 } from './audio';
-import { ProcessingRequestSchema } from './processing';
+import { ProcessingRequestSchema, ProcessingViewSchema } from './processing';
 import { SpaceKeySchema } from './spaces';
+import { PostStatsSchema, StatCountsSchema, StatWindowsSchema, TenantStatsSchema } from './stats';
+import {
+    DeleteRemotePostResultSchema,
+    RecheckRemoteSpaceRequestSchema,
+    RecheckRemoteSpaceResultSchema,
+    RegisterRemotePostRequestSchema,
+    RemotePostListViewSchema,
+    RemotePostsViewSchema,
+    RemotePostViewSchema,
+    RemoteSpaceSchema,
+    RemoteThreadPageSchema,
+    ReprocessRemotePostRequestSchema,
+    UnregisterRemotePostRequestSchema,
+} from './remote-posts';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
 
 /**
@@ -273,7 +287,6 @@ const CASES: ParityCase[] = [
         schema: AudioEmbedViewSchema,
         extras: {
             $type: 'union discriminator, carried on the wire but not a lexicon property',
-            processing: 'per-stage processing status — a hosted-deployment concern, not part of the portable view',
         },
     },
     {
@@ -330,7 +343,29 @@ const CASES: ParityCase[] = [
         lexicon: 'dev.antiphony.audio.defs#processingRequest',
         schema: ProcessingRequestSchema,
     },
+    { lexicon: 'dev.antiphony.audio.defs#processingView', schema: ProcessingViewSchema },
     { lexicon: 'dev.antiphony.audio.defs#spaceKey', schema: SpaceKeySchema },
+
+    // Remote posts (specs/audio-service-mode.md): the view, the inline
+    // outputs of the methods over them, and the procedure inputs.
+    { lexicon: 'dev.antiphony.audio.defs#remoteSpace', schema: RemoteSpaceSchema },
+    { lexicon: 'dev.antiphony.audio.defs#remotePostView', schema: RemotePostViewSchema },
+    { lexicon: 'dev.antiphony.audio.listRemotePosts#main', part: 'output', schema: RemotePostListViewSchema },
+    { lexicon: 'dev.antiphony.audio.getRemotePosts#main', part: 'output', schema: RemotePostsViewSchema },
+    { lexicon: 'dev.antiphony.audio.getRemoteThread#main', part: 'output', schema: RemoteThreadPageSchema },
+    { lexicon: 'dev.antiphony.audio.unregisterPost#main', part: 'output', schema: DeleteRemotePostResultSchema },
+    { lexicon: 'dev.antiphony.audio.recheckRemoteSpace#main', part: 'output', schema: RecheckRemoteSpaceResultSchema },
+    { lexicon: 'dev.antiphony.audio.registerPost#main', part: 'input', schema: RegisterRemotePostRequestSchema },
+    { lexicon: 'dev.antiphony.audio.reprocessRemotePost#main', part: 'input', schema: ReprocessRemotePostRequestSchema },
+    { lexicon: 'dev.antiphony.audio.unregisterPost#main', part: 'input', schema: UnregisterRemotePostRequestSchema },
+    { lexicon: 'dev.antiphony.audio.recheckRemoteSpace#main', part: 'input', schema: RecheckRemoteSpaceRequestSchema },
+
+    // Tenancy stats (specs/tenancy-stats.md): the counts, and the output of the
+    // one query that answers them.
+    { lexicon: 'dev.antiphony.tenant.defs#counts', schema: StatCountsSchema },
+    { lexicon: 'dev.antiphony.tenant.defs#windows', schema: StatWindowsSchema },
+    { lexicon: 'dev.antiphony.tenant.defs#postStats', schema: PostStatsSchema },
+    { lexicon: 'dev.antiphony.tenant.getStats#main', part: 'output', schema: TenantStatsSchema },
 
     // Procedure inputs: the body each XRPC procedure validates with.
     {
@@ -487,6 +522,10 @@ const NOT_COMPARED: Record<string, string> = {
     'dev.antiphony.audio.getPost#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getThread#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getPlaybackUrl#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.listRemotePosts#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getRemotePosts#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getRemotePost#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getRemoteThread#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getThread#main:output':
         '`{ parent, replies, cursor }` assembled by the handler; parent and replies are defs#postView, compared above',
     'dev.antiphony.audio.getPlaybackUrl#main:output': '`{ url }` built by the handler; no Zod schema',

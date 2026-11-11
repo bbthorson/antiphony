@@ -21,6 +21,22 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
   versions (spaces this month, the author segment next). REST has `/api/v1/` and 0.x semver to
   absorb that; lexicons don't. So the surface is built out now, and frozen and adopted at 1.0.
 
+> **Update 2026-11-11 (Brad): build XRPC-first from now, not only at 1.0.** New operations
+> are written lexicon-first: the lexicon, the XRPC handler, and a REST twin over the same
+> code. Existing calls stay on REST until 1.0. Two decisions below are settled with it:
+> **D-1 (a)**, lexicons are edited in place until they are published at 1.0; and **D-10**,
+> lists answer a named array plus `cursor`, absent on the last page. The first methods built
+> this way are `dev.antiphony.audio.listRemotePosts` and `getRemotePosts` (contract 0.10.7),
+> which makes seven methods, not the five §2 counts. §3.1's inventory predates remote posts,
+> the DID registry and deletion, and still needs rows for them.
+>
+> *Later the same day (0.10.8):* `dev.antiphony.tenant.getStats`, and the six remaining
+> remote-post operations as XRPC methods (`registerPost`, `getRemotePost`, `getRemoteThread`,
+> `reprocessRemotePost`, `unregisterPost`, `recheckRemoteSpace`), make fourteen. Those six were
+> REST routes first, so they are XRPC twins over the routes' code rather than lexicon-first
+> methods with a REST twin; they add no REST surface. §3.1 now has rows for remote posts; the DID
+> registry and deletion still need theirs.
+
 ## 2. What exists
 
 - **Five methods** in `apps/core-api/src/adapters/inbound/xrpc/`: `dev.antiphony.audio.getPost`,
@@ -39,8 +55,11 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 - **Gaps against REST:** XRPC `createPost` has no idempotency handling (REST's `POST /posts`
   takes `Idempotency-Key`); `createPost` answers a StrongRef `{ uri, cid }` where REST answers
   `{ postId }`.
-- **Antiphony has no DID document.** `ANTIPHONY_SERVICE_DID` names it as the `aud` of signed
-  service auth, but `https://api.antiphony.dev/.well-known/did.json` is a 404.
+- **Antiphony publishes a DID document, but accepts nothing signed with it.**
+  `https://api.antiphony.dev/.well-known/did.json` serves `did:web:api.antiphony.dev` with an
+  `#atproto` P-256 key and an `#antiphony_audio` service entry once `ANTIPHONY_SERVICE_SIGNING_KEY`
+  and `ANTIPHONY_SERVICE_PUBLIC_KEY` are set (a 404 until then). Accepting atproto service auth
+  is still not built, so the key is not yet used for anything.
 
 ## 3. The method inventory
 
@@ -58,7 +77,15 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.getPlaybackUrl` | query | URL minting | tenant | exists |
 | `dev.antiphony.audio.getAudio` | query, binary output | `GET /audio` (proxy) | capability (signed URL) | new, or stays a plain media route (D-8) |
 | space management | procedure / query | `PUT`/`GET /spaces/{type}/{skey}` | tenant | new (D-9) |
-| `dev.antiphony.tenant.getStats` | query | proposed `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | new, if built |
+| `dev.antiphony.tenant.getStats` | query | `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | exists |
+| `dev.antiphony.audio.registerPost` | procedure | `PUT /remote-posts` ([`audio-service-mode.md`](./audio-service-mode.md)) | tenant | exists (0.10.8); always 200, where REST tells 201 from 200 |
+| `dev.antiphony.audio.getRemotePost` | query | `GET /remote-posts?uri=` | tenant | exists (0.10.8) |
+| `dev.antiphony.audio.getRemoteThread` | query | `GET /remote-posts/thread?root=` | tenant | exists (0.10.8); `{ root?, replies, cursor? }` |
+| `dev.antiphony.audio.listRemotePosts` | query | `GET /remote-posts/list` (its twin) | tenant | exists (0.10.7) |
+| `dev.antiphony.audio.getRemotePosts` | query | `GET /remote-posts/batch` (its twin) | tenant | exists (0.10.7) |
+| `dev.antiphony.audio.reprocessRemotePost` | procedure | `PATCH /remote-posts?uri=` | tenant | exists (0.10.8); the URI in the body |
+| `dev.antiphony.audio.unregisterPost` | procedure | `DELETE /remote-posts?uri=` | tenant | exists (0.10.8) |
+| `dev.antiphony.audio.recheckRemoteSpace` | procedure | `POST /remote-posts/recheck` | tenant | exists (0.10.8) |
 | `dev.antiphony.server.describeServer` | query | `GET /` service info | public | new |
 
 Inputs and outputs reuse `defs.json` (`postView`, `threadView`, `embed` views, `spaceKey`).
@@ -133,9 +160,11 @@ OpenAPI contract version keeps describing REST until REST is removed.
 - **Lexicon resolution:** the `dev.antiphony` authority is `antiphony.dev`. Publishing makes the
   schemas resolvable through a `_lexicon` DNS record pointing at a DID whose repo holds
   `com.atproto.lexicon.schema` records. Antiphony is not a PDS, so that repo needs a home (D-3).
-- **Antiphony's service DID:** a `did:web:api.antiphony.dev` document with an `#antiphony` service
-  entry and a signing key. It is what atproto service auth is addressed to, and what lets a
-  user's PDS proxy calls to Antiphony (`atproto-proxy` header) (D-2).
+- **Antiphony's service DID:** the `did:web:api.antiphony.dev` document now exists
+  (`/.well-known/did.json`, with an `#atproto` signing key and an `#antiphony_audio` service
+  entry). It is what atproto service auth is addressed to, and what lets a user's PDS proxy calls
+  to Antiphony (`atproto-proxy: did:web:api.antiphony.dev#antiphony_audio`). Neither is built:
+  accepting atproto service auth and public reads are still open under D-2.
 - **Tenant discovery:** tenants' DID documents already name Antiphony as `#atproto_space_host`.
   Whether they also advertise an XRPC service entry is open
   ([`xrpc-and-atproto-lex-strategy.md`](./xrpc-and-atproto-lex-strategy.md) Phase 3).
@@ -162,8 +191,8 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 
 | # | Decision | Options | Lean |
 | :--- | :--- | :--- | :--- |
-| D-1 | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
-| D-2 | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
+| D-1 *(settled 2026-11-11: a)* | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
+| D-2 *(document published 2026-11-11; service auth and public reads not built)* | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
 | D-3 | **Where the `dev.antiphony` lexicon repo lives** | a small PDS account for `antiphony.dev`'s DID; a hosted PDS; don't publish | a hosted PDS account (no infra to run), at 1.0 |
 | D-4 | **Acting actor in the protocol shape** | keep custom headers (client sets them); move into each procedure's input; express as a signed claim inside service auth | keep headers until signed service auth is the credential, then fold the actor into the JWT |
 | D-5 | **Idempotency on XRPC writes** | `Idempotency-Key` header; an input field (`clientRequestId`); none | header, matching REST |
@@ -171,7 +200,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-7 | **Upload encoding** | raw body (uploadBlob style); multipart | raw body |
 | D-8 | **Playback bytes** | an XRPC binary query; keep a plain media route | keep a media route (it's a capability URL consumed by `<audio>`, not an API call); XRPC mints it |
 | D-9 | **Space management names** | `com.atproto.simplespace.createSpace`/`updateSpace`/`getSpace` for tenants too; `dev.antiphony.space.putSpace`/`getSpace` | the protocol's names, if their inputs fit tenant needs (policies as `$type` objects); else `dev.antiphony.space.*` |
-| D-10 | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
+| D-10 *(settled 2026-11-11: named arrays)* | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
 | D-11 | **Source of truth for shapes** | lexicons generate Zod; Zod stays hand-written with the parity test; validate with `@atproto/lex` at runtime | keep hand-written Zod plus parity until 1.0, then generate |
 | D-12 | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |
 | D-13 | **Rate limits for non-tenant callers** | per IP; per `iss` DID; per space credential | per `iss` for service auth, per IP for public |

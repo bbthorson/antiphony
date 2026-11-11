@@ -16,6 +16,7 @@ Every endpoint in the reference lives in **`apps/core-api`** — the open-core s
 The canonical resources:
 
 - **`/posts`** — Create an audio post, get one by id, list posts, list a post's replies (the thread), `PATCH` one to (re)trigger [audio enrichment](/self-hosting/configuration/#audio-enrichment), and [`DELETE`](/api/deleting/) one with its audio. One record type; `reply` presence is prompt-vs-reply.
+- **`/stats`** — [Count your posts](#counting-your-posts): hosted and remote, in total and over the last day and week.
 - **`/spaces`** — Create, replace, read and delete your app's [atproto spaces](#private-audio-in-a-space): permissioned places for posts whose audio isn't public.
 - **`/authors`** — [Erase](/api/deleting/#erase-everything-one-author-wrote) every post one author wrote, for an account-erasure request.
 - **`/audio`** — Upload audio (content-addressed — see [Lexicons § How faithful is this to AT Protocol?](/lexicons/overview/#how-faithful-is-this-to-at-protocol)), optionally into a space, and stream stored audio back (`GET /api/v1/audio`, with range support and optional mp3 renditions): from a stable, non-expiring URL for public audio, and a signed one that expires in an hour for audio in a space.
@@ -114,8 +115,23 @@ A **remote post** is a `dev.antiphony.audio.post` record that lives in a repo An
    
    Repeating a registration is a no-op; a new `cid` takes the edit. If you uploaded the same bytes with `POST /api/v1/audio/upload` first, they aren't downloaded again (`"bytesFrom": "upload"` requires that). Audio stored here as private for a space is the exception: Antiphony downloads it from the record's repo, checks it, and makes it public, original and processed variants, since a public record already makes it public there.
 2. **Read it** — `GET /api/v1/remote-posts?uri=…`, and `GET /api/v1/remote-posts/thread?root=…` for the registered replies under a root (Antiphony doesn't crawl for replies). The view carries `uri`, `cid`, `authorDid` (the DID whose repo holds it), `space` for a space record, `verified` and `deletionCheck` (below), the record, and the same `embed` a hosted post gets: a playback URL, the transcript and the processing status.
+   - **List them** with `GET /xrpc/dev.antiphony.audio.listRemotePosts` (or `GET /api/v1/remote-posts/list`): your registered remote posts, newest first, optionally narrowed by `repo` (a DID), `space` (a space URI) and `kind` (`prompt` or `reply`). Page with `limit` (1–100, default 50) and `cursor`. The answer is `{ posts, cursor }`, as atproto lists are, and `cursor` is absent on the last page.
+   - **Fetch several** with `GET /xrpc/dev.antiphony.audio.getRemotePosts?uris=…&uris=…` (or `GET /api/v1/remote-posts/batch`): up to 25 URIs, answered in the order asked. A URI you haven't registered is left out.
 3. **Process it** — `processing` on registration, or later with `PATCH /api/v1/remote-posts?uri=…`. Results arrive as `stage.settled` webhooks carrying the post's `uri` and no `postId`.
 4. **Remove it** — `DELETE /api/v1/remote-posts?uri=…` removes Antiphony's copy (the record in its repo is untouched); a later read is `410 REMOTE_POST_DELETED`.
+
+**Over XRPC.** Every step above is also an XRPC method, with the same service token (no acting actor), rate limits and checks, so your app can do all its remote-post work under `/xrpc` and never call these routes:
+
+| XRPC method | Same as |
+| :--- | :--- |
+| `POST /xrpc/dev.antiphony.audio.registerPost` | `PUT /api/v1/remote-posts`, same body. Always `200`: XRPC has no "created" status. |
+| `GET /xrpc/dev.antiphony.audio.getRemotePost?uri=…` | `GET /api/v1/remote-posts?uri=…` |
+| `GET /xrpc/dev.antiphony.audio.getRemoteThread?root=…` | `GET /api/v1/remote-posts/thread?root=…`. Answers `{ root?, replies, cursor? }`: `root` and `cursor` are left out, not null, when there is none. |
+| `POST /xrpc/dev.antiphony.audio.reprocessRemotePost` | `PATCH /api/v1/remote-posts?uri=…`, with the URI in the body: `{ "uri": …, "processing": { … } }` |
+| `POST /xrpc/dev.antiphony.audio.unregisterPost` | `DELETE /api/v1/remote-posts?uri=…`, with `{ "uri": … }` as the body |
+| `POST /xrpc/dev.antiphony.audio.recheckRemoteSpace` | `POST /api/v1/remote-posts/recheck` ([below](#records-in-a-space)) |
+
+XRPC answers the bare body, with no `success`/`data` envelope, and errors as `{ error, message }`. Each REST `code` arrives as a named `error` you can branch on: `REMOTE_CID_MISMATCH` is `RemoteCidMismatch`, `REMOTE_POST_DELETED` is `RemotePostDeleted`, and so on for every `REMOTE_*` code.
 
 Antiphony rechecks each public remote post hourly. A record its repo reports gone on two checks an hour apart is removed, and you get a `remote.gone` webhook; an edited record is taken and reprocessed, with a `remote.changed` webhook. A repo that can't be reached never causes a removal, but after 30 days the post reads `available: false` and stops playing.
 
@@ -149,6 +165,10 @@ Either way, a space record's audio plays only from signed, expiring URLs, and a 
 - Antiphony reads every due record in that space with that one delegation. It takes edits (`remote.changed`) and removes records gone on two rechecks an hour apart (`remote.gone`). A pushed record that reads back unchanged becomes `fetched`.
 - One call reads at most 100 records; if the answer says `remaining: true`, call again with another delegation.
 - You can call it without being asked, for example to upgrade records you pushed.
+
+## Counting your posts
+
+`GET /xrpc/dev.antiphony.tenant.getStats` (or `GET /api/v1/stats`) answers how many posts your app has, with no parameters: the service token names the tenant, and no acting actor is needed. The answer has `posts` (hosted posts) and `remotePosts` (the [remote posts](#posts-held-in-another-repo) you registered), each with `totals` and `windows.last24h` / `windows.last7d`, every one split into `posts`, `prompts` and `replies`, plus `asOf`, the one read time all of them were counted at. A window is by creation time (for a remote post, its record's own `createdAt`) and includes a row exactly at its edge. An app with no posts gets zeros. These are counts only: no per-author figures, no date ranges, and nothing about other tenants. Keep `asOf` if you cache the answer. The call is rate limited as a read, 60 per minute per client IP, so poll at an interval of a minute or more.
 
 ## Envelope
 

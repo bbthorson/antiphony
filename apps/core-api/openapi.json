@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Antiphony Core API",
-    "version": "0.10.6",
+    "version": "0.10.8",
     "description": "Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.\n\n## Authentication\n\nThe **service token is the only accepted credential**. Every caller is an application (a BFF) that authenticates with `Authorization: Bearer <service-token>`; the token identifies the app and establishes its tenancy (`originAppId`). Antiphony verifies no end-user identity tokens.\n\n- **Acting actor** — the app asserts which of its users is acting via `X-Antiphony-Acting-Actor: <actorId>` (+ optional `X-Antiphony-Acting-Actor-Did`). Required on writes and viewer-scoped reads; omit it for an anonymous, tenancy-scoped read. Deletes are the exception: who may delete is the app's decision, so they need only the service token.\n- **Reads are gated too** — every data route requires the service token so the credential always establishes *which* tenant is being read. The sole exception is the audio playback proxy (`GET /api/v1/audio`), which is capability-based: allowlisted, content-addressed paths whose bytes the proxy streams from the blob store. Audio stored in a space additionally needs the signature (`exp` + `sig`) Antiphony puts on its playback URL.\n\n## Envelope\n\nEvery JSON response wraps its payload: `{ success: true, data: T }` on success, `{ success: false, error: { message, code?, issues? }, requestId }` on failure. Pagination cursors live inside `data.nextCursor`."
   },
   "tags": [
@@ -21,6 +21,10 @@
     {
       "name": "Remote posts",
       "description": "Audio whose `dev.antiphony.audio.post` record lives in a repo Antiphony doesn't host, such as a person's PDS or a group's repo. Register one by URI and CID; Antiphony reads the record from its repo, copies and processes its audio, plays it, and removes its copy once the record is gone."
+    },
+    {
+      "name": "Tenant",
+      "description": "Facts about the calling tenant itself, answered from the service token alone: how many posts it has. Counts only, with no per-author figure and no other tenant's numbers."
     },
     {
       "name": "Audio",
@@ -7043,6 +7047,938 @@
         }
       }
     },
+    "/api/v1/remote-posts/list": {
+      "get": {
+        "tags": [
+          "Remote posts"
+        ],
+        "summary": "List the tenant's registered remote posts",
+        "description": "One page of the calling tenant's registered remote posts, newest first by the record's `createdAt`. `repo`, `space` and `kind` each narrow it, and they combine. Only what was registered is listed. This is the REST twin of the XRPC query `dev.antiphony.audio.listRemotePosts` (`GET /xrpc/dev.antiphony.audio.listRemotePosts`), and it answers in that shape inside the envelope: a `posts` array and a `cursor` that is absent on the last page, rather than `items` / `nextCursor`. A cursor this route did not issue is 400 (`INVALID_CURSOR`).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$",
+              "description": "Only records held in this DID's repo (a space record's author segment)"
+            },
+            "required": false,
+            "description": "Only records held in this DID's repo (a space record's author segment)",
+            "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^at:\\/\\/did:[a-z]+:[^/]+\\/space\\/[^/]+\\/[^/]+$",
+              "description": "Only records in this space: `at://{authority}/space/{type}/{skey}`"
+            },
+            "required": false,
+            "description": "Only records in this space: `at://{authority}/space/{type}/{skey}`",
+            "name": "space",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "prompt",
+                "reply"
+              ],
+              "description": "Only prompts, or only replies"
+            },
+            "required": false,
+            "description": "Only prompts, or only replies",
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "description": "1–100 (default 50)"
+            },
+            "required": false,
+            "description": "1–100 (default 50)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "description": "`cursor` from the previous page"
+            },
+            "required": false,
+            "description": "`cursor` from the previous page",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "posts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "maxLength": 512,
+                                "pattern": "^at:\\/\\/.+"
+                              },
+                              "cid": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "prompt",
+                                  "reply"
+                                ]
+                              },
+                              "authorDid": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                              },
+                              "space": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 317,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                                  },
+                                  "skey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 512,
+                                    "pattern": "^[A-Za-z0-9._:~-]+$"
+                                  },
+                                  "authority": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "skey",
+                                  "authority"
+                                ]
+                              },
+                              "verified": {
+                                "type": "string",
+                                "enum": [
+                                  "fetched",
+                                  "pushed"
+                                ]
+                              },
+                              "deletionCheck": {
+                                "type": "string",
+                                "enum": [
+                                  "sweep",
+                                  "recheck",
+                                  "tenant"
+                                ]
+                              },
+                              "record": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 3000
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "maxLength": 3000
+                                  },
+                                  "reply": {
+                                    "type": "object",
+                                    "properties": {
+                                      "root": {
+                                        "type": "object",
+                                        "properties": {
+                                          "uri": {
+                                            "type": "string",
+                                            "maxLength": 512,
+                                            "pattern": "^at:\\/\\/.+"
+                                          },
+                                          "cid": {
+                                            "type": "string",
+                                            "maxLength": 128
+                                          }
+                                        },
+                                        "required": [
+                                          "uri",
+                                          "cid"
+                                        ]
+                                      },
+                                      "parent": {
+                                        "type": "object",
+                                        "properties": {
+                                          "uri": {
+                                            "type": "string",
+                                            "maxLength": 512,
+                                            "pattern": "^at:\\/\\/.+"
+                                          },
+                                          "cid": {
+                                            "type": "string",
+                                            "maxLength": 128
+                                          }
+                                        },
+                                        "required": [
+                                          "uri",
+                                          "cid"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "root",
+                                      "parent"
+                                    ]
+                                  },
+                                  "langs": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "maxItems": 3
+                                  },
+                                  "selfLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "format": "date-time"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "createdAt"
+                                ]
+                              },
+                              "embed": {
+                                "type": "object",
+                                "properties": {
+                                  "$type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dev.antiphony.embed.audio#view"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri",
+                                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
+                                  },
+                                  "durationMs": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "maxLength": 10000
+                                  },
+                                  "waveform": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 100
+                                    },
+                                    "maxItems": 1000
+                                  },
+                                  "transcript": {
+                                    "type": "object",
+                                    "properties": {
+                                      "segments": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "startMs": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "endMs": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "text": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "startMs",
+                                            "endMs",
+                                            "text"
+                                          ]
+                                        }
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "segments"
+                                    ]
+                                  },
+                                  "processing": {
+                                    "type": "object",
+                                    "properties": {
+                                      "transcribe": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "denoise": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "trim": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "waveform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "$type",
+                                  "url"
+                                ]
+                              },
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "registeredAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "cid",
+                              "kind",
+                              "authorDid",
+                              "verified",
+                              "deletionCheck",
+                              "record",
+                              "available",
+                              "registeredAt"
+                            ]
+                          }
+                        },
+                        "cursor": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "posts"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid repo, space, kind, limit or cursor (`INVALID_CURSOR`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/remote-posts/batch": {
+      "get": {
+        "tags": [
+          "Remote posts"
+        ],
+        "summary": "Get several registered remote posts",
+        "description": "The calling tenant's registered remote posts among up to 25 URIs, in the order asked for. Repeat `uris` for each. A URI that is not registered, or whose registration was removed, is left out rather than failing the call. The REST twin of the XRPC query `dev.antiphony.audio.getRemotePosts`.",
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^at:\\/\\/.+"
+                  }
+                },
+                {
+                  "type": "string",
+                  "maxLength": 512,
+                  "pattern": "^at:\\/\\/.+"
+                }
+              ],
+              "description": "Record URIs, at most 25; repeat the parameter for each"
+            },
+            "required": true,
+            "description": "Record URIs, at most 25; repeat the parameter for each",
+            "name": "uris",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registered posts among the URIs, in request order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "posts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string",
+                                "maxLength": 512,
+                                "pattern": "^at:\\/\\/.+"
+                              },
+                              "cid": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "prompt",
+                                  "reply"
+                                ]
+                              },
+                              "authorDid": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                              },
+                              "space": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 317,
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9.-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+                                  },
+                                  "skey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 512,
+                                    "pattern": "^[A-Za-z0-9._:~-]+$"
+                                  },
+                                  "authority": {
+                                    "type": "string",
+                                    "maxLength": 2048,
+                                    "pattern": "^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "skey",
+                                  "authority"
+                                ]
+                              },
+                              "verified": {
+                                "type": "string",
+                                "enum": [
+                                  "fetched",
+                                  "pushed"
+                                ]
+                              },
+                              "deletionCheck": {
+                                "type": "string",
+                                "enum": [
+                                  "sweep",
+                                  "recheck",
+                                  "tenant"
+                                ]
+                              },
+                              "record": {
+                                "type": "object",
+                                "properties": {
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 3000
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "maxLength": 3000
+                                  },
+                                  "reply": {
+                                    "type": "object",
+                                    "properties": {
+                                      "root": {
+                                        "type": "object",
+                                        "properties": {
+                                          "uri": {
+                                            "type": "string",
+                                            "maxLength": 512,
+                                            "pattern": "^at:\\/\\/.+"
+                                          },
+                                          "cid": {
+                                            "type": "string",
+                                            "maxLength": 128
+                                          }
+                                        },
+                                        "required": [
+                                          "uri",
+                                          "cid"
+                                        ]
+                                      },
+                                      "parent": {
+                                        "type": "object",
+                                        "properties": {
+                                          "uri": {
+                                            "type": "string",
+                                            "maxLength": 512,
+                                            "pattern": "^at:\\/\\/.+"
+                                          },
+                                          "cid": {
+                                            "type": "string",
+                                            "maxLength": 128
+                                          }
+                                        },
+                                        "required": [
+                                          "uri",
+                                          "cid"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "root",
+                                      "parent"
+                                    ]
+                                  },
+                                  "langs": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "maxItems": 3
+                                  },
+                                  "selfLabels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "createdAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "format": "date-time"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "text",
+                                  "createdAt"
+                                ]
+                              },
+                              "embed": {
+                                "type": "object",
+                                "properties": {
+                                  "$type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dev.antiphony.embed.audio#view"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri",
+                                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?:\\/\\/"
+                                  },
+                                  "durationMs": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "maxLength": 10000
+                                  },
+                                  "waveform": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 100
+                                    },
+                                    "maxItems": 1000
+                                  },
+                                  "transcript": {
+                                    "type": "object",
+                                    "properties": {
+                                      "segments": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "startMs": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "endMs": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "text": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "startMs",
+                                            "endMs",
+                                            "text"
+                                          ]
+                                        }
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "segments"
+                                    ]
+                                  },
+                                  "processing": {
+                                    "type": "object",
+                                    "properties": {
+                                      "transcribe": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "denoise": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "trim": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      },
+                                      "waveform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "ready",
+                                          "failed",
+                                          "skipped"
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "$type",
+                                  "url"
+                                ]
+                              },
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "registeredAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "cid",
+                              "kind",
+                              "authorDid",
+                              "verified",
+                              "deletionCheck",
+                              "record",
+                              "available",
+                              "registeredAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "posts"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No URI, more than 25, or an invalid one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/remote-posts/recheck": {
       "post": {
         "tags": [
@@ -7323,6 +8259,267 @@
           },
           "503": {
             "description": "The space's authority could not be reached (`REMOTE_REPO_UNREACHABLE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "nullable": true
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "message"
+                      ]
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "requestId"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats": {
+      "get": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "Count the tenant's posts",
+        "description": "Post counts for the calling tenant, and only the calling tenant: the service token names it. `posts` counts hosted posts and `remotePosts` the remote posts the tenant registered, each as `totals` and as `windows` (`last24h`, `last7d`), every one split into `posts`, `prompts` and `replies`. A tenant with nothing gets zeros, not 404. Windows are by creation time and end at `asOf`; for a remote post that is its record's own `createdAt`, not when it was registered. Every figure is counted in one read at `asOf`, so `prompts + replies = posts` in each; keep `asOf` to show how fresh a cached copy is.\n\nCounts only, by design: no per-author figure, no date-range parameter, no other tenant's numbers, and no way to enumerate a post. Needs the service token and no acting actor (one sent is ignored). Rate limited as a read: 60 per minute per client IP, a bucket shared with the tenant's other reads from that address, so poll at a sane interval. The REST twin of the XRPC query `dev.antiphony.tenant.getStats` (`GET /xrpc/dev.antiphony.tenant.getStats`), which answers the same body without the envelope.",
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "posts": {
+                          "type": "object",
+                          "properties": {
+                            "totals": {
+                              "type": "object",
+                              "properties": {
+                                "posts": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "prompts": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "replies": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "posts",
+                                "prompts",
+                                "replies"
+                              ]
+                            },
+                            "windows": {
+                              "type": "object",
+                              "properties": {
+                                "last24h": {
+                                  "type": "object",
+                                  "properties": {
+                                    "posts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "prompts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "replies": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "posts",
+                                    "prompts",
+                                    "replies"
+                                  ]
+                                },
+                                "last7d": {
+                                  "type": "object",
+                                  "properties": {
+                                    "posts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "prompts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "replies": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "posts",
+                                    "prompts",
+                                    "replies"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "last24h",
+                                "last7d"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "totals",
+                            "windows"
+                          ]
+                        },
+                        "remotePosts": {
+                          "type": "object",
+                          "properties": {
+                            "totals": {
+                              "type": "object",
+                              "properties": {
+                                "posts": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "prompts": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "replies": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "posts",
+                                "prompts",
+                                "replies"
+                              ]
+                            },
+                            "windows": {
+                              "type": "object",
+                              "properties": {
+                                "last24h": {
+                                  "type": "object",
+                                  "properties": {
+                                    "posts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "prompts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "replies": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "posts",
+                                    "prompts",
+                                    "replies"
+                                  ]
+                                },
+                                "last7d": {
+                                  "type": "object",
+                                  "properties": {
+                                    "posts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "prompts": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "replies": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "posts",
+                                    "prompts",
+                                    "replies"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "last24h",
+                                "last7d"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "totals",
+                            "windows"
+                          ]
+                        },
+                        "asOf": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "posts",
+                        "remotePosts",
+                        "asOf"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
             "content": {
               "application/json": {
                 "schema": {

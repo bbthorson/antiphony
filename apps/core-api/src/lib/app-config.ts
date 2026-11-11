@@ -169,25 +169,67 @@ export const PLAYBACK_SECRET_MIN_LENGTH = 32;
  * `ANTIPHONY_SERVICE_DID` overrides, for the day this service's DID is
  * genuinely not `did:web` of its own hostname.
  *
- * ## Caveat, deliberately not hidden
+ * ## It resolves, when a signing key is configured
  *
- * `https://api.antiphony.dev/.well-known/did.json` is a 404 — we publish no DID
- * document. This identifier does not resolve, and both sides agree on it purely
- * by configuration. That is tolerable for a private agreement between two
- * services we operate, and it is the same species of unresolvable claim issue
- * #115 objects to when tenants have to make it. Whichever way #115 lands should
- * also settle whether this document gets published.
+ * `GET /.well-known/did.json` serves this DID's document once
+ * `ANTIPHONY_SERVICE_SIGNING_KEY` and `ANTIPHONY_SERVICE_PUBLIC_KEY` are set
+ * and agree (`lib/service-did-document.ts`). Without them the path is a 404
+ * and the identifier is agreed by configuration alone, as it was before the
+ * document existed. The document is only served when this value is exactly
+ * `did:web` of the host the request arrives on (`publicDidWeb()`): an override
+ * naming another host or a path would put the document at a URL that DID does
+ * not resolve to.
  */
 export function serviceDid(): string | undefined {
     const explicit = process.env.ANTIPHONY_SERVICE_DID?.trim();
     if (explicit) return explicit;
+    return publicDidWeb();
+}
+
+/**
+ * The `did:web` DID of the host in `ANTIPHONY_PUBLIC_BASE_URL`, which is the
+ * only DID whose document `/.well-known/did.json` on that host can be.
+ *
+ * did:web writes a port's colon as `%3A`, because a bare `:` separates path
+ * segments: `http://localhost:8787` is `did:web:localhost%3A8787`, and
+ * `did:web:localhost:8787` would mean the document at `/8787/did.json`. This
+ * used to build the DID from `URL.host`, which keeps the raw colon. A default
+ * port is dropped by `URL` itself, so a production `https://api.antiphony.dev`
+ * was never affected; only a self-hoster with an explicit port was.
+ */
+export function publicDidWeb(): string | undefined {
     const base = publicBaseUrl();
     if (!base) return undefined;
     try {
-        return `did:web:${new URL(base).host}`;
+        const url = new URL(base);
+        return `did:web:${url.port ? `${url.hostname}%3A${url.port}` : url.hostname}`;
     } catch {
         return undefined;
     }
+}
+
+/**
+ * The P-256 private key behind the DID document (`ANTIPHONY_SERVICE_SIGNING_KEY`,
+ * a Worker secret): the hex `P256Keypair` exports, as printed by
+ * `npm run generate:service-key`. Optional; without it no document is served.
+ *
+ * Read lazily, like `publicBaseUrl()`.
+ */
+export function serviceSigningKey(): string | undefined {
+    return process.env.ANTIPHONY_SERVICE_SIGNING_KEY?.trim() || undefined;
+}
+
+/**
+ * The matching public key (`ANTIPHONY_SERVICE_PUBLIC_KEY`, a public var): the
+ * multibase Multikey, `z…`. It is configuration rather than derived at startup
+ * so that the document only ever advertises a key an operator chose to publish,
+ * and so a wrong secret shows up as a mismatch instead of a silent key change.
+ * Optional; without it no document is served.
+ *
+ * Read lazily, like `publicBaseUrl()`.
+ */
+export function servicePublicKey(): string | undefined {
+    return process.env.ANTIPHONY_SERVICE_PUBLIC_KEY?.trim() || undefined;
 }
 
 /**

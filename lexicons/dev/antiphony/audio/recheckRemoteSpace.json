@@ -1,0 +1,88 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.recheckRemoteSpace",
+    "description": "Recheck the calling tenant's registered records in one space against their writers' PDSes, on a fresh delegation. The tenant's answer to a `remote.recheck_requested` webhook.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "A space credential lasts ten minutes, so Antiphony's hourly sweep never holds one: it asks the tenant, and the tenant answers here with a fresh delegation token from any member session that can read the space. Antiphony spends it at once and reads each due row: an unchanged one is noted (and a pushed one becomes `verified: \"fetched\"`), an edited one is taken and reprocessed (`remote.changed`), and a gone one is removed once a second read an hour later agrees (`remote.gone`). A deleted space reads as gone for every row. One call reads a bounded number of rows; `remaining` says to call again with another delegation. Tenant-level: a service token is enough, no acting actor.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["space", "delegationToken"],
+                    "properties": {
+                        "space": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "description": "The space, as a space URI: at://{authority}/space/{type}/{skey}."
+                        },
+                        "delegationToken": {
+                            "type": "string",
+                            "minLength": 16,
+                            "maxLength": 8192,
+                            "description": "A fresh delegation token (a compact JWS) from a member who can read the space. Single use."
+                        },
+                        "clientAttestation": {
+                            "type": "string",
+                            "minLength": 16,
+                            "maxLength": 8192,
+                            "description": "A client attestation from the tenant's OAuth client, for a space that only admits listed apps."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["space", "checked", "removed", "changed", "remaining"],
+                    "properties": {
+                        "space": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "description": "The space rechecked, as given."
+                        },
+                        "checked": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Rows read against their source."
+                        },
+                        "removed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Rows removed because their record, or the whole space, is gone."
+                        },
+                        "changed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Rows that took an edit."
+                        },
+                        "remaining": {
+                            "type": "boolean",
+                            "description": "Whether rows in this space are still due: call again with another delegation."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "RemoteUriUnsupported",
+                    "description": "`space` is not a space URI Antiphony can read."
+                },
+                {
+                    "name": "RemoteDelegationRefused",
+                    "description": "The space's authority refused the delegation; nothing changed."
+                },
+                {
+                    "name": "RemoteRepoUnreachable",
+                    "description": "The space's authority could not be reached; nothing changed. Retry with a fresh delegation."
+                },
+                {
+                    "name": "RemoteRecordInvalid",
+                    "description": "The space's authority could not be read as a space host."
+                }
+            ]
+        }
+    }
+}

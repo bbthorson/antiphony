@@ -115,6 +115,14 @@ PUT /api/v1/remote-posts
   copy and processing, as everything here is per tenant.
 - **XRPC.** A `dev.antiphony.audio.registerPost` procedure mirrors the route, as
   `createPost` mirrors `POST /posts` ([`xrpc-surface.md`](./xrpc-surface.md)).
+  *2026-11-11:* the two reads that list remote posts are XRPC queries first (§5.3).
+  *2026-11-11, later (0.10.8):* `registerPost` exists, with the same input and the view as
+  output, answering 200 for a first registration as for a repeat (XRPC has no created
+  status). The other routes have XRPC twins too: `getRemotePost`, `getRemoteThread`
+  (`{ root?, replies, cursor? }`), `reprocessRemotePost` (the URI in the body),
+  `unregisterPost` and `recheckRemoteSpace`. Each calls the same code as its route
+  (`apps/core-api/src/adapters/inbound/remote-post-operations.ts`), and the REST codes are
+  named errors (`RemoteCidMismatch`, `RemotePostDeleted`, and so on).
 
 *Alternative:* register by blob alone (`{ blobCid }`), with no record. This is simpler, but
 Antiphony would then know nothing of the thread, the authority or the space. Signed
@@ -263,6 +271,18 @@ suit audio, which is processed. The copy's lifetime is tied to the source record
   post's rkey) and the `authorId` facet, which a remote post doesn't have. Making them
   optional would be a typing break for clients that read them from hosted posts. A remote
   post's author is its repo DID (for a space record, the author segment).
+- **Listing (added 2026-11-11, contract 0.10.7).** Two XRPC queries, each with a REST twin
+  over the same code:
+  - `dev.antiphony.audio.listRemotePosts` (`GET /api/v1/remote-posts/list`): the tenant's
+    registered posts, newest first on `(created_at, uri)`, optionally only one repo's, one
+    space's, or one kind. `limit` 1 to 100 and an opaque `cursor`; `{ posts, cursor? }` out.
+  - `dev.antiphony.audio.getRemotePosts` (`GET /api/v1/remote-posts/batch`): up to 25 by URI,
+    in the order asked, leaving out what isn't registered.
+
+  The shapes follow `com.atproto.repo.listRecords` and `app.bsky.feed.getPosts`, read from
+  `bluesky-social/atproto` on 2026-11-11. Bluesky's video service has no list: it is keyed
+  by job. The view is `dev.antiphony.audio.defs#remotePostView`. Migration
+  `0010_remote_posts_list.sql` adds the two indexes.
 - **A thread is only what was registered.** Antiphony doesn't crawl. If a reply wasn't
   registered, it isn't in the thread. That's correct for a service that processes what it's
   given, and Bardcast and Vox Pop register everything they write.
@@ -469,7 +489,7 @@ Why not publish them now:
 | Change | Where |
 | :--- | :--- |
 | `PUT /api/v1/remote-posts`, `GET ?uri=`, `GET /thread?root=`, `DELETE ?uri=`; `PATCH ?uri=` for `processing` | new routes, `RemotePost*` schemas in `@antiphony/shared` |
-| `dev.antiphony.audio.registerPost` (XRPC) | new lexicon. Published lexicons can't take breaking changes, so this one waits until the REST shape has settled in use (see `xrpc-surface.md`). |
+| `dev.antiphony.audio.registerPost` (XRPC) | new lexicon. Published lexicons can't take breaking changes, so this one waited until the REST shape had settled in use (see `xrpc-surface.md`). **Built 2026-11-11 (0.10.8)**, with XRPC twins of the other routes (§3); lexicons are edited in place until they are published at 1.0 (`xrpc-surface.md` D-1). |
 | `remoteSpace` on `POST /api/v1/audio/upload` | Phase B |
 | `delegationToken` (and `clientAttestation`) on registration | Phase C, built as 0.10.6 |
 | `POST /api/v1/remote-posts/recheck`; `remote.recheck_requested`; `deletionCheck: "recheck"` | Phase C, built as 0.10.6 (§8.1's revision) |

@@ -127,6 +127,92 @@
                 }
             }
         },
+        "remoteSpace": {
+            "type": "object",
+            "description": "A space held outside Antiphony, such as a group's on its group host: the space `at://{authority}/space/{type}/{skey}`. The authority is never registered with Antiphony.",
+            "required": ["authority", "type", "skey"],
+            "properties": {
+                "authority": {
+                    "type": "string",
+                    "format": "did",
+                    "maxLength": 2048,
+                    "description": "The DID the space is under, e.g. a group's."
+                },
+                "type": {
+                    "type": "string",
+                    "format": "nsid",
+                    "description": "The space type."
+                },
+                "skey": {
+                    "type": "string",
+                    "format": "record-key",
+                    "maxLength": 512,
+                    "description": "The space key, in record-key syntax."
+                }
+            }
+        },
+        "remotePostView": {
+            "type": "object",
+            "description": "A remote post: a dev.antiphony.audio.post record held in a repo Antiphony doesn't host (a person's PDS, a group's repo on its group host), which a tenant registered so its audio is processed and played here. Unlike #postView it has no app-scoped author id and no viewer state: its author is the DID whose repo holds the record.",
+            "required": ["uri", "cid", "kind", "authorDid", "verified", "deletionCheck", "record", "available", "registeredAt"],
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "format": "at-uri",
+                    "description": "The record's at:// URI, as its own repo names it. A repo record, or a space record with the space and author in its path."
+                },
+                "cid": {
+                    "type": "string",
+                    "format": "cid",
+                    "description": "The record's CID, recomputed by Antiphony from the record it read or was sent."
+                },
+                "kind": {
+                    "type": "string",
+                    "knownValues": ["prompt", "reply"],
+                    "description": "Denormalized from `reply` presence on the record."
+                },
+                "authorDid": {
+                    "type": "string",
+                    "format": "did",
+                    "maxLength": 2048,
+                    "description": "The DID whose repo holds the record: the URI's authority, or a space record's author segment."
+                },
+                "space": {
+                    "type": "ref",
+                    "ref": "#remoteSpace",
+                    "description": "The space the record is in, when it is a space record. Its audio plays from signed, expiring URLs only."
+                },
+                "verified": {
+                    "type": "string",
+                    "knownValues": ["fetched", "pushed"],
+                    "description": "How Antiphony checked the record. `fetched`: it read the record and its blob from the source itself. `pushed`: the tenant sent them, which proves content but not that the tenant could read the space."
+                },
+                "deletionCheck": {
+                    "type": "string",
+                    "knownValues": ["sweep", "recheck", "tenant"],
+                    "description": "How a deletion of the source record reaches Antiphony. `sweep`: Antiphony rechecks the repo itself. `recheck`: Antiphony asks the tenant for a fresh delegation and rechecks on it. `tenant`: only the tenant's own delete call."
+                },
+                "record": {
+                    "type": "ref",
+                    "ref": "#postRecord",
+                    "description": "The public lexicon fields of the post."
+                },
+                "embed": {
+                    "type": "union",
+                    "refs": ["dev.antiphony.embed.audio#view"],
+                    "description": "The hydrated audio: a playback URL plus the transcript. Absent while the post is unavailable."
+                },
+                "available": {
+                    "type": "boolean",
+                    "description": "False when the record's repo has been unreachable for 30 days: the post is kept but not served."
+                },
+                "registeredAt": {
+                    "type": "string",
+                    "format": "datetime",
+                    "description": "When the calling tenant registered the record."
+                }
+            }
+        },
         "processingRequest": {
             "type": "object",
             "description": "An opt-in request for asynchronous audio processing. Every stage is off by default; only `true` asks for work. A stage this deployment has no provider for settles as `skipped` on the view rather than failing the request.",
@@ -139,6 +225,32 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Whether a completed byte-mutating stage invalidates and recomputes the derived artifacts describing the superseded audio. Defaults to true — a transcript of replaced audio is wrong, not merely stale. Names no stage, so a request carrying only this asks for no work."
+                }
+            }
+        },
+        "processingView": {
+            "type": "object",
+            "description": "Per-stage status of the asynchronous audio processing requested for a post. A property is present if and only if that stage was requested, so an absent stage means \"not requested\" and `pending` means \"still working\". A stage can return to `pending` after it was `ready`, when a completed byte-mutating stage invalidates the derived artifacts that describe the old audio; clients treat any `pending` stage as still working. Status only: the processed variant and its provenance are internal and never appear here.",
+            "properties": {
+                "transcribe": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Machine transcription. `pending` until requested work completes, `ready` when the transcript is available, `failed` when the attempt errored, `skipped` when this deployment has no provider for it."
+                },
+                "denoise": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Noise reduction (byte-mutating). Same values as `transcribe`; `ready` means playback now resolves to the cleaned variant."
+                },
+                "trim": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Leading and trailing silence removal (byte-mutating; runs after denoise). Same values as `transcribe`; `ready` means playback resolves to the trimmed variant."
+                },
+                "waveform": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Waveform peak extraction (derived). Same values as `transcribe`; `ready` means the view's peaks describe the audio being played."
                 }
             }
         }

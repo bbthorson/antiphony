@@ -4,6 +4,19 @@ import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
 import { reportError } from 'shared/observability/report-error';
 import { REPLY_CID_MISMATCH } from '@antiphony/core/services/audio-posts';
+import {
+    INVALID_CURSOR,
+    REMOTE_BLOB_SPACE_MISMATCH,
+    REMOTE_CID_MISMATCH,
+    REMOTE_DELEGATION_REFUSED,
+    REMOTE_POST_DELETED,
+    REMOTE_POST_NOT_FOUND,
+    REMOTE_RECORD_INVALID,
+    REMOTE_RECORD_NOT_FOUND,
+    REMOTE_REPO_UNREACHABLE,
+    REMOTE_REQUEST_INVALID,
+    REMOTE_URI_UNSUPPORTED,
+} from '@antiphony/core/services/remote-posts';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -39,7 +52,18 @@ export interface XrpcErrorBody {
  * answer is "your earlier identical request is still in flight" — the one case
  * where retrying later is correct.
  *
- * Anything unmapped becomes `InternalServerError`, matching the 500 fallback.
+ * The last three came with the remote-post methods, whose refusals include a
+ * 410 (a removed registration), a 413 (a body over the method's limit) and a
+ * 503 (a repo or space authority that can't be reached right now).
+ * `PayloadTooLarge` is atproto's own name for 413 (`@atproto/xrpc`'s
+ * `ResponseType`). For 410 and 503 atproto has no fitting name (its 503 is
+ * `NotEnoughResources`, which would send a client looking at its own request),
+ * so these say what happened: the thing is gone, or the service can't answer
+ * now and a retry may succeed. A remote-post client branches on the named
+ * error (`RemotePostDeleted`, `RemoteRepoUnreachable`) in any case; these are
+ * for whatever else raises the status, such as the tenant lookup's 503.
+ *
+ * A status not listed falls back by class, in `xrpcSymbol` below.
  */
 const SYMBOL_BY_STATUS: Record<number, string> = {
     400: 'InvalidRequest',
@@ -49,6 +73,9 @@ const SYMBOL_BY_STATUS: Record<number, string> = {
     409: 'Conflict',
     429: 'RateLimitExceeded',
     500: 'InternalServerError',
+    410: 'Gone',
+    413: 'PayloadTooLarge',
+    503: 'ServiceUnavailable',
 };
 
 /**
@@ -59,11 +86,40 @@ const SYMBOL_BY_STATUS: Record<number, string> = {
 const SYMBOL_BY_CODE: Record<string, string> = {
     // dev.antiphony.audio.createPost: a reply StrongRef's CID isn't the stored record's.
     [REPLY_CID_MISMATCH]: 'ReplyCidMismatch',
+    // dev.antiphony.audio.listRemotePosts: a cursor this service didn't issue.
+    [INVALID_CURSOR]: 'InvalidCursor',
+    // The remote-post methods (registerPost, getRemotePost, reprocessRemotePost,
+    // recheckRemoteSpace), named after the REST codes they carry, so a client
+    // on either surface branches on the same distinction. Each lexicon lists
+    // the ones its method raises.
+    [REMOTE_URI_UNSUPPORTED]: 'RemoteUriUnsupported',
+    [REMOTE_REQUEST_INVALID]: 'RemoteRequestInvalid',
+    [REMOTE_DELEGATION_REFUSED]: 'RemoteDelegationRefused',
+    [REMOTE_RECORD_NOT_FOUND]: 'RemoteRecordNotFound',
+    [REMOTE_REPO_UNREACHABLE]: 'RemoteRepoUnreachable',
+    [REMOTE_CID_MISMATCH]: 'RemoteCidMismatch',
+    [REMOTE_RECORD_INVALID]: 'RemoteRecordInvalid',
+    [REMOTE_BLOB_SPACE_MISMATCH]: 'RemoteBlobSpaceMismatch',
+    [REMOTE_POST_NOT_FOUND]: 'RemotePostNotFound',
+    [REMOTE_POST_DELETED]: 'RemotePostDeleted',
 };
 
-/** The XRPC symbol for a domain error: its named error if it has one, else its HTTP status's. */
+/**
+ * The XRPC symbol for a domain error: its named error if it has one, else its
+ * HTTP status's. A status with no entry falls back by class: any other 4xx is
+ * `InvalidRequest`, since the client has to change something before a retry
+ * can succeed, and anything else is `InternalServerError`. That is the
+ * classing `@atproto/xrpc` applies to an unknown status on the client side
+ * (`httpResponseCodeToEnum`), so a generated client and this table agree.
+ * Before this, an unlisted client error such as a 422 went out as
+ * `InternalServerError`, which tells a client the fault is the server's.
+ */
 export function xrpcSymbol(status: number, code?: string): string {
-    return (code !== undefined ? SYMBOL_BY_CODE[code] : undefined) ?? SYMBOL_BY_STATUS[status] ?? 'InternalServerError';
+    const named = code !== undefined ? SYMBOL_BY_CODE[code] : undefined;
+    if (named) return named;
+    const byStatus = SYMBOL_BY_STATUS[status];
+    if (byStatus) return byStatus;
+    return status >= 400 && status < 500 ? 'InvalidRequest' : 'InternalServerError';
 }
 
 /**

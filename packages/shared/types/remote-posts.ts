@@ -94,6 +94,22 @@ export const PatchRemotePostRequestSchema = z.object({
 export type PatchRemotePostRequest = z.infer<typeof PatchRemotePostRequestSchema>;
 
 /**
+ * `dev.antiphony.audio.reprocessRemotePost`: the PATCH body with the URI in it.
+ * A procedure's input is its body, so the URI travels there rather than in the
+ * query string, as `reprocessPost` carries the post id.
+ */
+export const ReprocessRemotePostRequestSchema = PatchRemotePostRequestSchema.extend({
+    uri: RemotePostUriSchema,
+});
+export type ReprocessRemotePostRequest = z.infer<typeof ReprocessRemotePostRequestSchema>;
+
+/** `dev.antiphony.audio.unregisterPost`: the registration to remove, by URI. */
+export const UnregisterRemotePostRequestSchema = z.object({
+    uri: RemotePostUriSchema,
+});
+export type UnregisterRemotePostRequest = z.infer<typeof UnregisterRemotePostRequestSchema>;
+
+/**
  * The record as fetched: the `dev.antiphony.audio.post` lexicon, as a PDS
  * returns it. Unknown fields are kept (a lexicon may gain optional fields), and
  * the record must carry a `dev.antiphony.embed.audio` embed: a registration is
@@ -191,7 +207,49 @@ export const RemoteThreadViewSchema = z.object({
 });
 export type RemoteThreadView = z.infer<typeof RemoteThreadViewSchema>;
 
-/** `DELETE /api/v1/remote-posts?uri=`: whether a registration was removed. */
+/**
+ * `dev.antiphony.audio.getRemoteThread`: the same page as `RemoteThreadView`,
+ * in the atproto list shape. A field with nothing to say is left out rather
+ * than sent as null: `root` when the root isn't a registered remote post or
+ * this isn't the first page, `cursor` on the last page.
+ */
+export const RemoteThreadPageSchema = z.object({
+    /** The root, when it's a registered remote post. On the first page only. */
+    root: RemotePostViewSchema.optional(),
+    replies: z.array(RemotePostViewSchema),
+    /** Pass as `cursor` for the next page. Absent on the last page. */
+    cursor: z.string().optional(),
+});
+export type RemoteThreadPage = z.infer<typeof RemoteThreadPageSchema>;
+
+/** The most URIs one `getRemotePosts` call takes, as `app.bsky.feed.getPosts` does. */
+export const MAX_REMOTE_POSTS_BATCH = 25;
+
+/**
+ * `dev.antiphony.audio.listRemotePosts`: one page of a tenant's registered
+ * remote posts, newest first. Shaped as atproto lists are (a named array and
+ * `cursor`), not as the older REST lists (`items` / `nextCursor`).
+ */
+export const RemotePostListViewSchema = z.object({
+    posts: z.array(RemotePostViewSchema),
+    /** Pass as `cursor` for the next page. Absent on the last page. */
+    cursor: z.string().optional(),
+});
+export type RemotePostListView = z.infer<typeof RemotePostListViewSchema>;
+
+/**
+ * `dev.antiphony.audio.getRemotePosts`: the registered posts among the URIs
+ * asked for, in request order. Unregistered URIs are left out.
+ */
+export const RemotePostsViewSchema = z.object({
+    posts: z.array(RemotePostViewSchema),
+});
+export type RemotePostsView = z.infer<typeof RemotePostsViewSchema>;
+
+/**
+ * `DELETE /api/v1/remote-posts?uri=`, and `dev.antiphony.audio.unregisterPost`:
+ * whether a registration was removed.
+ */
 export const DeleteRemotePostResultSchema = z.object({
     uri: RemotePostUriSchema,
     deleted: z.boolean(),

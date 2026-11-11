@@ -9,10 +9,12 @@ import { audioUploadRoute } from './adapters/inbound/rest/audio-upload.js';
 import { spacesRoute } from './adapters/inbound/rest/spaces.js';
 import { didsRoute } from './adapters/inbound/rest/dids.js';
 import { remotePostsRoute } from './adapters/inbound/rest/remote-posts.js';
+import { statsRoute } from './adapters/inbound/rest/stats.js';
 import { authorsRoute } from './adapters/inbound/rest/authors.js';
 import { systemProcessAudioRoute } from './adapters/inbound/rest/system-process-audio.js';
 import { xrpcRoute } from './adapters/inbound/xrpc/index.js';
 import { servicesFor } from './composition.js';
+import { serviceDidDocument } from './lib/service-did-document.js';
 import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
 
 /**
@@ -35,7 +37,7 @@ import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
  * does not work today regardless: the route 302s to a signed Cloud Storage
  * URL, and following that redirect from a browser needs CORS on the *bucket*.
  * An allowlist here would have permitted the first hop of a request that then
- * fails at the second.
+ * fails at the second. (`/.well-known/did.json` is the one exception, below.)
  *
  * So the middleware, its `ALLOWED_ORIGINS` env var, and its `credentials: true`
  * (which advertised cookie auth this API does not have) are gone. If a genuine
@@ -57,7 +59,7 @@ import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
  *   2. security-headers — global API-tier hardening (strict CSP, frame-deny,
  *      Cross-Origin-Resource-Policy); see middleware/security-headers.ts.
  *      Applied to every response, errors included.
- *   3. infra routes — `/`, `/health`, `/openapi.json`. No auth, so probes
+ *   3. infra routes — `/`, `/health`, `/.well-known/did.json`, `/openapi.json`. No auth, so probes
  *      and uptime checks reach them.
  *   4. routes — each route opts into rate-limit per-endpoint via the
  *      `rateLimit(...)` middleware; no global rate limit. Gated routes also
@@ -122,6 +124,25 @@ export function app(): OpenAPIHono {
         });
     });
 
+    // Antiphony's own DID document. Plain Hono, so it stays out of
+    // `/openapi.json`: it is the identity of the service, not part of the API
+    // contract. `serviceDidDocument()` is null unless a signing key is set and
+    // consistent, and then this is the unmatched-route 404, exactly as before
+    // the route existed.
+    //
+    // This is the one route that sets CORS: resolvers running in a browser
+    // fetch DID documents cross-origin, and the document is public and carries
+    // no credentials, so `*` exposes nothing. The security headers need no
+    // exception; their CSP and CORP apply to a JSON body without blocking a
+    // fetch (CORP `cross-origin`, set globally, is what permits it).
+    a.get('/.well-known/did.json', async (c) => {
+        const doc = await serviceDidDocument();
+        if (!doc) return c.notFound();
+        c.header('cache-control', 'public, max-age=300');
+        c.header('access-control-allow-origin', '*');
+        return c.json(doc);
+    });
+
     // 4. API routes.
     //
     // There is no origin lock any more. It existed to prove a request arrived
@@ -136,6 +157,8 @@ export function app(): OpenAPIHono {
     a.route('/api/v1/dids', didsRoute);
     // Audio whose record lives in a repo Antiphony doesn't host (specs/audio-service-mode.md).
     a.route('/api/v1/remote-posts', remotePostsRoute);
+    // Counts of the tenant's own posts (specs/tenancy-stats.md).
+    a.route('/api/v1/stats', statsRoute);
     a.route('/api/v1/authors', authorsRoute);
     // All audio storage operations live under /api/v1/audio. Mount the
     // more-specific upload sub-route BEFORE the proxy so it takes

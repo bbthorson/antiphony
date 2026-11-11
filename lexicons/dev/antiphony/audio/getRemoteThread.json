@@ -1,0 +1,59 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getRemoteThread",
+    "description": "The registered remote posts that reply under a root, oldest first. Only what was registered: Antiphony does not crawl for replies.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns a cursor-paginated page of the calling tenant's registered remote posts whose `reply.root` is `root`, oldest first, with the root itself on the first page when it is a registered remote post. A root with no registered replies answers an empty list, not an error.",
+            "parameters": {
+                "type": "params",
+                "required": ["root"],
+                "properties": {
+                    "root": {
+                        "type": "string",
+                        "format": "at-uri",
+                        "description": "The thread root's URI."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50,
+                        "description": "Maximum replies to return."
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor: the `cursor` from the previous page. Opaque."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["replies"],
+                    "properties": {
+                        "root": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#remotePostView",
+                            "description": "The root, when it is a registered remote post. On the first page only; absent otherwise."
+                        },
+                        "replies": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#remotePostView"
+                            },
+                            "description": "The page, oldest first."
+                        },
+                        "cursor": {
+                            "type": "string",
+                            "description": "Cursor for the next page. Absent on the last page."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

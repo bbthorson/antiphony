@@ -61,6 +61,11 @@
                     "type": "ref",
                     "ref": "dev.antiphony.audio.transcript#timedTranscript",
                     "description": "Machine transcript, lifted from the dev.antiphony.audio.transcript enrichment record at read time. Absent until transcription completes."
+                },
+                "processing": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#processingView",
+                    "description": "Status of the processing stages the calling app asked for. Absent when none was requested. `url`, `durationMs` and `waveform` above are resolved against the processed variant once its stages complete."
                 }
             }
         }

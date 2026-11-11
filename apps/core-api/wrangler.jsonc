@@ -234,7 +234,8 @@
 	// Non-secret configuration. Everything else — SYSTEM_AUTH_TOKEN,
 	// ANTIPHONY_APP_TOKENS, ELEVENLABS_API_KEY, DATABASE_URL, and the optional
 	// ANTIPHONY_PLAYBACK_SECRET (signs playback URLs for audio in a space;
-	// without it the deployment refuses to create spaces) — is a Worker
+	// without it the deployment refuses to create spaces) and the optional
+	// ANTIPHONY_SERVICE_SIGNING_KEY (below) — is a Worker
 	// SECRET, set with `wrangler secret put`, and must never appear in this
 	// file.
 	//
@@ -242,6 +243,21 @@
 	// proxy streams bytes rather than redirecting to a signed URL,
 	// `AudioEmbedView.url` is an absolute URL pointing back at this service.
 	// Without it a post with audio hydrates with no embed at all.
+	//
+	// ## Antiphony's own DID document (`/.well-known/did.json`)
+	//
+	// Two settings turn it on, and neither is in this file yet:
+	//
+	//   - ANTIPHONY_SERVICE_SIGNING_KEY, a SECRET: the P-256 private key, as the
+	//     hex `npm run generate:service-key -w @antiphony/core-api` prints.
+	//   - ANTIPHONY_SERVICE_PUBLIC_KEY, a VAR: the matching public Multikey
+	//     (`z…`), printed by the same command. Add it to "vars" below.
+	//
+	// Set the secret FIRST (`npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY
+	// -c apps/core-api/wrangler.jsonc`), then add the var and deploy. The route
+	// serves the document only when the secret derives the var, so that order
+	// means it never advertises a key the service does not hold. With either
+	// one absent the path stays a 404, as it was before the document existed.
 	//
 	// ANTIPHONY_APP_DIDS is a var rather than a secret: DIDs are public by
 	// construction, and keeping it here is what lets the CI deploy gate

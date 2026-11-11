@@ -1,0 +1,39 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getRemotePost",
+    "description": "Fetch one remote post the calling tenant registered, by its record URI.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns one of the calling tenant's registered remote posts. Another tenant's registration reads as not found. A post whose repo has been unreachable for 30 days has `available: false` and no `embed`.",
+            "parameters": {
+                "type": "params",
+                "required": ["uri"],
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "format": "at-uri",
+                        "description": "The record URI, as registered."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#remotePostView"
+                }
+            },
+            "errors": [
+                {
+                    "name": "RemotePostNotFound",
+                    "description": "The calling tenant has not registered this URI."
+                },
+                {
+                    "name": "RemotePostDeleted",
+                    "description": "The registration was removed, by the tenant or because the record was deleted from its repo."
+                }
+            ]
+        }
+    }
+}

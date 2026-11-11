@@ -1,0 +1,35 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.tenant.getStats",
+    "description": "Count the calling tenant's own posts. Takes no parameters: the tenant is the one the service token names, and no other tenant's figures can be asked for.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns post counts for the calling tenant: all time, and over the last 24 hours and 7 days, for hosted posts and for registered remote posts. A tenant with no posts gets zeros, not an error. Needs the tenant's service token and no acting actor. Counts only: nothing here names an author or enumerates a post. Every figure was taken at the one read time `asOf`, so `prompts` plus `replies` equals `posts` in each, and a caller that keeps the answer can say how old it is.",
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["posts", "remotePosts", "asOf"],
+                    "properties": {
+                        "posts": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.tenant.defs#postStats",
+                            "description": "Hosted posts: those Antiphony stores and whose records it mints."
+                        },
+                        "remotePosts": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.tenant.defs#postStats",
+                            "description": "Remote posts the tenant registered: records held in other repos. Counted apart from `posts`, never in it. A remote post's window is its record's own `createdAt`, not when it was registered."
+                        },
+                        "asOf": {
+                            "type": "string",
+                            "format": "datetime",
+                            "description": "The read time every count was taken at, and the end of both windows."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -8,6 +8,107 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.8] — 2026-11-11
+
+Counting a tenant's own posts ([`specs/tenancy-stats.md`](./specs/tenancy-stats.md)). Until now
+a tenant could not ask how many posts it has: `GET /posts` is actor-scoped, and no route
+counted. **Patch**: one new query on both surfaces, no new migration.
+
+Built lexicon-first like 0.10.7: the lexicon is the contract, XRPC is the primary surface, and
+the REST route is a twin over the same service method.
+
+### Added
+
+- **`GET /.well-known/did.json`**: Antiphony's own DID document (`did:web:api.antiphony.dev`),
+  with a P-256 `#atproto` key and an `#antiphony_audio` service entry. It is served only when
+  `ANTIPHONY_SERVICE_SIGNING_KEY` (secret) and `ANTIPHONY_SERVICE_PUBLIC_KEY` (var) are set and
+  agree, and answers 404 as before otherwise. Not part of the OpenAPI contract, so `openapi.json`
+  and the version are unchanged. `npm run generate:service-key -w @antiphony/core-api` makes the key.
+  `serviceDid()` also now writes an explicit port as `%3A`, as did:web requires.
+- **`dev.antiphony.tenant.getStats`** (`GET /xrpc/dev.antiphony.tenant.getStats`, and
+  `GET /api/v1/stats`): post counts for the calling tenant. No parameters; the service token
+  names the tenant, no acting actor is needed (one sent is ignored), and the read rate limit
+  applies (60 per minute per client IP).
+  - The answer is `{ posts, remotePosts, asOf }`. `posts` counts hosted posts and
+    `remotePosts` the remote posts the tenant registered, never in `posts`. Each is
+    `{ totals, windows: { last24h, last7d } }`, and each of those is `{ posts, prompts,
+    replies }`, where `posts` is `prompts + replies` and a reply is a post with a reply reference.
+  - `asOf` (ISO datetime) is the one read time every figure was counted at, and the end of both
+    windows. A window is by creation time and includes a row exactly at its edge; for a remote post
+    that is its record's own `createdAt`, not when it was registered. `last7d` includes `last24h`.
+  - A tenant with no posts gets zeros, not 404. XRPC answers the bare body; REST wraps it in the
+    envelope. Counts only: there are no per-author figures, date ranges or other tenants' numbers.
+- **Lexicons** `dev.antiphony.tenant.getStats` and `dev.antiphony.tenant.defs` (`counts`,
+  `windows`, `postStats`), and OpenAPI tag `Tenant`.
+- `@antiphony/shared` gains `TenantStatsSchema` (with `PostStatsSchema`, `StatWindowsSchema` and
+  `StatCountsSchema`) and `XRPC_NSID.GetStats`. Its release waits for the rest of the remote-post
+  XRPC methods, so the schemas ship in one bump.
+- **Remote posts over XRPC.** Every remote-post operation is now an XRPC method, so an app can do
+  all its remote-post work over `/xrpc` and never call `/api/v1/remote-posts`. **XRPC only**: no
+  REST route is added or changed (`openapi.json` is unchanged), so this needs no contract-version
+  bump. Each method is the twin of an existing route and calls the same code, with the same auth
+  (a service token, no acting actor), rate limits and body limits:
+  - **`dev.antiphony.audio.registerPost`** (procedure; `PUT /api/v1/remote-posts`): the same
+    input, answered with `defs#remotePostView`. Always 200: XRPC has no created status, so a first
+    registration and a repeat or an edit answer alike. Processing is dispatched as on REST.
+  - **`dev.antiphony.audio.getRemotePost`** (query; `GET ?uri=`): one view by `uri`.
+  - **`dev.antiphony.audio.getRemoteThread`** (query; `GET /thread?root=`): `root`, `limit`
+    (1–100, default 50) and `cursor` in; `{ root?, replies, cursor? }` out. Unlike REST, `root` is
+    **absent** (not null) on later pages or when the root isn't registered, and the cursor is
+    `cursor`, absent on the last page, not `nextCursor`.
+  - **`dev.antiphony.audio.reprocessRemotePost`** (procedure; `PATCH ?uri=`): `{ uri, processing }`
+    in, with the URI in the body; the view out.
+  - **`dev.antiphony.audio.unregisterPost`** (procedure; `DELETE ?uri=`): `{ uri }` in,
+    `{ uri, deleted }` out.
+  - **`dev.antiphony.audio.recheckRemoteSpace`** (procedure; `POST /recheck`): the same input and
+    counts.
+  - **Named errors** for the REST codes, declared in each lexicon: `RemoteUriUnsupported`,
+    `RemoteRequestInvalid`, `RemoteDelegationRefused`, `RemoteRecordNotFound`,
+    `RemoteRepoUnreachable`, `RemoteCidMismatch`, `RemoteRecordInvalid`,
+    `RemoteBlobSpaceMismatch`, `RemotePostNotFound` and `RemotePostDeleted`.
+  - **XRPC error symbols for more statuses:** 410 is `Gone`, 413 `PayloadTooLarge` and 503
+    `ServiceUnavailable`, and any other 4xx without a symbol is `InvalidRequest`. Until now an
+    unlisted status, a client error included, answered `InternalServerError`. No status that
+    already had a symbol changed.
+  - `@antiphony/shared` gains `RemoteThreadPageSchema`, `ReprocessRemotePostRequestSchema`,
+    `UnregisterRemotePostRequestSchema` and the six NSIDs in `XRPC_NSID`. These complete the
+    remote-post XRPC methods its release was waiting for.
+
+## [0.10.7] — 2026-11-11
+
+Listing remote posts. Until now a remote post could be read only by its URI or as part of a
+thread, so a tenant whose prompts live in other repos had no way to page through them.
+**Patch**: two new queries, each on both surfaces, and one migration.
+
+These are the first methods built lexicon-first ([`specs/xrpc-surface.md`](./specs/xrpc-surface.md)):
+the lexicon is the contract, XRPC is the primary surface, and the REST route is a twin over
+the same code. Their shapes follow atproto's own lists (`com.atproto.repo.listRecords`,
+`app.bsky.feed.getPosts`), not the older REST lists.
+
+### Added
+
+- **`dev.antiphony.audio.listRemotePosts`** (`GET /xrpc/dev.antiphony.audio.listRemotePosts`,
+  and `GET /api/v1/remote-posts/list`): one page of the calling tenant's registered remote
+  posts, newest first by the record's `createdAt`.
+  - Optional filters, which combine: `repo` (the DID whose repo holds the record), `space`
+    (`at://{authority}/space/{type}/{skey}`) and `kind` (`prompt` | `reply`).
+  - `limit` 1–100 (default 50) and `cursor`. The answer is `{ posts, cursor? }`: `cursor` is
+    **absent** on the last page, not null, and the array is named `posts`, not `items`.
+  - The cursor is opaque and names a position, so paging carries on when the row a page
+    ended at has since been removed. One this method didn't issue is 400: XRPC
+    `InvalidCursor`, REST `INVALID_CURSOR`.
+- **`dev.antiphony.audio.getRemotePosts`** (`GET /xrpc/dev.antiphony.audio.getRemotePosts`,
+  and `GET /api/v1/remote-posts/batch`): up to 25 registered posts by URI (`uris`, repeated),
+  answered as `{ posts }` in the order asked. A URI the tenant hasn't registered is left out
+  rather than failing the call.
+- **Lexicon definitions** `dev.antiphony.audio.defs#remotePostView` and `#remoteSpace`: the
+  `RemotePostView` the REST routes already return, now stated in the lexicons.
+- `@antiphony/shared` gains `RemotePostListViewSchema`, `RemotePostsViewSchema`,
+  `MAX_REMOTE_POSTS_BATCH` and the two method NSIDs in `XRPC_NSID`. Its release waits for
+  the rest of the remote-post XRPC methods, so the schemas ship in one bump.
+- Migration `0010_remote_posts_list.sql`: indexes for the listing, tenant-wide and per repo.
+- **Lexicon `processing` on `dev.antiphony.embed.audio#view`**, with the new def `dev.antiphony.audio.defs#processingView`: the per-stage status the API already returned, now stated in the lexicons so a generated client keeps it. No wire change.
+
 ## [0.10.6] — 2026-11-02
 
 Remote posts read on a delegation ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md),

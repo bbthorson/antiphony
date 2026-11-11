@@ -1,0 +1,98 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.registerPost",
+    "description": "Register a dev.antiphony.audio.post record held in a repo Antiphony doesn't host (a person's PDS, a group's repo on its group host), so its audio is processed and played here. Antiphony never writes into that repo.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Registers a remote post by URI and CID and returns its view. A repo record is read from the repo its URI names, never from the request: its CID is recomputed and must equal `cid`, and its blob is copied after its bytes are checked against the blob ref. A space record is registered on a member's delegation (`delegationToken`), which Antiphony spends to read it from the writer's PDS, or pushed by the tenant (`record`, with its audio uploaded first for that space). Repeating a registration is a no-op, and a new `cid` for the same URI takes the edit; both answer like a first registration. Tenant-level: a service token is enough, no acting actor.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["uri", "cid"],
+                    "properties": {
+                        "uri": {
+                            "type": "string",
+                            "format": "at-uri",
+                            "description": "The record's URI: at://{did}/dev.antiphony.audio.post/{rkey}, or for a space record at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}."
+                        },
+                        "cid": {
+                            "type": "string",
+                            "format": "cid",
+                            "maxLength": 128,
+                            "description": "The record CID the tenant expects. Antiphony recomputes the CID of the record it read (or, when pushed, of `record`) and refuses a mismatch."
+                        },
+                        "processing": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#processingRequest",
+                            "description": "Opt into processing stages, as on createPost. Stage results arrive by webhook (`stage.settled`, with `uri`)."
+                        },
+                        "bytesFrom": {
+                            "type": "string",
+                            "knownValues": ["fetch", "upload"],
+                            "description": "Where the audio bytes come from. `fetch`: the repo the URI names; the default for a repo record and for a space record with a `delegationToken`. `upload`: an earlier upload by this tenant, so nothing is downloaded; the default for a pushed space record. Any other value is refused."
+                        },
+                        "record": {
+                            "type": "unknown",
+                            "description": "For a space record the tenant pushes: the record as the tenant read it, in atproto's JSON form (`$link` for the blob ref). A JSON object, and it must hash to `cid`. Refused for a repo record, and beside a `delegationToken`."
+                        },
+                        "delegationToken": {
+                            "type": "string",
+                            "minLength": 16,
+                            "maxLength": 8192,
+                            "description": "For a space record: a delegation token (a compact JWS) from a member's PDS, minted with com.atproto.space.getDelegationToken just before the call. Single use and short-lived. Antiphony exchanges it at the space's authority and reads the record and its blob itself."
+                        },
+                        "clientAttestation": {
+                            "type": "string",
+                            "minLength": 16,
+                            "maxLength": 8192,
+                            "description": "A client attestation (a compact JWS) from the tenant's OAuth client, for a space that only admits listed apps. Sent with `delegationToken`."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#remotePostView"
+                }
+            },
+            "errors": [
+                {
+                    "name": "RemoteUriUnsupported",
+                    "description": "The URI is not an audio post record Antiphony can register, or it names a space record to fetch (`bytesFrom: \"fetch\"`) without a delegation."
+                },
+                {
+                    "name": "RemoteRequestInvalid",
+                    "description": "The fields don't fit the URI: `record` or `delegationToken` for a repo record, neither or both for a space record, or `clientAttestation` without a delegation."
+                },
+                {
+                    "name": "RemoteDelegationRefused",
+                    "description": "The space's authority refused the delegation: the member may not read the space, or the token was spent or expired."
+                },
+                {
+                    "name": "RemoteRecordNotFound",
+                    "description": "The repo says the record does not exist, or the space was deleted."
+                },
+                {
+                    "name": "RemoteRepoUnreachable",
+                    "description": "The record's repo, or the space's authority, could not be read right now. Retry later."
+                },
+                {
+                    "name": "RemoteCidMismatch",
+                    "description": "The record's current CID is not `cid`: it changed since the tenant read it."
+                },
+                {
+                    "name": "RemoteRecordInvalid",
+                    "description": "Not an audio post, a pushed record that does not hash to `cid`, or a blob that does not check out or was not uploaded."
+                },
+                {
+                    "name": "RemoteBlobSpaceMismatch",
+                    "description": "A pushed space record's audio is not stored private for its space."
+                }
+            ]
+        }
+    }
+}

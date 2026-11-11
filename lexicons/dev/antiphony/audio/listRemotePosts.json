@@ -1,0 +1,68 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.listRemotePosts",
+    "description": "List the remote posts the calling tenant has registered: audio posts whose records live in repos Antiphony doesn't host. Only what was registered is listed; Antiphony does not crawl.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns a cursor-paginated page of the calling tenant's registered remote posts, newest first by the record's `createdAt`. Every filter is optional and they combine. Shaped after com.atproto.repo.listRecords: `limit` and `cursor` in, a named array and `cursor` out.",
+            "parameters": {
+                "type": "params",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "format": "did",
+                        "description": "Only records held in this DID's repo: the URI's authority for a repo record, the author segment for a space record."
+                    },
+                    "space": {
+                        "type": "string",
+                        "description": "Only records in this space, as a space URI: at://{authority}/space/{type}/{skey}."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "knownValues": ["prompt", "reply"],
+                        "description": "Only prompts, or only replies. Any other value is refused."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50,
+                        "description": "Maximum posts to return."
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor: the `cursor` from the previous page. Opaque."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["posts"],
+                    "properties": {
+                        "posts": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#remotePostView"
+                            },
+                            "description": "The page, newest first."
+                        },
+                        "cursor": {
+                            "type": "string",
+                            "description": "Cursor for the next page. Absent on the last page."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidCursor",
+                    "description": "The cursor is not one this method issued."
+                }
+            ]
+        }
+    }
+}

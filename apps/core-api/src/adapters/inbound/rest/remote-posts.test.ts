@@ -31,6 +31,8 @@ const remotePostService = {
     requestProcessing: vi.fn(),
     delete: vi.fn(),
     recheckSpace: vi.fn(),
+    list: vi.fn(),
+    getMany: vi.fn(),
 };
 const dispatchRemoteProcessing = vi.fn(async () => undefined);
 
@@ -181,6 +183,66 @@ describe('/api/v1/remote-posts', () => {
         expect(res.status).toBe(200);
         expect((await res.json()).data).toMatchObject({ root: { uri: URI }, replies: [{ uri: URI }], nextCursor: URI });
         expect(remotePostService.thread).toHaveBeenCalledWith('test-app', URI, { limit: 10 });
+    });
+
+    describe('GET /list', () => {
+        const list = (query = '') => app().request(`/api/v1/remote-posts/list${query}`, { headers: auth });
+
+        it('answers the XRPC list shape inside the envelope: posts, and a cursor only when a page follows', async () => {
+            remotePostService.list.mockResolvedValue({ rows: [ROW], cursor: 'next' });
+            const res = await list();
+            expect(res.status).toBe(200);
+            expect(await res.json()).toMatchObject({ success: true, data: { posts: [{ uri: URI }], cursor: 'next' } });
+            expect(remotePostService.list).toHaveBeenCalledWith('test-app', {}, { limit: 50 });
+
+            remotePostService.list.mockResolvedValue({ rows: [] });
+            remotePostService.hydrate.mockResolvedValue([]);
+            expect((await (await list()).json()).data).toEqual({ posts: [] });
+        });
+
+        it('passes the filters through, with the space parsed', async () => {
+            remotePostService.list.mockResolvedValue({ rows: [ROW] });
+            const space = 'at://did:plc:group0000000000000000000/space/audio.voxpop.space.replies/3kprompt';
+            const query = new URLSearchParams({ repo: 'did:plc:abcdefghijklmnopqrstuvwx', space, kind: 'reply', limit: '5', cursor: 'c' });
+            expect((await list(`?${query}`)).status).toBe(200);
+            expect(remotePostService.list).toHaveBeenCalledWith(
+                'test-app',
+                {
+                    repoDid: 'did:plc:abcdefghijklmnopqrstuvwx',
+                    space: { authority: 'did:plc:group0000000000000000000', type: 'audio.voxpop.space.replies', skey: '3kprompt' },
+                    kind: 'reply',
+                },
+                { limit: 5, cursor: 'c' },
+            );
+        });
+
+        it('refuses a bad limit or kind (400), and is not mistaken for GET /?uri=', async () => {
+            expect((await list('?limit=101')).status).toBe(400);
+            expect((await list('?kind=draft')).status).toBe(400);
+            expect(remotePostService.get).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('GET /batch', () => {
+        const batch = (uris: string[]) =>
+            app().request(`/api/v1/remote-posts/batch?${uris.map((u) => `uris=${encodeURIComponent(u)}`).join('&')}`, { headers: auth });
+
+        it('reads one URI or several, in the envelope', async () => {
+            remotePostService.getMany.mockResolvedValue([ROW]);
+            const res = await batch([URI]);
+            expect(res.status).toBe(200);
+            expect(await res.json()).toMatchObject({ success: true, data: { posts: [{ uri: URI }] } });
+            expect(remotePostService.getMany).toHaveBeenCalledWith('test-app', [URI]);
+
+            await batch([URI, `${URI}2`]);
+            expect(remotePostService.getMany).toHaveBeenLastCalledWith('test-app', [URI, `${URI}2`]);
+        });
+
+        it('refuses none, or more than 25 (400)', async () => {
+            expect((await batch([])).status).toBe(400);
+            expect((await batch(Array.from({ length: 26 }, (_, i) => `${URI}${i}`))).status).toBe(400);
+            expect(remotePostService.getMany).not.toHaveBeenCalled();
+        });
     });
 
     describe('PATCH', () => {

@@ -47,6 +47,7 @@ const entry = [
   'types/records.ts',
   'types/remote-posts.ts',
   'types/spaces.ts',
+  'types/stats.ts',
   'types/url.ts',
 ];
 
