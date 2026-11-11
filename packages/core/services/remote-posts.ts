@@ -19,6 +19,8 @@ import type { PublicRepoPort, RepoFailureKind, RepoRecordRef } from '../ports/pu
 import type { SpaceDelegation, SpaceOpenResult, SpaceRepoPort } from '../ports/space-repo';
 import type {
     RemotePostDependencies,
+    RemoteListPosition,
+    RemotePostFilter,
     RemotePostRow,
     RemotePostWrite,
     RemoteSweepRow,
@@ -96,6 +98,31 @@ export const REMOTE_POST_DELETED = 'REMOTE_POST_DELETED';
 
 /** The most replies one thread page returns. */
 export const MAX_REMOTE_THREAD_PAGE = 100;
+
+/** Page cap for `RemotePostService.list`, as `com.atproto.repo.listRecords` has. */
+export const MAX_REMOTE_LIST_PAGE = 100;
+
+/** A list cursor this service didn't issue (XRPC `InvalidCursor`). */
+export const INVALID_CURSOR = 'INVALID_CURSOR';
+
+/**
+ * A list cursor: the last row's `createdAt` and URI, `{ISO datetime}::{uri}`.
+ * Opaque to callers. It names a position rather than a row, so a page still
+ * follows on when the row it ended at has since been removed.
+ */
+export function encodeRemoteListCursor(position: RemoteListPosition): string {
+    return `${position.createdAt.toISOString()}::${position.uri}`;
+}
+
+export function decodeRemoteListCursor(cursor: string): RemoteListPosition {
+    const at = cursor.indexOf('::');
+    const createdAt = at > 0 ? new Date(cursor.slice(0, at)) : new Date(NaN);
+    const uri = at > 0 ? cursor.slice(at + 2) : '';
+    if (Number.isNaN(createdAt.getTime()) || !uri.startsWith('at://')) {
+        throw new ServiceError('Invalid cursor: pass the `cursor` of the previous page unchanged', 400, undefined, INVALID_CURSOR);
+    }
+    return { createdAt, uri };
+}
 
 /**
  * A parsed remote post URI. `did` is the DID whose repo holds the record: the
@@ -391,6 +418,34 @@ export class RemotePostService {
             this.deps.listThread(originAppId, rootUri, { limit, cursor: page.cursor }),
         ]);
         return { root, replies: replies.items, nextCursor: replies.nextCursor };
+    }
+
+    /**
+     * One page of the tenant's registered posts, newest first, optionally only
+     * those in one repo, in one space, or of one kind. `cursor` is set when
+     * another page follows.
+     */
+    async list(
+        originAppId: string,
+        filter: RemotePostFilter,
+        page: { limit: number; cursor?: string },
+    ): Promise<{ rows: RemotePostRow[]; cursor?: string }> {
+        const limit = Math.max(1, Math.min(page.limit, MAX_REMOTE_LIST_PAGE));
+        const after = page.cursor !== undefined ? decodeRemoteListCursor(page.cursor) : undefined;
+        const { items, next } = await this.deps.listRemotePosts(originAppId, filter, { limit, ...(after ? { after } : {}) });
+        return { rows: items, ...(next ? { cursor: encodeRemoteListCursor(next) } : {}) };
+    }
+
+    /**
+     * The tenant's registered posts among `uris`, in the order asked for.
+     * A URI that isn't registered (or was removed) is left out, and a repeated
+     * one is returned once.
+     */
+    async getMany(originAppId: string, uris: string[]): Promise<RemotePostRow[]> {
+        const wanted = [...new Set(uris)];
+        if (wanted.length === 0) return [];
+        const found = new Map((await this.deps.getRemotePosts(originAppId, wanted)).map((row) => [row.uri, row]));
+        return wanted.map((uri) => found.get(uri)).filter((row): row is RemotePostRow => row !== undefined);
     }
 
     /** Views for one tenant's rows, transcripts loaded in one round. */

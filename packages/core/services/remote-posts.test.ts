@@ -155,6 +155,31 @@ function fakeDeps(clock: { now: Date }) {
             const items = [...rows.values()].filter((r) => r.originAppId === o && r.record.reply?.root.uri === root);
             return { items: items.slice(0, limit), nextCursor: null };
         },
+        async listRemotePosts(o, filter, { limit, after }) {
+            const position = (r: { createdAt: Date; uri: string }) => `${r.createdAt.toISOString()} ${r.uri}`;
+            const matching = [...rows.values()]
+                .filter(
+                    (r) =>
+                        r.originAppId === o &&
+                        (!filter.repoDid || r.repoDid === filter.repoDid) &&
+                        (!filter.space ||
+                            (r.space?.authority === filter.space.authority &&
+                                r.space.type === filter.space.type &&
+                                r.space.skey === filter.space.skey)) &&
+                        (!filter.kind || (r.record.reply ? 'reply' : 'prompt') === filter.kind) &&
+                        (!after || position(r) < position(after)),
+                )
+                .sort((a, b) => (position(a) < position(b) ? 1 : -1));
+            const items = matching.slice(0, limit).map((r) => structuredClone(r));
+            const last = items[items.length - 1];
+            return { items, next: matching.length > limit && last ? { createdAt: last.createdAt, uri: last.uri } : null };
+        },
+        async getRemotePosts(o, uris) {
+            return uris.flatMap((u) => {
+                const r = rows.get(key(o, u));
+                return r ? [structuredClone(r)] : [];
+            });
+        },
         async mergeProcessing(o, u, resolved: ResolvedProcessing) {
             const r = rows.get(key(o, u))!;
             r.processing = { ...r.processing, ...resolved, updatedAt: clock.now };
@@ -934,5 +959,105 @@ describe('RemotePostService', () => {
             r.publish(URI, audioRecord({ embed: undefined }));
             expect(await service.sweep(10)).toMatchObject({ removed: 1 });
         });
+    });
+});
+
+describe('RemotePostService: list and getMany', () => {
+    const OTHER_DID = 'did:plc:zyxwvutsrqponmlkjihgfedc';
+    const uriOf = (did: string, n: number) => `at://${did}/dev.antiphony.audio.post/3klist${String(n).padStart(7, '0')}`;
+    let f: ReturnType<typeof fakeDeps>;
+    let r: ReturnType<typeof fakeRepo>;
+    let service: RemotePostService;
+
+    beforeEach(() => {
+        const clock = { now: new Date('2026-11-02T12:00:00.000Z') };
+        f = fakeDeps(clock);
+        r = fakeRepo();
+        service = new RemotePostService(f.deps, r.repo);
+    });
+
+    /** Register post `n` in `did`'s repo, created `n` minutes after 10:00. */
+    async function post(did: string, n: number, over: Record<string, unknown> = {}, tenant = TENANT) {
+        const uri = uriOf(did, n);
+        const createdAt = new Date(Date.UTC(2026, 10, 2, 10, n)).toISOString();
+        await service.register(tenant, { uri, cid: r.publish(uri, audioRecord({ createdAt, ...over })) });
+        return uri;
+    }
+
+    it('lists newest first and pages with an opaque cursor until the last page', async () => {
+        const uris = [await post(DID, 1), await post(DID, 2), await post(DID, 3)];
+
+        const first = await service.list(TENANT, {}, { limit: 2 });
+        expect(first.rows.map((row) => row.uri)).toEqual([uris[2], uris[1]]);
+        expect(first.cursor).toEqual(expect.any(String));
+
+        const second = await service.list(TENANT, {}, { limit: 2, cursor: first.cursor });
+        expect(second.rows.map((row) => row.uri)).toEqual([uris[0]]);
+        expect(second.cursor).toBeUndefined();
+    });
+
+    it('has no cursor when a page is exactly the rest', async () => {
+        await post(DID, 1);
+        await post(DID, 2);
+        expect((await service.list(TENANT, {}, { limit: 2 })).cursor).toBeUndefined();
+    });
+
+    it('keeps paging when the row a cursor ended at has since been removed', async () => {
+        const uris = [await post(DID, 1), await post(DID, 2), await post(DID, 3)];
+        const first = await service.list(TENANT, {}, { limit: 1 });
+        await service.delete(TENANT, uris[2]);
+
+        const second = await service.list(TENANT, {}, { limit: 5, cursor: first.cursor });
+        expect(second.rows.map((row) => row.uri)).toEqual([uris[1], uris[0]]);
+    });
+
+    it('filters by repo, by kind, and by both', async () => {
+        const prompt = await post(DID, 1);
+        const reply = await post(DID, 2, { reply: { root: { uri: prompt, cid: 'bafyroot' }, parent: { uri: prompt, cid: 'bafyroot' } } });
+        const elsewhere = await post(OTHER_DID, 3);
+        const list = async (filter: Parameters<RemotePostService['list']>[1]) =>
+            (await service.list(TENANT, filter, { limit: 10 })).rows.map((row) => row.uri);
+
+        expect(await list({ repoDid: DID })).toEqual([reply, prompt]);
+        expect(await list({ kind: 'prompt' })).toEqual([elsewhere, prompt]);
+        expect(await list({ kind: 'reply' })).toEqual([reply]);
+        expect(await list({ repoDid: OTHER_DID, kind: 'reply' })).toEqual([]);
+    });
+
+    it('filters by space, authority included', async () => {
+        const record = audioRecord();
+        f.stored.set(`${TENANT} ${bytesCid(MP4)}`, { space: SPACE });
+        await service.register(TENANT, { uri: SPACE_URI, cid: recordCid(record), record });
+        await post(DID, 1);
+        const list = async (space: RemoteSpace) => (await service.list(TENANT, { space }, { limit: 10 })).rows.map((row) => row.uri);
+
+        expect(await list(SPACE)).toEqual([SPACE_URI]);
+        expect(await list({ ...SPACE, skey: 'elsewhere' })).toEqual([]);
+        expect(await list({ ...SPACE, authority: OTHER_DID })).toEqual([]);
+    });
+
+    it("never lists another tenant's registrations", async () => {
+        await post(DID, 1, {}, 'bardcast');
+        expect((await service.list(TENANT, {}, { limit: 10 })).rows).toEqual([]);
+    });
+
+    it('clamps the page size, and refuses a cursor it did not issue (400 INVALID_CURSOR)', async () => {
+        await post(DID, 1);
+        await post(DID, 2);
+        expect((await service.list(TENANT, {}, { limit: 0 })).rows).toHaveLength(1);
+        for (const cursor of ['nope', '::at://x', 'not-a-date::at://did:plc:x/c/r', '2026-11-02T10:00:00.000Z::https://x']) {
+            await expect(service.list(TENANT, {}, { limit: 10, cursor })).rejects.toMatchObject({ status: 400, code: 'INVALID_CURSOR' });
+        }
+    });
+
+    it('getMany returns the registered posts in the order asked, once each, leaving out the rest', async () => {
+        const a = await post(DID, 1);
+        const b = await post(DID, 2);
+        await post(DID, 3, {}, 'bardcast');
+        const missing = uriOf(DID, 9);
+
+        const rows = await service.getMany(TENANT, [b, missing, a, b, uriOf(DID, 3)]);
+        expect(rows.map((row) => row.uri)).toEqual([b, a]);
+        expect(await service.getMany(TENANT, [])).toEqual([]);
     });
 });

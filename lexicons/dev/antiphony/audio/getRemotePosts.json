@@ -1,0 +1,43 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.getRemotePosts",
+    "description": "Fetch several registered remote posts by URI in one call. The app.bsky.feed.getPosts analogue.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns the calling tenant's registered remote posts for the URIs given, in the order given. A URI the tenant has not registered, or whose registration was removed, is left out rather than failing the call.",
+            "parameters": {
+                "type": "params",
+                "required": ["uris"],
+                "properties": {
+                    "uris": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "at-uri"
+                        },
+                        "maxLength": 25,
+                        "description": "The record URIs. At most 25; repeat the parameter for each."
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["posts"],
+                    "properties": {
+                        "posts": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#remotePostView"
+                            },
+                            "description": "The registered posts among the URIs asked for, in request order."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

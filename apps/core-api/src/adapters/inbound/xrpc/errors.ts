@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ServiceError } from 'shared/errors';
 import { reportError } from 'shared/observability/report-error';
 import { REPLY_CID_MISMATCH } from '@antiphony/core/services/audio-posts';
+import { INVALID_CURSOR } from '@antiphony/core/services/remote-posts';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -59,6 +60,8 @@ const SYMBOL_BY_STATUS: Record<number, string> = {
 const SYMBOL_BY_CODE: Record<string, string> = {
     // dev.antiphony.audio.createPost: a reply StrongRef's CID isn't the stored record's.
     [REPLY_CID_MISMATCH]: 'ReplyCidMismatch',
+    // dev.antiphony.audio.listRemotePosts: a cursor this service didn't issue.
+    [INVALID_CURSOR]: 'InvalidCursor',
 };
 
 /** The XRPC symbol for a domain error: its named error if it has one, else its HTTP status's. */

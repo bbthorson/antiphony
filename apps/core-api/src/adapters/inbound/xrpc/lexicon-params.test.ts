@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join, resolve, dirname } from 'node:path';
 import type { z } from 'zod';
 import { GetPlaybackUrlQuerySchema, GetPostQuerySchema, GetThreadQuerySchema } from './index.js';
+import { GetRemotePostsQuerySchema, ListRemotePostsQuerySchema } from '../remote-post-queries.js';
 
 /**
  * Each XRPC query's `parameters`, as its lexicon declares them, against the
@@ -21,9 +22,42 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../
 
 interface LexParam {
     type: string;
+    format?: string;
+    knownValues?: string[];
     minimum?: number;
     maximum?: number;
+    maxLength?: number;
     default?: unknown;
+    items?: LexParam;
+}
+
+/** Sample values for the string formats a parameter declares. */
+const SAMPLE_BY_FORMAT: Record<string, string> = {
+    did: 'did:plc:abcdefghijklmnopqrstuvwx',
+    'at-uri': 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001',
+};
+
+/**
+ * Parameters whose syntax the lexicon states only in prose, with a value the
+ * handler's schema should accept. (Upstream has a `space-ref` format for a
+ * space URI; the Lexicon validator here doesn't know it yet.)
+ */
+const SAMPLE_BY_PARAM: Record<string, string> = {
+    'dev.antiphony.audio.listRemotePosts space': 'at://did:plc:group0000000000000000000/space/audio.voxpop.space.replies/3kprompt',
+};
+
+/** A query-string value the schema should accept for this parameter, and what it parses to. */
+function sample(nsid: string, name: string, prop: LexParam): { raw: string | string[]; parsed: unknown } {
+    if (prop.type === 'integer') {
+        const raw = String(prop.minimum ?? 1);
+        return { raw, parsed: Number(raw) };
+    }
+    if (prop.type === 'array') {
+        const item = sample(nsid, name, prop.items ?? { type: 'string' });
+        return { raw: [item.raw as string], parsed: [item.parsed] };
+    }
+    const raw = SAMPLE_BY_PARAM[`${nsid} ${name}`] ?? prop.knownValues?.[0] ?? (prop.format && SAMPLE_BY_FORMAT[prop.format]) ?? 'abc';
+    return { raw, parsed: raw };
 }
 
 interface QueryDef {
@@ -45,6 +79,8 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
     'dev.antiphony.audio.getPost': GetPostQuerySchema,
     'dev.antiphony.audio.getThread': GetThreadQuerySchema,
     'dev.antiphony.audio.getPlaybackUrl': GetPlaybackUrlQuerySchema,
+    'dev.antiphony.audio.listRemotePosts': ListRemotePostsQuerySchema,
+    'dev.antiphony.audio.getRemotePosts': GetRemotePostsQuerySchema,
 };
 
 const QUERIES = queries();
@@ -59,8 +95,8 @@ describe('XRPC query parameters ↔ lexicon', () => {
         const props = params?.properties ?? {};
         const required = new Set(params?.required ?? []);
         /** A query string that satisfies every required parameter. */
-        const minimal = Object.fromEntries(
-            [...required].map((name) => [name, props[name]?.type === 'integer' ? String(props[name]!.minimum ?? 1) : 'x']),
+        const minimal: Record<string, string | string[]> = Object.fromEntries(
+            [...required].map((name) => [name, sample(nsid, name, props[name]!).raw]),
         );
         const shapeKeys = Object.keys((schema as unknown as { shape: Record<string, unknown> }).shape);
 
@@ -78,11 +114,10 @@ describe('XRPC query parameters ↔ lexicon', () => {
 
         it('accepts each optional parameter and carries its value through', () => {
             for (const name of Object.keys(props).filter((n) => !required.has(n))) {
-                const integer = props[name]!.type === 'integer';
-                const value = integer ? String(props[name]!.minimum ?? 1) : 'abc';
-                const parsed = schema.safeParse({ ...minimal, [name]: value });
+                const value = sample(nsid, name, props[name]!);
+                const parsed = schema.safeParse({ ...minimal, [name]: value.raw });
                 expect(parsed.success, `${name} should parse`).toBe(true);
-                expect(parsed.success && (parsed.data as Record<string, unknown>)[name], name).toEqual(integer ? Number(value) : value);
+                expect(parsed.success && (parsed.data as Record<string, unknown>)[name], name).toEqual(value.parsed);
             }
         });
 
@@ -103,6 +138,20 @@ describe('XRPC query parameters ↔ lexicon', () => {
                     const { [name]: _, ...without } = minimal;
                     const parsed = schema.safeParse(without);
                     expect(parsed.success && (parsed.data as Record<string, unknown>)[name], `${name} default`).toBe(prop.default);
+                }
+            }
+        });
+
+        it('refuses a value outside a declared format, known value set or array length', () => {
+            for (const [name, prop] of Object.entries(props)) {
+                const parse = (v: string | string[]) => schema.safeParse({ ...minimal, [name]: v });
+                if (prop.type === 'string' && (prop.knownValues || (prop.format && SAMPLE_BY_FORMAT[prop.format]))) {
+                    expect(parse('not a valid value').success, `${name} must be checked`).toBe(false);
+                }
+                if (prop.type === 'array' && prop.maxLength !== undefined) {
+                    const item = sample(nsid, name, prop.items ?? { type: 'string' }).raw as string;
+                    expect(parse(Array.from({ length: prop.maxLength }, () => item)).success, `${name} at its maximum`).toBe(true);
+                    expect(parse(Array.from({ length: prop.maxLength + 1 }, () => item)).success, `${name} over its maximum`).toBe(false);
                 }
             }
         });

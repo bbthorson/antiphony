@@ -261,6 +261,19 @@ describe('remote posts (migration 0006)', () => {
             expect(await deps().getRemotePost(TENANT, SPACE_URI)).not.toBeNull();
         });
 
+        it('lists by space, authority included', async () => {
+            await uploadForSpace(MP4);
+            await push(MP4);
+            const cid = await publish(URI, new Uint8Array([...MP4, 9]));
+            await service().register(TENANT, { uri: URI, cid });
+            const list = async (space: typeof SPACE) => (await service().list(TENANT, { space }, { limit: 10 })).rows.map((row) => row.uri);
+
+            expect(await list(SPACE)).toEqual([SPACE_URI]);
+            expect(await list({ ...SPACE, skey: 'elsewhere' })).toEqual([]);
+            expect(await list({ ...SPACE, authority: DID })).toEqual([]);
+            expect((await service().list(TENANT, {}, { limit: 10 })).rows).toHaveLength(2);
+        });
+
         it('counts only fetched public records as verified public references', async () => {
             const cid = await cidForBytes(MP4);
             await uploadForSpace(MP4);
@@ -412,6 +425,66 @@ describe('remote posts (migration 0006)', () => {
             expect(await deps().getRemotePost(TENANT, SPACE_URI)).toBeNull();
             await drain();
             expect(await hasBlob(MP4)).toBe(false);
+        });
+    });
+
+    describe('listing (migration 0010)', () => {
+        const OTHER_DID = 'did:plc:zyxwvutsrqponmlkjihgfedc';
+        const uriOf = (did: string, n: number) => `at://${did}/dev.antiphony.audio.post/3klist${String(n).padStart(7, '0')}`;
+
+        /** Register post `n` in `did`'s repo, created `n` minutes after 10:00. Distinct bytes each, so each has its own blob. */
+        async function post(did: string, n: number, over: Record<string, unknown> = {}, tenant = TENANT) {
+            const uri = uriOf(did, n);
+            const createdAt = new Date(Date.UTC(2026, 10, 2, 10, n)).toISOString();
+            const cid = await publish(uri, new Uint8Array([...MP4, n]), { createdAt, ...over });
+            await service().register(tenant, { uri, cid });
+            return uri;
+        }
+        const list = async (filter: Parameters<RemotePostService['list']>[1], page: { limit: number; cursor?: string } = { limit: 10 }) => {
+            const { rows, cursor } = await service().list(TENANT, filter, page);
+            return { uris: rows.map((row) => row.uri), cursor };
+        };
+
+        it('pages newest first by (created_at, uri), across a tie on created_at', async () => {
+            const a = await post(DID, 1);
+            const b = await post(OTHER_DID, 1); // same minute as `a`: the URI breaks the tie
+            const c = await post(DID, 2);
+
+            const first = await list({}, { limit: 2 });
+            expect(first.uris).toEqual([c, b]);
+            const second = await list({}, { limit: 2, cursor: first.cursor });
+            expect(second).toEqual({ uris: [a], cursor: undefined });
+        });
+
+        it('filters by repo, by kind and by tenant', async () => {
+            const prompt = await post(DID, 1);
+            const reply = await post(DID, 2, {
+                reply: { root: { uri: prompt, cid: 'bafyroot' }, parent: { uri: prompt, cid: 'bafyroot' } },
+            });
+            const elsewhere = await post(OTHER_DID, 3);
+            await post(DID, 4, {}, 'bardcast');
+
+            expect((await list({})).uris).toEqual([elsewhere, reply, prompt]);
+            expect((await list({ repoDid: DID })).uris).toEqual([reply, prompt]);
+            expect((await list({ kind: 'reply' })).uris).toEqual([reply]);
+            expect((await list({ kind: 'prompt' })).uris).toEqual([elsewhere, prompt]);
+            expect((await list({ repoDid: OTHER_DID, kind: 'reply' })).uris).toEqual([]);
+        });
+
+        it('reads several by URI, in the order asked, without another tenant\'s', async () => {
+            const a = await post(DID, 1);
+            const b = await post(DID, 2);
+            const theirs = await post(DID, 3, {}, 'bardcast');
+
+            const rows = await service().getMany(TENANT, [b, uriOf(DID, 9), theirs, a]);
+            expect(rows.map((row) => row.uri)).toEqual([b, a]);
+        });
+
+        it('is served by the listing indexes', async () => {
+            const names = (await db.query<{ indexname: string }>("select indexname from pg_indexes where tablename = 'remote_posts'")).map(
+                (row) => row.indexname,
+            );
+            expect(names).toEqual(expect.arrayContaining(['remote_posts_list_idx', 'remote_posts_repo_list_idx']));
         });
     });
 });

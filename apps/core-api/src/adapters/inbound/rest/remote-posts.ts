@@ -6,6 +6,8 @@ import {
     RecheckRemoteSpaceRequestSchema,
     RecheckRemoteSpaceResultSchema,
     RegisterRemotePostRequestSchema,
+    RemotePostListViewSchema,
+    RemotePostsViewSchema,
     RemotePostUriSchema,
     RemotePostViewSchema,
     RemoteThreadViewSchema,
@@ -17,6 +19,12 @@ import { getOriginAppId } from '../../../lib/origin-app.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { dispatchRemoteProcessing, resolveInitialProcessing } from '../../../lib/audio-processing.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
+import {
+    GetRemotePostsQuerySchema,
+    ListRemotePostsQuerySchema,
+    getRemotePosts,
+    listRemotePosts,
+} from '../remote-post-queries.js';
 
 /**
  * Remote posts, mounted at `/api/v1/remote-posts` (specs/audio-service-mode.md):
@@ -30,6 +38,8 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  *   PUT    /                 — register a record by URI and CID
  *   GET    /?uri=            — one registered post
  *   GET    /thread?root=     — the registered replies under a root
+ *   GET    /list             — a page of the tenant's registered posts
+ *   GET    /batch?uris=      — several registered posts by URI
  *   PATCH  /?uri=            — request processing
  *   DELETE /?uri=            — remove a registration and Antiphony's copy
  *   POST   /recheck          — recheck a space's records on a fresh delegation
@@ -232,6 +242,87 @@ app.openapi(threadRoute, async (c) => {
         service.hydrate(originAppId, page.replies),
     ]);
     return c.json({ success: true as const, data: { root: rootView, replies, nextCursor: page.nextCursor } }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// GET /list and GET /batch — the REST twins of two XRPC queries
+// ---------------------------------------------------------------------------
+
+const listRoute = createRoute({
+    method: 'get',
+    path: '/list',
+    tags: ['Remote posts'],
+    summary: "List the tenant's registered remote posts",
+    description:
+        "One page of the calling tenant's registered remote posts, newest first by the record's `createdAt`. `repo`, " +
+        '`space` and `kind` each narrow it, and they combine. Only what was registered is listed. This is the REST ' +
+        'twin of the XRPC query `dev.antiphony.audio.listRemotePosts` (`GET /xrpc/dev.antiphony.audio.listRemotePosts`), ' +
+        'and it answers in that shape inside the envelope: a `posts` array and a `cursor` that is absent on the last ' +
+        'page, rather than `items` / `nextCursor`. A cursor this route did not issue is 400 (`INVALID_CURSOR`).',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+    ] as const,
+    request: {
+        query: ListRemotePostsQuerySchema.extend({
+            repo: ListRemotePostsQuerySchema.shape.repo.openapi({
+                description: "Only records held in this DID's repo (a space record's author segment)",
+            }),
+            space: ListRemotePostsQuerySchema.shape.space.openapi({
+                description: 'Only records in this space: `at://{authority}/space/{type}/{skey}`',
+            }),
+            kind: ListRemotePostsQuerySchema.shape.kind.openapi({ description: 'Only prompts, or only replies' }),
+            limit: ListRemotePostsQuerySchema.shape.limit.openapi({ description: '1–100 (default 50)' }),
+            cursor: ListRemotePostsQuerySchema.shape.cursor.openapi({ description: '`cursor` from the previous page' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(RemotePostListViewSchema, 'One page, newest first'),
+        400: errorResponse('Invalid repo, space, kind, limit or cursor (`INVALID_CURSOR`)'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(listRoute, async (c) => {
+    const data = await listRemotePosts(env(c), getOriginAppId(c), c.req.valid('query'));
+    return c.json({ success: true as const, data }, 200);
+});
+
+const batchRoute = createRoute({
+    method: 'get',
+    path: '/batch',
+    tags: ['Remote posts'],
+    summary: 'Get several registered remote posts',
+    description:
+        "The calling tenant's registered remote posts among up to 25 URIs, in the order asked for. Repeat `uris` for " +
+        'each. A URI that is not registered, or whose registration was removed, is left out rather than failing the ' +
+        'call. The REST twin of the XRPC query `dev.antiphony.audio.getRemotePosts`.',
+    middleware: [
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+    ] as const,
+    request: {
+        query: z.object({
+            uris: z
+                .array(RemotePostUriSchema)
+                .or(RemotePostUriSchema)
+                .openapi({ description: 'Record URIs, at most 25; repeat the parameter for each' }),
+        }),
+    },
+    responses: {
+        200: jsonResponse(RemotePostsViewSchema, 'The registered posts among the URIs, in request order'),
+        400: errorResponse('No URI, more than 25, or an invalid one'),
+        401: errorResponse('Not authenticated'),
+    },
+});
+
+app.openapi(batchRoute, async (c) => {
+    const parsed = GetRemotePostsQuerySchema.safeParse(c.req.valid('query'));
+    if (!parsed.success) return c.json(errorEnvelope(c, 'Send between 1 and 25 `uris`'), 400);
+    const data = await getRemotePosts(env(c), getOriginAppId(c), parsed.data.uris);
+    return c.json({ success: true as const, data }, 200);
 });
 
 // ---------------------------------------------------------------------------

@@ -55,6 +55,9 @@ export const XRPC_NSID = {
     GetPost: 'dev.antiphony.audio.getPost',
     GetThread: 'dev.antiphony.audio.getThread',
     GetPlaybackUrl: 'dev.antiphony.audio.getPlaybackUrl',
+    // Remote posts (specs/audio-service-mode.md): records held in other repos.
+    ListRemotePosts: 'dev.antiphony.audio.listRemotePosts',
+    GetRemotePosts: 'dev.antiphony.audio.getRemotePosts',
     // Procedures (POST).
     CreatePost: 'dev.antiphony.audio.createPost',
     ReprocessPost: 'dev.antiphony.audio.reprocessPost',

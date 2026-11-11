@@ -12,6 +12,8 @@
     "GET /api/v1/posts/{postId}",
     "GET /api/v1/posts/{postId}/replies",
     "GET /api/v1/remote-posts",
+    "GET /api/v1/remote-posts/batch",
+    "GET /api/v1/remote-posts/list",
     "GET /api/v1/remote-posts/thread",
     "GET /api/v1/spaces/{spaceType}/{skey}",
     "PATCH /api/v1/posts/{postId}",

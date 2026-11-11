@@ -191,6 +191,30 @@ export const RemoteThreadViewSchema = z.object({
 });
 export type RemoteThreadView = z.infer<typeof RemoteThreadViewSchema>;
 
+/** The most URIs one `getRemotePosts` call takes, as `app.bsky.feed.getPosts` does. */
+export const MAX_REMOTE_POSTS_BATCH = 25;
+
+/**
+ * `dev.antiphony.audio.listRemotePosts`: one page of a tenant's registered
+ * remote posts, newest first. Shaped as atproto lists are (a named array and
+ * `cursor`), not as the older REST lists (`items` / `nextCursor`).
+ */
+export const RemotePostListViewSchema = z.object({
+    posts: z.array(RemotePostViewSchema),
+    /** Pass as `cursor` for the next page. Absent on the last page. */
+    cursor: z.string().optional(),
+});
+export type RemotePostListView = z.infer<typeof RemotePostListViewSchema>;
+
+/**
+ * `dev.antiphony.audio.getRemotePosts`: the registered posts among the URIs
+ * asked for, in request order. Unregistered URIs are left out.
+ */
+export const RemotePostsViewSchema = z.object({
+    posts: z.array(RemotePostViewSchema),
+});
+export type RemotePostsView = z.infer<typeof RemotePostsViewSchema>;
+
 /** `DELETE /api/v1/remote-posts?uri=`: whether a registration was removed. */
 export const DeleteRemotePostResultSchema = z.object({
     uri: RemotePostUriSchema,

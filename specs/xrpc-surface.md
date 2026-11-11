@@ -21,6 +21,15 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
   versions (spaces this month, the author segment next). REST has `/api/v1/` and 0.x semver to
   absorb that; lexicons don't. So the surface is built out now, and frozen and adopted at 1.0.
 
+> **Update 2026-11-11 (Brad): build XRPC-first from now, not only at 1.0.** New operations
+> are written lexicon-first: the lexicon, the XRPC handler, and a REST twin over the same
+> code. Existing calls stay on REST until 1.0. Two decisions below are settled with it:
+> **D-1 (a)**, lexicons are edited in place until they are published at 1.0; and **D-10**,
+> lists answer a named array plus `cursor`, absent on the last page. The first methods built
+> this way are `dev.antiphony.audio.listRemotePosts` and `getRemotePosts` (contract 0.10.7),
+> which makes seven methods, not the five §2 counts. §3.1's inventory predates remote posts,
+> the DID registry and deletion, and still needs rows for them.
+
 ## 2. What exists
 
 - **Five methods** in `apps/core-api/src/adapters/inbound/xrpc/`: `dev.antiphony.audio.getPost`,
@@ -162,7 +171,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 
 | # | Decision | Options | Lean |
 | :--- | :--- | :--- | :--- |
-| D-1 | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
+| D-1 *(settled 2026-11-11: a)* | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
 | D-2 | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
 | D-3 | **Where the `dev.antiphony` lexicon repo lives** | a small PDS account for `antiphony.dev`'s DID; a hosted PDS; don't publish | a hosted PDS account (no infra to run), at 1.0 |
 | D-4 | **Acting actor in the protocol shape** | keep custom headers (client sets them); move into each procedure's input; express as a signed claim inside service auth | keep headers until signed service auth is the credential, then fold the actor into the JWT |
@@ -171,7 +180,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-7 | **Upload encoding** | raw body (uploadBlob style); multipart | raw body |
 | D-8 | **Playback bytes** | an XRPC binary query; keep a plain media route | keep a media route (it's a capability URL consumed by `<audio>`, not an API call); XRPC mints it |
 | D-9 | **Space management names** | `com.atproto.simplespace.createSpace`/`updateSpace`/`getSpace` for tenants too; `dev.antiphony.space.putSpace`/`getSpace` | the protocol's names, if their inputs fit tenant needs (policies as `$type` objects); else `dev.antiphony.space.*` |
-| D-10 | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
+| D-10 *(settled 2026-11-11: named arrays)* | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
 | D-11 | **Source of truth for shapes** | lexicons generate Zod; Zod stays hand-written with the parity test; validate with `@atproto/lex` at runtime | keep hand-written Zod plus parity until 1.0, then generate |
 | D-12 | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |
 | D-13 | **Rate limits for non-tenant callers** | per IP; per `iss` DID; per space credential | per `iss` for service auth, per IP for public |

@@ -17,6 +17,7 @@ import {
 } from './audio';
 import { ProcessingRequestSchema } from './processing';
 import { SpaceKeySchema } from './spaces';
+import { RemotePostListViewSchema, RemotePostsViewSchema, RemotePostViewSchema, RemoteSpaceSchema } from './remote-posts';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
 
 /**
@@ -332,6 +333,13 @@ const CASES: ParityCase[] = [
     },
     { lexicon: 'dev.antiphony.audio.defs#spaceKey', schema: SpaceKeySchema },
 
+    // Remote posts (specs/audio-service-mode.md): the view, and the outputs of
+    // the two queries that list them.
+    { lexicon: 'dev.antiphony.audio.defs#remoteSpace', schema: RemoteSpaceSchema },
+    { lexicon: 'dev.antiphony.audio.defs#remotePostView', schema: RemotePostViewSchema },
+    { lexicon: 'dev.antiphony.audio.listRemotePosts#main', part: 'output', schema: RemotePostListViewSchema },
+    { lexicon: 'dev.antiphony.audio.getRemotePosts#main', part: 'output', schema: RemotePostsViewSchema },
+
     // Procedure inputs: the body each XRPC procedure validates with.
     {
         lexicon: 'dev.antiphony.audio.createPost#main',
@@ -487,6 +495,8 @@ const NOT_COMPARED: Record<string, string> = {
     'dev.antiphony.audio.getPost#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getThread#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getPlaybackUrl#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.listRemotePosts#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.getRemotePosts#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getThread#main:output':
         '`{ parent, replies, cursor }` assembled by the handler; parent and replies are defs#postView, compared above',
     'dev.antiphony.audio.getPlaybackUrl#main:output': '`{ url }` built by the handler; no Zod schema',

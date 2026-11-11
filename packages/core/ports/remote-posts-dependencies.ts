@@ -55,6 +55,21 @@ export interface RemoteSpaceDue {
     oldestCheck: Date;
 }
 
+/** Which of a tenant's registered posts a listing returns. Every part is optional; they combine. */
+export interface RemotePostFilter {
+    /** The DID whose repo holds the record. */
+    repoDid?: string;
+    /** The space the record is in. */
+    space?: RemoteSpace;
+    kind?: 'prompt' | 'reply';
+}
+
+/** A position in the newest-first listing: the last row of the page before. */
+export interface RemoteListPosition {
+    createdAt: Date;
+    uri: string;
+}
+
 /** The outcome of one recheck, recorded on the row. */
 export type RemoteCheckOutcome = 'present' | 'gone' | 'unreachable';
 
@@ -84,6 +99,20 @@ export interface RemotePostDependencies {
         rootUri: string,
         page: { limit: number; cursor?: string },
     ): Promise<{ items: RemotePostRow[]; nextCursor: string | null }>;
+
+    /**
+     * This tenant's registered posts matching `filter`, newest first by
+     * `(createdAt, uri)`, strictly after `page.after` when given. `next` is
+     * the position to continue from, or null when this was the last page.
+     */
+    listRemotePosts(
+        originAppId: string,
+        filter: RemotePostFilter,
+        page: { limit: number; after?: RemoteListPosition },
+    ): Promise<{ items: RemotePostRow[]; next: RemoteListPosition | null }>;
+
+    /** This tenant's registered posts among `uris`, in no particular order. */
+    getRemotePosts(originAppId: string, uris: string[]): Promise<RemotePostRow[]>;
 
     /** Merge requested stages onto the stored state (stamps `updatedAt`). */
     mergeProcessing(originAppId: string, uri: string, resolved: ResolvedProcessing): Promise<void>;

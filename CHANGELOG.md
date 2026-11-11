@@ -8,6 +8,40 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.7] — 2026-11-11
+
+Listing remote posts. Until now a remote post could be read only by its URI or as part of a
+thread, so a tenant whose prompts live in other repos had no way to page through them.
+**Patch**: two new queries, each on both surfaces, and one migration.
+
+These are the first methods built lexicon-first ([`specs/xrpc-surface.md`](./specs/xrpc-surface.md)):
+the lexicon is the contract, XRPC is the primary surface, and the REST route is a twin over
+the same code. Their shapes follow atproto's own lists (`com.atproto.repo.listRecords`,
+`app.bsky.feed.getPosts`), not the older REST lists.
+
+### Added
+
+- **`dev.antiphony.audio.listRemotePosts`** (`GET /xrpc/dev.antiphony.audio.listRemotePosts`,
+  and `GET /api/v1/remote-posts/list`): one page of the calling tenant's registered remote
+  posts, newest first by the record's `createdAt`.
+  - Optional filters, which combine: `repo` (the DID whose repo holds the record), `space`
+    (`at://{authority}/space/{type}/{skey}`) and `kind` (`prompt` | `reply`).
+  - `limit` 1–100 (default 50) and `cursor`. The answer is `{ posts, cursor? }`: `cursor` is
+    **absent** on the last page, not null, and the array is named `posts`, not `items`.
+  - The cursor is opaque and names a position, so paging carries on when the row a page
+    ended at has since been removed. One this method didn't issue is 400: XRPC
+    `InvalidCursor`, REST `INVALID_CURSOR`.
+- **`dev.antiphony.audio.getRemotePosts`** (`GET /xrpc/dev.antiphony.audio.getRemotePosts`,
+  and `GET /api/v1/remote-posts/batch`): up to 25 registered posts by URI (`uris`, repeated),
+  answered as `{ posts }` in the order asked. A URI the tenant hasn't registered is left out
+  rather than failing the call.
+- **Lexicon definitions** `dev.antiphony.audio.defs#remotePostView` and `#remoteSpace`: the
+  `RemotePostView` the REST routes already return, now stated in the lexicons.
+- `@antiphony/shared` gains `RemotePostListViewSchema`, `RemotePostsViewSchema`,
+  `MAX_REMOTE_POSTS_BATCH` and the two method NSIDs in `XRPC_NSID`. Its release waits for
+  the rest of the remote-post XRPC methods, so the schemas ship in one bump.
+- Migration `0010_remote_posts_list.sql`: indexes for the listing, tenant-wide and per repo.
+
 ## [0.10.6] — 2026-11-02
 
 Remote posts read on a delegation ([`specs/audio-service-mode.md`](./specs/audio-service-mode.md),

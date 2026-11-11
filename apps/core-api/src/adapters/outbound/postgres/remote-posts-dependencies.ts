@@ -264,6 +264,52 @@ export function postgresRemotePostDependencies(
             return { items, nextCursor: rows.length > limit ? (rows[limit - 1]?.uri ?? null) : null };
         },
 
+        async listRemotePosts(originAppId, filter, { limit, after }) {
+            // Newest first on (created_at, uri), which migration 0010 indexes
+            // for the whole tenant and per repo. A null filter matches all.
+            const rows = await sql.query<RemoteRow>(
+                `
+                select ${COLS} from remote_posts
+                 where origin_app_id = $1
+                   and ($2::text is null or repo_did = $2)
+                   and ($3::text is null
+                        or (space is not null
+                            and space ->> 'authority' = $3 and space ->> 'type' = $4 and space ->> 'skey' = $5))
+                   and ($6::text is null or (reply_root_uri is not null) = ($6 = 'reply'))
+                   and ($7::timestamptz is null or (created_at, uri) < ($7::timestamptz, $8::text))
+                 order by created_at desc, uri desc
+                 limit $9
+                `,
+                [
+                    originAppId,
+                    filter.repoDid ?? null,
+                    filter.space?.authority ?? null,
+                    filter.space?.type ?? null,
+                    filter.space?.skey ?? null,
+                    filter.kind ?? null,
+                    after?.createdAt ?? null,
+                    after?.uri ?? null,
+                    limit + 1,
+                ],
+            );
+            // The position comes from the stored row, not the mapped one: a row
+            // that fails validation is skipped, and the page must still advance.
+            const last = rows.length > limit ? rows[limit - 1] : undefined;
+            return {
+                items: rows.slice(0, limit).map(toRow).filter((r): r is RemotePostRow => r !== null),
+                next: last ? { createdAt: date(last.created_at), uri: last.uri } : null,
+            };
+        },
+
+        async getRemotePosts(originAppId, uris) {
+            if (uris.length === 0) return [];
+            const rows = await sql.query<RemoteRow>(
+                `select ${COLS} from remote_posts where origin_app_id = $1 and uri = any($2::text[])`,
+                [originAppId, uris],
+            );
+            return rows.map(toRow).filter((r): r is RemotePostRow => r !== null);
+        },
+
         async mergeProcessing(originAppId, uri, resolved) {
             const merge: Record<string, unknown> = { updatedAt: now() };
             for (const [k, v] of Object.entries(resolved)) if (v !== undefined) merge[k] = v;

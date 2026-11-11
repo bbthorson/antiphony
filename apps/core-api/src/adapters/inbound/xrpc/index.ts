@@ -11,6 +11,12 @@ import { getAppDid } from '../../../lib/app-did.js';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
 import { xrpcError, xrpcErrorHandler } from './errors.js';
+import {
+    GetRemotePostsQuerySchema,
+    ListRemotePostsQuerySchema,
+    getRemotePosts,
+    listRemotePosts,
+} from '../remote-post-queries.js';
 
 /**
  * The XRPC inbound adapter, mounted at `/xrpc/*`
@@ -19,8 +25,10 @@ import { xrpcError, xrpcErrorHandler } from './errors.js';
  * XRPC is plain HTTP — `GET /xrpc/<nsid>` for a query, `POST /xrpc/<nsid>` for
  * a procedure — so in this codebase's hexagonal layout it is simply a second
  * inbound adapter over the same domain services the REST adapter calls. Nothing
- * here reaches past `audioPostService`; a handler that needed its own storage
- * access would be a sign the translation had leaked into the domain.
+ * here reaches past a domain service (`audioPostService`, and `remotePostService`
+ * through `../remote-post-queries.ts`, which the REST twins of those two queries
+ * call too); a handler that needed its own storage access would be a sign the
+ * translation had leaked into the domain.
  *
  * ## What differs from REST, and what deliberately does not
  *
@@ -222,6 +230,55 @@ export function xrpcRoute(): Hono {
                 );
             }
             return c.json({ url });
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.audio.listRemotePosts
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.ListRemotePosts}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        async (c) => {
+            const parsed = parseQuery(c, ListRemotePostsQuerySchema, {
+                repo: c.req.query('repo'),
+                space: c.req.query('space'),
+                kind: c.req.query('kind'),
+                limit: c.req.query('limit'),
+                cursor: c.req.query('cursor'),
+            });
+            if (!parsed.ok) return parsed.response;
+            // `{ posts, cursor? }`: `cursor` is left out on the last page, as
+            // atproto lists do, rather than sent as null.
+            return c.json(
+                await listRemotePosts(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value),
+            );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.audio.getRemotePosts
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.GetRemotePosts}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        async (c) => {
+            // An array parameter is the name repeated: `?uris=…&uris=…`.
+            const uris = c.req.queries('uris');
+            const result = GetRemotePostsQuerySchema.safeParse({ uris });
+            if (!result.success) {
+                const detail = result.error.issues
+                    .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+                    .join('; ');
+                return c.json(xrpcError('InvalidRequest', detail), 400);
+            }
+            return c.json(
+                await getRemotePosts(c.env as Record<string, unknown> | undefined, getOriginAppId(c), result.data.uris),
+            );
         },
     );
 
