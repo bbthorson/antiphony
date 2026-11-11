@@ -37,6 +37,36 @@ the REST route is a twin over the same service method.
 - `@antiphony/shared` gains `TenantStatsSchema` (with `PostStatsSchema`, `StatWindowsSchema` and
   `StatCountsSchema`) and `XRPC_NSID.GetStats`. Its release waits for the rest of the remote-post
   XRPC methods, so the schemas ship in one bump.
+- **Remote posts over XRPC.** Every remote-post operation is now an XRPC method, so an app can do
+  all its remote-post work over `/xrpc` and never call `/api/v1/remote-posts`. **XRPC only**: no
+  REST route is added or changed (`openapi.json` is unchanged), so this needs no contract-version
+  bump. Each method is the twin of an existing route and calls the same code, with the same auth
+  (a service token, no acting actor), rate limits and body limits:
+  - **`dev.antiphony.audio.registerPost`** (procedure; `PUT /api/v1/remote-posts`): the same
+    input, answered with `defs#remotePostView`. Always 200: XRPC has no created status, so a first
+    registration and a repeat or an edit answer alike. Processing is dispatched as on REST.
+  - **`dev.antiphony.audio.getRemotePost`** (query; `GET ?uri=`): one view by `uri`.
+  - **`dev.antiphony.audio.getRemoteThread`** (query; `GET /thread?root=`): `root`, `limit`
+    (1–100, default 50) and `cursor` in; `{ root?, replies, cursor? }` out. Unlike REST, `root` is
+    **absent** (not null) on later pages or when the root isn't registered, and the cursor is
+    `cursor`, absent on the last page, not `nextCursor`.
+  - **`dev.antiphony.audio.reprocessRemotePost`** (procedure; `PATCH ?uri=`): `{ uri, processing }`
+    in, with the URI in the body; the view out.
+  - **`dev.antiphony.audio.unregisterPost`** (procedure; `DELETE ?uri=`): `{ uri }` in,
+    `{ uri, deleted }` out.
+  - **`dev.antiphony.audio.recheckRemoteSpace`** (procedure; `POST /recheck`): the same input and
+    counts.
+  - **Named errors** for the REST codes, declared in each lexicon: `RemoteUriUnsupported`,
+    `RemoteRequestInvalid`, `RemoteDelegationRefused`, `RemoteRecordNotFound`,
+    `RemoteRepoUnreachable`, `RemoteCidMismatch`, `RemoteRecordInvalid`,
+    `RemoteBlobSpaceMismatch`, `RemotePostNotFound` and `RemotePostDeleted`.
+  - **XRPC error symbols for more statuses:** 410 is `Gone`, 413 `PayloadTooLarge` and 503
+    `ServiceUnavailable`, and any other 4xx without a symbol is `InvalidRequest`. Until now an
+    unlisted status, a client error included, answered `InternalServerError`. No status that
+    already had a symbol changed.
+  - `@antiphony/shared` gains `RemoteThreadPageSchema`, `ReprocessRemotePostRequestSchema`,
+    `UnregisterRemotePostRequestSchema` and the six NSIDs in `XRPC_NSID`. These complete the
+    remote-post XRPC methods its release was waiting for.
 
 ## [0.10.7] — 2026-11-11
 

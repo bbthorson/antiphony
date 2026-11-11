@@ -1,7 +1,14 @@
 import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { XRPC_NSID } from 'shared/nsid';
 import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
+import {
+    RecheckRemoteSpaceRequestSchema,
+    RegisterRemotePostRequestSchema,
+    ReprocessRemotePostRequestSchema,
+    UnregisterRemotePostRequestSchema,
+} from 'shared/types/remote-posts';
 import { postUriOf } from '@antiphony/core/services/audio-posts';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
@@ -10,13 +17,21 @@ import { getOriginAppId } from '../../../lib/origin-app.js';
 import { getAppDid } from '../../../lib/app-did.js';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
-import { xrpcError, xrpcErrorHandler } from './errors.js';
+import { xrpcError, xrpcErrorHandler, xrpcSymbol } from './errors.js';
 import {
+    GetRemotePostQuerySchema,
     GetRemotePostsQuerySchema,
+    GetRemoteThreadQuerySchema,
     ListRemotePostsQuerySchema,
+    getRemotePost,
     getRemotePosts,
+    getRemoteThread,
     listRemotePosts,
-} from '../remote-post-queries.js';
+    recheckRemoteSpace,
+    registerRemotePost,
+    reprocessRemotePost,
+    unregisterRemotePost,
+} from '../remote-post-operations.js';
 
 /**
  * The XRPC inbound adapter, mounted at `/xrpc/*`
@@ -26,9 +41,9 @@ import {
  * a procedure — so in this codebase's hexagonal layout it is simply a second
  * inbound adapter over the same domain services the REST adapter calls. Nothing
  * here reaches past a domain service (`audioPostService`, and `remotePostService`
- * through `../remote-post-queries.ts`, which the REST twins of those two queries
- * call too); a handler that needed its own storage access would be a sign the
- * translation had leaked into the domain.
+ * through `../remote-post-operations.ts`, which the REST twins of the
+ * remote-post methods call too); a handler that needed its own storage access
+ * would be a sign the translation had leaked into the domain.
  *
  * ## What differs from REST, and what deliberately does not
  *
@@ -96,13 +111,14 @@ function rkeyFromUri(uri: string): string {
 }
 
 /**
- * Parse a query string against a schema, answering in the XRPC dialect on
- * failure. Returns the parsed value, or a `Response` to return as-is.
+ * Parse a query string or a procedure's body against a schema, answering in
+ * the XRPC dialect on failure. Returns the parsed value, or a `Response` to
+ * return as-is.
  */
-function parseQuery<T extends z.ZodTypeAny>(
+function parseInput<T extends z.ZodTypeAny>(
     c: Context,
     schema: T,
-    raw: Record<string, string | undefined>,
+    raw: unknown,
 ): { ok: true; value: z.infer<T> } | { ok: false; response: Response } {
     const result = schema.safeParse(raw);
     if (result.success) return { ok: true, value: result.data };
@@ -115,6 +131,18 @@ function parseQuery<T extends z.ZodTypeAny>(
         ok: false,
         response: c.json(xrpcError('InvalidRequest', detail), 400),
     };
+}
+
+/**
+ * The body limit for a procedure, refused in the XRPC dialect. The sizes are
+ * the REST twins' (`rest/remote-posts.ts`), so a body one surface accepts the
+ * other does too.
+ */
+function xrpcBodyLimit(maxSize: number) {
+    return bodyLimit({
+        maxSize,
+        onError: (c) => c.json(xrpcError(xrpcSymbol(413), 'Request body too large'), 413),
+    });
 }
 
 export function xrpcRoute(): Hono {
@@ -134,7 +162,7 @@ export function xrpcRoute(): Hono {
         rateLimit(RATE_LIMITS.readAggregate),
         rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
-            const parsed = parseQuery(c, GetPostQuerySchema, { id: c.req.query('id') });
+            const parsed = parseInput(c, GetPostQuerySchema, { id: c.req.query('id') });
             if (!parsed.ok) return parsed.response;
 
             const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(
@@ -158,7 +186,7 @@ export function xrpcRoute(): Hono {
         rateLimit(RATE_LIMITS.readAggregate),
         rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
-            const parsed = parseQuery(c, GetThreadQuerySchema, {
+            const parsed = parseInput(c, GetThreadQuerySchema, {
                 id: c.req.query('id'),
                 limit: c.req.query('limit'),
                 cursor: c.req.query('cursor'),
@@ -203,7 +231,7 @@ export function xrpcRoute(): Hono {
         rateLimit(RATE_LIMITS.readAggregate),
         rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
-            const parsed = parseQuery(c, GetPlaybackUrlQuerySchema, { cid: c.req.query('cid') });
+            const parsed = parseInput(c, GetPlaybackUrlQuerySchema, { cid: c.req.query('cid') });
             if (!parsed.ok) return parsed.response;
 
             // Tenancy-scoped by construction: the blob path is built from the
@@ -242,7 +270,7 @@ export function xrpcRoute(): Hono {
         rateLimit(RATE_LIMITS.readAggregate),
         rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
         async (c) => {
-            const parsed = parseQuery(c, ListRemotePostsQuerySchema, {
+            const parsed = parseInput(c, ListRemotePostsQuerySchema, {
                 repo: c.req.query('repo'),
                 space: c.req.query('space'),
                 kind: c.req.query('kind'),
@@ -279,6 +307,51 @@ export function xrpcRoute(): Hono {
             return c.json(
                 await getRemotePosts(c.env as Record<string, unknown> | undefined, getOriginAppId(c), result.data.uris),
             );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.audio.getRemotePost
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.GetRemotePost}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        async (c) => {
+            const parsed = parseInput(c, GetRemotePostQuerySchema, { uri: c.req.query('uri') });
+            if (!parsed.ok) return parsed.response;
+            // Not registered is `RemotePostNotFound` (404), removed is
+            // `RemotePostDeleted` (410): thrown by the service, named in `onError`.
+            return c.json(
+                await getRemotePost(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value.uri),
+            );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.audio.getRemoteThread
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.GetRemoteThread}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        async (c) => {
+            const parsed = parseInput(c, GetRemoteThreadQuerySchema, {
+                root: c.req.query('root'),
+                limit: c.req.query('limit'),
+                cursor: c.req.query('cursor'),
+            });
+            if (!parsed.ok) return parsed.response;
+            const page = await getRemoteThread(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value);
+            // The atproto list shape: `root` and `cursor` are left out when
+            // there is nothing to say, rather than sent as null as REST does.
+            return c.json({
+                ...(page.root ? { root: page.root } : {}),
+                replies: page.replies,
+                ...(page.nextCursor ? { cursor: page.nextCursor } : {}),
+            });
         },
     );
 
@@ -396,6 +469,91 @@ export function xrpcRoute(): Hono {
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
             }
             return c.json(view);
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.registerPost
+    // -----------------------------------------------------------------------
+    // The remote-post procedures are tenant-level, as their REST twins are: a
+    // remote post has no author facet here, so a service token is enough and
+    // an acting actor, if sent, only keys the burst limit.
+    app.post(
+        `/${XRPC_NSID.RegisterPost}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        // Room for a pushed space record, as on `PUT /api/v1/remote-posts`.
+        xrpcBodyLimit(64 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, RegisterRemotePostRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+            // REST answers 201 for a first registration and 200 for a repeat or
+            // an edit. XRPC has no created status, so every success is 200 and
+            // `outcome` is not surfaced.
+            const { view } = await registerRemotePost(
+                c.env as Record<string, unknown> | undefined,
+                getOriginAppId(c),
+                parsed.value,
+            );
+            return c.json(view);
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.reprocessRemotePost
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.ReprocessRemotePost}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        xrpcBodyLimit(8 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, ReprocessRemotePostRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+            const { uri, processing } = parsed.value;
+            return c.json(
+                await reprocessRemotePost(c.env as Record<string, unknown> | undefined, getOriginAppId(c), uri, processing),
+            );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.unregisterPost
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.UnregisterPost}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        // REST's DELETE has no body to limit; this one carries only a URI, so
+        // it gets the smallest limit any remote-post route has.
+        xrpcBodyLimit(8 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, UnregisterRemotePostRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+            return c.json(
+                await unregisterRemotePost(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value.uri),
+            );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.recheckRemoteSpace
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.RecheckRemoteSpace}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        xrpcBodyLimit(32 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, RecheckRemoteSpaceRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+            return c.json(
+                await recheckRemoteSpace(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value),
+            );
         },
     );
 

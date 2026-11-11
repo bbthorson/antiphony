@@ -116,6 +116,13 @@ PUT /api/v1/remote-posts
 - **XRPC.** A `dev.antiphony.audio.registerPost` procedure mirrors the route, as
   `createPost` mirrors `POST /posts` ([`xrpc-surface.md`](./xrpc-surface.md)).
   *2026-11-11:* the two reads that list remote posts are XRPC queries first (§5.3).
+  *2026-11-11, later (0.10.8):* `registerPost` exists, with the same input and the view as
+  output, answering 200 for a first registration as for a repeat (XRPC has no created
+  status). The other routes have XRPC twins too: `getRemotePost`, `getRemoteThread`
+  (`{ root?, replies, cursor? }`), `reprocessRemotePost` (the URI in the body),
+  `unregisterPost` and `recheckRemoteSpace`. Each calls the same code as its route
+  (`apps/core-api/src/adapters/inbound/remote-post-operations.ts`), and the REST codes are
+  named errors (`RemoteCidMismatch`, `RemotePostDeleted`, and so on).
 
 *Alternative:* register by blob alone (`{ blobCid }`), with no record. This is simpler, but
 Antiphony would then know nothing of the thread, the authority or the space. Signed
@@ -482,7 +489,7 @@ Why not publish them now:
 | Change | Where |
 | :--- | :--- |
 | `PUT /api/v1/remote-posts`, `GET ?uri=`, `GET /thread?root=`, `DELETE ?uri=`; `PATCH ?uri=` for `processing` | new routes, `RemotePost*` schemas in `@antiphony/shared` |
-| `dev.antiphony.audio.registerPost` (XRPC) | new lexicon. Published lexicons can't take breaking changes, so this one waits until the REST shape has settled in use (see `xrpc-surface.md`). |
+| `dev.antiphony.audio.registerPost` (XRPC) | new lexicon. Published lexicons can't take breaking changes, so this one waited until the REST shape had settled in use (see `xrpc-surface.md`). **Built 2026-11-11 (0.10.8)**, with XRPC twins of the other routes (§3); lexicons are edited in place until they are published at 1.0 (`xrpc-surface.md` D-1). |
 | `remoteSpace` on `POST /api/v1/audio/upload` | Phase B |
 | `delegationToken` (and `clientAttestation`) on registration | Phase C, built as 0.10.6 |
 | `POST /api/v1/remote-posts/recheck`; `remote.recheck_requested`; `deletionCheck: "recheck"` | Phase C, built as 0.10.6 (§8.1's revision) |

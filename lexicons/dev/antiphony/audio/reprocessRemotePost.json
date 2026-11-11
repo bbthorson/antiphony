@@ -1,0 +1,47 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.reprocessRemotePost",
+    "description": "(Re)run asynchronous audio processing on a registered remote post, as reprocessPost does for a hosted one. Processing state is Antiphony's own and outside the record, which stays in its repo unchanged.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Requests processing stages for a registered remote post's audio and returns the view. Stage results arrive by webhook (`stage.settled`, with `uri`). Tenant-level: a service token is enough, no acting actor.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["uri", "processing"],
+                    "properties": {
+                        "uri": {
+                            "type": "string",
+                            "format": "at-uri",
+                            "description": "The registered record's URI."
+                        },
+                        "processing": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#processingRequest",
+                            "description": "The stages to run. A request enabling no stage is rejected (InvalidRequest) rather than treated as a no-op."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.defs#remotePostView"
+                }
+            },
+            "errors": [
+                {
+                    "name": "RemotePostNotFound",
+                    "description": "The calling tenant has not registered this URI."
+                },
+                {
+                    "name": "RemotePostDeleted",
+                    "description": "The registration was removed."
+                }
+            ]
+        }
+    }
+}

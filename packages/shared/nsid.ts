@@ -47,8 +47,10 @@ export const EMBED_NSID = {
  * namespace — hence a separate map rather than a helper over `NSID`.
  *
  * Queries are `GET`, procedures are `POST`; the grouping below follows that
- * split because it is also the auth split (procedures always require an acting
- * actor, queries may be viewer-less).
+ * split because it is mostly also the auth split (a hosted post's procedures
+ * require an acting actor, queries may be viewer-less). The remote-post
+ * procedures are the exception: a remote post has no author facet here, so
+ * they are tenant-level.
  */
 export const XRPC_NSID = {
     // Queries (GET).
@@ -56,6 +58,8 @@ export const XRPC_NSID = {
     GetThread: 'dev.antiphony.audio.getThread',
     GetPlaybackUrl: 'dev.antiphony.audio.getPlaybackUrl',
     // Remote posts (specs/audio-service-mode.md): records held in other repos.
+    GetRemotePost: 'dev.antiphony.audio.getRemotePost',
+    GetRemoteThread: 'dev.antiphony.audio.getRemoteThread',
     ListRemotePosts: 'dev.antiphony.audio.listRemotePosts',
     GetRemotePosts: 'dev.antiphony.audio.getRemotePosts',
     // Counts for the calling tenancy (specs/tenancy-stats.md).
@@ -63,6 +67,12 @@ export const XRPC_NSID = {
     // Procedures (POST).
     CreatePost: 'dev.antiphony.audio.createPost',
     ReprocessPost: 'dev.antiphony.audio.reprocessPost',
+    // Remote posts. Tenant-level, so unlike the two above they need no acting
+    // actor: a service token is enough, as on their REST twins.
+    RegisterPost: 'dev.antiphony.audio.registerPost',
+    ReprocessRemotePost: 'dev.antiphony.audio.reprocessRemotePost',
+    UnregisterPost: 'dev.antiphony.audio.unregisterPost',
+    RecheckRemoteSpace: 'dev.antiphony.audio.recheckRemoteSpace',
 } as const;
 
 export type XrpcNsidValue = typeof XRPC_NSID[keyof typeof XRPC_NSID];

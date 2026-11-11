@@ -14,17 +14,21 @@ import {
 } from 'shared/types/remote-posts';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireServiceToken } from '../../../middleware/auth.js';
-import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
-import { dispatchRemoteProcessing, resolveInitialProcessing } from '../../../lib/audio-processing.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
 import {
     GetRemotePostsQuerySchema,
     ListRemotePostsQuerySchema,
+    getRemotePost,
     getRemotePosts,
+    getRemoteThread,
     listRemotePosts,
-} from '../remote-post-queries.js';
+    recheckRemoteSpace,
+    registerRemotePost,
+    reprocessRemotePost,
+    unregisterRemotePost,
+} from '../remote-post-operations.js';
 
 /**
  * Remote posts, mounted at `/api/v1/remote-posts` (specs/audio-service-mode.md):
@@ -47,6 +51,10 @@ import {
  * The URI goes in the query, because an `at://` URI doesn't fit in a path
  * segment. Tenant-level, like `/api/v1/dids`: a remote post has no author
  * facet here, so a service token is enough.
+ *
+ * Each route is a twin of a `dev.antiphony.audio.*` XRPC method. Both call the
+ * same function in `../remote-post-operations.ts`, so this file only parses,
+ * documents and wraps in the envelope.
  */
 
 const app = new OpenAPIHono({ defaultHook: envelopeValidationHook });
@@ -141,23 +149,7 @@ const putRoute = createRoute({
 });
 
 app.openapi(putRoute, async (c) => {
-    const body = c.req.valid('json');
-    const originAppId = getOriginAppId(c);
-    const service = servicesFor(c.env).remotePostService;
-    const resolved = resolveInitialProcessing(originAppId, body.processing);
-    const { row, outcome, dispatch } = await service.register(originAppId, {
-        uri: body.uri,
-        cid: body.cid,
-        ...(resolved ? { processing: resolved } : {}),
-        ...(body.bytesFrom ? { bytesFrom: body.bytesFrom } : {}),
-        ...(body.record ? { record: body.record } : {}),
-        ...(body.delegationToken ? { delegationToken: body.delegationToken } : {}),
-        ...(body.clientAttestation ? { clientAttestation: body.clientAttestation } : {}),
-    });
-    if (dispatch) await dispatchRemoteProcessing(originAppId, body.uri, env(c));
-    // Re-read so the view reflects any inline processing results.
-    const fresh = dispatch ? await service.get(originAppId, body.uri) : row;
-    const [view] = await service.hydrate(originAppId, [fresh]);
+    const { view, outcome } = await registerRemotePost(env(c), getOriginAppId(c), c.req.valid('json'));
     return outcome === 'created'
         ? c.json({ success: true as const, data: view }, 201)
         : c.json({ success: true as const, data: view }, 200);
@@ -193,10 +185,7 @@ const getRoute = createRoute({
 });
 
 app.openapi(getRoute, async (c) => {
-    const { uri } = c.req.valid('query');
-    const originAppId = getOriginAppId(c);
-    const service = servicesFor(c.env).remotePostService;
-    const [view] = await service.hydrate(originAppId, [await service.get(originAppId, uri)]);
+    const view = await getRemotePost(env(c), getOriginAppId(c), c.req.valid('query').uri);
     return c.json({ success: true as const, data: view }, 200);
 });
 
@@ -233,15 +222,8 @@ const threadRoute = createRoute({
 });
 
 app.openapi(threadRoute, async (c) => {
-    const { root, limit, cursor } = c.req.valid('query');
-    const originAppId = getOriginAppId(c);
-    const service = servicesFor(c.env).remotePostService;
-    const page = await service.thread(originAppId, root, { limit: limit ?? 50, ...(cursor ? { cursor } : {}) });
-    const [rootView, replies] = await Promise.all([
-        page.root ? service.hydrate(originAppId, [page.root]).then(([v]) => v) : Promise.resolve(null),
-        service.hydrate(originAppId, page.replies),
-    ]);
-    return c.json({ success: true as const, data: { root: rootView, replies, nextCursor: page.nextCursor } }, 200);
+    const data = await getRemoteThread(env(c), getOriginAppId(c), c.req.valid('query'));
+    return c.json({ success: true as const, data }, 200);
 });
 
 // ---------------------------------------------------------------------------
@@ -360,16 +342,9 @@ const patchRoute = createRoute({
 });
 
 app.openapi(patchRoute, async (c) => {
-    const { uri } = c.req.valid('query');
-    const body = c.req.valid('json');
-    const originAppId = getOriginAppId(c);
-    const resolved = resolveInitialProcessing(originAppId, body.processing);
-    if (!resolved) return c.json(errorEnvelope(c, 'Request must enable at least one processing stage'), 400);
-
-    const service = servicesFor(c.env).remotePostService;
-    const { dispatch } = await service.requestProcessing(originAppId, uri, resolved);
-    if (dispatch) await dispatchRemoteProcessing(originAppId, uri, env(c));
-    const [view] = await service.hydrate(originAppId, [await service.get(originAppId, uri)]);
+    // A request naming no stage is thrown as a 400 there, which the error
+    // handler renders as the same envelope this route used to build itself.
+    const view = await reprocessRemotePost(env(c), getOriginAppId(c), c.req.valid('query').uri, c.req.valid('json').processing);
     return c.json({ success: true as const, data: view }, 200);
 });
 
@@ -404,9 +379,8 @@ const deleteRoute = createRoute({
 });
 
 app.openapi(deleteRoute, async (c) => {
-    const { uri } = c.req.valid('query');
-    const deleted = await servicesFor(c.env).remotePostService.delete(getOriginAppId(c), uri);
-    return c.json({ success: true as const, data: { uri, deleted } }, 200);
+    const data = await unregisterRemotePost(env(c), getOriginAppId(c), c.req.valid('query').uri);
+    return c.json({ success: true as const, data }, 200);
 });
 
 // ---------------------------------------------------------------------------
@@ -450,14 +424,8 @@ const recheckRoute = createRoute({
 });
 
 app.openapi(recheckRoute, async (c) => {
-    const body = c.req.valid('json');
-    const originAppId = getOriginAppId(c);
-    const { toDispatch, ...result } = await servicesFor(c.env).remotePostService.recheckSpace(originAppId, body.space, {
-        delegationToken: body.delegationToken,
-        ...(body.clientAttestation ? { clientAttestation: body.clientAttestation } : {}),
-    });
-    for (const job of toDispatch) await dispatchRemoteProcessing(job.originAppId, job.uri, env(c));
-    return c.json({ success: true as const, data: result }, 200);
+    const data = await recheckRemoteSpace(env(c), getOriginAppId(c), c.req.valid('json'));
+    return c.json({ success: true as const, data }, 200);
 });
 
 export { app as remotePostsRoute };

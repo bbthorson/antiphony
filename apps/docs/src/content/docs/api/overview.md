@@ -120,6 +120,19 @@ A **remote post** is a `dev.antiphony.audio.post` record that lives in a repo An
 3. **Process it** — `processing` on registration, or later with `PATCH /api/v1/remote-posts?uri=…`. Results arrive as `stage.settled` webhooks carrying the post's `uri` and no `postId`.
 4. **Remove it** — `DELETE /api/v1/remote-posts?uri=…` removes Antiphony's copy (the record in its repo is untouched); a later read is `410 REMOTE_POST_DELETED`.
 
+**Over XRPC.** Every step above is also an XRPC method, with the same service token (no acting actor), rate limits and checks, so your app can do all its remote-post work under `/xrpc` and never call these routes:
+
+| XRPC method | Same as |
+| :--- | :--- |
+| `POST /xrpc/dev.antiphony.audio.registerPost` | `PUT /api/v1/remote-posts`, same body. Always `200`: XRPC has no "created" status. |
+| `GET /xrpc/dev.antiphony.audio.getRemotePost?uri=…` | `GET /api/v1/remote-posts?uri=…` |
+| `GET /xrpc/dev.antiphony.audio.getRemoteThread?root=…` | `GET /api/v1/remote-posts/thread?root=…`. Answers `{ root?, replies, cursor? }`: `root` and `cursor` are left out, not null, when there is none. |
+| `POST /xrpc/dev.antiphony.audio.reprocessRemotePost` | `PATCH /api/v1/remote-posts?uri=…`, with the URI in the body: `{ "uri": …, "processing": { … } }` |
+| `POST /xrpc/dev.antiphony.audio.unregisterPost` | `DELETE /api/v1/remote-posts?uri=…`, with `{ "uri": … }` as the body |
+| `POST /xrpc/dev.antiphony.audio.recheckRemoteSpace` | `POST /api/v1/remote-posts/recheck` ([below](#records-in-a-space)) |
+
+XRPC answers the bare body, with no `success`/`data` envelope, and errors as `{ error, message }`. Each REST `code` arrives as a named `error` you can branch on: `REMOTE_CID_MISMATCH` is `RemoteCidMismatch`, `REMOTE_POST_DELETED` is `RemotePostDeleted`, and so on for every `REMOTE_*` code.
+
 Antiphony rechecks each public remote post hourly. A record its repo reports gone on two checks an hour apart is removed, and you get a `remote.gone` webhook; an edited record is taken and reprocessed, with a `remote.changed` webhook. A repo that can't be reached never causes a removal, but after 30 days the post reads `available: false` and stops playing.
 
 ### Records in a space

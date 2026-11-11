@@ -1,0 +1,43 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.unregisterPost",
+    "description": "Remove a remote post's registration and Antiphony's copy of its audio. The record in its own repo is untouched.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Removes the calling tenant's registration and Antiphony's copy: the index entry, the transcript, and the audio and its variants unless another post still uses them. A content-free ledger entry is kept, so a later getRemotePost is RemotePostDeleted. Idempotent: `deleted` is false when there was no registration. For a pushed space record no recheck has read, this is the only way Antiphony learns the record is gone, so send it when the member deletes the record. Tenant-level: a service token is enough, no acting actor.",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["uri"],
+                    "properties": {
+                        "uri": {
+                            "type": "string",
+                            "format": "at-uri",
+                            "description": "The registered record's URI."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["uri", "deleted"],
+                    "properties": {
+                        "uri": {
+                            "type": "string",
+                            "format": "at-uri",
+                            "description": "The URI asked about."
+                        },
+                        "deleted": {
+                            "type": "boolean",
+                            "description": "Whether a registration was removed. False when there was none to remove."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { join, resolve, dirname } from 'node:path';
 import type { z } from 'zod';
 import { GetPlaybackUrlQuerySchema, GetPostQuerySchema, GetThreadQuerySchema } from './index.js';
-import { GetRemotePostsQuerySchema, ListRemotePostsQuerySchema } from '../remote-post-queries.js';
+import {
+    GetRemotePostQuerySchema,
+    GetRemotePostsQuerySchema,
+    GetRemoteThreadQuerySchema,
+    ListRemotePostsQuerySchema,
+} from '../remote-post-operations.js';
 
 /**
  * Each XRPC query's `parameters`, as its lexicon declares them, against the
@@ -81,6 +86,8 @@ const SCHEMAS: Record<string, z.ZodTypeAny> = {
     'dev.antiphony.audio.getPlaybackUrl': GetPlaybackUrlQuerySchema,
     'dev.antiphony.audio.listRemotePosts': ListRemotePostsQuerySchema,
     'dev.antiphony.audio.getRemotePosts': GetRemotePostsQuerySchema,
+    'dev.antiphony.audio.getRemotePost': GetRemotePostQuerySchema,
+    'dev.antiphony.audio.getRemoteThread': GetRemoteThreadQuerySchema,
 };
 
 const QUERIES = queries();

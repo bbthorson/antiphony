@@ -29,6 +29,13 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 > this way are `dev.antiphony.audio.listRemotePosts` and `getRemotePosts` (contract 0.10.7),
 > which makes seven methods, not the five §2 counts. §3.1's inventory predates remote posts,
 > the DID registry and deletion, and still needs rows for them.
+>
+> *Later the same day (0.10.8):* `dev.antiphony.tenant.getStats`, and the six remaining
+> remote-post operations as XRPC methods (`registerPost`, `getRemotePost`, `getRemoteThread`,
+> `reprocessRemotePost`, `unregisterPost`, `recheckRemoteSpace`), make fourteen. Those six were
+> REST routes first, so they are XRPC twins over the routes' code rather than lexicon-first
+> methods with a REST twin; they add no REST surface. §3.1 now has rows for remote posts; the DID
+> registry and deletion still need theirs.
 
 ## 2. What exists
 
@@ -68,6 +75,14 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.getAudio` | query, binary output | `GET /audio` (proxy) | capability (signed URL) | new, or stays a plain media route (D-8) |
 | space management | procedure / query | `PUT`/`GET /spaces/{type}/{skey}` | tenant | new (D-9) |
 | `dev.antiphony.tenant.getStats` | query | `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | exists |
+| `dev.antiphony.audio.registerPost` | procedure | `PUT /remote-posts` ([`audio-service-mode.md`](./audio-service-mode.md)) | tenant | exists (0.10.8); always 200, where REST tells 201 from 200 |
+| `dev.antiphony.audio.getRemotePost` | query | `GET /remote-posts?uri=` | tenant | exists (0.10.8) |
+| `dev.antiphony.audio.getRemoteThread` | query | `GET /remote-posts/thread?root=` | tenant | exists (0.10.8); `{ root?, replies, cursor? }` |
+| `dev.antiphony.audio.listRemotePosts` | query | `GET /remote-posts/list` (its twin) | tenant | exists (0.10.7) |
+| `dev.antiphony.audio.getRemotePosts` | query | `GET /remote-posts/batch` (its twin) | tenant | exists (0.10.7) |
+| `dev.antiphony.audio.reprocessRemotePost` | procedure | `PATCH /remote-posts?uri=` | tenant | exists (0.10.8); the URI in the body |
+| `dev.antiphony.audio.unregisterPost` | procedure | `DELETE /remote-posts?uri=` | tenant | exists (0.10.8) |
+| `dev.antiphony.audio.recheckRemoteSpace` | procedure | `POST /remote-posts/recheck` | tenant | exists (0.10.8) |
 | `dev.antiphony.server.describeServer` | query | `GET /` service info | public | new |
 
 Inputs and outputs reuse `defs.json` (`postView`, `threadView`, `embed` views, `spaceKey`).
