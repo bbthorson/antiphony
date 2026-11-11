@@ -19,6 +19,12 @@ the REST route is a twin over the same service method.
 
 ### Added
 
+- **`GET /.well-known/did.json`**: Antiphony's own DID document (`did:web:api.antiphony.dev`),
+  with a P-256 `#atproto` key and an `#antiphony_audio` service entry. It is served only when
+  `ANTIPHONY_SERVICE_SIGNING_KEY` (secret) and `ANTIPHONY_SERVICE_PUBLIC_KEY` (var) are set and
+  agree, and answers 404 as before otherwise. Not part of the OpenAPI contract, so `openapi.json`
+  and the version are unchanged. `npm run generate:service-key -w @antiphony/core-api` makes the key.
+  `serviceDid()` also now writes an explicit port as `%3A`, as did:web requires.
 - **`dev.antiphony.tenant.getStats`** (`GET /xrpc/dev.antiphony.tenant.getStats`, and
   `GET /api/v1/stats`): post counts for the calling tenant. No parameters; the service token
   names the tenant, no acting actor is needed (one sent is ignored), and the read rate limit

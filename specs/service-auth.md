@@ -168,8 +168,14 @@ snapshotted the DID document, so the key is a field read on something in memory.
 `ANTIPHONY_SERVICE_DID` — Antiphony's own DID, the only accepted `aud`. Defaults
 to `did:web:<host of ANTIPHONY_PUBLIC_BASE_URL>`. A signing BFF should derive
 its `aud` the same way, so the two cannot drift by editing one config. Note
-that this identifier does not currently resolve — we publish no DID document —
-which #115 should settle.
+that this identifier resolves only when a signing key is configured: the
+document at `https://<host>/.well-known/did.json` is served when
+`ANTIPHONY_SERVICE_SIGNING_KEY` (a Worker secret) and
+`ANTIPHONY_SERVICE_PUBLIC_KEY` (a var, the matching multibase Multikey) are set
+and agree, and the DID is exactly `did:web` of that host. Otherwise the path is a
+404 and the audience is agreed by configuration alone. Nothing consumes the
+published key yet: it exists so that accepting atproto service auth and signing
+as a service later do not change the document.
 
 ## Non-goals (v1)
 

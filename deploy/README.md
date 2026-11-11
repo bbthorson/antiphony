@@ -110,6 +110,21 @@ internal `SYSTEM_AUTH_TOKEN`.
 public, and keeping it in the config is what lets the deploy gate prove the pins
 without access to anything secret.
 
+An optional fifth secret, `ANTIPHONY_SERVICE_SIGNING_KEY`, publishes Antiphony's own
+DID document at `/.well-known/did.json`. Generate the key and set both halves
+**in this order**, secret first:
+
+```bash
+npm run generate:service-key -w @antiphony/core-api   # prints both values; writes nothing
+npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY -c apps/core-api/wrangler.jsonc
+# then add the printed public key to "vars" in apps/core-api/wrangler.jsonc as
+# ANTIPHONY_SERVICE_PUBLIC_KEY and deploy
+```
+
+The route answers only when the secret derives the var, so that order means the
+document never advertises a key the service lacks; with either missing, the path
+stays a 404. Keep the private key in a password manager and nowhere else.
+
 Each `secret put` prompts for the value on stdin, so these are four
 interactive commands — nothing to paste into a file, and nothing that survives
 in shell history.

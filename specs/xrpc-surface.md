@@ -55,8 +55,11 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 - **Gaps against REST:** XRPC `createPost` has no idempotency handling (REST's `POST /posts`
   takes `Idempotency-Key`); `createPost` answers a StrongRef `{ uri, cid }` where REST answers
   `{ postId }`.
-- **Antiphony has no DID document.** `ANTIPHONY_SERVICE_DID` names it as the `aud` of signed
-  service auth, but `https://api.antiphony.dev/.well-known/did.json` is a 404.
+- **Antiphony publishes a DID document, but accepts nothing signed with it.**
+  `https://api.antiphony.dev/.well-known/did.json` serves `did:web:api.antiphony.dev` with an
+  `#atproto` P-256 key and an `#antiphony_audio` service entry once `ANTIPHONY_SERVICE_SIGNING_KEY`
+  and `ANTIPHONY_SERVICE_PUBLIC_KEY` are set (a 404 until then). Accepting atproto service auth
+  is still not built, so the key is not yet used for anything.
 
 ## 3. The method inventory
 
@@ -157,9 +160,11 @@ OpenAPI contract version keeps describing REST until REST is removed.
 - **Lexicon resolution:** the `dev.antiphony` authority is `antiphony.dev`. Publishing makes the
   schemas resolvable through a `_lexicon` DNS record pointing at a DID whose repo holds
   `com.atproto.lexicon.schema` records. Antiphony is not a PDS, so that repo needs a home (D-3).
-- **Antiphony's service DID:** a `did:web:api.antiphony.dev` document with an `#antiphony` service
-  entry and a signing key. It is what atproto service auth is addressed to, and what lets a
-  user's PDS proxy calls to Antiphony (`atproto-proxy` header) (D-2).
+- **Antiphony's service DID:** the `did:web:api.antiphony.dev` document now exists
+  (`/.well-known/did.json`, with an `#atproto` signing key and an `#antiphony_audio` service
+  entry). It is what atproto service auth is addressed to, and what lets a user's PDS proxy calls
+  to Antiphony (`atproto-proxy: did:web:api.antiphony.dev#antiphony_audio`). Neither is built:
+  accepting atproto service auth and public reads are still open under D-2.
 - **Tenant discovery:** tenants' DID documents already name Antiphony as `#atproto_space_host`.
   Whether they also advertise an XRPC service entry is open
   ([`xrpc-and-atproto-lex-strategy.md`](./xrpc-and-atproto-lex-strategy.md) Phase 3).
@@ -187,7 +192,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | # | Decision | Options | Lean |
 | :--- | :--- | :--- | :--- |
 | D-1 *(settled 2026-11-11: a)* | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
-| D-2 | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
+| D-2 *(document published 2026-11-11; service auth and public reads not built)* | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
 | D-3 | **Where the `dev.antiphony` lexicon repo lives** | a small PDS account for `antiphony.dev`'s DID; a hosted PDS; don't publish | a hosted PDS account (no infra to run), at 1.0 |
 | D-4 | **Acting actor in the protocol shape** | keep custom headers (client sets them); move into each procedure's input; express as a signed claim inside service auth | keep headers until signed service auth is the credential, then fold the actor into the JWT |
 | D-5 | **Idempotency on XRPC writes** | `Idempotency-Key` header; an input field (`clientRequestId`); none | header, matching REST |

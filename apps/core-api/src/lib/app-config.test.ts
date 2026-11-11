@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { assertRequiredConfig, publicBaseUrl } from './app-config.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { assertRequiredConfig, publicBaseUrl, publicDidWeb, serviceDid, servicePublicKey, serviceSigningKey } from './app-config.js';
 
 /**
  * The regression these cover is an OUTAGE THAT ALREADY HAPPENED:
@@ -120,5 +120,83 @@ describe('publicBaseUrl', () => {
             if (previous === undefined) delete process.env.ANTIPHONY_PUBLIC_BASE_URL;
             else process.env.ANTIPHONY_PUBLIC_BASE_URL = previous;
         }
+    });
+});
+
+describe('serviceDid and publicDidWeb', () => {
+    const saved = { base: process.env.ANTIPHONY_PUBLIC_BASE_URL, did: process.env.ANTIPHONY_SERVICE_DID };
+    afterEach(() => {
+        restore('ANTIPHONY_PUBLIC_BASE_URL', saved.base);
+        restore('ANTIPHONY_SERVICE_DID', saved.did);
+    });
+
+    function restore(name: string, value: string | undefined) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+    }
+
+    it('derives did:web from the host of the public base URL', () => {
+        delete process.env.ANTIPHONY_SERVICE_DID;
+        process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.dev/';
+        expect(serviceDid()).toBe('did:web:api.antiphony.dev');
+    });
+
+    it('percent-encodes an explicit port, because a bare colon is a path separator in did:web', () => {
+        delete process.env.ANTIPHONY_SERVICE_DID;
+        process.env.ANTIPHONY_PUBLIC_BASE_URL = 'http://localhost:8787';
+        expect(serviceDid()).toBe('did:web:localhost%3A8787');
+        expect(publicDidWeb()).toBe('did:web:localhost%3A8787');
+    });
+
+    it('leaves a default port out, as URL does', () => {
+        delete process.env.ANTIPHONY_SERVICE_DID;
+        process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.dev:443';
+        expect(serviceDid()).toBe('did:web:api.antiphony.dev');
+    });
+
+    it('prefers ANTIPHONY_SERVICE_DID, while publicDidWeb ignores it', () => {
+        process.env.ANTIPHONY_PUBLIC_BASE_URL = 'https://api.antiphony.dev';
+        process.env.ANTIPHONY_SERVICE_DID = 'did:web:other.example';
+        expect(serviceDid()).toBe('did:web:other.example');
+        expect(publicDidWeb()).toBe('did:web:api.antiphony.dev');
+    });
+
+    it('is undefined with no usable base URL', () => {
+        delete process.env.ANTIPHONY_SERVICE_DID;
+        delete process.env.ANTIPHONY_PUBLIC_BASE_URL;
+        expect(serviceDid()).toBeUndefined();
+        process.env.ANTIPHONY_PUBLIC_BASE_URL = 'not a url';
+        expect(serviceDid()).toBeUndefined();
+    });
+});
+
+describe('serviceSigningKey and servicePublicKey', () => {
+    const saved = {
+        priv: process.env.ANTIPHONY_SERVICE_SIGNING_KEY,
+        pub: process.env.ANTIPHONY_SERVICE_PUBLIC_KEY,
+    };
+    afterEach(() => {
+        if (saved.priv === undefined) delete process.env.ANTIPHONY_SERVICE_SIGNING_KEY;
+        else process.env.ANTIPHONY_SERVICE_SIGNING_KEY = saved.priv;
+        if (saved.pub === undefined) delete process.env.ANTIPHONY_SERVICE_PUBLIC_KEY;
+        else process.env.ANTIPHONY_SERVICE_PUBLIC_KEY = saved.pub;
+    });
+
+    it('read the env per call, trimmed', () => {
+        delete process.env.ANTIPHONY_SERVICE_SIGNING_KEY;
+        delete process.env.ANTIPHONY_SERVICE_PUBLIC_KEY;
+        expect(serviceSigningKey()).toBeUndefined();
+        expect(servicePublicKey()).toBeUndefined();
+        process.env.ANTIPHONY_SERVICE_SIGNING_KEY = '  abc \n';
+        process.env.ANTIPHONY_SERVICE_PUBLIC_KEY = ' zQ ';
+        expect(serviceSigningKey()).toBe('abc');
+        expect(servicePublicKey()).toBe('zQ');
+    });
+
+    it('treat a blank value as absent', () => {
+        process.env.ANTIPHONY_SERVICE_SIGNING_KEY = '   ';
+        process.env.ANTIPHONY_SERVICE_PUBLIC_KEY = '';
+        expect(serviceSigningKey()).toBeUndefined();
+        expect(servicePublicKey()).toBeUndefined();
     });
 });
