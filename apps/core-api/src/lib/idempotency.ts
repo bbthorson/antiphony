@@ -19,6 +19,22 @@ import type { IdempotencyStore } from '../ports/idempotency-store.js';
  * stays HERE is the part that is HTTP contract rather than storage: reading the
  * header case-insensitively, deriving a per-caller id from it, and the 24h TTL.
  *
+ * ## Surfaces
+ *
+ * A key is recorded per tenant, per caller and per client key, and by nothing
+ * else: not the route, not the method, and not a hash of the payload. So a
+ * replayed key is NOT checked against the request that first used it; the stored
+ * response comes back whatever the retry carries.
+ *
+ * Two inbound surfaces answer the same create with different bodies (REST
+ * `{ success, data: { postId } }`, XRPC `{ uri, cid }`), so a caller that sent
+ * one key to both would otherwise get one surface's body replayed on the other.
+ * A caller passes `scope` to keep its records apart. REST passes none, which
+ * leaves its ids byte-for-byte what they were, so keys already stored stay
+ * valid. A scope is mixed into the hashed part with a NUL separator: an HTTP
+ * header value cannot contain NUL, so no raw key can reproduce a scoped hash
+ * input, and the id cannot be forged from the unscoped side.
+ *
  * The doc id is namespaced by `uid` so two callers sending the same raw key get
  * independent records. Without it, the first caller's cached response could be
  * returned to a second (resource-id leak), or a second could pre-register a key
@@ -57,8 +73,9 @@ function readKey(c: Context): string | null {
  * (so the same raw key from two users or two tenants never collides), and are
  * kept readable for debuggability.
  */
-function docId(originAppId: string, uid: string, key: string): string {
-    return `${originAppId}_${uid}_${createHash('sha256').update(key).digest('hex')}`;
+function docId(originAppId: string, uid: string, key: string, scope?: string): string {
+    const hashed = scope === undefined ? key : `${scope}\0${key}`;
+    return `${originAppId}_${uid}_${createHash('sha256').update(hashed).digest('hex')}`;
 }
 
 function resolveOriginAppId(c: Context): string {
@@ -79,11 +96,12 @@ export async function checkIdempotency(
     c: Context,
     uid: string,
     store?: IdempotencyStore,
+    scope?: string,
 ): Promise<{ cached: unknown } | null> {
     const key = readKey(c);
     if (!key) return null;
 
-    const claim = await resolveStore(c, store).claim(docId(resolveOriginAppId(c), uid, key), TTL_MS);
+    const claim = await resolveStore(c, store).claim(docId(resolveOriginAppId(c), uid, key, scope), TTL_MS);
     if (claim === 'in-progress') throw new IdempotencyInProgressError();
     if (claim === 'claimed') return null;
     return { cached: claim.replay };
@@ -94,19 +112,21 @@ export async function saveIdempotencyResult(
     uid: string,
     body: unknown,
     store?: IdempotencyStore,
+    scope?: string,
 ): Promise<void> {
     const key = readKey(c);
     if (!key) return;
-    await resolveStore(c, store).settle(docId(resolveOriginAppId(c), uid, key), body, TTL_MS);
+    await resolveStore(c, store).settle(docId(resolveOriginAppId(c), uid, key, scope), body, TTL_MS);
 }
 
 export async function releaseIdempotencyClaim(
     c: Context,
     uid: string,
     store?: IdempotencyStore,
+    scope?: string,
 ): Promise<void> {
     const key = readKey(c);
     if (!key) return;
-    await resolveStore(c, store).release(docId(resolveOriginAppId(c), uid, key));
+    await resolveStore(c, store).release(docId(resolveOriginAppId(c), uid, key, scope));
 }
 

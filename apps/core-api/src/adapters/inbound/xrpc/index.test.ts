@@ -23,6 +23,30 @@ const audioPostService = {
     setProcessing: vi.fn(),
 };
 
+/**
+ * An in-memory `IdempotencyStore` with the port's real semantics (atomic claim,
+ * settle replays, release deletes), so the createPost suites below exercise the
+ * real `lib/idempotency.ts` id derivation rather than a mock of it. `ids` lists
+ * every id claimed, in order.
+ */
+const idempotencyRecords = new Map<string, { status: 'processing' | 'done'; response?: unknown }>();
+const idempotencyStore = {
+    claim: vi.fn(async (id: string) => {
+        const found = idempotencyRecords.get(id);
+        if (!found) {
+            idempotencyRecords.set(id, { status: 'processing' });
+            return 'claimed' as const;
+        }
+        return found.status === 'done' ? { replay: found.response } : ('in-progress' as const);
+    }),
+    settle: vi.fn(async (id: string, response: unknown) => {
+        idempotencyRecords.set(id, { status: 'done', response });
+    }),
+    release: vi.fn(async (id: string) => {
+        if (idempotencyRecords.get(id)?.status === 'processing') idempotencyRecords.delete(id);
+    }),
+};
+
 const getBlobSpace = vi.fn();
 /** What the rate-limit store answers. `under` except in the over-limit case. */
 let rateLimitVerdict: 'under' | 'over' = 'under';
@@ -30,6 +54,7 @@ let rateLimitVerdict: 'under' | 'over' = 'under';
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
+        idempotencyStore,
         audioPostDeps: { getBlobSpace },
     // The rate-limit middleware resolves its store from here. Under limit except
     // in "over the rate limit" below: these suites assert route behaviour, not
@@ -92,6 +117,7 @@ function anonHeaders(): Record<string, string> {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    idempotencyRecords.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -518,6 +544,160 @@ describe('dev.antiphony.audio.createPost', () => {
 });
 
 // ---------------------------------------------------------------------------
+
+describe('dev.antiphony.audio.createPost — Idempotency-Key', () => {
+    const KEY = { 'idempotency-key': 'retry-me' };
+
+    function create(body: unknown = { text: 'hello' }, headers: Record<string, string> = KEY) {
+        return app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', ...headers }),
+            body: JSON.stringify(body),
+        });
+    }
+
+    function created(id: string, cid: string) {
+        vi.mocked(audioPostService.createPost).mockResolvedValueOnce({ id, cid } as Awaited<
+            ReturnType<typeof audioPostService.createPost>
+        >);
+    }
+
+    it('replays the first response for a retry and creates one post', async () => {
+        created('p1', 'bafypost1');
+
+        const first = await create();
+        const second = await create();
+
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+        expect(await second.json()).toEqual(await first.clone().json());
+        expect(await first.json()).toEqual({
+            uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/p1',
+            cid: 'bafypost1',
+        });
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a duplicate that arrives while the first is in flight with 409 Conflict', async () => {
+        let finish!: () => void;
+        vi.mocked(audioPostService.createPost).mockImplementationOnce(
+            () => new Promise((resolve) => { finish = () => resolve({ id: 'p1', cid: 'bafypost1' }); }),
+        );
+
+        const inFlight = create();
+        await vi.waitFor(() => expect(audioPostService.createPost).toHaveBeenCalled());
+        const duplicate = await create();
+
+        expect(duplicate.status).toBe(409);
+        expect(await duplicate.json()).toEqual({
+            error: 'Conflict',
+            message: 'An earlier request with the same idempotency key is still in flight',
+        });
+        finish();
+        expect((await inFlight).status).toBe(200);
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the claim after a validation failure, so a corrected retry creates the post', async () => {
+        const bad = await create({ text: 'hi', spaceAuthor: 'someone-else' });
+        expect(bad.status).toBe(400);
+        expect(idempotencyStore.release).toHaveBeenCalledTimes(1);
+        expect(idempotencyStore.settle).not.toHaveBeenCalled();
+
+        created('p1', 'bafypost1');
+        const retry = await create({ text: 'hi' });
+        expect(retry.status).toBe(200);
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the claim after a malformed body', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', ...KEY }),
+            body: '{not json',
+        });
+        expect(res.status).toBe(400);
+        expect(idempotencyStore.release).toHaveBeenCalledTimes(1);
+        expect(idempotencyRecords.size).toBe(0);
+    });
+
+    it('releases the claim after a thrown service error, so a retry is not locked out', async () => {
+        const { ServiceError } = await import('shared/errors');
+        vi.mocked(audioPostService.createPost).mockRejectedValueOnce(new ServiceError('nope', 400));
+
+        const failed = await create();
+        expect(failed.status).toBe(400);
+        expect(idempotencyStore.release).toHaveBeenCalledTimes(1);
+        expect(idempotencyStore.settle).not.toHaveBeenCalled();
+
+        created('p1', 'bafypost1');
+        expect((await create()).status).toBe(200);
+    });
+
+    it('does not release the claim after a successful create', async () => {
+        created('p1', 'bafypost1');
+        await create();
+        expect(idempotencyStore.release).not.toHaveBeenCalled();
+        expect(idempotencyStore.settle).toHaveBeenCalledTimes(1);
+    });
+
+    it('behaves as before without the header: no store use, a second post per request', async () => {
+        created('p1', 'bafypost1');
+        created('p2', 'bafypost2');
+
+        await create({ text: 'hello' }, {});
+        const second = await create({ text: 'hello' }, {});
+
+        expect((await second.json()).cid).toBe('bafypost2');
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(2);
+        expect(idempotencyStore.claim).not.toHaveBeenCalled();
+        expect(idempotencyStore.settle).not.toHaveBeenCalled();
+    });
+
+    it('keeps one actor\'s key from another actor\'s retry', async () => {
+        created('p1', 'bafypost1');
+        created('p2', 'bafypost2');
+
+        await create();
+        const other = await app().request('/xrpc/dev.antiphony.audio.createPost', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', 'x-antiphony-acting-actor': 'u2', ...KEY }),
+            body: JSON.stringify({ text: 'hello' }),
+        });
+
+        expect((await other.json()).cid).toBe('bafypost2');
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(2);
+    });
+
+    it('never replays one surface\'s response on the other for the same actor and key', async () => {
+        created('p1', 'bafypost1');
+        created('p2', 'bafypost2');
+
+        const viaRest = await app().request('/api/v1/posts', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', ...KEY }),
+            body: JSON.stringify({ text: 'hello' }),
+        });
+        const viaXrpc = await create();
+
+        expect(await viaRest.json()).toEqual({ success: true, data: { postId: 'p1' } });
+        expect(await viaXrpc.json()).toEqual({
+            uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/p2',
+            cid: 'bafypost2',
+        });
+        // Two claims under two different ids, and a retry on each surface still
+        // replays its own body.
+        expect(new Set(idempotencyRecords.keys()).size).toBe(2);
+        const restRetry = await app().request('/api/v1/posts', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'application/json', ...KEY }),
+            body: JSON.stringify({ text: 'hello' }),
+        });
+        expect(await restRetry.json()).toEqual({ success: true, data: { postId: 'p1' } });
+        expect((await (await create()).json()).cid).toBe('bafypost2');
+        expect(audioPostService.createPost).toHaveBeenCalledTimes(2);
+    });
+});
 
 describe('dev.antiphony.audio.createPost — declared errors', () => {
     /**

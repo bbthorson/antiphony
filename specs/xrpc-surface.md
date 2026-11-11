@@ -59,10 +59,8 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
   `AuthenticationRequired`, `Forbidden`, `RecordNotFound`, `Conflict`, `Gone`, `PayloadTooLarge`,
   `RateLimitExceeded`, `ServiceUnavailable`, `InternalServerError`), so the hosted-post codes
   such as `AUDIO_PLACEMENT` and `SPACES_UNAVAILABLE` are still lost (§4.2).
-- **Gaps against REST:** XRPC `createPost` has no idempotency handling (REST's `POST /posts`
-  takes `Idempotency-Key`), though its lexicon already declares the `Conflict` an idempotency
-  clash would answer (D-5); `createPost` answers a StrongRef `{ uri, cid }` where REST answers
-  `{ postId }`. Upload, spaces, the DID registry, deletion and the hosted-post list have no
+- **Gaps against REST:** `createPost` answers a StrongRef `{ uri, cid }` where REST answers
+  `{ postId }`. (It honours `Idempotency-Key` like REST, §4.3.) Upload, spaces, the DID registry, deletion and the hosted-post list have no
   XRPC method yet.
 - **Antiphony publishes a DID document, but accepts nothing signed with it.**
   `https://api.antiphony.dev/.well-known/did.json` serves `did:web:api.antiphony.dev` with an
@@ -80,7 +78,7 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.getThread` | query | thread reads | tenant; public for flat posts | exists |
 | `dev.antiphony.audio.listPosts` | query | `GET /posts` (`kind`, `rootAuthor`, cursor) | tenant | new |
 | `dev.antiphony.audio.listReplies` | query | `GET /posts/{id}/replies` | tenant | new, or folded into `getThread` (D-6) |
-| `dev.antiphony.audio.createPost` | procedure | `POST /posts` | tenant + acting actor | exists; add idempotency (D-5) |
+| `dev.antiphony.audio.createPost` | procedure | `POST /posts` | tenant + acting actor | exists; honours `Idempotency-Key` (D-5, built) |
 | `dev.antiphony.audio.reprocessPost` | procedure | `PATCH /posts/{id}` | tenant + acting actor | exists |
 | `dev.antiphony.audio.uploadAudio` | procedure, binary input | `POST /audio/upload` | tenant + acting actor | new (D-7) |
 | `dev.antiphony.audio.getPlaybackUrl` | query | URL minting | tenant | exists |
@@ -140,9 +138,19 @@ REST `code`. The status-derived symbols stay the fallback. Every XRPC error also
 
 ### 4.3 Idempotency
 
-`createPost` and `uploadAudio` accept an `Idempotency-Key` header with REST's semantics
-(`checkIdempotency` / `saveIdempotencyResult`), so a retried write can't double-post. Headers
-aren't part of a lexicon, so the client package sets it (D-5).
+`createPost` accepts an `Idempotency-Key` header with REST's semantics, so a retried write
+can't double-post: the same key from the same actor replays the stored `{ uri, cid }`, a
+duplicate while the first is in flight answers 409 `Conflict`, and the claim is released when
+no post was created (a validation failure or a thrown service error) so a corrected retry is
+not locked out. **Built** for `createPost`; `uploadAudio` has no XRPC method yet and takes it
+when it gets one.
+
+The claim/save/release sequence is `lib/idempotent-create.ts`, called by both the REST and the
+XRPC create handlers. A stored key is scoped by tenant, actor and key only, so the XRPC
+handler passes a scope (its NSID): the same key sent to both surfaces by one actor claims two
+records and never replays REST's `{ postId }` envelope as an XRPC body or the reverse. REST
+passes no scope, so its stored ids are unchanged. As on REST, a replay is not checked against
+the retry's payload. Headers aren't part of a lexicon, so the client package sets it (D-5).
 
 ### 4.4 Upload
 
@@ -204,7 +212,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-2 *(document published 2026-11-11; service auth and public reads not built)* | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
 | D-3 | **Where the `dev.antiphony` lexicon repo lives** | a small PDS account for `antiphony.dev`'s DID; a hosted PDS; don't publish | a hosted PDS account (no infra to run), at 1.0 |
 | D-4 | **Acting actor in the protocol shape** | keep custom headers (client sets them); move into each procedure's input; express as a signed claim inside service auth | keep headers until signed service auth is the credential, then fold the actor into the JWT |
-| D-5 | **Idempotency on XRPC writes** | `Idempotency-Key` header; an input field (`clientRequestId`); none | header, matching REST |
+| D-5 | **Idempotency on XRPC writes** | `Idempotency-Key` header; an input field (`clientRequestId`); none | **Settled: header, matching REST. Built for `createPost`.** |
 | D-6 | **Replies: `listReplies` or paged `getThread`** | separate list method; `getThread` with cursor only | `getThread` already pages; add `listReplies` only if the apps need flat reply lists by filter |
 | D-7 | **Upload encoding** | raw body (uploadBlob style); multipart | raw body |
 | D-8 | **Playback bytes** | an XRPC binary query; keep a plain media route | keep a media route (it's a capability URL consumed by `<audio>`, not an API call); XRPC mints it |

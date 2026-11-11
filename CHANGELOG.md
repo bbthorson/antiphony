@@ -10,7 +10,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [0.10.9] — 2026-11-11
 
-Documentation of unchanged behaviour. **Patch**: two descriptions in the OpenAPI document.
+Documentation of unchanged REST behaviour, plus idempotency on the XRPC `createPost`. **Patch**:
+two descriptions in the OpenAPI document; the XRPC change is outside the contract.
+
+### Added
+
+- **`dev.antiphony.audio.createPost` (XRPC) honours `Idempotency-Key`**, with the semantics of
+  `POST /api/v1/posts`: a retry replays the stored `{ uri, cid }`, a duplicate still in flight
+  answers 409 `Conflict`, and the claim is released when no post was created. XRPC-only: the
+  OpenAPI document is unchanged, so the contract version does not move for it. A key sent to
+  both surfaces by one actor is recorded separately on each; keys REST already stored are
+  untouched.
 
 ### Changed
 
