@@ -317,6 +317,15 @@
 		// there is no chain. It remains supported for a self-hoster who fronts this
 		// API with something that does send XFF — see lib/client-ip.ts, where the
 		// history of getting that number wrong is recorded twice over.
-		"CLIENT_IP_SOURCE": "cf"
+		"CLIENT_IP_SOURCE": "cf",
+
+		// The public half of this service's signing key, published in the DID
+		// document at /.well-known/did.json as did:web:api.antiphony.dev#atproto
+		// (see the note above the vars for the two settings and their order).
+		// Set 2026-11-11, after the ANTIPHONY_SERVICE_SIGNING_KEY secret was
+		// stored. The document is served only while the secret's key derives
+		// to exactly this value, so replacing the key means: put the new secret,
+		// then change this, in that order.
+		"ANTIPHONY_SERVICE_PUBLIC_KEY": "zDnaesZ9tCgnbJmBCRmRFushYnmtt7784fSfEWjCHYMALCoxX"
 	}
 }
