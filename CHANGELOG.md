@@ -41,8 +41,8 @@ the REST route is a twin over the same service method.
 - **Lexicons** `dev.antiphony.tenant.getStats` and `dev.antiphony.tenant.defs` (`counts`,
   `windows`, `postStats`), and OpenAPI tag `Tenant`.
 - `@antiphony/shared` gains `TenantStatsSchema` (with `PostStatsSchema`, `StatWindowsSchema` and
-  `StatCountsSchema`) and `XRPC_NSID.GetStats`. Its release waits for the rest of the remote-post
-  XRPC methods, so the schemas ship in one bump.
+  `StatCountsSchema`) and `XRPC_NSID.GetStats`. Released in `@antiphony/shared` 0.14.0, with
+  the remote-post schemas below and 0.10.7's.
 - **Remote posts over XRPC.** Every remote-post operation is now an XRPC method, so an app can do
   all its remote-post work over `/xrpc` and never call `/api/v1/remote-posts`. **XRPC only**: no
   REST route is added or changed (`openapi.json` is unchanged), so this needs no contract-version
@@ -104,8 +104,8 @@ the same code. Their shapes follow atproto's own lists (`com.atproto.repo.listRe
 - **Lexicon definitions** `dev.antiphony.audio.defs#remotePostView` and `#remoteSpace`: the
   `RemotePostView` the REST routes already return, now stated in the lexicons.
 - `@antiphony/shared` gains `RemotePostListViewSchema`, `RemotePostsViewSchema`,
-  `MAX_REMOTE_POSTS_BATCH` and the two method NSIDs in `XRPC_NSID`. Its release waits for
-  the rest of the remote-post XRPC methods, so the schemas ship in one bump.
+  `MAX_REMOTE_POSTS_BATCH` and the two method NSIDs in `XRPC_NSID`. Released in
+  `@antiphony/shared` 0.14.0, with 0.10.8's.
 - Migration `0010_remote_posts_list.sql`: indexes for the listing, tenant-wide and per repo.
 - **Lexicon `processing` on `dev.antiphony.embed.audio#view`**, with the new def `dev.antiphony.audio.defs#processingView`: the per-stage status the API already returned, now stated in the lexicons so a generated client keeps it. No wire change.
 
