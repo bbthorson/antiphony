@@ -8,6 +8,18 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.9] — 2026-11-11
+
+Documentation of unchanged behaviour. **Patch**: two descriptions in the OpenAPI document.
+
+### Changed
+
+- **`PUT /api/v1/dids/{did}` and the `DIDs` tag no longer offer a Vox Pop org or a Bardcast
+  table as an example.** Both are opensocial groups, whose DIDs name their group host and so
+  fail this route's custody check ([`specs/audio-service-and-groups.md`](./specs/audio-service-and-groups.md),
+  the 2026-11-02 finding). The descriptions now say so and point to remote posts. Nothing
+  about the route changed.
+
 ## [0.10.8] — 2026-11-11
 
 Counting a tenant's own posts ([`specs/tenancy-stats.md`](./specs/tenancy-stats.md)). Until now

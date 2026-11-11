@@ -42,9 +42,9 @@ import { logger } from './logger.js';
  *   - `ANTIPHONY_PROCESSING_INLINE=true` → wire the inline dispatcher, which
  *     runs processing synchronously inside the request. This is the local/test
  *     trigger.
- *   - Otherwise, if the `ANTIPHONY_TASKS_*` vars are set → the Cloud Tasks
- *     dispatcher, which enqueues against this deployment's own
- *     `/api/v1/system/process-audio` worker. This is production.
+ *   - Otherwise, when the runtime registered a durable dispatcher → that one.
+ *     On Workers it is the Cloudflare Queue (`PROCESSING_QUEUE`), consumed by
+ *     the `queue` handler in `worker.ts`. This is production.
  *   - With neither → the noop dispatcher logs and drops.
  *
  * Note the two flags govern DIFFERENT axes and neither implies the other:

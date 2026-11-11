@@ -267,8 +267,9 @@ suit audio, which is processed. The copy's lifetime is tied to the source record
 - **The view is a new `RemotePostView`.** It carries `uri`, `cid`, the record, and the same
   embed a hosted post gets: `processing`, the transcript, waveform peaks and the playback
   URL. It reuses those schemas.
-- **Why not `AudioPostView` with fields made optional:** it requires `id` (the hosted
-  post's rkey) and the `authorId` facet, which a remote post doesn't have. Making them
+- **Why not `AudioPostView` with fields made optional:** it requires the `authorId` facet and
+  `viewer` state, which a remote post doesn't have, and the hosted routes address a post by
+  its rkey. Making them
   optional would be a typing break for clients that read them from hosted posts. A remote
   post's author is its repo DID (for a space record, the author segment).
 - **Listing (added 2026-11-11, contract 0.10.7).** Two XRPC queries, each with a REST twin

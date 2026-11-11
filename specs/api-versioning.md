@@ -32,7 +32,7 @@ literal to drift.
 `package.json` versions track *package* releases and are **allowed to differ**
 from the API contract version — do not conflate them, and do not "fix" the
 divergence. For example, `@antiphony/shared` (at `0.14.0`) and `@antiphony/capture-kit`
-(at `0.1.0`) track their own release lines while the contract sits at `0.10.8` and
+(at `0.1.0`) track their own release lines while the contract sits at `0.10.9` and
 internal packages sit at `0.1.0`. That is correct: a package bump for an export
 or dependency change is a different event from a breaking *contract* change.
 The two lines briefly agreed at `0.9.2` by coincidence: the contract reached it
@@ -79,6 +79,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.10.5` | Remote posts in spaces ([`audio-service-mode.md`](./audio-service-mode.md), Phase B): `remoteSpace` on upload, space-record URIs with `record` and `bytesFrom` on registration, `space` / `verified` / `deletionCheck` on `RemotePostView`, and visibility by reference in place of 409 `REMOTE_BLOB_PRIVATE`. Optional fields, added view fields and a refusal lifted, so patch. |
 | `0.10.7` | Listing remote posts: `dev.antiphony.audio.listRemotePosts` and `getRemotePosts`, each an XRPC query with a REST twin (`GET /api/v1/remote-posts/list` and `/batch`). The first methods built lexicon-first ([`xrpc-surface.md`](./xrpc-surface.md)). New routes, so patch. |
 | `0.10.8` | Tenancy stats ([`tenancy-stats.md`](./tenancy-stats.md)): `dev.antiphony.tenant.getStats` and `GET /api/v1/stats`. New route, so patch. The remote-post XRPC methods (`registerPost` and five more) and the service DID document landed with it; neither is part of the OpenAPI contract. |
+| `0.10.9` | The `DIDs` descriptions stop offering opensocial groups (a Vox Pop org, a Bardcast table) as examples: their DIDs can't pass the custody check. Documentation of unchanged behaviour, so patch. |
 
 ### Next: the enrichment pipeline
 

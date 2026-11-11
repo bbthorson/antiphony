@@ -34,10 +34,10 @@ import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
  * CORS middleware does not affect it.
  *
  * The remaining case CORS would cover — a browser `fetch()` of that proxy —
- * does not work today regardless: the route 302s to a signed Cloud Storage
- * URL, and following that redirect from a browser needs CORS on the *bucket*.
- * An allowlist here would have permitted the first hop of a request that then
- * fails at the second. (`/.well-known/did.json` is the one exception, below.)
+ * is not offered. The route streams the bytes itself (it once 302ed to a
+ * signed bucket URL, which needed CORS on the bucket as well), so a script on
+ * another origin can load the audio into an element but can't read it. Nothing
+ * needs to yet. (`/.well-known/did.json` is the one exception, below.)
  *
  * So the middleware, its `ALLOWED_ORIGINS` env var, and its `credentials: true`
  * (which advertised cookie auth this API does not have) are gone. If a genuine
