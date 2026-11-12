@@ -1,6 +1,10 @@
 # Antiphony, Vox Pop and Bardcast: cross-repo design
 
-**Status:** decided 2026-10-11 (Brad); nothing here is built. It sets how Antiphony, Vox Pop
+**Status:** decided 2026-10-11 (Brad). Built since, on Antiphony's side: §3.2 (a reply may be
+more private than its parent), §3.4's parent-CID check and §4.2's author segment, all in
+contract 0.9.0. Not built, and replaced: Phase 3 with Antiphony as space host (§4), including
+the outbound `checkUserAccess` call, which Antiphony will not make (see the note below). Not
+built: §5's `@antiphony/client`. It sets how Antiphony, Vox Pop
 and Bardcast fit together and what each repo changes. Read against `bbthorson/antiphony`,
 `bbthorson/vox-pop` (`920e7de`) and `bbthorson/bardcast` (`9d12198`).
 

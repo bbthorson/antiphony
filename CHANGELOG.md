@@ -8,6 +8,38 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.9] — 2026-11-11
+
+Documentation of unchanged REST behaviour, idempotency on the XRPC `createPost`, and published
+webhook schemas. **Patch**: two descriptions in the OpenAPI document; the XRPC and webhook
+changes are outside the contract.
+
+### Added
+
+- **`@antiphony/shared` gains the webhook payload schemas and a signature verifier**:
+  `WebhookEventSchema` (a union on `type` over the five events: `stage.settled`, `post.deleted`,
+  `remote.gone`, `remote.changed`, `remote.recheck_requested`), one schema per event, the three
+  header-name constants, and `verifyWebhookSignature({ secret, rawBody, signatureHeader })`, which
+  checks the HMAC with WebCrypto in constant time. The notifier now builds its bodies from those
+  same types, so the sender cannot drift from the schemas. The wire format is unchanged and the
+  OpenAPI contract is untouched, so the contract version does not move for it. They ship in
+  `@antiphony/shared` 0.14.1. The spec's event-id section is also corrected to the form
+  the notifier builds for each event.
+- **`dev.antiphony.audio.createPost` (XRPC) honours `Idempotency-Key`**, with the semantics of
+  `POST /api/v1/posts`: a retry replays the stored `{ uri, cid }`, a duplicate still in flight
+  answers 409 `Conflict`, and the claim is released when no post was created. XRPC-only: the
+  OpenAPI document is unchanged, so the contract version does not move for it. A key sent to
+  both surfaces by one actor is recorded separately on each; keys REST already stored are
+  untouched.
+
+### Changed
+
+- **`PUT /api/v1/dids/{did}` and the `DIDs` tag no longer offer a Vox Pop org or a Bardcast
+  table as an example.** Both are opensocial groups, whose DIDs name their group host and so
+  fail this route's custody check ([`specs/audio-service-and-groups.md`](./specs/audio-service-and-groups.md),
+  the 2026-11-02 finding). The descriptions now say so and point to remote posts. Nothing
+  about the route changed.
+
 ## [0.10.8] — 2026-11-11
 
 Counting a tenant's own posts ([`specs/tenancy-stats.md`](./specs/tenancy-stats.md)). Until now

@@ -46,11 +46,13 @@ export interface XrpcErrorBody {
  * HTTP status → XRPC error symbol.
  *
  * The first six are the symbols named in specs/xrpc-and-atproto-lex-strategy.md
- * §5.4. `Conflict` (409) is an addition: the spec's list omitted it, but
- * `createPost` returns 409 on an idempotency conflict, and folding that into
- * `InvalidRequest` would tell a client its payload was malformed when the real
- * answer is "your earlier identical request is still in flight" — the one case
- * where retrying later is correct.
+ * §5.4. `Conflict` (409) is an addition: the spec's list omitted it, but the
+ * `createPost` lexicon declares it for an idempotency conflict, and folding a
+ * 409 into `InvalidRequest` would tell a client its payload was malformed when
+ * the real answer is "your earlier identical request is still in flight" — the
+ * one case where retrying later is correct. XRPC `createPost` raises it
+ * for a duplicate `Idempotency-Key` still in flight (specs/xrpc-surface.md
+ * D-5), through `xrpcError` directly rather than a thrown error.
  *
  * The last three came with the remote-post methods, whose refusals include a
  * 410 (a removed registration), a 413 (a body over the method's limit) and a

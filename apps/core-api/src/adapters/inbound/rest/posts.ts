@@ -6,12 +6,7 @@ import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'share
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
-import {
-    checkIdempotency,
-    saveIdempotencyResult,
-    releaseIdempotencyClaim,
-    IdempotencyInProgressError,
-} from '../../../lib/idempotency.js';
+import { runIdempotent } from '../../../lib/idempotent-create.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
@@ -359,80 +354,76 @@ app.openapi(createRouteDef, async (c) => {
     const uid = c.get('viewerUid')!;
 
     // Idempotency: a retry with the same key returns the cached response
-    // (completed) or 409 (still processing). Doc id is per-user (M5 fix).
-    try {
-        const idem = await checkIdempotency(c, uid);
-        if (idem) {
-            return c.json(idem.cached as object, 200);
-        }
-    } catch (err) {
-        if (err instanceof IdempotencyInProgressError) {
-            return c.json(errorEnvelope(c, err.message), 409);
-        }
-        throw err;
-    }
+    // (completed) or 409 (still processing). Doc id is per-user (M5 fix). The
+    // claim/save/release sequence is shared with the XRPC createPost.
+    // The cast: `runIdempotent` is surface-neutral, so it returns a plain
+    // `Response`, which the typed route handler will not accept. The statuses
+    // and bodies are still the ones the route declares; each is built below.
+    const reply = await runIdempotent<Response>(
+        c,
+        uid,
+        undefined,
+        {
+            replay: (body) => c.json(body as object, 200),
+            inFlight: () => c.json(errorEnvelope(c, 'Request already in progress'), 409),
+        },
+        async () => {
+            let rawData: unknown;
+            try {
+                rawData = await c.req.json();
+            } catch {
+                return { created: false, response: c.json(errorEnvelope(c, 'Invalid JSON body'), 400) };
+            }
 
-    let rawData: unknown;
-    try {
-        rawData = await c.req.json();
-    } catch {
-        await releaseIdempotencyClaim(c, uid);
-        return c.json(errorEnvelope(c, 'Invalid JSON body'), 400);
-    }
+            const validation = CreateAudioPostRequestSchema.safeParse(rawData);
+            if (!validation.success) {
+                return {
+                    created: false,
+                    response: c.json(
+                        errorEnvelope(c, 'Validation failed', { issues: validation.error.issues }),
+                        400,
+                    ),
+                };
+            }
 
-    const validation = CreateAudioPostRequestSchema.safeParse(rawData);
-    if (!validation.success) {
-        await releaseIdempotencyClaim(c, uid);
-        return c.json(
-            errorEnvelope(c, 'Validation failed', { issues: validation.error.issues }),
-            400,
-        );
-    }
+            const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
 
-    const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
+            const originAppId = getOriginAppId(c);
+            // Resolve the opt-in request against THIS TENANT's capabilities: each
+            // requested stage starts `pending` (worker will do it) or `skipped` (no
+            // provider configured for this tenant). Stored on the record; surfaced on
+            // the view.
+            const initialProcessing = resolveInitialProcessing(originAppId, processing);
+            const created = await servicesFor(c.env).audioPostService.createPost({
+                originAppId,
+                authorId: uid,
+                // App-asserted AT Protocol DID (service path only) — trusted within
+                // the app's tenancy; see specs/service-auth.md.
+                authorDid: c.get('actingActorDid') ?? undefined,
+                text,
+                title,
+                embed,
+                reply,
+                langs,
+                selfLabels,
+                processing: initialProcessing,
+                space,
+                spaceAuthor,
+                authority,
+            });
 
-    const originAppId = getOriginAppId(c);
-    // Resolve the opt-in request against THIS TENANT's capabilities: each
-    // requested stage starts `pending` (worker will do it) or `skipped` (no
-    // provider configured for this tenant). Stored on the record; surfaced on
-    // the view.
-    const initialProcessing = resolveInitialProcessing(originAppId, processing);
+            // Kick off processing for any stage that's actually pending. Which
+            // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
+            // inline awaits the work, a queue adapter awaits only the enqueue.
+            if (hasPendingStage(initialProcessing)) {
+                await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
+            }
 
-    let created: { id: string };
-    try {
-        created = await servicesFor(c.env).audioPostService.createPost({
-            originAppId,
-            authorId: uid,
-            // App-asserted AT Protocol DID (service path only) — trusted within
-            // the app's tenancy; see specs/service-auth.md.
-            authorDid: c.get('actingActorDid') ?? undefined,
-            text,
-            title,
-            embed,
-            reply,
-            langs,
-            selfLabels,
-            processing: initialProcessing,
-            space,
-            spaceAuthor,
-            authority,
-        });
-
-        // Kick off processing for any stage that's actually pending. Which
-        // dispatcher runs it is a wiring decision behind `ProcessingDispatchPort`;
-        // inline awaits the work, a queue adapter awaits only the enqueue.
-        if (hasPendingStage(initialProcessing)) {
-            await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
-        }
-    } catch (err) {
-        await releaseIdempotencyClaim(c, uid);
-        throw err;
-    }
-
-    const responseBody = { success: true as const, data: { postId: created.id } };
-    await saveIdempotencyResult(c, uid, responseBody);
-
-    return c.json(responseBody, 200);
+            const responseBody = { success: true as const, data: { postId: created.id } };
+            return { created: true, body: responseBody, response: c.json(responseBody, 200) };
+        },
+    );
+    return reply as never;
 });
 
 // ---------------------------------------------------------------------------

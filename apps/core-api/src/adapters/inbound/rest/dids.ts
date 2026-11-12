@@ -34,8 +34,9 @@ const putRoute = createRoute({
     tags: ['DIDs'],
     summary: 'Register a DID',
     description:
-        "Registers a DID the calling tenant acts for, such as a group's (a Bardcast table, a Vox Pop org), so later " +
-        "writes can go under it. Antiphony first resolves the DID's document and requires it to name this deployment " +
+        "Registers a DID the calling tenant acts for and that this deployment hosts, so later writes can go under it. " +
+        "Not for an opensocial group's DID: that names its group host, so it fails the check below, and its audio is " +
+        "registered as remote posts instead. Antiphony first resolves the DID's document and requires it to name this deployment " +
         'as its space host (`#atproto_space_host`), the same check the app DID passes: 400 `DID_CUSTODY_DISPROVED` ' +
         'if it does not, 503 `DID_UNREACHABLE` if the document cannot be read. A DID belongs to at most one tenant ' +
         '(409 `DID_TAKEN`). Repeating a registration is a no-op (200); changing its role or subject is refused (409 ' +

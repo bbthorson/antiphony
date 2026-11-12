@@ -1,7 +1,8 @@
 # Antiphony as an audio service; groups and who owns a record
 
 **Status:** decided 2026-11-01 (Brad). Step 2 of the work table is built on Antiphony's side
-(contract 0.10.1); audio-service mode (step 6) is not. **Revised 2026-11-02** with a finding
+(contract 0.10.1), and so is audio-service mode (step 6): Phases A, B and C, contracts 0.10.4 to
+0.10.6, with its reads and stats added as XRPC methods in 0.10.7 and 0.10.8. **Revised 2026-11-02** with a finding
 from Grain's code: an opensocial group's host is the group's PDS, so Antiphony can never hold
 records under a group's DID ("Finding: a group host is the group's PDS", below). That makes
 step 6 the critical path. This replaces parts of
@@ -248,17 +249,27 @@ Step 2 must land before Bardcast keeps its first recording.
 
 ## Open questions
 
-1. **Who runs group hosts.** *Narrowed 2026-11-02:* the group host is the group's PDS (finding
+1. **Who runs group hosts.** *Decided for prototyping, 2026-11-11 (Brad): `opensocial.fyi`,
+   the atproto team's host; self-hosting is deferred.* *Narrowed 2026-11-02:* the group host is the group's PDS (finding
    above), so Antiphony's temporary repo hosting is not an option. What's left is whose host:
    self-host the opensocial.group reference, or use someone else's. Not sealed: a group can
    move hosts, as any account can move PDS. Whoever creates a group DID must give its top
    rotation key to the app acting for the group (and through it, the group), so the group can
    move later.
-2. **What the proposal says**, once readable (still unreachable 2026-11-02):
-   - whether a member's acceptance must be written from their own PDS;
-   - whether a group's spaces can sit on more than one host;
-   - whether a personal-private space accepts a second writer (Bardcast's narrator);
-   - whether a group host accepts a `managing-app` read policy (G4), or only flat roles.
+2. **What the proposal says.** Its repo is still unreachable, but Brad supplied a copy on
+   2026-11-02, read in [`audio-service-mode.md`](./audio-service-mode.md) ("Phase C
+   verification", source 4). None of the four below has been checked on a running host:
+   - **whether a member's acceptance must be written from their own PDS:** the text has the
+     member write their own acceptance, and each writer's records live in their own repo, so
+     it follows that it comes from their PDS. Acceptance puts a member on the roster; it
+     doesn't gate access, which roles do;
+   - **whether a group's spaces can sit on more than one host:** not answered;
+   - **whether a personal-private space accepts a second writer** (Bardcast's narrator): not
+     answered;
+   - **whether a group host accepts a `managing-app` read policy** (G4), or only flat roles:
+     the proposal describes flat roles and an `access` record per space, enforced when the
+     host issues credentials, and says nothing of a managing app. Plan on flat roles, with the
+     finer rule kept in the app's own access check.
 3. **Where derived records live:** transcripts and processing state as records in the same
    space under Antiphony's DID, or only in Antiphony's index.
 4. **A player deletes a reply a chapter used.** The chapter stays (G3), and the reply's

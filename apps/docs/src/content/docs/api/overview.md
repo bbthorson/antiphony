@@ -222,7 +222,7 @@ The `dev.antiphony.embed.audio` lexicon permits `audio/*` up to 100 MB. That's t
 
 The write limit is tight enough to hit while developing — back off rather than retrying immediately.
 
-**Idempotency.** `POST /api/v1/posts` honours an `Idempotency-Key` header. Keys are scoped per tenant (`originAppId`) and per actor. If a create request fails validation or an internal service error occurs, the idempotency claim is **immediately released**, allowing your client to correct and retry without waiting for key expiration. A successful response caches the result for replay upon identical retries.
+**Idempotency.** `POST /api/v1/posts` honours an `Idempotency-Key` header. Keys are scoped per tenant (`originAppId`) and per actor. If a create request fails validation or an internal service error occurs, the idempotency claim is **immediately released**, allowing your client to correct and retry without waiting for key expiration. A successful response caches the result for replay upon identical retries. `POST /xrpc/dev.antiphony.audio.createPost` honours the same header with the same rules and answers its own `{ uri, cid }` body (a duplicate still in flight is a 409 `Conflict`); a key sent to both surfaces is recorded separately on each.
 
 ## Source of truth
 

@@ -128,7 +128,7 @@ export default {
     },
 
     /**
-     * Cron. Wired in `wrangler.core-api.jsonc`; see that file for the schedule
+     * Cron. Wired in `apps/core-api/wrangler.jsonc`; see that file for the schedule
      * and why it is hourly.
      *
      * The pin gate is NOT awaited here. This handler mints no `at://` uris and

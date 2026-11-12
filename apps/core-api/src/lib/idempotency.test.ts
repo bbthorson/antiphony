@@ -121,6 +121,31 @@ describe('checkIdempotency — per-user namespacing (M5)', () => {
         expect(claimed[0]).not.toContain('/');
     });
 
+    it('keeps the unscoped id unchanged, so keys already stored stay valid', async () => {
+        const { store, claimed } = recordingStore();
+        await checkIdempotency(makeCtx('k'), 'u', store, undefined);
+        expect(claimed).toEqual([expectedId('default', 'u', 'k')]);
+    });
+
+    it('derives a DIFFERENT id for the same tenant, user and key under a scope', async () => {
+        const plain = recordingStore();
+        const scoped = recordingStore();
+        await checkIdempotency(makeCtx('k'), 'u', plain.store);
+        await checkIdempotency(makeCtx('k'), 'u', scoped.store, 'xrpc');
+        expect(scoped.claimed[0]).not.toBe(plain.claimed[0]);
+        expect(scoped.claimed[0]).toBe(expectedId('default', 'u', 'xrpc\0k'));
+    });
+
+    it('applies the scope to save and release as well as claim', async () => {
+        const { store, claimed, settled, released } = recordingStore();
+        const ctx = makeCtx('k');
+        await checkIdempotency(ctx, 'u', store, 'xrpc');
+        await saveIdempotencyResult(ctx, 'u', { ok: true }, store, 'xrpc');
+        await releaseIdempotencyClaim(ctx, 'u', store, 'xrpc');
+        expect(settled[0].id).toBe(claimed[0]);
+        expect(released[0]).toBe(claimed[0]);
+    });
+
     it('passes the 24h TTL to the store', async () => {
         let seen: number | undefined;
         const store: IdempotencyStore = {

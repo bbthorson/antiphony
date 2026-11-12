@@ -14,6 +14,7 @@ import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate
 import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
+import { runIdempotent } from '../../../lib/idempotent-create.js';
 import { getAppDid } from '../../../lib/app-did.js';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
@@ -379,49 +380,67 @@ export function xrpcRoute(): Hono {
         async (c) => {
             const uid = c.get('viewerUid')!;
 
-            // A malformed body throws; `onError` renders it as InvalidRequest.
-            const raw: unknown = await c.req.json();
-            const validation = CreateAudioPostRequestSchema.safeParse(raw);
-            if (!validation.success) {
-                return c.json(
-                    xrpcError('InvalidRequest', 'Payload failed schema validation'),
-                    400,
-                );
-            }
+            // `Idempotency-Key`, with REST's semantics (specs/xrpc-surface.md
+            // D-5): the claim/save/release sequence is `runIdempotent`, shared
+            // with REST. The scope keeps this surface's stored `{ uri, cid }`
+            // apart from REST's `{ postId }` envelope when a caller sends one
+            // key to both.
+            return runIdempotent<Response>(
+                c,
+                uid,
+                XRPC_NSID.CreatePost,
+                {
+                    replay: (body) => c.json(body as object),
+                    inFlight: () =>
+                        c.json(
+                            xrpcError('Conflict', 'An earlier request with the same idempotency key is still in flight'),
+                            409,
+                        ),
+                },
+                async () => {
+                    // A malformed body throws; `onError` renders it as InvalidRequest.
+                    const raw: unknown = await c.req.json();
+                    const validation = CreateAudioPostRequestSchema.safeParse(raw);
+                    if (!validation.success) {
+                        return {
+                            created: false,
+                            response: c.json(xrpcError('InvalidRequest', 'Payload failed schema validation'), 400),
+                        };
+                    }
 
-            const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
-            const originAppId = getOriginAppId(c);
-            const initialProcessing = resolveInitialProcessing(originAppId, processing);
+                    const { text, title, embed, reply, langs, selfLabels, processing, space, spaceAuthor, authority } = validation.data;
+                    const originAppId = getOriginAppId(c);
+                    const initialProcessing = resolveInitialProcessing(originAppId, processing);
 
-            const created = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.createPost({
-                originAppId,
-                authorId: uid,
-                authorDid: c.get('actingActorDid') ?? undefined,
-                text,
-                title,
-                embed,
-                reply,
-                langs,
-                selfLabels,
-                processing: initialProcessing,
-                space,
-                spaceAuthor,
-                authority,
-            });
+                    const created = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.createPost({
+                        originAppId,
+                        authorId: uid,
+                        authorDid: c.get('actingActorDid') ?? undefined,
+                        text,
+                        title,
+                        embed,
+                        reply,
+                        langs,
+                        selfLabels,
+                        processing: initialProcessing,
+                        space,
+                        spaceAuthor,
+                        authority,
+                    });
 
-            if (hasPendingStage(initialProcessing)) {
-                await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
-            }
+                    if (hasPendingStage(initialProcessing)) {
+                        await dispatchProcessing(originAppId, created.id, c.env as Record<string, unknown> | undefined);
+                    }
 
-            // `{ uri, cid }` — a StrongRef, the atproto convention for "what I
-            // just wrote" (cf. com.atproto.repo.createRecord). The REST route
-            // answers `{ postId }` instead; both name the same record, and the
-            // uri is built here rather than re-read so a create still costs one
-            // write and no extra read.
-            return c.json({
-                uri: postUriOf(created, getAppDid),
-                cid: created.cid,
-            });
+                    // `{ uri, cid }` — a StrongRef, the atproto convention for "what I
+                    // just wrote" (cf. com.atproto.repo.createRecord). The REST route
+                    // answers `{ postId }` instead; both name the same record, and the
+                    // uri is built here rather than re-read so a create still costs one
+                    // write and no extra read.
+                    const body = { uri: postUriOf(created, getAppDid), cid: created.cid };
+                    return { created: true, body, response: c.json(body) };
+                },
+            );
         },
     );
 

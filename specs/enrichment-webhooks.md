@@ -55,7 +55,9 @@ One POST per stage that reaches a terminal state in a pass (not one per pass):
 
 ```json
 {
+  "type": "stage.settled",
   "postId": "3kb2…",
+  "uri": "at://did:web:voxpop.audio/dev.antiphony.audio.post/3kb2…",
   "originAppId": "voxpop",
   "stage": "transcribe",
   "status": "ready",
@@ -63,6 +65,7 @@ One POST per stage that reaches a terminal state in a pass (not one per pass):
 }
 ```
 
+- **`type`**, **`uri`** — added later (see below); the example shows the body as sent today.
 - **`postId`**, **`stage`**, **`status`** — exactly the three the consumer asked for.
   `stage` ∈ `denoise | trim | transcribe | waveform`; `status` ∈ `ready | failed | skipped`
   (the terminal states — `pending` never fires).
@@ -98,13 +101,31 @@ space is asked again on the next sweep rather than deduplicated away.
 Each request carries:
 - `X-Antiphony-Signature: sha256=<hex>` — an HMAC-SHA256 of the raw request body keyed by the tenant's webhook secret.
 - `X-Antiphony-Timestamp: <ISO 8601>` — the event's `occurredAt`, repeated as a header. **Not signed.**
-- `X-Antiphony-Event-Id` — `{postId}:{stage}:{status}` for a stage event, `{postId}:deleted` for a deletion. **Not signed, and not unique per delivery:** a recompute re-fires the same `{postId}:{stage}:ready` (see § Delivery below).
+- `X-Antiphony-Event-Id` — the form depends on the event type, as `notifier.ts` builds it. **Not signed, and not unique per delivery:** a recompute re-fires the same `{postId}:{stage}:ready` (see § Delivery below).
 
-The receiver recomputes the HMAC over the raw body and constant-time-compares. Only the body is authenticated, so staleness checks use `occurredAt` from the body, never the header. Dedupe is latest-wins on `(postId, stage)` by `occurredAt`, not "seen this event id before".
+  | `type` | Event id |
+  |---|---|
+  | `stage.settled` | `{postId or uri}:{stage}:{status}` — `postId` for a hosted post, the post's `uri` for a remote post (which has no `postId`) |
+  | `post.deleted` | `{postId}:deleted` |
+  | `remote.gone` | `{uri}:remote.gone` |
+  | `remote.changed` | `{uri}:remote.changed:{cid}`, or `{uri}:remote.changed` if the event carries no `cid` |
+  | `remote.recheck_requested` | `{uri}:remote.recheck_requested:{occurredAt}` — `uri` is the space's URI, and `occurredAt` makes each request its own id |
+
+The receiver recomputes the HMAC over the raw body and constant-time-compares. Only the body is authenticated, so staleness checks use `occurredAt` from the body, never the header. Dedupe is latest-wins on `(uri, stage)` by `occurredAt` (`uri` rather than `postId`, which a remote post lacks), not "seen this event id before".
 
 (Corrected 2026-10-28. This section previously described a `${timestamp}.${body}` signature, a Unix-seconds timestamp and a UUID event id. The adapter has never sent those, and the receiver guide in `apps/docs` has always described the raw-body signature.)
 
 Outbound delivery uses `redirect: 'manual'` so signed payloads are never reposted across redirects.
+
+## Receiving
+
+The payload shapes and the signature check are published in `@antiphony/shared`, so a receiver does not re-derive them from this page:
+
+- `WebhookEventSchema` (and one schema per event type) in `packages/shared/types/webhooks.ts` is the body exactly as the notifier sends it, discriminated on `type`. The schemas ignore unknown keys, so a field added later does not break a receiver, and a receiver should acknowledge an unknown `type` rather than fail on it: new event types are additive. `WEBHOOK_EVENT_TYPES` lists the types a given release knows.
+- `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_TIMESTAMP_HEADER` and `WEBHOOK_EVENT_ID_HEADER` name the three headers.
+- `verifyWebhookSignature({ secret, rawBody, signatureHeader })` in `packages/shared/utils/webhook-signature.ts` checks the signature over the raw bytes with WebCrypto, in constant time, and returns `false` rather than throwing for any malformed header.
+
+The sender builds each body as a `WebhookEvent` from the same module and takes its header names from it, so changing a payload field without changing the schema is a compile error in `notifier.ts`. `notifier.contract.test.ts` checks, for each of the five types, that what is sent parses with its schema and verifies with the published verifier. The receiver guide in `apps/docs` shows the handler.
 
 No bearer token: unlike the inbound `/system/*` routes (which core authenticates), here core is the *client*, and a shared bearer sent outbound would be a static secret on the wire with no per-message integrity. HMAC binds the secret to the exact bytes, `occurredAt` included.
 
@@ -141,10 +162,13 @@ Mechanics:
 - **Fires after the stage is settled**, never before. `patchProcessingState` writes the
   terminal status first; only then does the notifier POST. Ordering the write first means
   a crash between them loses a *notification*, not a result.
-- **Bounded and non-blocking to correctness.** A short timeout (~3s) and a couple of quick
-  retries on transient failure. A webhook that times out or errors is **logged and
-  swallowed** — it never fails the stage, never throws out of `process()`, and never holds
-  the lease. The pass's success is defined by the storage writes, not by delivery.
+- **Bounded and non-blocking to correctness.** Per event, up to **3 attempts**, each with a
+  **3 s timeout**, with a fixed **200 ms** pause between attempts. A network error, a timeout,
+  a 5xx, a 429 or a 408 is retried; any other non-2xx (including a 3xx, since redirects are not
+  followed) is not retried and is logged as a rejection. When the attempts run out, or on a
+  non-retried response, the event is **logged and dropped** — it never fails the stage, never
+  throws out of `process()`, and never holds the lease. The pass's success is defined by the
+  storage writes, not by delivery.
 - **At-least-once, and the receiver must dedupe.** Two hazards make a stage's webhook fire
   more than once, and one makes "already saw this" the wrong dedupe:
   - A worker **redelivery** (the queue is at-least-once) re-runs only `pending` stages, so

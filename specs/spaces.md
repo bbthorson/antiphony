@@ -136,8 +136,11 @@ findings for whoever adds `@atproto/space` (Phase 3):
 record MAC (KEM encapsulation, `verifyRecordMac`) added. It all passed; see
 [`audio-service-mode.md`](./audio-service-mode.md) §12 and "Phase C verification".
 
-`@atproto/space` is not a dependency yet: nothing calls it before Phase 3, and `knip` rejects
-an unused dependency. `@atproto/syntax` is, at the exact alpha, in both `packages/core` and
+`@atproto/space` became a dependency of core-api on 2026-11-02, with `@atproto/crypto`, at
+`0.0.0-spaces-alpha-20261029171913` and with the root `overrides` above: audio-service mode's
+Phase C reads spaces on other hosts with it ([`audio-service-mode.md`](./audio-service-mode.md)
+§12). It was left out until something called it, since `knip` rejects an unused dependency.
+`@atproto/syntax` is a dependency too, at the exact alpha, in both `packages/core` and
 `apps/core-api` (one version, replacing `^0.7.6`; core-api only used its TID, record-key and
 DID validators, which the alpha keeps). Its own dependencies don't hit the `0.0.0` trap.
 

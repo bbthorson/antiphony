@@ -101,8 +101,8 @@ Consequences:
 - A derived stage re-entering `pending` after having been `ready` is **normal**, not a
   regression. Clients already treat any `pending` stage as "still working"; that rule
   now also covers recompute.
-- Recompute costs the caller money on a billable stage. `POST /processing` therefore
-  accepts **`reprocess: false`** to suppress it — the caller keeps stale derivatives
+- Recompute costs the caller money on a billable stage. the `processing` opt-in (on create
+  and on `PATCH /api/v1/posts/{postId}`) therefore accepts **`reprocess: false`** to suppress it — the caller keeps stale derivatives
   knowingly. Default is `true`.
 - Recompute is bounded: byte-mutating stages do not depend on derived ones, so a
   recompute cannot itself trigger further byte-mutating work. No cascade.
@@ -145,6 +145,13 @@ widened only on a real request.
   tuned against real recordings. They are not contract.
 
 ## Deployment portability
+
+*Written before the move: `apps/core-api` has run on Cloudflare Workers since 2026-08
+([`archive/cloudflare-migration.md`](./archive/cloudflare-migration.md)). Of the two
+assumptions below, the second was resolved as it predicts: trim and waveform run in the
+`apps/audio-rendition` container ([`mp3-rendition-stage.md`](./mp3-rendition-stage.md)). The
+first still holds: a pass reads a whole blob into a 128 MB isolate, which is why upload caps
+at 25 MB although the lexicon allows 100 MB.*
 
 `apps/core-api` may move from Firebase App Hosting to Cloudflare. That decision is
 **not gated on this pipeline**, and this pipeline should not bake in assumptions that

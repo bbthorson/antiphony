@@ -8,7 +8,7 @@
  */
 export const OPENAPI_INFO = {
     title: 'Antiphony Core API',
-    version: '0.10.8',
+    version: '0.10.9',
     description: [
         'Open-source REST surface for Antiphony — a headless store for AT-Protocol-shaped audio posts plus audio storage/hygiene. It holds content, tenancy, and custody; user profiles live in the calling app (a BFF), not here.',
         '',
@@ -39,7 +39,7 @@ export const OPENAPI_INFO = {
 export const OPENAPI_TAGS = [
     { name: 'Posts', description: 'Antiphony canonical audio posts (`dev.antiphony.audio.post`) — create, read, list, and threaded replies with hydrated audio + lifted transcript.' },
     { name: 'Spaces', description: "A tenant's atproto spaces — create or replace one, read one. Posts and audio placed in a space are private: their audio plays through signed, expiring URLs." },
-    { name: 'DIDs', description: "DIDs a tenant may write under besides its app DID, such as a group's. Custody is proven when one is registered: its document must name this deployment as its space host." },
+    { name: 'DIDs', description: "DIDs a tenant may write under besides its app DID. Custody is proven when one is registered: its document must name this deployment as its space host, so an opensocial group's DID, which names its group host, can't be registered (see Remote posts)." },
     { name: 'Remote posts', description: "Audio whose `dev.antiphony.audio.post` record lives in a repo Antiphony doesn't host, such as a person's PDS or a group's repo. Register one by URI and CID; Antiphony reads the record from its repo, copies and processes its audio, plays it, and removes its copy once the record is gone." },
     { name: 'Tenant', description: "Facts about the calling tenant itself, answered from the service token alone: how many posts it has. Counts only, with no per-author figure and no other tenant's numbers." },
     { name: 'Audio', description: 'Audio storage primitives — the capability-based playback proxy (streams the bytes; audio in a space needs a signed URL) and the service-token-gated upload endpoint.' },

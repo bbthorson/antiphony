@@ -49,6 +49,7 @@ const entry = [
   'types/spaces.ts',
   'types/stats.ts',
   'types/url.ts',
+  'types/webhooks.ts',
 ];
 
 const common: UserConfig = {
