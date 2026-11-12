@@ -22,8 +22,8 @@ changes are outside the contract.
   header-name constants, and `verifyWebhookSignature({ secret, rawBody, signatureHeader })`, which
   checks the HMAC with WebCrypto in constant time. The notifier now builds its bodies from those
   same types, so the sender cannot drift from the schemas. The wire format is unchanged and the
-  OpenAPI contract is untouched, so the contract version does not move for it. They ship in the
-  next `@antiphony/shared` release. The spec's event-id section is also corrected to the form
+  OpenAPI contract is untouched, so the contract version does not move for it. They ship in
+  `@antiphony/shared` 0.14.1. The spec's event-id section is also corrected to the form
   the notifier builds for each event.
 - **`dev.antiphony.audio.createPost` (XRPC) honours `Idempotency-Key`**, with the semantics of
   `POST /api/v1/posts`: a retry replays the stored `{ uri, cid }`, a duplicate still in flight
