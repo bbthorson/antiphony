@@ -7,6 +7,7 @@ export * from './types/deletion';
 export * from './types/dids';
 export * from './types/remote-posts';
 export * from './types/stats';
+export * from './types/webhooks';
 export * from './types/blob';
 export * from './types/url';
 export * from './nsid';

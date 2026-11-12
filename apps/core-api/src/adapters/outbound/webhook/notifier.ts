@@ -6,6 +6,16 @@ import type {
 } from '@antiphony/core/ports/processing-notifier';
 import type { DeletionNotifierPort, PostDeletedEvent } from '@antiphony/core/ports/deletion-notifier';
 import type { RemoteNotifierPort, RemotePostEvent } from '@antiphony/core/ports/remote-notifier';
+import {
+    WEBHOOK_EVENT_ID_HEADER,
+    WEBHOOK_SIGNATURE_HEADER,
+    WEBHOOK_TIMESTAMP_HEADER,
+    type PostDeletedWebhook,
+    type RemoteChangedWebhook,
+    type RemoteRecheckRequestedWebhook,
+    type StageSettledWebhook,
+    type WebhookEvent,
+} from 'shared/types/webhooks';
 import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-config.js';
 
 /**
@@ -20,9 +30,14 @@ import { resolveWebhookConfig, type WebhookConfig } from '../../../lib/webhook-c
  * failure, logs and RESOLVES — the service also guards, but the adapter should
  * not lean on that to swallow ordinary network noise.
  *
- * **Two event types, one channel.** Stage events and `post.deleted` events
- * (specs/deletion.md § 8) go to the same URL with the same signature, and carry
- * a `type` so a receiver can tell them apart.
+ * **Five event types, one channel.** Stage events, `post.deleted` events
+ * (specs/deletion.md § 8) and the three `remote.*` events go to the same URL
+ * with the same signature, and carry a `type` so a receiver can tell them apart.
+ *
+ * **The payloads are the published schemas.** Every body is built as a
+ * `WebhookEvent` from `shared/types/webhooks` — the same module `@antiphony/shared`
+ * ships to receivers — so a field added, renamed or dropped here without the
+ * schema (or the reverse) does not compile.
  *
  * **Silent per-tenant opt-out.** A tenant with no `{url, secret}` (or partial
  * config, already logged at parse) resolves to nothing here and simply gets no
@@ -57,14 +72,18 @@ export function webhookNotifier(
                 {
                     type: 'stage.settled',
                     // `postId` for a hosted post; a remote post has none (its
-                    // rkey alone isn't unique). `uri` names either.
-                    ...(event.postId !== undefined ? { postId: event.postId } : {}),
+                    // rkey alone isn't unique). `uri` names either. The
+                    // `satisfies` ties the conditional key to the schema, which
+                    // a bare spread would not (it is exempt from excess-key checks).
+                    ...(event.postId !== undefined
+                        ? ({ postId: event.postId } satisfies Pick<StageSettledWebhook, 'postId'>)
+                        : {}),
                     uri: event.uri,
                     originAppId: event.originAppId,
                     stage: event.stage,
                     status: event.status,
                     occurredAt: event.occurredAt,
-                },
+                } satisfies StageSettledWebhook,
                 {
                     eventId: `${event.postId ?? event.uri}:${event.stage}:${event.status}`,
                     timestamp: event.occurredAt,
@@ -93,7 +112,7 @@ export function webhookNotifier(
                     uri: event.uri,
                     kind: event.kind,
                     occurredAt: event.occurredAt,
-                },
+                } satisfies PostDeletedWebhook,
                 {
                     // A post is deleted once, so its id names the event.
                     eventId: `${event.postId}:deleted`,
@@ -118,8 +137,10 @@ export function webhookNotifier(
                     type: event.type,
                     originAppId: event.originAppId,
                     uri: event.uri,
-                    ...(event.cid !== undefined ? { cid: event.cid } : {}),
-                    ...(event.space !== undefined ? { space: event.space } : {}),
+                    ...(event.cid !== undefined ? ({ cid: event.cid } satisfies Pick<RemoteChangedWebhook, 'cid'>) : {}),
+                    ...(event.space !== undefined
+                        ? ({ space: event.space } satisfies Pick<RemoteRecheckRequestedWebhook, 'space'>)
+                        : {}),
                     occurredAt: event.occurredAt,
                 },
                 {
@@ -152,7 +173,7 @@ interface Delivery {
 
 async function deliver(
     config: WebhookConfig,
-    payload: Record<string, unknown>,
+    payload: WebhookEvent,
     delivery: Delivery,
     logger: Logger,
     fetchImpl: typeof fetch,
@@ -170,9 +191,9 @@ async function deliver(
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Antiphony-Signature': signature,
-                    'X-Antiphony-Event-Id': delivery.eventId,
-                    'X-Antiphony-Timestamp': delivery.timestamp,
+                    [WEBHOOK_SIGNATURE_HEADER]: signature,
+                    [WEBHOOK_EVENT_ID_HEADER]: delivery.eventId,
+                    [WEBHOOK_TIMESTAMP_HEADER]: delivery.timestamp,
                 },
                 body,
                 redirect: 'manual',

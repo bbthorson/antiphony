@@ -10,11 +10,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [0.10.9] — 2026-11-11
 
-Documentation of unchanged REST behaviour, plus idempotency on the XRPC `createPost`. **Patch**:
-two descriptions in the OpenAPI document; the XRPC change is outside the contract.
+Documentation of unchanged REST behaviour, idempotency on the XRPC `createPost`, and published
+webhook schemas. **Patch**: two descriptions in the OpenAPI document; the XRPC and webhook
+changes are outside the contract.
 
 ### Added
 
+- **`@antiphony/shared` gains the webhook payload schemas and a signature verifier**:
+  `WebhookEventSchema` (a union on `type` over the five events: `stage.settled`, `post.deleted`,
+  `remote.gone`, `remote.changed`, `remote.recheck_requested`), one schema per event, the three
+  header-name constants, and `verifyWebhookSignature({ secret, rawBody, signatureHeader })`, which
+  checks the HMAC with WebCrypto in constant time. The notifier now builds its bodies from those
+  same types, so the sender cannot drift from the schemas. The wire format is unchanged and the
+  OpenAPI contract is untouched, so the contract version does not move for it. They ship in the
+  next `@antiphony/shared` release. The spec's event-id section is also corrected to the form
+  the notifier builds for each event.
 - **`dev.antiphony.audio.createPost` (XRPC) honours `Idempotency-Key`**, with the semantics of
   `POST /api/v1/posts`: a retry replays the stored `{ uri, cid }`, a duplicate still in flight
   answers 409 `Conflict`, and the claim is released when no post was created. XRPC-only: the

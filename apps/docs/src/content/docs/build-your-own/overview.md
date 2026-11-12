@@ -84,21 +84,59 @@ One POST per stage that settles, `Content-Type: application/json`:
 
 ### Verify the signature
 
-Every request carries `X-Antiphony-Signature: sha256=<hex>`, an HMAC-SHA256 of the **raw request body** keyed by your webhook secret. Recompute it over the exact bytes you received and compare in constant time — this is what lets you trust the payload without a callback to the core.
+Every request carries `X-Antiphony-Signature: sha256=<hex>`, an HMAC-SHA256 of the **raw request body** keyed by your webhook secret. `@antiphony/shared` ships the check and the payload schemas, so you don't write either: `verifyWebhookSignature` recomputes the HMAC over the exact bytes you received and compares in constant time (it uses WebCrypto, so it runs on Workers, Node 22 and in browsers), and `WebhookEventSchema` parses the body into a union discriminated on `type`.
 
 ```ts
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Hono } from 'hono';
+import {
+  verifyWebhookSignature,
+  WebhookEventSchema,
+  WEBHOOK_EVENT_TYPES,
+  WEBHOOK_SIGNATURE_HEADER,
+} from '@antiphony/shared';
 
-function verify(rawBody: string, header: string | undefined, secret: string): boolean {
-  if (!header) return false; // no signature → reject (unsigned probe, missing header)
-  const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+const app = new Hono<{ Bindings: { ANTIPHONY_WEBHOOK_SECRET: string } }>();
+
+app.post('/hooks/antiphony', async (c) => {
+  // Read the body once, as bytes, and verify BEFORE parsing anything.
+  const rawBody = await c.req.arrayBuffer();
+  const ok = await verifyWebhookSignature({
+    secret: c.env.ANTIPHONY_WEBHOOK_SECRET,
+    rawBody,
+    signatureHeader: c.req.header(WEBHOOK_SIGNATURE_HEADER),
+  });
+  if (!ok) return c.body(null, 401);
+
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder().decode(rawBody));
+  } catch {
+    return c.body(null, 400);
+  }
+
+  // A type this version of the schemas doesn't know is a newer event, not an
+  // error: acknowledge it so it isn't retried or logged as a rejection.
+  const type = (json as { type?: unknown } | null)?.type;
+  if (typeof type !== 'string' || !(WEBHOOK_EVENT_TYPES as readonly string[]).includes(type)) {
+    return c.body(null, 202);
+  }
+
+  const parsed = WebhookEventSchema.safeParse(json);
+  if (!parsed.success) return c.body(null, 400);
+  const event = parsed.data;
+
+  if (event.type === 'stage.settled') {
+    // Latest wins for (event.uri, event.stage), ordered by event.occurredAt.
+  }
+  // ...and handle post.deleted, remote.gone, remote.changed and
+  // remote.recheck_requested the same way, narrowing on event.type.
+  return c.body(null, 204);
+});
 ```
 
-Sign and compare over the **raw body**, before any JSON parse and re-serialize — a reparsed body's bytes (key order, whitespace) won't match. Also reject a request whose `occurredAt` is far from now to blunt replay.
+Verify over the **raw body**, before any JSON parse and re-serialize — a reparsed body's bytes (key order, whitespace) won't match, which is why the handler reads `arrayBuffer()` once and parses from those same bytes. The schemas ignore keys they don't know, so a field added later won't break you. Staleness checks use `occurredAt` from the signed body, not the unsigned `X-Antiphony-Timestamp` header; reject a request whose `occurredAt` is far from now to blunt replay.
+
+Answer any 2xx once you've accepted an event. The core makes up to three attempts, 3 seconds each, 200 ms apart, and retries only on a network error, a timeout, a 5xx, a 429 or a 408. Any other non-2xx, a redirect included, is logged and not retried.
 
 ### Dedupe by "latest wins", not "seen before"
 
