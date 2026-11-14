@@ -8,6 +8,33 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Readiness for the atproto Spaces public beta (December 1). The OpenAPI contract is unchanged, so
+the contract version does not move.
+
+### Changed
+
+- **Space reads (remote posts, Phase C) speak the November 12 Spaces protocol.** Spaces-capable
+  PDSes from December 1 no longer answer the October 29 alpha protocol, and the old one doesn't
+  work against them. `@atproto/space`, `@atproto/syntax` and `@atproto/crypto` are pinned to
+  `0.0.0-spaces-alpha-20261113224550`, the last alpha before the beta.
+  - The credential exchange is `com.atproto.space.authorizeSpaceSync`, with `credentialKey`,
+    replacing `getSpaceCredential` and `credentialKid`. It registers for no notifications.
+  - The record MAC on `com.atproto.space.getRecord` is requested with `Accept-Signature` (tag
+    `atproto-space-record`). It comes back as an RFC 9421 `hmac-sha256` signature over an
+    `Atproto-Space-Record` header, keyed with an HPKE-exported secret. This replaces the
+    `atproto-space-want-mac` and `atproto-space-mac` headers.
+  - Classification: `AccountNotAuthorized` (formerly `UserNotAuthorized`) and
+    `InvalidClientAttestation` are `refused`. `UpstreamFailure` (a managed space's app didn't
+    answer), `RepoTakendown` and `RepoDeactivated` are `unreachable` at any status.
+  - Space record URIs are built with `SpaceRef#recordUri`, which replaces the removed
+    `AtUri.makeSpace`. The URIs are byte-identical.
+  - Checked against two in-process reference PDSes (`@atproto/dev-env` at the same pin): a
+    member's delegation, `authorizeSpaceSync` with Antiphony's own key, `getRecord` with a
+    verified MAC, `getBlob`, single-use delegations, an outsider refused, a missing MAC
+    request answered `InvalidSpaceMac`, and a deleted space read as `deleted`.
+
 ## [0.10.9] — 2026-11-11
 
 Documentation of unchanged REST behaviour, idempotency on the XRPC `createPost`, and published

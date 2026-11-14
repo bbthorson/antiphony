@@ -1,17 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { P256Keypair, bytesToMultibase, parseDidKey } from '@atproto/crypto';
 import {
-    RECORD_MAC_TYPE,
-    WANT_MAC_HEADER,
-    MAC_HEADER,
-    computeRecordMac,
-    createSpaceToken,
+    RECORD_MAC_PROFILE,
+    createRecordMacHeaders,
+    createSpaceCredential,
     decapsulate,
-    formatMacHeader,
+    parseMacRequest,
     parseSpaceToken,
-    parseWantMacHeader,
     verifyCredentialSig,
 } from '@atproto/space';
+import type { AtUriString, DidString, SpaceRefString } from '@atproto/syntax';
 import { CID } from 'multiformats/cid';
 import { spaceRepo } from './space-repo.js';
 import { kemDidKeyOf } from './did-document.js';
@@ -84,22 +82,23 @@ function hostFetch(host: Host): typeof fetch {
             return json(404, {});
         }
 
-        if (url.href.startsWith('https://group-host.example/xrpc/com.atproto.space.getSpaceCredential')) {
+        if (url.href.startsWith('https://group-host.example/xrpc/com.atproto.space.authorizeSpaceSync')) {
             const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
             host.exchanges.push(body);
             if (host.exchange !== 'ok') return json(host.exchange.status, { error: host.exchange.error });
-            host.boundKey = body.credentialKid as string;
-            const credential = await createSpaceToken(
-                'credential',
-                { iss: GROUP, sub: String(body.space), keyId: body.credentialKid as `did:key:${string}` },
-                host.authority,
-            );
+            host.boundKey = body.credentialKey as string;
+            const credential = await createSpaceCredential({
+                iss: GROUP,
+                sub: String(body.space) as SpaceRefString,
+                keyId: body.credentialKey as DidString,
+                keypair: host.authority,
+            });
             return json(200, { credential });
         }
 
         if (url.hostname === 'player-pds.example') {
             // The writer's host: the credential's signature, for this audience.
-            await verifyCredentialSig(headers, host.boundKey as `did:key:${string}`);
+            await verifyCredentialSig(headers, host.boundKey as DidString);
             const audience = headers['atproto-space-audience'];
             host.audiences.push(audience);
             if (audience !== url.searchParams.get('repo')) return json(401, { error: 'BadSpaceAudience' });
@@ -110,15 +109,18 @@ function hostFetch(host: Host): typeof fetch {
 
             if (url.pathname === '/xrpc/com.atproto.space.getRecord') {
                 if (host.record === 'gone') return json(400, { error: 'RecordNotFound' });
-                const want = headers[WANT_MAC_HEADER];
-                if (!want) return json(400, { error: 'BadSpaceMac' });
-                const secret = decapsulate(host.writerKem, parseWantMacHeader(want, RECORD_MAC_TYPE));
+                const request = parseMacRequest(headers['accept-signature'], RECORD_MAC_PROFILE);
+                if (!request) return json(400, { error: 'InvalidSpaceMac' });
+                const secret = decapsulate(host.writerKem, request.keyShare);
                 const uri = host.record === 'other-uri' ? RECORD_URI.replace('3kspace000001', '3kother') : RECORD_URI;
-                const mac = computeRecordMac(host.record === 'bad-mac' ? new Uint8Array(32) : secret, uri, CID.parse(RECORD_CID));
+                const mac = createRecordMacHeaders(uri as AtUriString, CID.parse(RECORD_CID), {
+                    ...request,
+                    sharedSecret: host.record === 'bad-mac' ? new Uint8Array(32) : secret,
+                });
                 return json(
                     200,
                     { uri, cid: RECORD_CID, value: { $type: 'dev.antiphony.audio.post', text: 'hi' } },
-                    host.record === 'no-mac' ? {} : { [MAC_HEADER]: formatMacHeader(RECORD_MAC_TYPE, mac) },
+                    host.record === 'no-mac' ? {} : mac.headers,
                 );
             }
             if (url.pathname === '/xrpc/com.atproto.space.getBlob') {
@@ -152,7 +154,7 @@ describe('spaceRepo', () => {
 
     it('exchanges the delegation for a credential bound to a key it made, at the authority', async () => {
         const reader = await open();
-        expect(host.exchanges).toEqual([{ space: SPACE_URI, credentialKid: host.boundKey, delegationToken: 'delegation.jwt.token' }]);
+        expect(host.exchanges).toEqual([{ space: SPACE_URI, credentialKey: host.boundKey, delegationToken: 'delegation.jwt.token' }]);
         expect(host.boundKey).toMatch(/^did:key:zDn/);
         // The reference credential lives ten minutes.
         expect(reader.expiresAt - Date.now()).toBeGreaterThan(9 * 60 * 1000);
@@ -206,7 +208,10 @@ describe('spaceRepo', () => {
         [{ status: 400, error: 'SpaceNotFound' }, 'refused'],
         [{ status: 400, error: 'InvalidDelegationToken' }, 'refused'],
         [{ status: 400, error: 'AppNotAuthorized' }, 'refused'],
+        [{ status: 400, error: 'AccountNotAuthorized' }, 'refused'],
         [{ status: 502, error: 'UpstreamFailure' }, 'unreachable'],
+        [{ status: 400, error: 'UpstreamFailure' }, 'unreachable'],
+        [{ status: 400, error: 'RepoTakendown' }, 'unreachable'],
     ] as const)('classifies an exchange answering %o as %s', async (answer, kind) => {
         host.exchange = answer;
         expect(await port().open(SPACE, { delegationToken: 'd.j.t' })).toMatchObject({ ok: false, kind });

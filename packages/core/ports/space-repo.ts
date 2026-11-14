@@ -6,7 +6,7 @@ import type { FetchedBlob, FetchedRecord, RepoRecordRef, RepoResult } from './pu
  * on a member's delegation (specs/audio-service-mode.md §4.2, Phase C).
  *
  * `open` makes one credential exchange at the space authority's host
- * (`com.atproto.space.getSpaceCredential`), spending the delegation token,
+ * (`com.atproto.space.authorizeSpaceSync`), spending the delegation token,
  * for a credential bound to a key the adapter generates and never shares. The
  * reader it returns presents that credential to each writer's own PDS,
  * signed for that writer, and checks the record MAC `getRecord` answers with.

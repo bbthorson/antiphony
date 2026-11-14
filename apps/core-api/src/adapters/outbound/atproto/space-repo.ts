@@ -1,14 +1,6 @@
 import { P256Keypair } from '@atproto/crypto';
-import {
-    MAC_HEADER,
-    RECORD_MAC_TYPE,
-    WANT_MAC_HEADER,
-    createSpaceSigHeaders,
-    encapsulate,
-    formatWantMacHeader,
-    parseMacHeader,
-    verifyRecordMac,
-} from '@atproto/space';
+import { RECORD_MAC_PROFILE, createSpaceSigHeaders, encapsulate, formatMacRequest, verifyRecordMac } from '@atproto/space';
+import type { AtUriString, DidString } from '@atproto/syntax';
 import { CID } from 'multiformats/cid';
 import type { FetchedBlob, FetchedRecord, RepoResult } from '@antiphony/core/ports/public-repo';
 import type { SpaceOpenResult, SpaceReader, SpaceRepoPort } from '@antiphony/core/ports/space-repo';
@@ -26,32 +18,38 @@ import {
 /**
  * `SpaceRepoPort` over the Spaces protocol (specs/audio-service-mode.md §4.2,
  * Phase C), checked against the reference implementation at
- * `0.0.0-spaces-alpha-20261029171913` ("Phase C verification").
+ * `0.0.0-spaces-alpha-20261113224550`, the last alpha before the beta.
  *
  * ## The exchange
  *
- * `com.atproto.space.getSpaceCredential` at the authority's `#atproto_pds`,
- * with the tenant's delegation token and `credentialKid`: a P-256 key made
+ * `com.atproto.space.authorizeSpaceSync` at the authority's `#atproto_pds`,
+ * with the tenant's delegation token and `credentialKey`: a P-256 key made
  * here for this credential alone and never exported. The credential is bound
  * to that key, so it's worthless to anyone holding it without the key. It
  * lives about ten minutes; a reader is for one call's work and is dropped
- * with its key.
+ * with its key. It registers for no notifications (no `notify`): a reader
+ * reads once and is dropped.
  *
  * ## Reads
  *
  * Each request goes to the **writer's** PDS and carries the credential, signed
  * (RFC 9421, via `createSpaceSigHeaders`) for the DID it's addressed to, so it
  * can't be replayed against another account. `getRecord` also asks for a
- * record MAC: a fresh key share encapsulated against the writer's
- * `#atproto_kem`, which the host answers with `atproto-space-mac` over the URI
- * and CID. The reference host refuses a credentialed `getRecord` without one
- * (`BadSpaceMac`). `getBlob` serves only blobs a record in that space references.
+ * record MAC: an `Accept-Signature` request (tag `atproto-space-record`) with
+ * a fresh HPKE key share encapsulated against the writer's `#atproto_kem`. The
+ * host answers with an `Atproto-Space-Record` header naming the URI and CID and
+ * an RFC 9421 `hmac-sha256` signature over it. The reference host refuses a
+ * credentialed `getRecord` without one (`InvalidSpaceMac`). `getBlob` serves
+ * only blobs a record in that space references.
  *
  * ## Classification
  *
  * As `public-repo.ts`, plus the exchange's two answers about the space:
  * `SpaceDeleted` is `deleted`; `SpaceNotFound` (also a host's answer to a
  * delegation it won't honour) and the token errors are `refused`, never gone.
+ * `UpstreamFailure` (a managed space's app didn't answer) and a suspended
+ * authority (`RepoTakendown`, `RepoDeactivated`) are `unreachable`: they say
+ * nothing lasting about the space.
  * A writer's host that rejects the credential (401) is `unreachable`: it
  * tells us nothing about the record.
  */
@@ -68,9 +66,12 @@ const REFUSED_ERRORS = new Set([
     'InvalidDelegationToken',
     'AppNotAuthorized',
     'NotAuthorized',
-    'UserNotAuthorized',
+    'AccountNotAuthorized',
+    'InvalidClientAttestation',
     'JwtReplayed',
 ]);
+/** Answers that may change on a retry, whatever their status. */
+const TRANSIENT_ERRORS = new Set(['UpstreamFailure', 'RepoTakendown', 'RepoDeactivated']);
 
 export type SpaceRepoOptions = DidDocumentResolverOptions;
 
@@ -90,26 +91,27 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
             const spaceUri = spaceUriOf(space);
             let res: Response;
             try {
-                res = await fetchImpl(new URL('/xrpc/com.atproto.space.getSpaceCredential', host.value), {
+                res = await fetchImpl(new URL('/xrpc/com.atproto.space.authorizeSpaceSync', host.value), {
                     method: 'POST',
                     redirect: 'manual',
                     signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
                     headers: { 'content-type': 'application/json', accept: 'application/json' },
                     body: JSON.stringify({
                         space: spaceUri,
-                        credentialKid: key.did(),
+                        credentialKey: key.did(),
                         delegationToken: delegation.delegationToken,
                         ...(delegation.clientAttestation ? { clientAttestation: delegation.clientAttestation } : {}),
                     }),
                 });
             } catch (err) {
-                return { ok: false, kind: 'unreachable', reason: `getSpaceCredential: ${errorText(err)}` };
+                return { ok: false, kind: 'unreachable', reason: `authorizeSpaceSync: ${errorText(err)}` };
             }
             const body = (await res.json().catch(() => null)) as { credential?: unknown; error?: unknown } | null;
             if (!res.ok) {
                 const name = typeof body?.error === 'string' ? body.error : undefined;
-                const reason = `getSpaceCredential: ${res.status}${name ? ` ${name}` : ''}`;
+                const reason = `authorizeSpaceSync: ${res.status}${name ? ` ${name}` : ''}`;
                 if (name === 'SpaceDeleted') return { ok: false, kind: 'deleted', reason };
+                if (name && TRANSIENT_ERRORS.has(name)) return { ok: false, kind: 'unreachable', reason };
                 if (res.status >= 400 && res.status < 500 && name && REFUSED_ERRORS.has(name)) {
                     return { ok: false, kind: 'refused', reason };
                 }
@@ -117,7 +119,7 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
                 return { ok: false, kind: 'refused', reason };
             }
             if (typeof body?.credential !== 'string') {
-                return { ok: false, kind: 'unreachable', reason: 'getSpaceCredential: the answer carried no credential' };
+                return { ok: false, kind: 'unreachable', reason: 'authorizeSpaceSync: the answer carried no credential' };
             }
             return { ok: true, reader: reader(spaceUri, body.credential, key) };
         },
@@ -130,10 +132,11 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
         const headersFor = (audience: string) => {
             let headers = signed.get(audience);
             if (!headers) {
-                headers = createSpaceSigHeaders(key, {
+                headers = createSpaceSigHeaders({
                     authorization: `Atproto-Space-Credential ${credential}`,
-                    audience: audience as `did:${string}:${string}`,
-                });
+                    audience: audience as DidString,
+                    keypair: key,
+                }).then((sig) => sig.headers);
                 signed.set(audience, headers);
             }
             return headers;
@@ -156,7 +159,7 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
                 const kem = kemDidKeyOf(host.value.doc);
                 if (!kem) return { ok: false, kind: 'invalid', reason: "the writer's DID document has no P-256 #atproto_kem key" };
 
-                const { keyShare, sharedSecret } = await encapsulate(kem);
+                const encapsulation = await encapsulate(kem as DidString);
                 const url = new URL('/xrpc/com.atproto.space.getRecord', host.value.pds);
                 url.searchParams.set('space', spaceUri);
                 url.searchParams.set('repo', ref.did);
@@ -167,7 +170,10 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
                     res = await fetchImpl(url, {
                         redirect: 'manual',
                         signal: AbortSignal.timeout(RECORD_TIMEOUT_MS),
-                        headers: { ...(await headersFor(ref.did)), [WANT_MAC_HEADER]: formatWantMacHeader(RECORD_MAC_TYPE, keyShare) },
+                        headers: {
+                            ...(await headersFor(ref.did)),
+                            'accept-signature': formatMacRequest(RECORD_MAC_PROFILE, encapsulation.keyShare),
+                        },
                     });
                 } catch (err) {
                     return { ok: false, kind: 'unreachable', reason: `space getRecord: ${errorText(err)}` };
@@ -178,20 +184,18 @@ export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
                 if (!body || typeof body.cid !== 'string' || body.value === null || typeof body.value !== 'object') {
                     return { ok: false, kind: 'unreachable', reason: 'space getRecord: the answer carried no record and CID' };
                 }
-                // The MAC is over the URI the host names and the CID it reports,
-                // so check the URI is the one asked for, then the MAC.
+                // The MAC covers the URI and CID the host names in its
+                // `Atproto-Space-Record` header, so check the URI is the one
+                // asked for, then that the MAC covers it and the body's CID.
                 const expected = `${spaceUri}/${ref.did}/${ref.collection}/${ref.rkey}`;
                 if (body.uri !== expected) {
                     return { ok: false, kind: 'invalid', reason: `space getRecord answered for ${String(body.uri)}, not ${expected}` };
                 }
-                let macOk: boolean;
                 try {
-                    const mac = parseMacHeader(res.headers.get(MAC_HEADER) ?? undefined, RECORD_MAC_TYPE);
-                    macOk = verifyRecordMac(sharedSecret, expected, CID.parse(body.cid), mac);
+                    verifyRecordMac(expected as AtUriString, CID.parse(body.cid), { ...encapsulation, headers: res.headers });
                 } catch (err) {
-                    return { ok: false, kind: 'invalid', reason: `space getRecord: no usable record MAC (${errorText(err)})` };
+                    return { ok: false, kind: 'invalid', reason: `space getRecord: the record MAC did not verify (${errorText(err)})` };
                 }
-                if (!macOk) return { ok: false, kind: 'invalid', reason: 'space getRecord: the record MAC did not verify' };
                 return { ok: true, value: { cid: body.cid, value: body.value } };
             },
 
