@@ -24,17 +24,17 @@ Ships both ESM and CommonJS builds with correct type resolution under `node16`/`
 import { AudioPostRecordSchema, AudioPostViewSchema } from '@antiphony/shared';
 ```
 
-The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, errors, utils, observability). Granular subpaths are available too:
+The root re-exports everything below: every `types/*` module, the codecs, NSIDs, errors, utils and observability. Granular subpaths are available too:
 
 | Subpath | What's in it |
 | :--- | :--- |
-| `@antiphony/shared` | The common surface: audio records + views, `api-codecs`, `nsid`, `errors`, `utils`, `observability`. |
+| `@antiphony/shared` | Everything: all the `types/*` modules, `api-codecs`, `nsid`, `errors`, `utils`, `observability`. |
 | `@antiphony/shared/api-codecs` | Request/response Zod codecs for the REST surface. |
 | `@antiphony/shared/nsid` | The `dev.antiphony.*` NSID constants. |
 | `@antiphony/shared/errors` | Shared error types and helpers. |
-| `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers). |
+| `@antiphony/shared/utils` | Pure shared utilities (projection/date/sanitization helpers) and `verifyWebhookSignature`. |
 | `@antiphony/shared/observability` | Logging/error-reporting helpers (`./observability/report-error` for just the reporter). |
-| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `dids`, `processing`, `records`, `remote-posts`, `spaces`, `url`, `webhooks`. |
+| `@antiphony/shared/types/*` | Individual type modules: `audio`, `blob`, `deletion`, `dids`, `processing`, `records`, `remote-posts`, `spaces`, `stats`, `url`, `webhooks`. |
 
 ## The records this models
 
@@ -44,6 +44,8 @@ The root re-exports the most-used pieces (audio records + views, codecs, NSIDs, 
 - **`dev.antiphony.actor.profile`** — the portable actor-profile shape. Lexicon-only: the core never stores it; the calling app owns profile data.
 
 A stored post may also carry a **space placement** (`SpacePlacementSchema` in `types/spaces`: space type, space key and author segment), when it lives in an atproto space rather than flat. It is storage-layer, like `originAppId`: not in the lexicon, not in the record CID, and visible only through the post's `at://` URI. See [`specs/spaces.md`](https://github.com/bbthorson/antiphony/blob/master/specs/spaces.md).
+
+It also models what the API returns around those records: remote posts (`types/remote-posts`, audio whose record lives in another repo), tenant stats (`types/stats`), deletion (`types/deletion`), and the webhook events with `verifyWebhookSignature` for receivers (`types/webhooks`, [receiver guide](https://docs.antiphony.dev/build-your-own/overview/#verify-the-signature)).
 
 See the [lexicon reference](https://docs.antiphony.dev/lexicons/overview/) for the full contract.
 

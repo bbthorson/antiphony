@@ -2,14 +2,16 @@
 
 **Call-and-response audio infrastructure.** Antiphony is a headless service other
 applications call to store and retrieve audio posts in an interoperable,
-AT-Protocol-shaped format — plus audio enrichment (transcription, and opt-in
-cleanup like denoising, trimming and waveform peaks). It owns the canonical
-`dev.antiphony.*` data model, the audio-embed lexicon contribution, and the public
-REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs.antiphony.dev).
+AT-Protocol-shaped format, plus audio enrichment (transcription, and opt-in
+cleanup like denoising, trimming and waveform peaks). It can also process and
+serve audio whose record lives in someone else's repo, including a permissioned
+atproto space (*remote posts*). It owns the `dev.antiphony.*` data model, the
+audio-embed lexicon, and the REST and XRPC surfaces applications build on. Docs:
+[docs.antiphony.dev](https://docs.antiphony.dev).
 
 ## Status
 
-- **Pre-1.0.** The API contract is at `0.x` (currently `0.10.0`, the
+- **Pre-1.0.** The API contract is at `0.x` (currently `0.10.9`, the
   `info.version` in [`apps/core-api/openapi.json`](apps/core-api/openapi.json)),
   served under the `/api/v1/` URL major. While `0.x`, a **breaking** contract
   change bumps the minor and an additive change or fix bumps the patch — see
@@ -26,9 +28,13 @@ REST surface that applications build on. Docs: [docs.antiphony.dev](https://docs
 - **Consumers:** two separate codebases whose backends call this API over HTTP
   and depend on `@antiphony/shared`.
   [Vox Pop](https://voxpop.audio) was the first. Bardcast is the second, and the
-  first consumer of atproto spaces: each campaign is a semi-private space
-  (see [`specs/spaces.md`](specs/spaces.md) and
-  [`specs/cross-repo-design.md`](specs/cross-repo-design.md)).
+  first consumer of atproto spaces: each table is an atmospheric group, and each
+  campaign a space under it. Their records live in the group's and the players'
+  own repos, and Antiphony processes the audio
+  ([`specs/audio-service-and-groups.md`](specs/audio-service-and-groups.md)).
+- **atproto Spaces:** built against the last alpha before the public beta, which
+  starts 2026-12-01. The plan and the protocol's current names are in
+  [`specs/spaces-beta-readiness.md`](specs/spaces-beta-readiness.md).
 
 ## Quickstart
 
@@ -96,7 +102,7 @@ Every JSON response uses the envelope `{ success: true, data }` /
 | `apps/docs` (`@antiphony/docs`) | Astro/Starlight docs site, deployed to the `antiphony-docs` Worker (see `wrangler.jsonc`). |
 | `apps/audio-rendition` (`@antiphony/audio-rendition`) | The one service that is not a Worker: an ffmpeg container on Cloud Run that derives renditions into R2 and backs the `trim` / `waveform` stages. |
 | `apps/reference` (`@antiphony/reference`) | Minimal Vite/React reference client that drives the published contract end to end. |
-| `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.*`, `embed.*`, `actor.profile`). |
+| `lexicons/dev/antiphony/` | AT Protocol lexicon definitions (`audio.*`, `embed.*`, `actor.profile`, `tenant.*`), records and XRPC methods. The source of truth for the contract. |
 
 ## Commands
 
@@ -118,18 +124,18 @@ publishing to npm, so no one needs npm credentials locally.
 
 ```bash
 # 1. bump the version in the target package.json, land it on master
-#    packages/shared/package.json -> "version": "0.8.0"
-#    or packages/capture-kit/package.json -> "version": "0.1.0"
+#    packages/shared/package.json -> "version": "0.15.0"
+#    or packages/capture-kit/package.json -> "version": "0.3.0"
 # 2. tag the merge commit and push the tag
-git tag shared-v0.8.0 && git push origin shared-v0.8.0
+git tag shared-v0.15.0 && git push origin shared-v0.15.0
 # or
-git tag capture-kit-v0.1.0 && git push origin capture-kit-v0.1.0
+git tag capture-kit-v0.3.0 && git push origin capture-kit-v0.3.0
 ```
 
 The workflow re-runs typecheck, lint, knip, test, and build, then asserts the tag
 matches the selected package's `package.json` and that the version is unclaimed on
 the registry, before publishing. A version with a prerelease identifier
-(`shared-v0.8.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
+(`shared-v0.15.0-rc.1`) publishes under the `next` dist-tag rather than `latest`.
 
 `workflow_dispatch` runs the same pipeline with a `package` choice (`shared` or
 `capture-kit`) and a `dry_run` input (default on) to validate a release without publishing.
@@ -155,5 +161,4 @@ This repository was extracted from the Vox Pop monorepo with full git history
 (`git filter-repo` over `packages/{core,shared}`, `apps/core-api`,
 `lexicons/dev/antiphony`, `eslint-rules`). The extraction is complete: Vox Pop no
 longer carries an in-repo copy of the platform. It calls the deployed API over
-HTTP and consumes the published contract, pinning `@antiphony/shared` exactly
-(currently `0.7.0`).
+HTTP and consumes the published contract, pinning `@antiphony/shared` exactly.

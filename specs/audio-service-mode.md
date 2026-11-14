@@ -7,6 +7,12 @@ and 0.10.6; "Phase A as built", "Phase B as built" and "Phase C as built", below
 - Phase C was verified against the reference implementation and the opensocial proposal's
   text, **not yet against a running opensocial host** ("Phase C verification", below; open
   question 2 answered). Rerun that against `opensocial.fyi` before the first group uses it.
+- **Updated 2026-11-14 for the Spaces beta** ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md)).
+  Phase C now speaks the November 12 alpha protocol: `authorizeSpaceSync` replaces
+  `getSpaceCredential`, and record MACs are RFC 9421 signatures. It was rechecked against the
+  reference PDS at `0.0.0-spaces-alpha-20261113224550`. §4.2, §8.1, §12 and "Phase C as built"
+  use the new names. The prior-art notes and "Phase C verification" keep the names of their
+  dates; that spec maps them.
 
 This is
 step 6 of the work table in [`audio-service-and-groups.md`](./audio-service-and-groups.md)
@@ -174,28 +180,32 @@ two steps:
   implementation; built 2026-11-02, "Phase C as built"*). The tenant asks the member's PDS for a delegation token
   for the space (`com.atproto.space.getDelegationToken`) and passes it with the registration
   (`delegationToken`). The token is single-use and lives 60 s, so it's spent at once.
-  - **The exchange.** Antiphony posts the token to `com.atproto.space.getSpaceCredential` at
-    the authority's `#atproto_pds` (its group host). The token names its audience as
-    `{authority}#atproto_pds`, but it doesn't name a key. So Antiphony names **a P-256 key it
-    generates and holds** (`credentialKid`, a `did:key`), and the credential is bound to that
-    key. The tenant never sees the key, and the credential is useless without it.
+  - **The exchange.** Antiphony posts the token to `com.atproto.space.authorizeSpaceSync`
+    (`getSpaceCredential` before the November 12 alpha) at the authority's `#atproto_pds` (its
+    group host). The token names its audience as `{authority}#atproto_pds`, but it doesn't name
+    a key. So Antiphony names **a P-256 key it generates and holds** (`credentialKey`, a
+    `did:key`), and the credential is bound to that key. The tenant never sees the key, and the
+    credential is useless without it. Antiphony sends no `notify`, so it registers for no
+    notifications.
   - **The credential** is signed with the authority's `#atproto` key and lives 600 s (the
     library's cap is an hour). It can't be renewed: a fresh one needs a fresh delegation,
     unless the space is publicly readable.
   - **Reads.** Antiphony signs every request for the repo it's addressed to
     (`atproto-space-audience`, an RFC 9421 signature over the credential and that DID), and
     sends it to the **writer's** PDS.
-    - `com.atproto.space.getRecord` **also requires a MAC request**
-      (`atproto-space-want-mac`). Antiphony encapsulates a fresh key share against the
-      writer's `#atproto_kem` key, and verifies the `atproto-space-mac` the host answers with.
-      Without the request, the host refuses with `BadSpaceMac`. The spec before this
-      verification missed this.
+    - `com.atproto.space.getRecord` **also requires a MAC request**: an `Accept-Signature`
+      header tagged `atproto-space-record`, whose `keyid` is a fresh key share encapsulated
+      (HPKE Secret Export) against the writer's `#atproto_kem` key. The host answers with an
+      `Atproto-Space-Record` header naming the URI and CID, and an RFC 9421 `hmac-sha256`
+      signature over it. Antiphony checks the URI is the one it asked for and that the
+      signature covers it and the CID. Without the request, the host refuses with
+      `InvalidSpaceMac`. The spec before the 2026-11-02 verification missed this.
     - `com.atproto.space.getBlob` needs no MAC. It serves only a blob that a record in that
       repo in that space references.
   - **What it fixes.** It removes the trust gap in Phase B: Antiphony reads what a member was
     authorized to read, and checks it as §3 and §4.1 do. It also lets Antiphony recheck a
     private record for deletion (§8.1) while a credential lives.
-  - **A space that restricts apps** (`allowedApps` on a member-list policy) also wants a
+  - **A space that restricts apps** (`allowedApps` on a `memberspace` policy) also wants a
     `clientAttestation`: a 60 s, single-use `private_key_jwt` from the tenant's OAuth client.
     The tenant passes it beside `delegationToken` when it has one.
   - **The tenant's OAuth session needs a space read scope** for the space type
@@ -399,9 +409,9 @@ copy and everything derived from it must go too, within a stated bound.
     for member records.
 - **Gone vs unreachable** follows the pin validator:
   - **gone** is `RecordNotFound` (for a space record, read with a valid credential), a
-    tombstoned or deactivated DID, or `SpaceDeleted` from `getSpaceCredential`. The reference
+    tombstoned or deactivated DID, or `SpaceDeleted` from `authorizeSpaceSync`. The reference
     host answers `SpaceDeleted` for a deleted space with or without a delegation;
-  - **not gone: `SpaceNotFound` from `getSpaceCredential`.** The reference host gives that
+  - **not gone: `SpaceNotFound` from `authorizeSpaceSync`.** The reference host gives that
     same answer to a delegation from someone who isn't, or is no longer, a member, so that a
     refusal says nothing about the space. It means "this delegation can't read it", never "the
     space is gone". The recheck waits for another delegation;
@@ -413,15 +423,20 @@ copy and everything derived from it must go too, within a stated bound.
   `unavailable`), and it is reported.
 - **Revocation lags by up to a credential's life.** A credential issued before a member's
   removal kept reading the writer's blob afterwards in the conformance run. Hosts can cut it
-  short with `notifyCredentialRevoked`. A Phase C read is therefore as fresh as the 10 minutes
+  short with `notifyCredentialsRevoked`. A Phase C read is therefore as fresh as the 10 minutes
   before it. That's the same order as signed playback's hour, and fine for a deletion sweep.
 - **Later: notifications instead of polling.** For public records, a Jetstream subscription
-  filtered to `dev.antiphony.audio.post` and the repo DIDs in the index. For spaces,
-  `registerNotify` with the authority (hatk `notify.ts`). On the reference host it needs a
-  credential and a `service` DID with a resolvable endpoint, and a registration lasts a day,
-  so Antiphony needs a service DID for it as well. A `notifyWrite` carries no records: it says
-  when to ask for a delegation, not what changed. Both kinds of notification are best-effort,
-  so the sweep stays as the guarantee (hatk's "nothing here may be load-bearing").
+  filtered to `dev.antiphony.audio.post` and the repo DIDs in the index. For spaces, a `notify`
+  registration on `authorizeSpaceSync` (since the November 12 alpha; `registerNotify` before).
+  The space host first calls `confirmRegistration` on Antiphony's endpoint, then sends
+  `notifySpaceUpdate` webhooks (`repoWrite`, `repoRemoved`, `spaceDeleted`,
+  `registrationExpired`). A registration lives only as long as its latest credential, about
+  ten minutes, so staying registered means reauthorizing, and each reauthorization needs a
+  fresh delegation. For Antiphony, which holds no sessions, that makes notifications
+  impractical unless it becomes a member itself (§4.2's alternative). A `repoWrite` carries no
+  records: it says when to ask for a delegation, not what changed. Both kinds of notification
+  are best-effort, so the sweep stays as the guarantee (hatk's "nothing here may be
+  load-bearing").
 
 ### 8.2 Removing, and edits
 
@@ -506,12 +521,19 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
   record's CID is `cidForRecord` (`lib/cid.ts`, `@ipld/dag-cbor`), already used for
   Antiphony's own records.
 - **Phase C needs `@atproto/space`**, for:
-  - `getSpaceCredential`'s key binding and HTTP message signatures (`createSpaceSigHeaders`);
-  - the record MAC: `encapsulate`, `formatWantMacHeader`, `parseMacHeader` and
-    `verifyRecordMac`, using the header names `WANT_MAC_HEADER` and `MAC_HEADER`.
+  - the credential's key binding and HTTP message signatures (`createSpaceSigHeaders`);
+  - the record MAC: `encapsulate`, `formatMacRequest` and `verifyRecordMac`, under the
+    `RECORD_MAC_PROFILE` tag.
+
+  **Updated 2026-11-14:** pinned to `0.0.0-spaces-alpha-20261113224550`, the last alpha before
+  the beta ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md)). From this release the
+  alpha packages pin their `@atproto/*` dependencies exactly, and `@atproto/space` depends on
+  `@atproto/lex-schema` and `@atproto/star` in place of zod 3. The root `overrides` stay, for
+  the copies other packages pull in. `@atproto/dev-env` now installs in a scratch project with
+  no overrides at all.
 
   [`spaces.md`](./spaces.md) ("Update 2026-10-07") recorded what adding it takes. Checked again
-  2026-11-02:
+  2026-11-02 (names as of then):
   - **Pin `0.0.0-spaces-alpha-20261029171913` exactly.** It is still the newest alpha of
     `@atproto/space` and `@atproto/pds`. It renamed the management methods
     (`com.atproto.simplespace.*` became `com.atproto.space.createSpace` and
@@ -552,7 +574,7 @@ Nothing seals a URI. Antiphony stores URIs other people minted.
 | **A** *(built, 0.10.4)* | `remote_posts`; the transcript tenant column (§6); register, read, thread and delete for **public** records; Antiphony fetches (§4.1); processing, transcripts, playback and webhooks keyed by subject (§6); the deletion sweep for public records (§8) | Vox Pop org prompts under an org group's DID |
 | **B** *(built, 0.10.5)* | Space records with **tenant-pushed bytes** (§4.2); `remoteSpace` on upload; visibility by reference (§7) | Bardcast campaign posts and Vox Pop org reply spaces on a group host |
 | **C** *(built, 0.10.6)* | **Delegation hand-off**: Antiphony reads spaces itself, with the record MAC; the sweep covers space records through tenant-supplied (or, opt-in, Antiphony's own) delegations; `@atproto/space` added | Removes Phase B's trust gap and its reliance on the tenant for deletion |
-| **D** | Notifications (Jetstream, `registerNotify`) to make the sweep rarely needed | Latency of deletion |
+| **D** | Notifications (Jetstream; for spaces, `notify` on `authorizeSpaceSync`, §8.1) to make the sweep rarely needed | Latency of deletion |
 | **E** | Publishing derived records, once D-7 is revisited | Third-party readers of transcripts |
 
 A and B can ship as one change if Bardcast needs B first. A is still worth landing on its own,
@@ -671,6 +693,12 @@ Where the build differs from the sections above, or settles what they left open:
   `@atproto/space`), the XRPC `registerPost`, and notifications.
 
 ## Phase C verification (2026-11-02)
+
+*Rechecked 2026-11-14 at `0.0.0-spaces-alpha-20261113224550`, with the ported adapter itself
+against two reference PDSes (`space-repo.conformance.test.ts`, 6 of 6). That covers the
+exchange, a MAC-checked record, a blob, `gone`, a single-use delegation, an outsider `refused`,
+`InvalidSpaceMac` without a MAC request, and `deleted`. The table below keeps the names of
+2026-11-02.*
 
 Stage 1 of Phase C: checking its assumptions before any product code. There are four sources.
 The first three are in order of strength; the fourth is the proposal itself, read afterwards.
@@ -813,34 +841,46 @@ settles what they left open:
 
   `@antiphony/shared` 0.13.0 ships Phase B's and Phase C's schemas together.
 - **Dependencies, as §12 says.**
-  - `@atproto/space` and `@atproto/crypto` at `0.0.0-spaces-alpha-20261029171913`, exact, in
-    core-api. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
+  - `@atproto/space` and `@atproto/crypto` at `0.0.0-spaces-alpha-20261029171913` (moved to
+    `20261113224550` on 2026-11-14), exact, in core-api. Since 2026-11-14 also
+    `@atproto/lex-space`, `@atproto/lex-schema`, `@atproto/lex-json` and
+    `@atproto-labs/did-resolver`, at the same pin. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
     and converts KEM keys with it.
   - `@atproto/syntax` moved to the same alpha in core-api and `packages/core`.
   - Root `overrides` pin `lex-data`, `lex-cbor`, `car`, `crypto`, `common` and `syntax`.
     Overrides apply to the whole tree, so `@atproto/lex-schema`'s copies (under
     `lex-document`, the lexicon check) move to the alpha too. `test:lexicons` still passes.
-  - zod 3 comes in under `@atproto/space` only, and no schema crosses into it.
+  - zod 3 came in under `@atproto/space` only, and no schema crossed into it. Since
+    2026-11-14 `@atproto/space` uses `@atproto/lex-schema` instead.
   - The lockfile was written with npm 12.0.2 (the root `packageManager`). An older npm drops
     `libc` fields throughout it.
   - The Worker bundle grew from 1624 to 1976 KiB, and `check:worker-bundle` stays clean.
-- **The adapter** (`adapters/outbound/atproto/space-repo.ts`) behind a new `SpaceRepoPort`:
-  - one `getSpaceCredential` exchange per call, at the authority's `#atproto_pds`, with a
-    fresh P-256 key that is never exported;
+- **The adapter** (`adapters/outbound/atproto/space-repo.ts`) behind a new `SpaceRepoPort`.
+  *Since 2026-11-14 it is built on `@atproto/lex-space`'s `SpaceReader`*
+  ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md), "Upstream packages"), which does
+  the protocol work below; the adapter keeps the network policy and the classification.
+  - one `authorizeSpaceSync` exchange per call (`getSpaceCredential` until 2026-11-14), at
+    the authority's `#atproto_pds`, with a fresh P-256 key that is never exported, and the
+    tenant's token handed over exactly once;
   - requests signed per writer, with `getRecord`'s record MAC encapsulated against the
-    writer's `#atproto_kem`. Both key spellings are read (`did-document.ts`, shared with the
-    public-repo adapter, which moved onto it);
-  - the URI and the MAC are verified, then the record's CID is recomputed as for a repo
-    record.
+    writer's `#atproto_kem`. Both key spellings are read (by `@atproto/did` now; by
+    `did-document.ts` before);
+  - the URI, the MAC and the record's CID are verified (by the library), the record is
+    returned as JSON (`lexToJson`), and the core recomputes its CID as for a repo record;
+  - a blob is verified against its CID, and capped by the adapter's `fetch`, since the
+    library buffers it whole.
 
   Classification:
   - `SpaceDeleted` is `deleted`;
-  - `SpaceNotFound`, the token errors and `AppNotAuthorized` are `refused`;
+  - `SpaceNotFound`, the token errors, `AppNotAuthorized`, `AccountNotAuthorized` and
+    `InvalidClientAttestation` are `refused`;
+  - `UpstreamFailure`, `RepoTakendown` and `RepoDeactivated` are `unreachable` at any status
+    (added 2026-11-14);
   - a writer's 401 is `unreachable`.
 
-  Tested against a fake host built from `@atproto/space`'s own primitives. It was also run
-  once, outside the suite, against the reference stack from "Phase C verification":
-  exchange, MAC-checked record, blob, `gone`, `refused` and `deleted` all passed.
+  Tested against a fake host built from `@atproto/space`'s own primitives. Since 2026-11-14 it
+  is also tested against the reference stack by `space-repo.conformance.test.ts`, which is
+  skipped unless `DEV_ENV_PATH` names an installed `@atproto/dev-env`.
 - **Registration.**
   - `delegationToken` makes `bytesFrom: "fetch"` the default for a space URI.
   - `record` beside a delegation, a delegation for a repo record, or an attestation without
@@ -865,11 +905,11 @@ settles what they left open:
   - A deleted space reads as gone for every row, under the same two-reads rule.
 - **Not built:**
   - Antiphony's own service DID as a member (§4.2's alternative; it needs a decision and a DID);
-  - `registerNotify` (Phase D);
+  - notification registration (Phase D);
   - acting on group moderation labels (open question 5);
-  - the conformance harness in this repo. Its dependencies need overrides for the whole
-    `@atproto` alpha tree, which don't belong in the workspace lockfile, so it ran from a
-    scratch project. Adding it as a standalone project is a follow-up.
+  - ~~the conformance harness in this repo.~~ Added 2026-11-14 as
+    `space-repo.conformance.test.ts`. It loads dev-env from a path, so dev-env stays out of
+    the workspace lockfile.
 
 ## 14. Open questions
 

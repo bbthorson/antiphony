@@ -100,18 +100,21 @@ Lists use `limit` + `cursor` and answer `{ items, cursor? }` (D-10).
 
 ### 3.2 Protocol methods Antiphony serves (spaces Phase 3)
 
-`com.atproto.space.*` (`getDelegationToken`, `getSpaceCredential`, `getRecord`, `listRecords`,
-`getBlob`, `listBlobs`, `getLatestCommit`, `getRepo`, `listRepos`, `listRepoOps`,
-`registerNotify`, `unregisterNotify`, `notifyWrite`) and `com.atproto.simplespace.getSpace` for
-third parties. Antiphony implements these lexicons; it doesn't define them. Their auth is the
-protocol's (space credentials, service auth), which is why §4.1 needs more than one tier. Plan:
-[`cross-repo-design.md`](./cross-repo-design.md) §4.3.
+*Replaced 2026-11-01:* Antiphony won't be a space host ([`audio-service-and-groups.md`](./audio-service-and-groups.md)
+G2), so it serves none of the `com.atproto.space.*` methods. The list stays as the inventory to
+revisit if that changes. In the November 12 alpha's names
+([`spaces-beta-readiness.md`](./spaces-beta-readiness.md)) it is: `authorizeSpaceSync`,
+`getRecord`, `listRecords`, `getBlob`, `listBlobs`, `getLatestCommit`, `getRepo`,
+`listWriters`, `listRepoOps` and `getSpace`, with inbound `notifyRepoUpdate`. Their auth is the
+protocol's (space credentials, service auth), which is why §4.1 needs more than one tier.
 
 ### 3.3 Methods Antiphony calls
 
-`com.atproto.simplespace.checkUserAccess` on each tenant's managing-app endpoint, and outbound
-`com.atproto.space.notifyWrite`. Tenants implement the former, with a helper in the client
-package (§5).
+As a space reader (audio-service mode Phase C, built): `com.atproto.space.authorizeSpaceSync`
+at a space authority's host, and `com.atproto.space.getRecord` / `getBlob` at each writer's
+PDS ([`audio-service-mode.md`](./audio-service-mode.md) §4.2). Tenants that manage spaces
+implement `com.atproto.managedspace.checkAccess`, which the space's host calls, not Antiphony;
+a helper for it belongs in the client package (§5).
 
 ## 4. Cross-cutting design
 
@@ -216,7 +219,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-6 | **Replies: `listReplies` or paged `getThread`** | separate list method; `getThread` with cursor only | `getThread` already pages; add `listReplies` only if the apps need flat reply lists by filter |
 | D-7 | **Upload encoding** | raw body (uploadBlob style); multipart | raw body |
 | D-8 | **Playback bytes** | an XRPC binary query; keep a plain media route | keep a media route (it's a capability URL consumed by `<audio>`, not an API call); XRPC mints it |
-| D-9 | **Space management names** | `com.atproto.simplespace.createSpace`/`updateSpace`/`getSpace` for tenants too; `dev.antiphony.space.putSpace`/`getSpace` | the protocol's names, if their inputs fit tenant needs (policies as `$type` objects); else `dev.antiphony.space.*` |
+| D-9 | **Space management names** | `com.atproto.space.createSpace`/`updateSpace`/`getSpace` (with a `personalspace`, `memberspace` or `managedspace` policy) for tenants too; `dev.antiphony.space.putSpace`/`getSpace` | the protocol's names, if their inputs fit tenant needs (policies as `$type` objects); else `dev.antiphony.space.*`. *2026-11-14:* `simplespace` is gone from the protocol; see `spaces-beta-readiness.md`. |
 | D-10 *(settled 2026-11-11: named arrays)* | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
 | D-11 | **Source of truth for shapes** | lexicons generate Zod; Zod stays hand-written with the parity test; validate with `@atproto/lex` at runtime | keep hand-written Zod plus parity until 1.0, then generate |
 | D-12 | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |

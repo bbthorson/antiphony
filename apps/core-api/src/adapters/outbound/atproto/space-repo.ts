@@ -1,61 +1,52 @@
-import { P256Keypair } from '@atproto/crypto';
-import {
-    MAC_HEADER,
-    RECORD_MAC_TYPE,
-    WANT_MAC_HEADER,
-    createSpaceSigHeaders,
-    encapsulate,
-    formatWantMacHeader,
-    parseMacHeader,
-    verifyRecordMac,
-} from '@atproto/space';
-import { CID } from 'multiformats/cid';
+import { createDidResolver } from '@atproto-labs/did-resolver';
+import { lexToJson } from '@atproto/lex-json';
+import { l } from '@atproto/lex-schema';
+import { SpaceReader } from '@atproto/lex-space';
+import type { DidString, NsidString, SpaceRefString } from '@atproto/syntax';
 import type { FetchedBlob, FetchedRecord, RepoResult } from '@antiphony/core/ports/public-repo';
-import type { SpaceOpenResult, SpaceReader, SpaceRepoPort } from '@antiphony/core/ports/space-repo';
+import type { SpaceOpenResult, SpaceReader as SpaceReaderPort, SpaceRepoPort } from '@antiphony/core/ports/space-repo';
 import { spaceUriOf } from '@antiphony/core/services/remote-posts';
-import {
-    type DidDocument,
-    type DidDocumentResolverOptions,
-    didDocumentResolver,
-    errorText,
-    kemDidKeyOf,
-    pdsEndpointOf,
-    readCapped,
-} from './did-document.js';
+import { type DidDocumentResolverOptions, errorText } from './did-document.js';
 
 /**
- * `SpaceRepoPort` over the Spaces protocol (specs/audio-service-mode.md §4.2,
- * Phase C), checked against the reference implementation at
- * `0.0.0-spaces-alpha-20261029171913` ("Phase C verification").
+ * `SpaceRepoPort` over `@atproto/lex-space`'s `SpaceReader`
+ * (specs/audio-service-mode.md §4.2, Phase C; specs/spaces-beta-readiness.md,
+ * "Upstream packages"). The library speaks the protocol; this file keeps
+ * Antiphony's network policy and its classification of what went wrong.
  *
- * ## The exchange
+ * ## What the library does
  *
- * `com.atproto.space.getSpaceCredential` at the authority's `#atproto_pds`,
- * with the tenant's delegation token and `credentialKid`: a P-256 key made
- * here for this credential alone and never exported. The credential is bound
- * to that key, so it's worthless to anyone holding it without the key. It
- * lives about ten minutes; a reader is for one call's work and is dropped
- * with its key.
+ * `authorize()` spends the tenant's delegation token at the authority's
+ * `#atproto_pds` (`com.atproto.space.authorizeSpaceSync`) for a credential bound
+ * to a P-256 key it makes and never exports. `getRecord` goes to the writer's
+ * PDS, signed for the writer, with an HPKE-keyed MAC request against the
+ * writer's `#atproto_kem`, and verifies the MAC and the record's CID. `getBlob`
+ * verifies the bytes against their CID. No notifications are registered: a
+ * reader is for one call's work and is dropped with its key.
  *
- * ## Reads
+ * ## What stays here
  *
- * Each request goes to the **writer's** PDS and carries the credential, signed
- * (RFC 9421, via `createSpaceSigHeaders`) for the DID it's addressed to, so it
- * can't be replayed against another account. `getRecord` also asks for a
- * record MAC: a fresh key share encapsulated against the writer's
- * `#atproto_kem`, which the host answers with `atproto-space-mac` over the URI
- * and CID. The reference host refuses a credentialed `getRecord` without one
- * (`BadSpaceMac`). `getBlob` serves only blobs a record in that space references.
- *
- * ## Classification
- *
- * As `public-repo.ts`, plus the exchange's two answers about the space:
- * `SpaceDeleted` is `deleted`; `SpaceNotFound` (also a host's answer to a
- * delegation it won't honour) and the token errors are `refused`, never gone.
- * A writer's host that rejects the credential (401) is `unreachable`: it
- * tells us nothing about the record.
+ * - **The network policy**, in `guardedFetch`, which every request the library
+ *   makes goes through (DID documents included): HTTPS only, no redirects, a
+ *   timeout per request, and a byte cap on blobs. The library buffers a blob
+ *   whole with no cap of its own, so the cap is enforced on the stream it reads.
+ * - **The delegation is spent once.** The token is single use. When a writer's
+ *   host rejects the credential, the library asks for a fresh one; the second
+ *   request for the token throws, which reads as `unreachable`, as a writer's 401
+ *   always did.
+ * - **The record comes back as JSON** (`lexToJson`): the library hands back lex
+ *   values, with CID objects where the wire had `{ "$link": … }`, and the core
+ *   parses and hashes JSON.
+ * - **Classification**, as `public-repo.ts`, plus the exchange's answers about the
+ *   space: `SpaceDeleted` is `deleted`; `SpaceNotFound` (also a host's answer to a
+ *   delegation it won't honour) and the token errors are `refused`, never gone.
+ *   `UpstreamFailure` (a managed space's app didn't answer) and a suspended
+ *   authority (`RepoTakendown`, `RepoDeactivated`) are `unreachable`. A writer's
+ *   host that rejects the credential is `unreachable`: it says nothing about the
+ *   record.
  */
 
+const DOC_TIMEOUT_MS = 5_000;
 const EXCHANGE_TIMEOUT_MS = 10_000;
 const RECORD_TIMEOUT_MS = 10_000;
 const BLOB_TIMEOUT_MS = 30_000;
@@ -68,181 +59,225 @@ const REFUSED_ERRORS = new Set([
     'InvalidDelegationToken',
     'AppNotAuthorized',
     'NotAuthorized',
-    'UserNotAuthorized',
+    'AccountNotAuthorized',
+    'InvalidClientAttestation',
     'JwtReplayed',
 ]);
+/** Answers that may change on a retry, whatever their status. */
+const TRANSIENT_ERRORS = new Set(['UpstreamFailure', 'RepoTakendown', 'RepoDeactivated']);
+
+/**
+ * A space type schema built from the URI alone. Antiphony reads one record and
+ * its blob by path, so it declares no collections and never validates against
+ * them.
+ */
+const anySpace = (type: NsidString) => l.space('any', type, []);
+type AnySpace = ReturnType<typeof anySpace>;
+
+type Kind = 'gone' | 'unreachable' | 'invalid' | 'refused' | 'deleted';
+
+/** A failure this file raises itself, carrying the kind it reads as. */
+class PolicyError extends Error {
+    constructor(
+        readonly kind: Kind,
+        message: string,
+    ) {
+        super(message);
+        this.name = 'PolicyError';
+    }
+}
 
 export type SpaceRepoOptions = DidDocumentResolverOptions;
 
 export function spaceRepo(opts: SpaceRepoOptions = {}): SpaceRepoPort {
     const fetchImpl = opts.fetchImpl ?? fetch;
     const now = opts.now ?? Date.now;
-    const docOf = didDocumentResolver(opts);
 
     return {
         async open(space, delegation): Promise<SpaceOpenResult> {
-            const doc = await docOf(space.authority);
-            if (!doc.ok) return asOpenFailure(doc, 'authority');
-            const host = pdsEndpointOf(doc.value);
-            if (!host.ok) return asOpenFailure(host, 'authority');
+            const blobCaps = new Map<string, number>();
+            const policyFetch = guardedFetch(fetchImpl, blobCaps);
+            let spent = false;
+            const reader = SpaceReader.openSpace(anySpace(space.type as NsidString), spaceUriOf(space) as SpaceRefString, {
+                fetch: policyFetch,
+                didResolver: createDidResolver({
+                    fetch: policyFetch,
+                    allowHttp: false,
+                    ...(opts.plcDirectoryUrl ? { plcDirectoryUrl: opts.plcDirectoryUrl } : {}),
+                }),
+                delegationTokenProvider: async () => {
+                    if (spent) throw new PolicyError('unreachable', "the writer's host rejected the credential, and the delegation is spent");
+                    spent = true;
+                    return delegation.delegationToken;
+                },
+                ...(delegation.clientAttestation ? { clientAttestationProvider: once(delegation.clientAttestation) } : {}),
+            });
 
-            const key = await P256Keypair.create();
-            const spaceUri = spaceUriOf(space);
-            let res: Response;
+            let token: string;
             try {
-                res = await fetchImpl(new URL('/xrpc/com.atproto.space.getSpaceCredential', host.value), {
-                    method: 'POST',
-                    redirect: 'manual',
-                    signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
-                    headers: { 'content-type': 'application/json', accept: 'application/json' },
-                    body: JSON.stringify({
-                        space: spaceUri,
-                        credentialKid: key.did(),
-                        delegationToken: delegation.delegationToken,
-                        ...(delegation.clientAttestation ? { clientAttestation: delegation.clientAttestation } : {}),
-                    }),
-                });
+                token = (await reader.authorize()).token;
             } catch (err) {
-                return { ok: false, kind: 'unreachable', reason: `getSpaceCredential: ${errorText(err)}` };
+                const { kind, reason } = classify(err, 'authorizeSpaceSync');
+                // A DID document that's gone for the authority means its spaces
+                // can't be read, not that they were deleted: only `SpaceDeleted`
+                // says that.
+                return { ok: false, kind: kind === 'gone' ? 'unreachable' : kind, reason };
             }
-            const body = (await res.json().catch(() => null)) as { credential?: unknown; error?: unknown } | null;
-            if (!res.ok) {
-                const name = typeof body?.error === 'string' ? body.error : undefined;
-                const reason = `getSpaceCredential: ${res.status}${name ? ` ${name}` : ''}`;
-                if (name === 'SpaceDeleted') return { ok: false, kind: 'deleted', reason };
-                if (res.status >= 400 && res.status < 500 && name && REFUSED_ERRORS.has(name)) {
-                    return { ok: false, kind: 'refused', reason };
-                }
-                if (res.status >= 500 || res.status === 429) return { ok: false, kind: 'unreachable', reason };
-                return { ok: false, kind: 'refused', reason };
-            }
-            if (typeof body?.credential !== 'string') {
-                return { ok: false, kind: 'unreachable', reason: 'getSpaceCredential: the answer carried no credential' };
-            }
-            return { ok: true, reader: reader(spaceUri, body.credential, key) };
+            return { ok: true, reader: wrap(reader, token, blobCaps, now()) };
         },
     };
+}
 
-    function reader(spaceUri: string, credential: string, key: P256Keypair): SpaceReader {
-        // A signature covers only the credential and its audience, so one per
-        // writer serves every request to that writer.
-        const signed = new Map<string, Promise<Record<string, string>>>();
-        const headersFor = (audience: string) => {
-            let headers = signed.get(audience);
-            if (!headers) {
-                headers = createSpaceSigHeaders(key, {
-                    authorization: `Atproto-Space-Credential ${credential}`,
-                    audience: audience as `did:${string}:${string}`,
-                });
-                signed.set(audience, headers);
+function wrap(reader: SpaceReader<AnySpace>, credential: string, blobCaps: Map<string, number>, nowMs: number): SpaceReaderPort {
+    return {
+        expiresAt: expiryOf(credential, nowMs),
+
+        async getRecord(ref): Promise<RepoResult<FetchedRecord>> {
+            try {
+                const res = await reader.getRecord(ref.collection as NsidString, ref.rkey, { repo: ref.did as DidString });
+                const { cid, value } = res.body;
+                return { ok: true, value: { cid: String(cid), value: lexToJson(value) } };
+            } catch (err) {
+                return asRepoFailure(classify(err, 'space getRecord'));
             }
-            return headers;
-        };
+        },
 
-        /** A writer's PDS and, for a record, its KEM key. */
-        async function writer(did: string): Promise<RepoResult<{ pds: string; doc: DidDocument }>> {
-            const doc = await docOf(did);
-            if (!doc.ok) return doc;
-            const pds = pdsEndpointOf(doc.value);
-            return pds.ok ? { ok: true, value: { pds: pds.value, doc: doc.value } } : pds;
+        async getBlob(repoDid, cid, maxBytes): Promise<RepoResult<FetchedBlob>> {
+            blobCaps.set(cid, maxBytes);
+            try {
+                const res = await reader.getBlob({ repo: repoDid as DidString, cid });
+                return { ok: true, value: { bytes: res.body, contentType: res.headers.get('content-type') ?? undefined } };
+            } catch (err) {
+                return asRepoFailure(classify(err, 'space getBlob'));
+            } finally {
+                blobCaps.delete(cid);
+            }
+        },
+    };
+}
+
+/**
+ * Every request the library makes: HTTPS only, redirects not followed, a
+ * timeout chosen by method, and a blob read stopped at its cap.
+ */
+function guardedFetch(fetchImpl: typeof fetch, blobCaps: Map<string, number>): typeof fetch {
+    return (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+        if (url.protocol !== 'https:') throw new PolicyError('invalid', `${url.origin} is not HTTPS`);
+        const method = url.pathname.startsWith('/xrpc/') ? url.pathname.slice('/xrpc/'.length) : null;
+        const ms =
+            method === 'com.atproto.space.getBlob'
+                ? BLOB_TIMEOUT_MS
+                : method === 'com.atproto.space.authorizeSpaceSync'
+                  ? EXCHANGE_TIMEOUT_MS
+                  : method
+                    ? RECORD_TIMEOUT_MS
+                    : DOC_TIMEOUT_MS;
+        const callerSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+        const signal = callerSignal ? AbortSignal.any([callerSignal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms);
+
+        const res = await fetchImpl(input, { ...init, redirect: 'manual', signal });
+        if (res.status >= 300 && res.status < 400) {
+            await res.body?.cancel().catch(() => undefined);
+            throw new PolicyError('unreachable', `${method ?? url.origin} answered a redirect, which isn't followed`);
         }
 
-        return {
-            expiresAt: expiryOf(credential, now()),
-
-            async getRecord(ref): Promise<RepoResult<FetchedRecord>> {
-                const host = await writer(ref.did);
-                if (!host.ok) return host;
-                const kem = kemDidKeyOf(host.value.doc);
-                if (!kem) return { ok: false, kind: 'invalid', reason: "the writer's DID document has no P-256 #atproto_kem key" };
-
-                const { keyShare, sharedSecret } = await encapsulate(kem);
-                const url = new URL('/xrpc/com.atproto.space.getRecord', host.value.pds);
-                url.searchParams.set('space', spaceUri);
-                url.searchParams.set('repo', ref.did);
-                url.searchParams.set('collection', ref.collection);
-                url.searchParams.set('rkey', ref.rkey);
-                let res: Response;
-                try {
-                    res = await fetchImpl(url, {
-                        redirect: 'manual',
-                        signal: AbortSignal.timeout(RECORD_TIMEOUT_MS),
-                        headers: { ...(await headersFor(ref.did)), [WANT_MAC_HEADER]: formatWantMacHeader(RECORD_MAC_TYPE, keyShare) },
-                    });
-                } catch (err) {
-                    return { ok: false, kind: 'unreachable', reason: `space getRecord: ${errorText(err)}` };
-                }
-                if (!res.ok) return failure(res, 'space getRecord');
-
-                const body = (await res.json().catch(() => null)) as { uri?: unknown; cid?: unknown; value?: unknown } | null;
-                if (!body || typeof body.cid !== 'string' || body.value === null || typeof body.value !== 'object') {
-                    return { ok: false, kind: 'unreachable', reason: 'space getRecord: the answer carried no record and CID' };
-                }
-                // The MAC is over the URI the host names and the CID it reports,
-                // so check the URI is the one asked for, then the MAC.
-                const expected = `${spaceUri}/${ref.did}/${ref.collection}/${ref.rkey}`;
-                if (body.uri !== expected) {
-                    return { ok: false, kind: 'invalid', reason: `space getRecord answered for ${String(body.uri)}, not ${expected}` };
-                }
-                let macOk: boolean;
-                try {
-                    const mac = parseMacHeader(res.headers.get(MAC_HEADER) ?? undefined, RECORD_MAC_TYPE);
-                    macOk = verifyRecordMac(sharedSecret, expected, CID.parse(body.cid), mac);
-                } catch (err) {
-                    return { ok: false, kind: 'invalid', reason: `space getRecord: no usable record MAC (${errorText(err)})` };
-                }
-                if (!macOk) return { ok: false, kind: 'invalid', reason: 'space getRecord: the record MAC did not verify' };
-                return { ok: true, value: { cid: body.cid, value: body.value } };
-            },
-
-            async getBlob(repoDid, cid, maxBytes): Promise<RepoResult<FetchedBlob>> {
-                const host = await writer(repoDid);
-                if (!host.ok) return host;
-                const url = new URL('/xrpc/com.atproto.space.getBlob', host.value.pds);
-                url.searchParams.set('space', spaceUri);
-                url.searchParams.set('repo', repoDid);
-                url.searchParams.set('cid', cid);
-                let res: Response;
-                try {
-                    res = await fetchImpl(url, {
-                        redirect: 'manual',
-                        signal: AbortSignal.timeout(BLOB_TIMEOUT_MS),
-                        headers: await headersFor(repoDid),
-                    });
-                } catch (err) {
-                    return { ok: false, kind: 'unreachable', reason: `space getBlob: ${errorText(err)}` };
-                }
-                if (!res.ok) return failure(res, 'space getBlob');
-
-                const declared = Number(res.headers.get('content-length'));
-                if (Number.isFinite(declared) && declared > maxBytes) {
-                    await res.body?.cancel().catch(() => undefined);
-                    return { ok: false, kind: 'invalid', reason: `blob is ${declared} bytes, over the ${maxBytes} cap` };
-                }
-                const bytes = await readCapped(res, maxBytes);
-                if (bytes === 'too-large') return { ok: false, kind: 'invalid', reason: `blob is over the ${maxBytes} cap` };
-                if (bytes === 'failed') return { ok: false, kind: 'unreachable', reason: 'space getBlob: the body broke off' };
-                return { ok: true, value: { bytes, contentType: res.headers.get('content-type') ?? undefined } };
-            },
-        };
-    }
+        const cap = method === 'com.atproto.space.getBlob' ? blobCaps.get(url.searchParams.get('cid') ?? '') : undefined;
+        if (cap === undefined || !res.ok || !res.body) return res;
+        const declared = Number(res.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > cap) {
+            await res.body.cancel().catch(() => undefined);
+            throw new PolicyError('invalid', `blob is ${declared} bytes, over the ${cap} cap`);
+        }
+        let total = 0;
+        const capped = res.body.pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+                transform(chunk, controller) {
+                    total += chunk.byteLength;
+                    if (total > cap) controller.error(new PolicyError('invalid', `blob is over the ${cap} cap`));
+                    else controller.enqueue(chunk);
+                },
+            }),
+        );
+        return new Response(capped, { status: res.status, statusText: res.statusText, headers: res.headers });
+    }) as typeof fetch;
 }
 
-/** Classify a non-2xx answer from a writer's host. */
-async function failure(res: Response, what: string): Promise<{ ok: false; kind: 'gone' | 'unreachable'; reason: string }> {
-    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
-    const name = typeof body?.error === 'string' ? body.error : undefined;
-    if ((res.status === 400 || res.status === 404) && name && GONE_ERRORS.has(name)) {
-        return { ok: false, kind: 'gone', reason: `${what}: ${name}` };
+/** What went wrong, from whichever layer said so. */
+function classify(err: unknown, what: string): { kind: Kind; reason: string } {
+    const policy = findCause(err, (e): e is PolicyError => e instanceof PolicyError);
+    if (policy) return { kind: policy.kind, reason: `${what}: ${policy.message}` };
+
+    // `XrpcResponseError` from `@atproto/lex-client`: the host answered with an
+    // XRPC error. Duck-typed, so a second bundled copy of the class still matches.
+    const xrpc = findCause(err, isXrpcResponseError);
+    if (xrpc) {
+        const name = xrpc.error;
+        const status = xrpc.response.status;
+        const reason = `${what}: ${status} ${name}`;
+        if (name === 'SpaceDeleted') return { kind: 'deleted', reason };
+        if (TRANSIENT_ERRORS.has(name)) return { kind: 'unreachable', reason };
+        if (GONE_ERRORS.has(name) && (status === 400 || status === 404)) return { kind: 'gone', reason };
+        if (REFUSED_ERRORS.has(name) && status >= 400 && status < 500) return { kind: 'refused', reason };
+        if (status === 401 || status === 429 || status >= 500) return { kind: 'unreachable', reason };
+        // Any other 4xx from the exchange is a refusal; from a writer's host, it
+        // says nothing about the record.
+        return { kind: what === 'authorizeSpaceSync' ? 'refused' : 'unreachable', reason };
     }
-    return { ok: false, kind: 'unreachable', reason: `${what}: ${res.status}${name ? ` ${name}` : ''}` };
+
+    // `DidError` from `@atproto/did`: resolving a DID document, or reading it.
+    const did = findCause(err, isDidError);
+    if (did) {
+        const reason = `${what}: DID document for ${did.did}: ${did.message}`;
+        switch (did.code) {
+            case 'did-fetch-error':
+                return { kind: did.status === 404 || did.status === 410 ? 'gone' : 'unreachable', reason };
+            case 'did-service-not-found':
+                return { kind: 'gone', reason };
+            case 'did-document-id-mismatch':
+                return { kind: 'unreachable', reason };
+            default:
+                // A malformed document, or one with no `#atproto_kem` for a MAC.
+                return { kind: 'invalid', reason };
+        }
+    }
+
+    // `SpaceRepoVerificationError`, `SpaceMacError`, `SpaceKemError` from
+    // `@atproto/space`: a MAC, a record or a blob that doesn't check out.
+    const verification = findCause(err, (e): e is Error => e instanceof Error && /^Space(RepoVerification|Mac|Kem)Error$/.test(e.name));
+    if (verification) return { kind: 'invalid', reason: `${what}: ${verification.message}` };
+
+    return { kind: 'unreachable', reason: `${what}: ${errorText(err)}` };
 }
 
-function asOpenFailure(result: Extract<RepoResult<unknown>, { ok: false }>, whose: string): SpaceOpenResult {
-    // A DID document that's gone for the authority means its spaces can't be
-    // read, not that they were deleted: only `SpaceDeleted` says that.
-    const kind = result.kind === 'invalid' ? 'invalid' : 'unreachable';
-    return { ok: false, kind, reason: `${whose}: ${result.reason}` };
+function asRepoFailure({ kind, reason }: { kind: Kind; reason: string }): { ok: false; kind: 'gone' | 'unreachable' | 'invalid'; reason: string } {
+    return { ok: false, kind: kind === 'gone' || kind === 'invalid' ? kind : 'unreachable', reason };
+}
+
+function findCause<T>(err: unknown, test: (e: unknown) => e is T): T | undefined {
+    for (let e: unknown = err, depth = 0; e && depth < 8; e = (e as { cause?: unknown }).cause, depth++) {
+        if (test(e)) return e;
+    }
+    return undefined;
+}
+
+function isXrpcResponseError(e: unknown): e is { error: string; response: Response } {
+    const x = e as { error?: unknown; response?: { status?: unknown } } | null;
+    return !!x && typeof x.error === 'string' && typeof x.response?.status === 'number';
+}
+
+function isDidError(e: unknown): e is { did: string; code: string; status: number; message: string } {
+    const d = e as { did?: unknown; code?: unknown; status?: unknown } | null;
+    return !!d && typeof d.did === 'string' && typeof d.code === 'string' && d.code.startsWith('did-') && typeof d.status === 'number';
+}
+
+function once(value: string): () => Promise<string> {
+    let used = false;
+    return async () => {
+        if (used) throw new PolicyError('unreachable', 'the client attestation is spent');
+        used = true;
+        return value;
+    };
 }
 
 /** The credential's `exp`, in ms; the reference lifetime from now if it can't be read. */

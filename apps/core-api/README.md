@@ -1,6 +1,6 @@
 # @antiphony/core-api
 
-> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` JSON API surface — audio posts, threaded replies, and audio upload/playback. Runs on Cloudflare Workers against Postgres and an R2 bucket; every backend touch goes through a port, so those are adapter choices rather than requirements.
+> **Open-source core of [Antiphony](https://docs.antiphony.dev).** MIT-licensed Hono service that hosts the `/api/v1/*` REST surface and the `/xrpc/*` methods: audio posts and threaded replies, audio upload and playback, atproto spaces, and remote posts (audio whose record lives in another repo). Runs on Cloudflare Workers against Postgres and an R2 bucket. Every backend touch goes through a port, so those are adapter choices rather than requirements.
 >
 > **Apps built on it** (e.g. [Vox Pop](https://voxpop.audio)) add their own product features — telephony, embed distribution, teams, billing. This repo contains only the open-core tier.
 
@@ -8,10 +8,16 @@
 
 **Open-core carve-out complete.** Antiphony is a standalone MIT repository; the Vox Pop consumer app is a separate codebase with its own BFF that talks to this API over HTTP. This repo contains only the open-core tier and is deployed at `api.antiphony.dev`.
 
-The public `/api/v1/*` surface is deliberately small — **two resource groups**:
+The public `/api/v1/*` surface has six tag groups, one per OpenAPI tag:
 
-- **Posts** (`dev.antiphony.audio.post`) — create, read, list, and threaded replies, with hydrated audio and lifted transcript. A prompt and a reply are the *same* record type, distinguished by the `reply` field, not separate resources.
-- **Audio** — the playback proxy (`GET /api/v1/audio`, which streams the bytes with range support rather than redirecting to a signed URL) and the service-token-gated upload endpoint.
+- **Posts** (`dev.antiphony.audio.post`): create, read, list, delete, and threaded replies, with hydrated audio and the transcript lifted into the view. A prompt and a reply are the *same* record type, distinguished by the `reply` field, not separate resources.
+- **Audio**: the playback proxy (`GET /api/v1/audio`, which streams the bytes with range support; audio in a space needs a signed URL) and the service-token-gated upload.
+- **Spaces**: a tenant's atproto spaces ([`specs/spaces.md`](../../specs/spaces.md)).
+- **Remote posts**: register, read, recheck and remove audio whose record lives in someone else's repo ([`specs/audio-service-mode.md`](../../specs/audio-service-mode.md)).
+- **DIDs**: DIDs a tenant may write under besides its app DID.
+- **Tenant**: the calling tenant's post counts.
+
+Most of these are also XRPC methods (`dev.antiphony.audio.*`, `dev.antiphony.tenant.getStats`), defined by the lexicons in [`lexicons/`](../../lexicons/) ([`specs/xrpc-surface.md`](../../specs/xrpc-surface.md)).
 
 Plus opt-in **audio enrichment** — denoise, trim, transcribe, and waveform — requested on create/patch and run out of band behind a durable queue. See [`../../specs/enrichment-pipeline.md`](../../specs/enrichment-pipeline.md).
 
@@ -32,8 +38,8 @@ These belong to the consumer app (e.g. Vox Pop) — now a separate repo — not 
 **Ports and adapters (hexagonal).** The backend-free domain — ports and services — lives in [`@antiphony/core`](../../packages/core/); this package is the Workers host that wires concrete adapters to it.
 
 - **`src/adapters/inbound/rest/`** — one file per HTTP route. Each validates with Zod, authenticates via the auth middleware, and calls a use case / domain service.
-- **`src/adapters/inbound/xrpc/`** — AT Protocol XRPC inbound adapter for native Lexicon RPC queries.
-- **`src/adapters/outbound/`** — the driven side: `postgres/` (records, transcripts, processing state, idempotency), `r2/` (audio blobs + renditions), `durable-objects/` (rate-limit buckets), `dispatch/` (the processing queue), `elevenlabs/` (transcribe + denoise), `rendition/` (trim + waveform, over HTTP to `apps/audio-rendition`), and `webhook/` (stage completion notifications to tenant BFFs). Swapping a backend means swapping an adapter, not touching `packages/core`.
+- **`src/adapters/inbound/xrpc/`** — the XRPC adapter: the `dev.antiphony.*` lexicon methods, each calling the same code as its REST twin.
+- **`src/adapters/outbound/`** — the driven side: `postgres/` (records, transcripts, processing state, remote posts, spaces, idempotency, sweeps), `r2/` (audio blobs and renditions), `atproto/` (DID documents, other repos and spaces), `durable-objects/` (rate-limit buckets), `dispatch/` (the processing queue), `elevenlabs/` and `workers-ai/` (transcription and denoising providers), `rendition/` (trim and waveform, over HTTP to `apps/audio-rendition`), and `webhook/` (signed events to tenant BFFs). Swapping a backend means swapping an adapter, not touching `packages/core`. See [`packages/core/README.md`](../../packages/core/README.md) for which port each implements.
 - **`src/use-cases/`**, **`src/middleware/`**, **`src/lib/`** — application wiring, auth/logging/rate-limit middleware, and the composition helpers (`src/composition.ts`). `src/app.ts` mounts the routes.
 
 No React, no Next.js, no framework magic. Just Hono handlers talking to typed ports.
@@ -46,7 +52,7 @@ The documented public API surface is defined by **one rule**:
 > `app.openapi(createRoute({ ... }), handler)` on an `OpenAPIHono` **and** carries
 > one of the approved tags.
 
-The approved tag set — **Posts** and **Audio** — is the single source of truth,
+The approved tag set (Posts, Spaces, DIDs, Remote posts, Tenant and Audio) is the single source of truth,
 declared in [`src/lib/openapi-info.ts`](src/lib/openapi-info.ts)
 (`OPENAPI_TAGS`). A route belongs in the contract only if it is a **primitive**
 (CRUD over a core resource), a **query** (a read needing server-only state), or a
@@ -88,9 +94,9 @@ npm run test -w @antiphony/core-api -- --run
 
 ## Deployment
 
-Cloudflare Workers — the `antiphony-core-api` Worker serves `api.antiphony.dev`, configured by [`wrangler.jsonc`](./wrangler.jsonc) and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/README.md`](../../deploy/README.md) for the one-time setup: the KV namespace, R2 bucket and queues the config names, plus the four Worker secrets. There is deliberately no Hyperdrive config — the HTTP SQL driver cannot use one; see that file and `wrangler.jsonc`.
+Cloudflare Workers — the `antiphony-core-api` Worker serves `api.antiphony.dev`, configured by [`wrangler.jsonc`](./wrangler.jsonc) and shipped by [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml). See [`deploy/README.md`](../../deploy/README.md) for the one-time setup: the KV namespace, R2 bucket and queues the config names, plus the Worker secrets. There is deliberately no Hyperdrive config — the HTTP SQL driver cannot use one; see that file and `wrangler.jsonc`.
 
-Every binding is authorised by being bound — there is no R2 key or service-account credential anywhere in the config. `DATABASE_URL` is the one exception and the reason is narrow: the SQL driver speaks HTTP to Neon rather than reaching a binding, so it holds a real credential and is a Worker secret. Enrichment runs off the `PROCESSING_QUEUE` binding rather than Cloud Tasks; see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
+Every binding is authorised by being bound — there is no R2 key or service-account credential anywhere in the config. `DATABASE_URL` is the one exception and the reason is narrow: the SQL driver speaks HTTP to Neon rather than reaching a binding, so it holds a real credential and is a Worker secret. Enrichment runs off the `PROCESSING_QUEUE` binding; see [Configuration](https://docs.antiphony.dev/self-hosting/configuration/#audio-enrichment).
 
 ## Why Hono, not Next.js
 

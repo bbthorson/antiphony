@@ -22,7 +22,7 @@ import type {
     AudioPostThreadOptions,
 } from '../ports/audio-posts-dependencies';
 import { NSID } from 'shared/nsid';
-import { AtUri, isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
+import { AtUri, SpaceRef, isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
 
 /**
  * AudioPostService — CRUD + batched hydration for the Antiphony canonical
@@ -107,7 +107,7 @@ export interface CreateAudioPostInput {
  *
  * The flat shape is built by hand so it stays byte-identical to every URI
  * already handed out. The space shape is built by `@atproto/syntax`
- * (`AtUri.makeSpace`), after every part is checked with its validators: a URI is
+ * (`SpaceRef#recordUri`), after every part is checked with its validators: a URI is
  * sealed into each reply's StrongRef, so a malformed one can never be minted.
  */
 export function buildRecordUri(parts: {
@@ -125,7 +125,7 @@ export function buildRecordUri(parts: {
     if (!isValidDid(authority)) throw new ValidationError(`Invalid space authority DID: ${authority}`);
     if (!isValidNsid(collection)) throw new ValidationError(`Invalid collection NSID: ${collection}`);
     if (!isValidRecordKey(rkey)) throw new ValidationError(`Invalid record key: ${rkey}`);
-    return AtUri.makeSpace(authority, type, skey, authorSegment, collection, rkey).toString();
+    return new SpaceRef(authority, type, skey).recordUri(authorSegment, collection, rkey).toString();
 }
 
 /** Reject a placement whose parts aren't valid atproto syntax (NSID, record key, DID). */

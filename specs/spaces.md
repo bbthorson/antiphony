@@ -22,6 +22,15 @@ first two are built (API contract 0.9.0, 2026-10-11), with the parent-CID check 
 > with a credential (G2). Phases 1 and 2 stay in the tree until the migration steps there
 > replace them.
 
+> **Protocol names, 2026-11-14.** The protocol sections below use the names of their dates.
+> The November 12 alpha, which settles the names for the December 1 beta, replaced
+> `simplespace` with three policies (`personalspace`, `memberspace`, `managedspace`).
+> `checkUserAccess` became `managedspace.checkAccess`, `getSpaceCredential` became
+> `authorizeSpaceSync`, `notifyWrite` became `notifyRepoUpdate`, and `AtUri.makeSpace` became
+> `SpaceRef#recordUri`. The mapping, the December 1 plan and the possible `at:space/` URI
+> change are in [`spaces-beta-readiness.md`](./spaces-beta-readiness.md). The tenant API's own
+> `public` / `member-list` / `managing-app` policies are unchanged; that spec explains why.
+
 ## Decisions this plan builds on (settled, not reopened here)
 
 1. **A space's authority is always the tenant's DID** (or an org's DID), never
@@ -258,7 +267,8 @@ What landed, and where it differs from the plan above:
 - **URIs.** `buildRecordUri({ authority, collection, rkey, space? })` is the one builder;
   `buildPostUri(appDid, rkey, space?)` wraps it, so every caller passes the record's own
   placement (hydration, transcript subjects, XRPC `createPost`). Flat URIs are still built by
-  hand, byte-identical; space URIs come from `AtUri.makeSpace`. `parsePostUri` returns the id
+  hand, byte-identical; space URIs come from `AtUri.makeSpace` (`SpaceRef#recordUri` since
+  2026-11-14, same bytes). `parsePostUri` returns the id
   and placement, refuses another tenant's authority as before, and refuses a space URI this
   service wouldn't have minted (it must round-trip). `parsePostId` wraps it.
 - **Placement through `createPost`.** A prompt can name `space: { type, skey }`; the author

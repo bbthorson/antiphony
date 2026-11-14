@@ -20,6 +20,15 @@ second, as long as the first still works.
 > authority: *2026-11-02*, an org that is an opensocial group has a DID naming its group host,
 > not Antiphony, so its reply spaces can't be held here (see the note in §3.3).
 
+> **Protocol names, 2026-11-14.** This note predates the November 12 Spaces alpha, which
+> settles the names for the December 1 beta. `com.atproto.simplespace.*` is now three
+> policies (`personalspace`, `memberspace`, `managedspace`). `checkUserAccess` is
+> `com.atproto.managedspace.checkAccess`. `getSpaceCredential` is `authorizeSpaceSync`.
+> `notifyWrite` is `notifyRepoUpdate`, and `listRepos` is `listWriters`. The full mapping is
+> in [`spaces-beta-readiness.md`](./spaces-beta-readiness.md). The replaced Phase 3 text below
+> keeps its old names; the rows tenants still act on (§3.1's managing app, §4.3 step 3, §5's
+> helper) use the new ones.
+
 ## Decisions
 
 | # | Question | Decision | Repo | When |
@@ -84,7 +93,7 @@ Antiphony or in the apps": both, for different roles.
 | :--- | :--- | :--- |
 | **Authority** (the DID in `at://{did}/space/…`) | Owns the space; its DID document names the host and the credential key | The tenant's DID (`spaces.md` decision 1). Never Antiphony's. |
 | **Space host** (`#atproto_space_host`) | `getSpace`, credentials, the writer list, routing `notifyWrite` | Antiphony |
-| **Managing app** (`managing-app` policy) | Answers `checkUserAccess(space, user, access)` | The tenant: Vox Pop or Bardcast |
+| **Managing app** (`com.atproto.managedspace.policy`) | Answers `com.atproto.managedspace.checkAccess(space, repo?, clientId?)` with `{ read, write }` | The tenant: Vox Pop or Bardcast |
 | **Repo host** | Holds one author's records in the space and signs their commits | Antiphony for audio posts; the app for its own records (Bardcast's seats and chapters) |
 
 ### 3.2 Antiphony rule change: a reply may be more private than its parent
@@ -291,8 +300,8 @@ start now. Steps 5 onward wait for the alpha to settle or a second app to ask.
 | :--- | :--- | :--- | :--- |
 | 1 | Settle §4.2 and ship §3.2 | antiphony, bardcast | Sealed URIs first. |
 | 2 | **Keys.** Each authority's DID document publishes `#atproto_space` (P-256) next to `#atproto_space_host`; Antiphony holds the private half, sealed at rest, one per authority. The same key signs service auth as the authority (for `checkUserAccess` and `notifyWrite`). | antiphony; tenant DID docs | Design with the operational key in `did-plc-and-multi-did-tenancy.md`. `did:web` tenants (Vox Pop) edit their document; minted `did:plc` gets it at genesis. |
-| 3 | **`checkUserAccess` in each app.** A `com.atproto.simplespace.checkUserAccess` endpoint that verifies Antiphony's service auth and answers from app state. Tenants record the endpoint as `managingAppEndpoint` on each space. | vox-pop, bardcast; helper in §5's client | Antiphony keeps skipping the call for tenant-originated reads, as now. |
-| 4 | **Conformance harness.** A test instance of HappyView and the Bluesky reference PDS (`pds-spaces-alpha` image) acting as third-party readers against a local Antiphony. | antiphony | Proves interop instead of reading the spec. HappyView is MIT. |
+| 3 | **`checkAccess` in each app.** A `com.atproto.managedspace.checkAccess` endpoint (`checkUserAccess` before 2026-11-12) that verifies the space authority's service auth (`lxm` = that NSID) and answers `{ read, write }` from app state. A call with no `repo` asks whether the space is publicly readable. A managed space names the app as `managingApp`, a `did#serviceId` reference. *2026-11-14:* the caller is the space's host (a group host or the reference PDS), not Antiphony. | vox-pop, bardcast; helper in §5's client | Antiphony keeps skipping the call for tenant-originated reads, as now. |
+| 4 | **Conformance harness.** A test instance of HappyView and the Bluesky reference PDS (`pds-spaces-alpha` image) acting as third-party readers against a local Antiphony. | antiphony | Proves interop instead of reading the spec. HappyView is MIT. *2026-11-14:* the reader half exists as `space-repo.conformance.test.ts` (Antiphony reading the reference PDS through `@atproto/dev-env`). |
 | 5 | **Credentials.** `getDelegationToken` and `getSpaceCredential`, request-signature checks, `appAccess` (`open` or an allow list of `client_id`s), credential lifetime and revocation on loss of read (`notifyCredentialRevoked`). | antiphony | `@atproto/space` covers the crypto; add it with the `overrides` `spaces.md` lists. |
 | 6 | **Credentialed reads.** `com.atproto.space.getRecord`, `listRecords`, `getBlob` for `dev.antiphony.audio.post` and its transcripts. | antiphony | Signed playback URLs stay for browsers (`<audio src>` can't sign a request). |
 | 7 | **Repos and sync.** Per-author space repo commits (`RepoCommit`, LtHash), `getLatestCommit`, `getRepo`, `listRepos`, `listRepoOps`, `registerNotify`, outbound `notifyWrite`. | antiphony | Needs §4.2 settled. |
@@ -309,13 +318,13 @@ extras (invites, spaces as members, `read_self`).
 | :--- | :--- | :--- |
 | **A typed client** | Bardcast: `packages/antiphony-client` (295 lines plus 166 of copied response shapes). Vox Pop: `apps/vox-pop-api/src/lib/antiphony-client.ts` (632 lines, tied to Hono). Both re-implement the envelope, errors, acting-actor headers, upload placement checks, reply pagination, and parsing post and space URIs. | `@antiphony/client`, published from this repo, built on `@antiphony/shared`. Framework-free; Vox Pop's Hono proxying stays in Vox Pop. |
 | **The service-auth signer** | Vox Pop only (`antiphony-service-auth.ts`, 281 lines). Antiphony owns the verifier. | In `@antiphony/client`. Whoever owns the verifier should own the signer, or Bardcast writes its own. |
-| **A `checkUserAccess` helper** | Nobody yet (§4.3 step 3) | In `@antiphony/client`: verify Antiphony's service auth, call the app's decision function, answer in the protocol's shape. |
+| **A `checkAccess` helper** | Nobody yet (§4.3 step 3) | In `@antiphony/client`: verify the authority's service auth, call the app's decision function, answer `{ read, write }`. |
 | **A fake Antiphony** | Vox Pop: `antiphony-stub.ts` (417 lines). Bardcast: `fetch` mocks. | `@antiphony/testing`: an in-memory implementation of the REST contract for local dev and tests. |
 | **Tenant DID tooling** | Vox Pop: `scripts/generate-app-did-key.mjs`, `check-app-did-key.mjs`, `infra/did-web/`. Bardcast needs the same before it's a tenant in production. | A CLI or template in this repo, beside `tenant-onboarding.md`, that also writes the `#atproto_space` key (§4.3 step 2). |
 | ~~**`@antiphony/shared` 0.9.0**~~ | Published 2026-10-11, with the space schemas. Bardcast can drop its copies. | Done. |
 
 **Stays in the apps:** AT Proto OAuth (`@bbthorson/atproto-cf-auth`), SMS verification and the
-phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess`, and app data
+phone ↔ user mapping, orgs and campaigns, the decision inside `checkAccess`, and app data
 (CRM, sentiment, seats). `@antiphony/capture-kit` is already shared by both apps.
 
 ## 6. Sequencing
@@ -325,7 +334,7 @@ phone ↔ user mapping, orgs and campaigns, the decision inside `checkUserAccess
    Antiphony's parent-CID check; ~~publish `@antiphony/shared` 0.9.0~~ (published 2026-10-11).
 2. **Next:** Vox Pop reply spaces (§3.3); `@antiphony/client` with the signer, then both apps
    move onto it; the Bardcast lexicon wording.
-3. **Phase 3 groundwork:** keys, `checkUserAccess` endpoints and the conformance harness
+3. **Phase 3 groundwork:** keys, `checkAccess` endpoints and the conformance harness
    (§4.3 steps 2–4).
 4. **Phase 3 proper,** when the alpha settles or a second app needs to read a space: steps 5–10.
 

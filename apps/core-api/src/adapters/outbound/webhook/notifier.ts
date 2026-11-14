@@ -56,8 +56,7 @@ const RETRY_BACKOFF_MS = 200;
 export function webhookNotifier(
     logger: Logger,
     // Injected so the adapter's tests can assert the signed request it builds
-    // without a live listener, mirroring `cloudTasksDispatcher`. Production
-    // passes nothing.
+    // without a live listener. Production passes nothing.
     fetchImpl: typeof fetch = fetch,
     // Injected only so tests exercise the retry path without real wall-clock
     // delay; production uses the real timer.

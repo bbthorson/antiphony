@@ -148,9 +148,10 @@ function serviceTokenGate(c: Parameters<MiddlewareHandler>[0]): void {
  *
  * ## Why the pin check lives in the auth middleware
  *
- * `src/index.ts` proves every pin at boot and `process.exit(1)`s on failure, so
- * `getAppDid()` — a synchronous accessor serving only from that snapshot — can
- * never answer with an authority we have not proven. Workers have no boot
+ * On Cloud Run, the Node entry (`src/index.ts`, since removed) proved every pin
+ * at boot and `process.exit(1)`ed on failure, so `getAppDid()` — a synchronous
+ * accessor serving only from that snapshot — could never answer with an
+ * authority we had not proven. Workers have no boot
  * phase, so that ordering has to be established somewhere else, and this is the
  * right somewhere: these two middlewares already resolve `originAppId`, they
  * ARE the tenancy boundary, and a pin is a tenancy property. A fourth

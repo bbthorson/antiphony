@@ -104,11 +104,18 @@ updates:
             update-types:
                 - version-update:semver-major
 
-          # `@atproto/syntax` is pinned EXACTLY to a spaces-alpha prerelease
-          # (apps/core-api, packages/core) because atproto spaces only exist on
-          # that line. Dependabot reads `0.0.0-spaces-alpha-…` as older than any
-          # stable release and "upgrades" it: #205 moved it to 0.7.7, which has
-          # no `AtUri.makeSpace`, `isSpace` or `SpaceRef`, and typecheck failed
-          # across core-api and core. Move this pin by hand when spaces ship in
-          # a stable @atproto/syntax, then delete this entry.
+          # Every `@atproto/*` and `@atproto-labs/*` dependency below is pinned
+          # EXACTLY to a spaces-alpha prerelease (apps/core-api, packages/core) because atproto
+          # spaces only exist on that line. Dependabot reads `0.0.0-spaces-alpha-…`
+          # as older than any stable release and "upgrades" it: #205 moved syntax
+          # to 0.7.7, which has no `isSpace` or `SpaceRef`, and typecheck failed
+          # across core-api and core. `@atproto/space` needs no entry: it has no
+          # stable release (`@atproto/lex-space` does: a placeholder 0.0.1). Move
+          # these pins by hand, all together (the beta is due 2026-12-01,
+          # specs/spaces-beta-readiness.md), then delete these entries.
           - dependency-name: '@atproto/syntax'
+          - dependency-name: '@atproto/crypto'
+          - dependency-name: '@atproto/lex-space'
+          - dependency-name: '@atproto/lex-schema'
+          - dependency-name: '@atproto/lex-json'
+          - dependency-name: '@atproto-labs/did-resolver'

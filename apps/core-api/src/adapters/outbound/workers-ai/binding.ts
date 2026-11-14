@@ -8,9 +8,9 @@
  * `env`. So `worker.ts` hands it over here at the top of `fetch`, `scheduled`
  * and `queue`, and the registry reads it back with `workersAi()`.
  *
- * Under the Node entry (`index.ts`) nothing calls `bindWorkersAi`, so the
- * `workers-ai` provider reports unavailable and the default scan moves on —
- * the same honest-absence path an unset API key takes.
+ * Anywhere `bindWorkersAi` isn't called (tests, a harness), the `workers-ai`
+ * provider reports unavailable and the default scan moves on, the same
+ * honest-absence path an unset API key takes.
  */
 
 /** The one method the adapters call, typed structurally (no workers-types import). */
