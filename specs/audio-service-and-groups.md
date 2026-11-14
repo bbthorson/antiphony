@@ -211,6 +211,10 @@ keeps every URI, as long as the DID, collection and record key stay the same. So
   one but the person can sign their commits. When the person's PDS supports spaces, the app
   writes the same records there with the person's OAuth session: same URI, same CID.
 - **To exercise the native path now,** run the spaces-alpha reference PDS for test accounts.
+  *2026-11-14:* from the December 1 beta, the reference PDS and Bluesky's PDS fleet hold space
+  repos, so a person's own PDS is the native path. Don't keep anything on an alpha PDS: alpha
+  data won't migrate cleanly, and `spaces-alpha.host.bsky.network` will be shut down
+  ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md)).
 - **What is sealed is the DID in each URI segment**, which G5 settles. Where records are hosted
   is not sealed.
 
@@ -242,7 +246,7 @@ someone hear their own reply.
 | 4 | **Bardcast's chapter and join consent** (G3): the join flow says chapters stay with the table. | bardcast |
 | 5 | **Vox Pop members from the members space** (G4): membership records and acceptances, with Postgres as an index. | vox-pop |
 | 6 | **Audio service mode** (G2): process audio referenced by records in other repos, read with a space credential, and publish derived records. **The critical path** since the 2026-11-02 finding: it is the only way Antiphony processes a group's audio. Spec: [`audio-service-mode.md`](./audio-service-mode.md); Phases A, B and C approved 2026-11-02. *Phase A (public records) built 2026-11-02, contract 0.10.4; Phase B (space records, tenant-pushed bytes) built 2026-11-02, contract 0.10.5; Phase C (space records read on a delegation) built 2026-11-02, contract 0.10.6.* | antiphony |
-| 7 | **Move member-authored records to members' PDSes** as they gain spaces support (G6). | bardcast |
+| 7 | **Move member-authored records to members' PDSes** as they gain spaces support (G6). *Unblocked from the December 1 beta* ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md) step 8). | bardcast |
 | 8 | **Retire custody pinning and Antiphony's repo hosting** once nothing is hosted there. | antiphony |
 
 Step 2 must land before Bardcast keeps its first recording.

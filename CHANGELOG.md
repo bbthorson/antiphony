@@ -33,7 +33,13 @@ the contract version does not move.
   - Checked against two in-process reference PDSes (`@atproto/dev-env` at the same pin): a
     member's delegation, `authorizeSpaceSync` with Antiphony's own key, `getRecord` with a
     verified MAC, `getBlob`, single-use delegations, an outsider refused, a missing MAC
-    request answered `InvalidSpaceMac`, and a deleted space read as `deleted`.
+    request answered `InvalidSpaceMac`, and a deleted space read as `deleted`. The check is
+    committed as `space-repo.conformance.test.ts`, which is skipped unless `DEV_ENV_PATH` is set.
+- **Specs use the beta's names.** [`specs/spaces-beta-readiness.md`](./specs/spaces-beta-readiness.md)
+  maps the old protocol names to the new ones and sets out the December 1 plan, including the
+  possible `at:space/` URI change. The specs tenants build from (`cross-repo-design.md`,
+  `xrpc-surface.md`, `audio-service-mode.md`) now say `managedspace.checkAccess` where they said
+  `simplespace.checkUserAccess`.
 
 ## [0.10.9] — 2026-11-11
 
