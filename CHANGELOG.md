@@ -35,6 +35,14 @@ the contract version does not move.
     verified MAC, `getBlob`, single-use delegations, an outsider refused, a missing MAC
     request answered `InvalidSpaceMac`, and a deleted space read as `deleted`. The check is
     committed as `space-repo.conformance.test.ts`, which is skipped unless `DEV_ENV_PATH` is set.
+- **Space reads are built on `@atproto/lex-space`** (`SpaceReader`), replacing the hand-written
+  credential exchange, request signing and MAC handling. Antiphony keeps its own network
+  policy around it: every request is HTTPS-only, follows no redirects, has a timeout, and a
+  blob read stops at its byte cap. The tenant's delegation token is spent at most once.
+  Classification is unchanged. The library also checks each record's CID and each blob's bytes
+  against their CIDs. New dependencies, pinned to the same alpha: `@atproto/lex-space`,
+  `@atproto/lex-schema`, `@atproto/lex-json` and `@atproto-labs/did-resolver`. The Worker's
+  gzipped upload grew from 416 to 529 KiB.
 - **Specs use the beta's names.** [`specs/spaces-beta-readiness.md`](./specs/spaces-beta-readiness.md)
   maps the old protocol names to the new ones and sets out the December 1 plan, including the
   possible `at:space/` URI change. The specs tenants build from (`cross-repo-design.md`,

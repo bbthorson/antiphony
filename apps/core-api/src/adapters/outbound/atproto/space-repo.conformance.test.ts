@@ -5,7 +5,7 @@ import type { DidString } from '@atproto/syntax';
 import { spaceRepo } from './space-repo.js';
 
 /**
- * Conformance: the real `spaceRepo` adapter against two in-process reference
+ * Conformance: the real `spaceRepo` adapter (over `@atproto/lex-space`) against two in-process reference
  * PDSes (`@atproto/dev-env`), one holding the space's authority and one the
  * writer. Skipped unless `DEV_ENV_PATH` names an installed dev-env, so the
  * normal suite never needs it. Rerun at every Spaces pin bump
@@ -57,9 +57,9 @@ describe.skipIf(!DEV_ENV)('spaceRepo conformance against the reference PDS', () 
 
     // The adapter insists on HTTPS; dev-env serves http://localhost. Bridge both ways.
     const bridgingFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        const url = new URL(href.replace(/^https:\/\/localhost/, 'http://localhost'));
-        const res = await fetch(url, init);
+        const req = new Request(input, init);
+        const url = new URL(req.url.replace(/^https:\/\/localhost/, 'http://localhost'));
+        const res = await fetch(new Request(url, req));
         if (url.origin !== new URL(plc.url).origin) return res;
         const text = (await res.text()).replaceAll('http://localhost', 'https://localhost');
         return new Response(text, { status: res.status, headers: res.headers });

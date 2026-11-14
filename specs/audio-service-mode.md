@@ -842,7 +842,9 @@ settles what they left open:
   `@antiphony/shared` 0.13.0 ships Phase B's and Phase C's schemas together.
 - **Dependencies, as §12 says.**
   - `@atproto/space` and `@atproto/crypto` at `0.0.0-spaces-alpha-20261029171913` (moved to
-    `20261113224550` on 2026-11-14), exact, in core-api. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
+    `20261113224550` on 2026-11-14), exact, in core-api. Since 2026-11-14 also
+    `@atproto/lex-space`, `@atproto/lex-schema`, `@atproto/lex-json` and
+    `@atproto-labs/did-resolver`, at the same pin. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
     and converts KEM keys with it.
   - `@atproto/syntax` moved to the same alpha in core-api and `packages/core`.
   - Root `overrides` pin `lex-data`, `lex-cbor`, `car`, `crypto`, `common` and `syntax`.
@@ -853,14 +855,20 @@ settles what they left open:
   - The lockfile was written with npm 12.0.2 (the root `packageManager`). An older npm drops
     `libc` fields throughout it.
   - The Worker bundle grew from 1624 to 1976 KiB, and `check:worker-bundle` stays clean.
-- **The adapter** (`adapters/outbound/atproto/space-repo.ts`) behind a new `SpaceRepoPort`:
+- **The adapter** (`adapters/outbound/atproto/space-repo.ts`) behind a new `SpaceRepoPort`.
+  *Since 2026-11-14 it is built on `@atproto/lex-space`'s `SpaceReader`*
+  ([`spaces-beta-readiness.md`](./spaces-beta-readiness.md), "Upstream packages"), which does
+  the protocol work below; the adapter keeps the network policy and the classification.
   - one `authorizeSpaceSync` exchange per call (`getSpaceCredential` until 2026-11-14), at
-    the authority's `#atproto_pds`, with a fresh P-256 key that is never exported;
+    the authority's `#atproto_pds`, with a fresh P-256 key that is never exported, and the
+    tenant's token handed over exactly once;
   - requests signed per writer, with `getRecord`'s record MAC encapsulated against the
-    writer's `#atproto_kem`. Both key spellings are read (`did-document.ts`, shared with the
-    public-repo adapter, which moved onto it);
-  - the URI and the MAC are verified, then the record's CID is recomputed as for a repo
-    record.
+    writer's `#atproto_kem`. Both key spellings are read (by `@atproto/did` now; by
+    `did-document.ts` before);
+  - the URI, the MAC and the record's CID are verified (by the library), the record is
+    returned as JSON (`lexToJson`), and the core recomputes its CID as for a repo record;
+  - a blob is verified against its CID, and capped by the adapter's `fetch`, since the
+    library buffers it whole.
 
   Classification:
   - `SpaceDeleted` is `deleted`;

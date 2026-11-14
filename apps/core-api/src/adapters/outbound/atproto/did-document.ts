@@ -1,12 +1,12 @@
-import { P256_JWT_ALG, formatDidKey, multibaseToBytes, parseMultikey } from '@atproto/crypto';
 import type { RepoResult } from '@antiphony/core/ports/public-repo';
 import { didPlcToUrl, didWebToUrl } from '../../../lib/app-did.js';
 
 /**
  * Reading the DID documents a remote record's hosts are found through, with
  * the guards `public-repo.ts` explains: HTTPS only, no redirects, timeouts.
- * Shared by the public-repo and space adapters, so both classify a document
- * the same way (`gone` only for the directory's own 404/410).
+ * `gone` only for the directory's own 404/410. The space adapter resolves
+ * through `@atproto-labs/did-resolver` instead, under the same guards
+ * (`space-repo.ts`), and classifies its answers the same way.
  */
 
 const DOC_TIMEOUT_MS = 5_000;
@@ -16,7 +16,6 @@ const DOC_CACHE_MS = 10 * 60 * 1000;
 export interface DidDocument {
     id?: unknown;
     service?: { id?: unknown; type?: unknown; serviceEndpoint?: unknown }[];
-    verificationMethod?: { id?: unknown; type?: unknown; publicKeyMultibase?: unknown }[];
 }
 
 export interface DidDocumentResolverOptions {
@@ -68,33 +67,6 @@ export function pdsEndpointOf(doc: DidDocument): RepoResult<string> {
     }
     if (url.protocol !== 'https:') return { ok: false, kind: 'invalid', reason: '#atproto_pds is not HTTPS' };
     return { ok: true, value: url.origin };
-}
-
-/**
- * The document's `#atproto_kem` key as a P-256 `did:key`: what a space reader
- * encapsulates a request's key share against, so only the writer's host can
- * answer it with a record MAC.
- *
- * Two spellings exist. PLC publishes the legacy
- * `EcdsaSecp256r1VerificationKey2019`, whose multibase is the bare key, so
- * prefixing it with `did:key:` gives a key nobody can parse. A `Multikey`
- * carries its multicodec. Both are read, as `@atproto/identity` does.
- */
-export function kemDidKeyOf(doc: DidDocument): string | null {
-    const method = doc.verificationMethod?.find((m) => typeof m.id === 'string' && m.id.endsWith('#atproto_kem'));
-    if (!method || typeof method.publicKeyMultibase !== 'string') return null;
-    try {
-        if (method.type === 'EcdsaSecp256r1VerificationKey2019') {
-            return formatDidKey(P256_JWT_ALG, multibaseToBytes(method.publicKeyMultibase));
-        }
-        if (method.type === 'Multikey') {
-            const parsed = parseMultikey(method.publicKeyMultibase);
-            return parsed.jwtAlg === P256_JWT_ALG ? formatDidKey(parsed.jwtAlg, parsed.keyBytes) : null;
-        }
-    } catch {
-        return null;
-    }
-    return null;
 }
 
 /** Read a body, giving up as soon as it passes `maxBytes`. */
