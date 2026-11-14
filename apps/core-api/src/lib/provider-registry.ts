@@ -95,7 +95,7 @@ export interface ProviderEntry<T> {
 // `workers-ai` leads the scan: when the Worker has its `AI` binding,
 // transcription runs on Cloudflare (Whisper) with no vendor key. Set
 // `ANTIPHONY_TRANSCRIBER=elevenlabs` to keep Scribe on a deployment that has
-// both. Off-Worker (the Node entry) the binding is never set, so the scan falls
+// both. Where the binding is never set (tests, a harness), the scan falls
 // through to ElevenLabs exactly as before.
 const TRANSCRIBERS: ProviderEntry<TranscriberPort>[] = [
     {

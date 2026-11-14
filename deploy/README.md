@@ -1,58 +1,39 @@
-# Cloudflare Workers deploy — one-time setup
+# Deploying Antiphony
 
-`apps/core-api` runs on Cloudflare Workers. `.github/workflows/deploy.yml`
-deploys it on every push to `master` that touches the service; everything here
-is the setup that workflow assumes.
+Three things deploy from this repo:
 
-The config it applies is [`apps/core-api/wrangler.jsonc`](../apps/core-api/wrangler.jsonc),
-which carries the reasoning for each binding. This file is the runbook.
+| What | Where | Workflow |
+| :--- | :--- | :--- |
+| `apps/core-api`, the API | Cloudflare Worker `antiphony-core-api`, at `api.antiphony.dev` | [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), on every push to `master` that touches the service |
+| `apps/audio-rendition`, the ffmpeg service | Cloud Run `antiphony-audio-rendition` (`us-east4`, project `antiphony-core`) | [`.github/workflows/deploy-audio-rendition.yml`](../.github/workflows/deploy-audio-rendition.yml) |
+| `apps/docs`, the docs site | Cloudflare Worker `antiphony-docs`, at `docs.antiphony.dev` | [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml), after CI passes on `master` |
 
-> **This replaced a Cloud Run deployment**, which had itself replaced Firebase
-> App Hosting. The Cloud Run runbook that used to live here — Artifact Registry,
-> two service accounts, Workload Identity Federation, a `--no-traffic` →
-> smoke-test → promote sequence, a `Host` header rewrite, and an origin lock — is
-> gone with the runtime. Most of it existed to contain a fail-closed boot gate
-> that no longer exists either; see
-> [`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md) § The boot
-> gate. If you need the old procedure, it is in this file's git history.
+This file is the runbook for the one-time setup those workflows assume. The core-api config
+is [`apps/core-api/wrangler.jsonc`](../apps/core-api/wrangler.jsonc), which explains each
+binding.
 
 ---
 
-## 1. Create the resources the config names
+## 1. Cloudflare resources
 
-Three, and `wrangler deploy` fails on a config naming any that does not exist —
-which is the point: a missing binding is caught before a deploy rather than at
-the first request that needs it.
-
-> ✅ **Done on 2026-08-17** for account `dd03fe171a20e2a1728b90c2f16ae4f4`. The
-> ids below are committed, so this section is a record rather than a step —
-> re-run it only for a fresh account.
-
-> **There is no Hyperdrive config, deliberately.** The driver conflict is
-> resolved as **option A**: `core-api`'s SQL client is `@neondatabase/serverless`
-> in HTTP mode, which derives an HTTPS endpoint from the connection string's
-> hostname, and a Hyperdrive string points into Cloudflare's network rather than
-> at Neon. Since `readRuntimeEnv` PREFERS Hyperdrive when bound, creating one
-> would break the database outright. The `hyperdrive` block is gone from
-> `apps/core-api/wrangler.jsonc` and the database is a Worker secret instead
-> (§ 2). Neon's pooled (`-pooler`) host is correct for that. Getting Hyperdrive
-> later is option B — a driver replacement, not a binding. See § Verified deploy
-> blockers in [`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md).
+`wrangler deploy` fails on a config that names a resource that doesn't exist. That's useful:
+a missing binding is caught before a deploy, not at the first request that needs it.
 
 ```bash
 # The shared layer of the app-DID custody cache.
 npx wrangler kv namespace create PIN_CACHE
 
-# Audio processing. The dead letter queue must exist before the consumer that
-# names it.
+# Audio processing. Create the dead-letter queue before the consumer that names it.
 npx wrangler queues create antiphony-processing
 npx wrangler queues create antiphony-processing-dlq
+
+# Audio blobs.
+npx wrangler r2 bucket create antiphony-r2-bucket
 ```
 
-Each prints an id. Put them in `apps/core-api/wrangler.jsonc` in place of the
-`REPLACE_ME_…` placeholders and commit that — ids are per-account identifiers,
-not credentials. Only `PIN_CACHE` has an id in the config; queues are bound by
-name, which is why the queue ids are recorded here and nowhere else:
+Put the KV id in `apps/core-api/wrangler.jsonc` and commit it. Ids identify resources; they
+aren't credentials. Queues are bound by name, so their ids are recorded only here. For the
+production account (`dd03fe171a20e2a1728b90c2f16ae4f4`, created 2026-08-17):
 
 | Resource | Id |
 | :--- | :--- |
@@ -60,33 +41,18 @@ name, which is why the queue ids are recorded here and nowhere else:
 | `antiphony-processing` | `83b13d87b09b4ded940cae4a914f173a` |
 | `antiphony-processing-dlq` | `d3da1758e098419490fec45ea12da07b` |
 
-The GCP side of `apps/audio-rendition` needs one more grant that the workflow's
-header does not mention, found by running it: `github-deploy@` must be able to
-act as the Cloud Run runtime service account, or `gcloud run deploy` fails with
-`Permission 'iam.serviceaccounts.actAs' denied`.
+**There is no Hyperdrive binding, on purpose.** core-api's SQL client is
+`@neondatabase/serverless` in HTTP mode, which derives an HTTPS endpoint from the connection
+string's host. A Hyperdrive string points into Cloudflare's network, not at Neon, and
+`readRuntimeEnv` prefers Hyperdrive when it's bound, so adding one would break the database.
+The database is a Worker secret instead (§2). Moving to Hyperdrive means replacing the driver,
+not adding a binding ([`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md),
+"Verified deploy blockers").
 
-**The grant is per-SA, so it names the SA the workflow actually deploys as** —
-`antiphony-core-api@`, passed explicitly via `--service-account`. An earlier
-version of this file granted it on `636106936349-compute@` instead, which is the
-default Cloud Run identity and holds `roles/editor` on the whole project; that
-grant does not carry over and should be revoked if nothing else needs it.
+## 2. Worker secrets
 
-```bash
-gcloud iam service-accounts add-iam-policy-binding \
-  antiphony-core-api@antiphony-core.iam.gserviceaccount.com \
-  --member "serviceAccount:github-deploy@antiphony-core.iam.gserviceaccount.com" \
-  --role roles/iam.serviceAccountUser --project antiphony-core
-```
-
-The R2 bucket (`antiphony-r2-bucket`) is created in the dashboard, or with
-`npx wrangler r2 bucket create antiphony-r2-bucket`.
-
-## 2. Secrets
-
-Four, and none of them appears in any committed file. Cloudflare secrets are
-write-only from outside — nothing reads one back — which is exactly why the
-schema apply in step 4 and the blob migration in step 5 cannot use them: those
-run in a shell, against Neon and GCS, with no Worker involved.
+None of these appears in a committed file. Each `secret put` reads the value from stdin, so
+nothing lands in a file or in shell history.
 
 ```bash
 cd apps/core-api
@@ -94,423 +60,245 @@ npx wrangler secret put SYSTEM_AUTH_TOKEN
 npx wrangler secret put ANTIPHONY_APP_TOKENS
 npx wrangler secret put ELEVENLABS_API_KEY
 npx wrangler secret put DATABASE_URL
-npx wrangler secret put RENDITION_SERVICE_TOKEN  # optional: dedicated bearer for audio-rendition
+npx wrangler secret put RENDITION_SERVICE_TOKEN         # optional
+npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY   # optional, see below
 ```
 
-`DATABASE_URL` is the fourth required secret because option A won the driver decision (§ 1) —
-Neon's **pooled** (`-pooler`) connection string, the one real database
-credential this Worker holds. Under Hyperdrive it would not exist here at all,
-which is the trade that decision made: a secret to hold, in exchange for a
-driver that works today. `RENDITION_SERVICE_TOKEN` is optional: when provided,
-it separates the Cloud Run audio-rendition service token from the platform's
-internal `SYSTEM_AUTH_TOKEN`.
+- **`DATABASE_URL`** is Neon's **pooled** (`-pooler`) connection string, the one real database
+  credential the Worker holds.
+- **`RENDITION_SERVICE_TOKEN`** (optional) is a bearer just for calls to audio-rendition, so it
+  can be rotated apart from `SYSTEM_AUTH_TOKEN`.
+- **R2 needs no secret.** A binding authorizes by being bound.
+- **`ANTIPHONY_APP_DIDS` is a var, not a secret.** DIDs are public, and keeping the pins in the
+  config is what lets the deploy prove them without access to anything secret.
+- **`ANTIPHONY_SERVICE_SIGNING_KEY`** (optional) publishes Antiphony's own DID document at
+  `/.well-known/did.json`. Set the secret first, then the public key:
 
-**Not** R2 (binding-based authorisation needs no credential).
-`ANTIPHONY_APP_DIDS` is deliberately a `var` rather than a secret: DIDs are
-public, and keeping it in the config is what lets the deploy gate prove the pins
-without access to anything secret.
+  ```bash
+  npm run generate:service-key -w @antiphony/core-api   # prints both values; writes nothing
+  npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY -c apps/core-api/wrangler.jsonc
+  # then put the printed public key in "vars" in apps/core-api/wrangler.jsonc as
+  # ANTIPHONY_SERVICE_PUBLIC_KEY, and deploy
+  ```
 
-An optional fifth secret, `ANTIPHONY_SERVICE_SIGNING_KEY`, publishes Antiphony's own
-DID document at `/.well-known/did.json`. Generate the key and set both halves
-**in this order**, secret first:
+  The route answers only when the secret derives the var. With either one missing it stays a
+  404, so the document never advertises a key the service doesn't hold. Keep the private key
+  in a password manager and nowhere else.
 
-```bash
-npm run generate:service-key -w @antiphony/core-api   # prints both values; writes nothing
-npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY -c apps/core-api/wrangler.jsonc
-# then add the printed public key to "vars" in apps/core-api/wrangler.jsonc as
-# ANTIPHONY_SERVICE_PUBLIC_KEY and deploy
-```
+Cloudflare secrets can't be read back. That's why the schema apply (§4) runs from a shell
+with its own copy of `DATABASE_URL`.
 
-The route answers only when the secret derives the var, so that order means the
-document never advertises a key the service lacks; with either missing, the path
-stays a 404. Keep the private key in a password manager and nowhere else.
-
-Each `secret put` prompts for the value on stdin, so these are four
-interactive commands — nothing to paste into a file, and nothing that survives
-in shell history.
-
-## 3. GitHub
+## 3. GitHub settings
 
 | Kind | Name | Value |
 | :--- | :--- | :--- |
-| Secret | `CLOUDFLARE_API_TOKEN` | API token — permissions below, and **`Workers Scripts:Edit` alone is not enough** |
-| Variable | `CLOUDFLARE_ACCOUNT_ID` | Account id — an identifier, not a credential |
-| Variable | `R2_ACCOUNT_ID` | Same account id, read by the audio-rendition deploy |
+| Secret | `CLOUDFLARE_API_TOKEN` | An API token with the permissions below |
+| Variable | `CLOUDFLARE_ACCOUNT_ID` | The account id |
+| Variable | `R2_ACCOUNT_ID` | The same account id, read by the audio-rendition deploy |
 
-### The token's permissions
+**Put the account ids under Variables, not Secrets.** `secrets.FOO` and `vars.FOO` are separate
+namespaces in Actions. An id added as a secret leaves `vars.CLOUDFLARE_ACCOUNT_ID` empty while
+the settings page looks complete.
 
-`wrangler deploy` validates **every binding in the config against the API**
-before it uploads anything, so the token needs read access to each resource the
-config names — not just the right to write a script. An earlier version of this
-file said `Workers Scripts:Edit`, and a deploy with exactly that failed:
+**The token needs more than `Workers Scripts:Edit`.** `wrangler deploy` checks every binding
+in the config against the API before it uploads anything, and stops at the first one that
+fails. Grant the whole set at once, or a too-narrow token reveals its gaps one red build at a
+time:
 
-    A request to the Cloudflare API (/accounts/…/r2/buckets/antiphony-r2-bucket) failed.
-      Authentication error [code: 10000]
-
-Account permissions the current config requires:
-
-| Permission | Why |
+| Account permission | Why |
 | :--- | :--- |
 | `Workers Scripts:Edit` | Upload the script |
-| `Workers R2 Storage:Edit` | The `BLOBS` binding — this is the one that failed above |
+| `Workers R2 Storage:Edit` | The `BLOBS` binding |
 | `Workers KV Storage:Edit` | The `PIN_CACHE` binding |
 | `Queues:Edit` | The producer and consumer bindings |
 | `Account Settings:Read` | Account lookup during deploy |
 
-Plus `User → Memberships:Read` and `User → User Details:Read`, whose absence
-prints warnings rather than failing, and `Zone → Workers Routes:Edit` **only if
-routes move into this config** — the route attached in step 7 was added through
-the dashboard, which needs nothing from this token.
+Also grant `User → Memberships:Read` and `User → User Details:Read`; without them deploys warn
+but don't fail. `Zone → Workers Routes:Edit` is needed only if routes move into the config (the
+route in §7 was added in the dashboard). A bad binding fails with `Authentication error
+[code: 10000]` on that resource. A missing token fails before any binding is checked, so check
+the token first.
 
-Validation **stops at the first binding that fails**, so a too-narrow token
-reveals its gaps one red build at a time. Grant the whole set at once. The token
-in use is broader still (AI, Containers, D1, Hyperdrive, Cloudchamber, Vectorize,
-SSL) — that is a build token reused across projects, not what this deploy needs;
-narrowing it to the table above would cost nothing here.
-
-**All three exist as of 2026-08-17.** The `Kind` column is the whole content of
-this section: `secrets.FOO` and `vars.FOO` are separate namespaces in Actions, so
-an account id added under Secrets leaves `vars.CLOUDFLARE_ACCOUNT_ID` resolving
-to an empty string while the settings page looks complete. That is how these were
-first added, and it reproduces the original blocker exactly. The ids belong under
-Variables *because* they are not credentials: an unmasked empty value is visible
-in a log, where `***` is not.
-
-`wrangler` fails before it validates any binding, so a missing token looks
-nothing like a bad binding id in the logs — check the token first.
-
-## 4. Apply the database schema
+## 4. Database schema
 
 ```bash
+DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api -- --dry-run   # what's pending
 DATABASE_URL="$DATABASE_URL" npm run migrate -w @antiphony/core-api
 ```
 
-A versioned chain now, not apply-once DDL: `apps/core-api/migrations/*.sql`
-applied in order with a `schema_migrations` ledger, one transaction per file,
-and a checksum per file so an already-applied migration cannot be edited. Run
-it with `-- --dry-run` first to see what is pending.
+Migrations are a numbered chain in `apps/core-api/migrations/*.sql`. Each file is applied in
+its own transaction and recorded with a checksum in `schema_migrations`, so an applied file
+can't be edited. In production, the `Deploy core-api` workflow applies pending migrations before
+it deploys. A self-hosted deployment has to run them itself. A database that already has the
+schema from before the chain existed (applied with `psql -f db/schema.sql`) has to be
+baselined once first, always with `--until` naming the last file it already has. See
+[`apps/core-api/db/README.md`](../apps/core-api/db/README.md).
 
-**The DID registry (contract 0.10.2–0.10.3) needs migrations 0004 and 0005**
-(`tenant_dids`, and the `authority` columns and foreign keys) and
-`ANTIPHONY_PDS_HOST`. In production both are in place: the `Deploy core-api`
-workflow applies pending migrations before it deploys (step "Apply pending
-schema migrations"; it ran for #225 and #226 on 2026-11-01), and
-`ANTIPHONY_PDS_HOST` is a var in `apps/core-api/wrangler.jsonc`, which the Worker
-refuses to start without (`assertRequiredConfig`). A self-hosted deploy must do
-both itself. Without the migrations, `/api/v1/dids` and any write naming an
-`authority` fail on the missing table or column. Outside the Worker (a Node
-harness or tests, where the startup check doesn't run) a missing
-`ANTIPHONY_PDS_HOST` makes `/api/v1/dids` answer `503 DIDS_UNAVAILABLE` and
-writes under a registered DID `503 AUTHORITY_CUSTODY_UNPROVEN`, because without
-an expected host a tenant could register anyone's DID.
+`ANTIPHONY_PDS_HOST` (a var in `wrangler.jsonc`) is required: the Worker refuses to start
+without it (`assertRequiredConfig`). Outside the Worker, in tests or a local harness, a missing
+value makes `/api/v1/dids` answer `503 DIDS_UNAVAILABLE` and writes under a registered DID
+answer `503 AUTHORITY_CUSTODY_UNPROVEN`. Without an expected host, a tenant could register
+anyone's DID.
 
-⚠️ On a database that ALREADY has the schema — anything applied with the old
-`psql -f db/schema.sql` — run `-- --baseline` once instead, which records the
-chain as applied without executing it. See `apps/core-api/db/README.md`.
+## 5. audio-rendition (optional)
 
-The paragraph that used to be here said the first post-deploy schema change is
-when that stops being fine and a migration tool becomes necessary.
+`apps/audio-rendition` derives `mp3` renditions for callers that can't decode webm/opus.
+Twilio's `<Play>` is the one that matters. It's a container, not a Worker, because it spawns
+ffmpeg. See [`apps/audio-rendition/README.md`](../apps/audio-rendition/README.md).
 
-## 5. Move the data
+**You can skip it.** Without it, `GET /api/v1/audio?format=mp3` serves renditions that already
+exist and 404s the rest. If you skip it, **delete `ANTIPHONY_RENDITION_SERVICE_URL`** from the
+vars rather than leaving a placeholder. `renditionServiceConfig()` only checks that the var is
+non-empty, so a placeholder counts as configured and every miss fetches a host that doesn't
+resolve.
 
-Two independent halves. **Object paths are unchanged across the move**
-(`blobs/{originAppId}/{cid}`), so no record needs rewriting to point at the new
-bucket — a property of content addressing, and the reason these can run in
-either order or concurrently.
+The deploy needs three Secret Manager secrets (`system-auth-token`, `r2-access-key-id`,
+`r2-secret-access-key`) and the `R2_ACCOUNT_ID` repo variable. The R2 key is the **one stored R2
+credential in Antiphony**, because everything else reaches R2 through a binding. Scope it to
+`antiphony-r2-bucket`.
 
-**Blobs — Cloudflare Super Slurper, no code.** R2 → Data Migration in the
-dashboard copies GCS → R2 natively, given a service account with
-`Storage Object Viewer` plus `storage.buckets.get`.
+**IAM, all learned by running it:**
 
-**Records — already done, because there is nothing to move.** A dry run against
-`antiphony-core` on 2026-08-16 found `posts` and `audio_transcripts` both
-**empty**: nothing has ever been written through `/api/v1/posts` in this
-project, so the cutover is just pointing at Neon. What the store does hold is
-the legacy Vox Pop model the extraction inherited (17 prompts, 33 replies, 13
-users), which is not an `AudioPostRecord` and which the script correctly
-ignores. Bringing that across would be a model translation rather than a store
-swap — see § 2d in the migration spec.
+1. **`github-deploy@` needs `roles/iam.serviceAccountUser` on the runtime service account it
+   deploys as**, `antiphony-core-api@`. The grant is per service account:
 
-To confirm it yourself:
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding \
+     antiphony-core-api@antiphony-core.iam.gserviceaccount.com \
+     --member "serviceAccount:github-deploy@antiphony-core.iam.gserviceaccount.com" \
+     --role roles/iam.serviceAccountUser --project antiphony-core
+   ```
 
-```bash
-FIREBASE_PROJECT_ID=antiphony-core \
-  npm run migrate:firestore-to-neon -w @antiphony/core-api -- --dry-run --allow-empty
-```
+   An earlier grant on the default compute account (`636106936349-compute@`) doesn't carry
+   over. Revoke it if nothing else needs it.
+2. **The runtime account needs `roles/secretmanager.secretAccessor` on each secret.** Without
+   it, Cloud Run refuses the revision at start. The service then exists in the console but
+   serves nothing, which looks like a broken container rather than a missing grant.
+3. **The workflow passes `--service-account` on purpose.** Otherwise the revision runs as the
+   default compute account, which holds `roles/editor` on the whole project. That's the widest
+   blast radius possible, for the one container that shells out to ffmpeg and holds R2 keys.
 
-A dry run needs no `DATABASE_URL` — it touches no database, and passing one it
-never uses is what an earlier version wrongly demanded. `--allow-empty` is
-required to acknowledge an empty store: reading zero records from both
-collections is far more often a credential or project mismatch than a genuinely
-empty one, so the script refuses to report success without it.
-
-If records ever DO need moving, dropping `--dry-run` writes them, and the script
-**verifies itself** — every migrated post is read back and its CID recomputed,
-exiting non-zero on any drift. That check is inline rather than a later audit
-because the failure is silent: `jsonb` stores numbers as `numeric`, wider than
-JS, so a coercion would change a record and invalidate every StrongRef pointing
-at it while both sides continued to agree with themselves. Drift caught during
-the run is one record to investigate; caught afterwards it is an unknown subset.
-
-Re-running is safe — every write is an upsert keyed on the record's own id, so
-a partial run resumes by running again. Nothing is deleted from Firestore.
-
-## 5b. Deploy the transcode service (optional)
-
-`apps/audio-rendition` derives `mp3` renditions for callers that cannot decode
-webm/opus — Twilio's `<Play>` being the one that matters. It is a container
-rather than a Worker because it spawns ffmpeg.
-
-**Skippable.** Without it, `GET /api/v1/audio?format=mp3` serves renditions that
-already exist and 404s the rest. That is the right state for a deployment that
-pre-warms everything it needs, or that never phones anything.
-
-> ⚠️ **Skipping it is not the same as leaving the placeholder in.** Until
-> 2026-08-17 `ANTIPHONY_RENDITION_SERVICE_URL` shipped as
-> `https://antiphony-audio-rendition-REPLACE_ME.us-east4.run.app`, and
-> `renditionServiceConfig()` only checks that the var is NON-EMPTY — so a
-> placeholder counted as configured, which is precisely the state that function's
-> own comment exists to prevent. Every mp3 miss fetched a host that does not
-> resolve, logged `[rendition] service unreachable`, and 404ed anyway.
->
-> **The var is now deleted**, which is the honest form of "the service is
-> skipped". Restore it with the real Cloud Run URL when the service deploys —
-> never with a placeholder.
-
-`.github/workflows/deploy-audio-rendition.yml` ships it, and needs three
-Secret Manager secrets granted to the runtime service account
-(`system-auth-token`, `r2-access-key-id`, `r2-secret-access-key`) plus an
-`R2_ACCOUNT_ID` repo variable. As of 2026-08-17 only `system-auth-token` exists;
-the two R2 keys have never been created. See
-[`apps/audio-rendition/README.md`](../apps/audio-rendition/README.md).
-
-The R2 key is the **one place in Antiphony a stored R2 credential is
-unavoidable** — everywhere else access is a Worker binding. Scope it to the one
-bucket, `antiphony-r2-bucket`.
-
-**Three IAM facts this deploy needs, all learned by running it:**
-
-1. **`github-deploy@` needs `roles/iam.serviceAccountUser` on the runtime SA it
-   deploys as** — and that grant is per-SA. The first one was made against the
-   default compute SA and did not carry over when the service moved to
-   `antiphony-core-api@`.
-2. **The runtime SA needs `roles/secretmanager.secretAccessor` on each secret.**
-   Cloud Run validates this when the revision starts and refuses it, naming
-   every secret it cannot read — the service then exists in the console while
-   serving nothing, which reads as a broken container rather than a missing
-   grant.
-3. **The workflow passes `--service-account` deliberately.** Without it, Cloud
-   Run runs the revision as the default compute SA, which holds `roles/editor`
-   on the whole project — the widest possible blast radius for the one container
-   in this system that shells out to ffmpeg, and the one place R2 credentials
-   are mounted.
-
-> ✅ **Deployed 2026-08-18**, running as `antiphony-core-api@` and reading R2 with
-> a bucket-scoped S3 key. Verified by asking for a rendition of a CID that does
-> not exist: the service logged `[rendition] no source` at `warn` and answered
-> 404, which is R2 authenticating and reporting a missing object. A bad key would
-> have been `read failed (403)` at `error`. `/health` does NOT touch R2, so a
-> green health check proves nothing about the credentials — that probe is the
-> check that does.
-
-Then point core-api at it by setting `ANTIPHONY_RENDITION_SERVICE_URL` in
-`apps/core-api/wrangler.jsonc` to the deployed Cloud Run URL — which is
-Cloud Run's **opaque** hostname, not the `-{project-number}` shape this file's
-old placeholder implied:
+Then set `ANTIPHONY_RENDITION_SERVICE_URL` in `wrangler.jsonc` to the service's URL. That's Cloud
+Run's opaque hostname:
 
 ```bash
 gcloud run services describe antiphony-audio-rendition \
   --project antiphony-core --region us-east4 --format='value(status.url)'
-``` That var and `SYSTEM_AUTH_TOKEN` go together — a URL
-with no token is a rendition path that looks configured and 401s on every miss,
-which core-api logs once at startup rather than per request.
+```
 
-## 6. Deploy
+The URL and `SYSTEM_AUTH_TOKEN` (or `RENDITION_SERVICE_TOKEN`) go together. A URL with no token
+401s on every miss, and core-api logs that once at startup.
 
-Push to `master`, or run the workflow by hand. It proves every app-DID pin,
-asserts the Worker bundle carries no Node-only dependency, deploys, and smoke
-tests `/health`.
+**To check it works,** ask for an mp3 of a CID that doesn't exist. The service should log
+`[rendition] no source` at `warn` and answer 404, which means R2 authenticated and reported a
+missing object. A bad key logs `read failed (403)` at `error`. `/health` doesn't touch R2, so
+a green health check proves nothing about the credentials.
 
-The smoke test asserts the **SHA**, not `"ok":true`. `ok:true` is true of any
-healthy deployment at that hostname — so it passed while `api.antiphony.dev`
-still answered from Cloud Run, and would pass on any stale version. It matches
-`/health`'s `sha` against `GITHUB_SHA` instead, which cannot be satisfied by
-something this workflow did not produce. Its one remaining blind spot: a
-`workflow_dispatch` re-run of the SAME commit is satisfied by the previous
-deploy of that commit, since only `BUILD_TIME` differs.
+## 6. Deploy core-api
 
-That step is also the migration's most-repeated lesson: when `Deploy` fails,
-GitHub **skips** it, so the one step whose job is to say "live is not what you
-merged" is exactly the step that does not run. It stayed silent for 17 hours
-that way. A red `Deploy` is the thing to read; a green run with a skipped smoke
-test is not a deploy.
+Push to `master`, or run the workflow by hand. It proves every app-DID pin (`validate:pins`),
+checks the Worker bundle has no Node-only dependency, applies pending migrations, deploys,
+and smoke-tests `/health`.
 
-To deploy from a laptop:
+**The smoke test matches `/health`'s `sha` against `GITHUB_SHA`,** not `"ok": true`. Any healthy
+deployment at that hostname says `ok`, including a stale one. The one gap: a manual re-run of
+the same commit is satisfied by the previous deploy of it.
+
+**When `Deploy` fails, GitHub skips the smoke test.** So the step whose job is to say "live is
+not what you merged" doesn't run. Read a red `Deploy` as the signal; a green run with a skipped
+smoke test is not a deploy.
+
+From a laptop:
 
 ```bash
 npm run deploy -w @antiphony/core-api
 ```
 
-## 7. Point the domain at it
+## 7. Domain
 
-Add a route for `api.antiphony.dev/*` to the `antiphony-core-api` Worker
-(Workers & Pages → the Worker → Settings → Domains & Routes). Because both
-sides are Cloudflare, there is no origin behind the edge to reach around — which
-is why the origin lock the Cloud Run deployment needed is gone rather than
-ported.
-
-> ✅ **Attached 2026-08-17T22:05Z. The cutover is done.** `api.antiphony.dev`
-> answers from the Worker on `backend: postgres`. Until the route existed the
-> Worker was reachable only at `antiphony-core-api.bbthorson.workers.dev`, and
-> the domain still served the Cloud Run revision `4f07b24` on `firebase` — the
-> two hostnames disagreeing is what a half-finished cutover looks like from
-> outside, and `/health` is what makes it visible.
->
-> Rolling the cutover back is removing this route: the Cloud Run revision is
-> still running and untouched, so it resumes serving. That is a dashboard action,
-> not a redeploy.
-
-Confirm the cutover with the one route that answers without a credential:
+`api.antiphony.dev/*` is a route on the `antiphony-core-api` Worker (Workers & Pages → the
+Worker → Settings → Domains & Routes). Both sides are Cloudflare, so there's no origin to reach
+around.
 
 ```bash
 curl -s https://api.antiphony.dev/health
 ```
 
-`backend` reports which store is actually wired (`postgres` or `firebase`),
-which is the question that stops being answerable from the commit alone during
-a migration.
+`/health` answers without a credential. It reports `sha`, `deployedAt`, the wired `backend`
+(always `postgres` now), and whether Neon and R2 actually hold data. `ok` stays `true` for an
+empty deployment, so read the fields, not the status code.
 
-**`workers.dev` is on**, because the config sets no `workers_dev` key and the
-default is enabled — the deploy log warns about it, and preview URLs come with
-it. It is how the Worker was verified before the route existed. It also means a
-second public hostname reaching the same Worker, which is a real qualification
-of "no origin to reach around" above: every route but `/health` still needs a
-token, so it is not a hole, but anything configured at the edge for
-`api.antiphony.dev` does not apply there. Setting `"workers_dev": false` is the
-deliberate version of this decision, either way.
+**`workers.dev` is on.** The config sets no `workers_dev` key, and the default is enabled. So the
+Worker also answers at `antiphony-core-api.bbthorson.workers.dev`. Every route but `/health`
+still needs a token, so it isn't a hole, but edge settings for `api.antiphony.dev` don't apply
+there. Set `"workers_dev": false` to close it.
 
 ---
 
-## 8. The docs site is a second Worker
+## 8. The docs site
 
-`docs.antiphony.dev` is a separate, assets-only Worker named **`antiphony-docs`**,
-deployed via [`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)
-(on completion of CI on `master`, or manually via `workflow_dispatch`). It has no
-bindings and no `main` script: it serves the static Astro build (`apps/docs/dist`).
-
-> **Previously deployed via Cloudflare Workers Builds** (dashboard → the Worker →
-> Settings → Builds). That path was disconnected in favor of the GitHub Actions
-> workflow to provide explicit build reporting and eliminate silent deploy stalls.
-> Ensure the Git repository is disconnected in the Cloudflare dashboard so it does
-> not deploy twice.
+`docs.antiphony.dev` is a separate, assets-only Worker, **`antiphony-docs`**. It has no bindings
+and no script, and serves the static Astro build of `apps/docs`. Its config is
+[`wrangler.jsonc`](../wrangler.jsonc) at the repo root, so the root config must stay the docs
+site's; core-api's is always passed with `-c`.
 
 | Setting | Value |
 | :--- | :--- |
-| Root directory | `/` |
 | Build command | `npm run build -w @antiphony/docs` |
-| Deploy command | `npx wrangler deploy` |
-| Wrangler config | [`wrangler.jsonc`](../wrangler.jsonc) at the repo root |
+| Deploy command | `npx wrangler deploy` (from the repo root) |
 
-⚠️ **`name` in that file must equal the Worker's name in the dashboard, or the
-build fails** — see [the documented name check](https://developers.cloudflare.com/workers/ci-cd/builds/).
-It said `antiphony` from 2026-06-27 while the Worker has always been
-`antiphony-docs`. Fixed 2026-08-19.
+- **`name` in the root `wrangler.jsonc` must equal the Worker's name, `antiphony-docs`.**
+  Cloudflare's autofix once "corrected" it to `antiphony`, and that was wrong. When the dashboard
+  shows the "keep settings consistent" banner, take the name from the banner (it quotes the
+  live Worker), not from an autofix PR.
+- **Deploys come from GitHub Actions only.** The Cloudflare Workers Builds connection was
+  removed so failures show up in Actions. Keep the Git repository disconnected in the dashboard
+  so it doesn't deploy twice.
+- **A docs build runs a full workspace install,** so anything that breaks `npm ci` at the root
+  breaks the docs deploy too.
 
-The wrong value came from Cloudflare's own autofix, which opens a PR when it
-detects a mismatch (branch `update_worker_name_to_antiphony`, commit 59b402c).
-It guessed wrong and the PR was merged. When the dashboard shows the
-"keep settings consistent" banner it quotes the **live Worker**, so take the
-name from the banner, not from the autofix PR.
+### Node version
 
-**This was NOT why the builds were failing, despite looking like it.** The
-failing build's log ends at Cloudflare's tool-install step, which runs before
-this config is read:
+`.nvmrc` pins an exact patch (`22.23.2`), and every workflow reads it through
+`actions/setup-node`, so a bump moves CI and every deploy together. It's exact because Cloudflare's
+build image only preinstalls a few versions. A bare `22` resolves to the newest release, which
+may need a download that has failed before. `apps/audio-rendition/Dockerfile` pins `node:22-slim`
+separately.
 
-```
-Detected the following tools from environment: nodejs@22.23.2, npm@12.0.2
-Installing nodejs 22.23.2
-Failed: error occurred while installing tools or dependencies.
-```
-
-The name check was never reached. The config is sound — the build image
-preinstalls 22.23.2, and npm 12.0.2's engines (`^22.22.2 || ^24.15.0 || >=26.0.0`)
-accept it — and identical config both passed and failed across 2026-08-16..19,
-which is the signature of a transient failure in that step. **Retry the build
-first**; escalate only if a retry fails the same way. The rename is still
-correct, because it is a real latent bug that would have failed the deploy step
-once a build got that far.
-
-### Why `.nvmrc` pins an exact patch version
-
-It is `22.23.2`, not `22`. Workers Builds resolves a bare major to the newest
-release in that line, and the build image only **preinstalls** two versions
-(currently 22.23.2 and 24.18.0). The day Node ships 22.23.3, a bare `22` starts
-resolving to a version that is not in the image, forcing the download step that
-failed above. An exact pin that matches a preinstalled version skips it.
-
-So when Cloudflare changes what the image preinstalls, this file should follow.
-`.nvmrc` is also the single source of truth for `actions/setup-node` across all
-workflows (`ci.yml`, `deploy.yml`, `deploy-docs.yml`, `deploy-audio-rendition.yml`,
-and `release.yml`), so a bump moves CI and all production deploys together —
-which is the point, but check all of them when you change it.
-
-**Node 22 is the maintenance line** (LTS since 2024-10-29, maintenance since
-2025-10-21, EOL 2027-04-30). Node 24 is the active LTS and is Workers Builds'
-default. The full gate — typecheck, lint, 853 tests, build, docs build,
-`check:worker-bundle` — was verified green on 24.18.0 on 2026-08-19, so that
-move is pre-validated whenever it is wanted. `apps/audio-rendition/Dockerfile`
-pins `node:22-slim` independently and would need the same bump.
-
-Two consequences of the deploy command being a bare `npx wrangler deploy` at the
-repo root are worth keeping in mind: the root config must stay the docs site's
-(core-api's is passed explicitly with `-c`), and a build of this Worker runs a
-full workspace install, so it is affected by anything that breaks `npm ci` at
-the root even though it only publishes `apps/docs/dist`.
+Node 22 is in maintenance until 2027-04-30. Node 24 is the active LTS. The full gate passed on
+24.18.0 on 2026-08-19, so the move is pre-validated. Bump `.nvmrc`, the Dockerfile and the root
+`engines` together.
 
 ---
 
 ## Rollback
 
-**A bad deploy:** roll back to the previous version in the dashboard
-(Workers & Pages → the Worker → Deployments), or `npx wrangler rollback`.
-Instant and needs no rebuild.
-
-**A bad data cutover — records:** this is the one that stopped being a config
-flip. On Cloud Run, unsetting `DATABASE_URL` fell back to Firestore. On Workers
-the bindings are mandatory — `composition.ts` throws rather than falling back —
-because a Worker holds no Application Default Credentials and could not reach
-Firestore if it tried.
-
-That matters less than it sounds, because the fallback was never a meaningful
-records rollback: `posts` and `audio_transcripts` are empty (§ 5), so falling
-back to Firestore would mean falling back to nothing. **The real recovery for a
-Neon problem is Neon's own** — point-in-time restore, or restoring onto a
-branch — not a swap to a store that never held these records.
-
-**A bad data cutover — blobs:** here the old copy is real. Super Slurper copies
-rather than moves, so GCS keeps every object, and the paths are identical on
-both sides (a property of content addressing). The bytes are safe regardless;
-what is Worker-only is the access path, so reaching them again means a runtime
-with a GCS binding rather than a config change.
+- **A bad deploy:** roll back in the dashboard (Workers & Pages → the Worker → Deployments), or
+  `npx wrangler rollback`. It's instant and needs no rebuild.
+- **Bad data:** use Neon's own recovery, a point-in-time restore or a restore onto a branch.
+  There is no other store to fall back to; `composition.ts` throws rather than run without its
+  bindings.
 
 ## Operational notes
 
-**The TTL sweep** runs hourly from the Worker's Cron Trigger and drives
-`antiphony_sweep_expired()`. It is pure space reclamation — both upserts already
-treat an expired row as absent — so it can run late, partially, or not at all
-without anything observable changing except disk. Run it by hand if the tables
-ever look large:
+- **The TTL sweep** runs hourly from the Worker's cron trigger (`17 * * * *`) and calls
+  `antiphony_sweep_expired()`. It only reclaims space, since both upserts already treat an
+  expired row as absent. It can run late or not at all without anything visible changing. To
+  run it by hand: `select * from antiphony_sweep_expired();`.
+- **Pin drift** is reported on the same trigger, before the sweep. A tenant whose DID document
+  stops naming Antiphony logs at `error`, and fails closed at its next request. DIDs registered
+  through `/api/v1/dids` are rechecked the same way.
+- **The remote-post sweep** runs on the same trigger too
+  ([`specs/audio-service-mode.md`](../specs/audio-service-mode.md) §8.1).
+- **Latency.** Neon is single-region (AWS `us-east-1`) and Workers run near the user, so Smart
+  Placement is on. The regression it prevents can't be seen when testing from the US east coast,
+  which is why it was on from the first deploy rather than added after measuring.
 
-```sql
-select * from antiphony_sweep_expired();
-```
+## History
 
-**Pin drift** is reported on the same hourly trigger. A tenant whose `did:web`
-document stops naming us logs at `error` with the reason, and fails closed at
-its next request. This is the ongoing-custody check the Cloud Run boot gate only
-ever performed when a process happened to restart.
-
-**Latency.** Neon is single-region on AWS `us-east-1` and Workers run near the
-user, so Smart Placement is on from the first deploy — see § Geography in the
-migration spec. The regression it prevents is invisible when testing from the US
-east coast, which is the reason it is not something to enable after measuring.
+core-api ran on Firebase App Hosting, then Cloud Run with Firestore and Cloud Storage, and moved
+to Workers, Neon and R2 on 2026-08-17. Nothing in core-api talks to Google Cloud or Firebase
+now. Firestore never held any `/api/v1/posts` records, so the move copied only blobs (with
+Cloudflare Super Slurper; object paths are content-addressed and didn't change). The Cloud Run
+runbook and the Firestore migration script are in this file's and the repo's git history. The
+reasoning is in [`specs/archive/cloudflare-migration.md`](../specs/archive/cloudflare-migration.md).

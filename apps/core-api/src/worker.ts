@@ -102,8 +102,8 @@ export default {
     /**
      * ## There is no boot gate here, and that is the design
      *
-     * On Cloud Run, `index.ts` proves every pin before `serve()` and
-     * `process.exit(1)`s on failure. Workers have no boot phase, and the
+     * On Cloud Run, the Node entry (`index.ts`, since removed) proved every pin
+     * before `serve()` and `process.exit(1)`ed on failure. Workers have no boot phase, and the
      * replacement is deliberately not "do the same thing on the first request":
      * that would keep the property this codebase's own analysis says the boot
      * gate has by accident rather than by design — one bad tenant failing every

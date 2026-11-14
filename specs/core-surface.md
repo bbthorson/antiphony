@@ -6,6 +6,12 @@ only**, and the profile/handle/identity routes described below as "remove" are
 gone, re-homed in the Vox Pop BFF (see [`core-bff-boundary.md`](./core-bff-boundary.md)).
 The breaking trim shipped as a version bump (see [`api-versioning.md`](./api-versioning.md)).
 
+> **Widened since, on the same rules (2026-11-14 note).** The surface is still headless and
+> identity-free, but it is no longer posts and audio only. Spaces, DIDs, Remote posts and
+> Tenant were each added as an approved tag through a deliberate surface review. The current
+> list is `OPENAPI_TAGS` in `apps/core-api/src/lib/openapi-info.ts`, summarised in
+> [`apps/core-api/README.md`](../apps/core-api/README.md).
+
 ## Decision
 
 Antiphony's public API surface is **posts + audio only**. Author identity is
@@ -127,7 +133,11 @@ means "no viewer," not "no tenant."
 The service token is required on **all data routes**, public reads included. A
 data request with no token → `401`.
 
-- The three public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,\n  + audio resolve) move from `optionalAuth` (token-optional) to a\n  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +\n  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open — they\n  carry no tenancy.
+- The three public-read routes (`GET /posts/{postId}`, `GET /posts/{postId}/replies`,
+  and audio resolve) move from `optionalAuth` (token-optional) to a
+  **require-token / optional-actor** gate. `requireAuth` is unchanged (token +
+  actor). Infra routes (`GET /`, `/health`, `/openapi.json`) stay open: they
+  carry no tenancy.
 - **Remove the default-tenant fallback:** delete `DEFAULT_ORIGIN_APP_ID` /
   `ANTIPHONY_ORIGIN_APP_ID` from `lib/origin-app.ts` and drop the env var from
   `deploy/cloudrun.env.yaml`. Today a tokenless read silently resolves against the

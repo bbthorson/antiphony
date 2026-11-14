@@ -1,44 +1,50 @@
 # @antiphony/core
 
-> Open-core service layer for Antiphony. Portable business-logic classes — `AudioPostService`, `AudioProcessingService`, and the `makeStorageService` factory — plus the dependency **ports** they compose against.
+> Open-core service layer for Antiphony: portable business logic (posts, enrichment, spaces, remote posts, deletion, the DID registry, tenant stats) plus the dependency **ports** it composes against.
 >
 > **License:** MIT. **Status:** consumed by `apps/core-api`.
 
 ## What lives here
 
-- **`services/*.ts`** — service classes. Pure business logic; no vendor SDK imports, no framework imports, no I/O concerns. Today: `audio-posts.ts` (`AudioPostService` — posts, replies, hydrated views), `audio-processing.ts` (`AudioProcessingService` — the enrichment pipeline), `storage.ts` (`makeStorageService`).
-- **`ports/*.ts`** — the narrow interface contracts the services depend on. Two kinds:
-  - **Dependency ports** — the storage/query seam a service needs (`AudioPostDependencies`, `AudioProcessingDependencies`, `StorageDependencies`). A concrete backend implements these.
-  - **Provider ports** — the pluggable capabilities enrichment uses: `TranscriberPort`, `DenoiserPort`, `TrimmerPort`, `WaveformPort`, `ProcessingDispatchPort`, `ProcessingNotifierPort`, plus `Logger`.
+- **`services/*.ts`**: pure business logic, with no vendor SDK imports, no framework imports and no I/O.
+
+  | Service | What it does |
+  | :--- | :--- |
+  | `audio-posts.ts` | Posts and replies Antiphony holds, hydrated views, and building and parsing record URIs (flat and in a space) |
+  | `audio-processing.ts` | The enrichment pipeline: denoise, trim, transcribe, waveform |
+  | `spaces.ts` | A tenant's atproto spaces and their policies |
+  | `remote-posts.ts` | Audio whose record lives in another repo: registration, verification, rechecks |
+  | `post-deletion.ts` | Deleting posts and their audio, and the deletion ledger |
+  | `did-registry.ts` | DIDs a tenant may write under besides its app DID |
+  | `tenant-stats.ts` | Post counts for the calling tenant |
+  | `storage.ts` | `makeStorageService`, over a `BlobStore` |
+
+- **`ports/*.ts`**: the narrow interfaces the services depend on. Two kinds:
+  - **Dependency ports**: the storage and query seam each service needs (`AudioPostDependencies`, `RemotePostDependencies`, `SpaceDependencies`, …). A concrete backend implements them.
+  - **Provider ports**: pluggable capabilities. Enrichment uses `TranscriberPort`, `DenoiserPort`, `TrimmerPort`, `WaveformPort`, `ProcessingDispatchPort` and `ProcessingNotifierPort`. Remote posts use `PublicRepoPort` and `SpaceRepoPort` (reading records and blobs from other repos) and `RemoteNotifierPort`. Deletion uses `DeletionNotifierPort`. Everything takes a `Logger`.
 
 The package's hard constraint: **zero vendor SDK imports.** Service code is portable to any backend whose bindings implement the ports. Concrete adapters live in `apps/core-api/src/adapters/outbound/`.
 
 ## How it composes
 
 ```
-packages/core/                     ← THIS PACKAGE (Vendor-free)
-├── services/
-│   ├── audio-posts.ts       — class AudioPostService (posts, replies, hydration)
-│   ├── audio-processing.ts  — class AudioProcessingService (denoise/trim/transcribe/waveform)
-│   └── storage.ts           — makeStorageService factory (BlobStore-backed)
-└── ports/
-    ├── audio-posts-dependencies.ts       — interface AudioPostDependencies
-    ├── audio-processing-dependencies.ts  — interface AudioProcessingDependencies
-    ├── storage-dependencies.ts           — interface StorageDependencies
-    ├── transcription.ts / audio-denoiser.ts / audio-trimmer.ts /
-    │   audio-waveform.ts / processing-dispatch.ts /
-    │   processing-notifier.ts            — provider ports
-    └── logger.ts
-                ↑  each service takes its port via the constructor
+packages/core/                          ← THIS PACKAGE (vendor-free)
+├── services/   — the services above
+├── ports/      — *-dependencies.ts (storage seams) and provider ports
+└── testing/    — an in-memory AudioPostDependencies and the contract suite adapters run
+                ↑  each service takes its ports through its constructor
                 │
 apps/core-api/src/adapters/outbound/    ← the driven adapters (Workers + Postgres + R2)
-├── postgres/        — Postgres impl of AudioPostDependencies & AudioProcessingDependencies
-├── r2/              — R2 BlobStore impl of StorageDependencies
-├── durable-objects/ — RateLimitStore (Cloudflare Durable Objects)
-├── elevenlabs/      — TranscriberPort + DenoiserPort
-├── rendition/       — TrimmerPort + WaveformPort (HTTP to apps/audio-rendition)
-├── dispatch/        — ProcessingDispatchPort (Cloudflare Queues / inline / noop)
-└── webhook/         — ProcessingNotifierPort (HTTP webhook notifier)
+├── postgres/        — every *Dependencies port, plus idempotency, rate limits and the sweeps
+├── r2/              — the BlobStore behind StorageDependencies
+├── atproto/         — PublicRepoPort and SpaceRepoPort (DID documents, repos, spaces)
+├── durable-objects/ — the rate-limit store
+├── elevenlabs/      — TranscriberPort and DenoiserPort
+├── workers-ai/      — a TranscriberPort on the Workers AI binding
+├── rendition/       — TrimmerPort and WaveformPort, over HTTP to apps/audio-rendition
+├── processing/      — the provider registry that picks among them
+├── dispatch/        — ProcessingDispatchPort (Cloudflare Queues, inline, or no-op)
+└── webhook/         — the notifier ports, as signed webhooks to tenant BFFs
 ```
 
 A self-hoster targeting a different database or storage backend implements the `*Dependencies` ports against their stack and wires them where `apps/core-api` wires the Postgres/R2 ones; the domain logic keeps working without change.

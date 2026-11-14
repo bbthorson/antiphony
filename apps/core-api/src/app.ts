@@ -49,8 +49,8 @@ import { cachedDataPresence, type R2ListLike } from './lib/data-presence.js';
  * Construct the Hono app with all middleware and routes wired.
  *
  * Exported as a factory (not a module-level `new Hono()`) so tests can
- * build a fresh app per test, and so `src/index.ts` stays dedicated to
- * the runtime `serve()` call.
+ * build a fresh app per test, and so `src/worker.ts` stays dedicated to
+ * the Workers entry points.
  *
  * ## Middleware order matters
  *

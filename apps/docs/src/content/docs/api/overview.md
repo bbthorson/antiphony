@@ -139,6 +139,10 @@ Antiphony rechecks each public remote post hourly. A record its repo reports gon
 
 A record in a space (a player's reply in a group's campaign space, say) is in the player's own repo, readable only to the space's members. There are two ways to register one.
 
+:::note[atproto Spaces public beta]
+Antiphony speaks the Spaces protocol as of the last alpha before the public beta, which starts on December 1, 2026. From then on, the reference PDS and Bluesky's PDSes hold space repos. A writer's PDS needs to be upgraded before Antiphony can read a record from it on a delegation: until then, its DID document has no `#atproto_kem` key and the registration answers `422 REMOTE_RECORD_INVALID`. Push those records instead (below). In OAuth scopes the space type parameter is `spaceType` (`space?spaceType=…&authority=*`); the positional form `space:<type>?…` is unchanged. The space URI format may still change to `at:space/…` before the beta. If it does, Antiphony will follow in a contract minor.
+:::
+
 **On a delegation (recommended).** Antiphony reads the record itself, on a member's say-so:
 
 1. **Mint a delegation** from a member's PDS: `com.atproto.space.getDelegationToken?space=at://{authority}/space/{type}/{skey}`, using a session you hold for someone who can read the space. Your OAuth client needs a space read scope for the space type. The token is single use and lives 60 seconds, so mint it right before the next step.

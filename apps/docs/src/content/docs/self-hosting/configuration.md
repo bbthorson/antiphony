@@ -10,7 +10,7 @@ The distinction matters more than it looks:
 - **Bindings** — the database, the R2 bucket, the queue, the KV namespace, the rate-limit Durable Object — are declared in [`apps/core-api/wrangler.jsonc`](https://github.com/bbthorson/antiphony/blob/master/apps/core-api/wrangler.jsonc) and authorised *by being bound*. There is no R2 key or service-account credential anywhere in that file, and a binding a deployment doesn't attach is a missing capability rather than a broken credential.
 - **Values** are either non-secret `vars` in the same file, or **Worker secrets** set out of band with `wrangler secret put`. Everything below marked "store as a secret" is the second kind. Locally, both live in `apps/core-api/.dev.vars` (gitignored) — see the [quick start](/self-hosting/quick-start/#4-configure-and-start-core-api).
 
-Under a Node host the same values are read from `process.env`, so nothing here is Workers-only syntax.
+Workers is the only supported host: there is no Node entry point. The values are plain strings, though, so nothing here is Workers-only syntax.
 
 ## Core variables
 
@@ -99,7 +99,7 @@ Optional, and rarely needed: with none of these set, each stage takes the first 
 
 Naming a stage's provider explicitly lets you mix them — a real transcriber next to a stub denoiser while evaluating one of them, say. Two behaviors are worth knowing before you reach for these:
 
-- **A named provider that isn't configured is a misconfiguration, not an opt-out.** `ANTIPHONY_TRANSCRIBER=elevenlabs` with no API key logs at `error` and leaves `transcribe` unavailable; it does **not** quietly fall back to another provider, on the same principle as the partial `ANTIPHONY_TASKS_*` set below.
+- **A named provider that isn't configured is a misconfiguration, not an opt-out.** `ANTIPHONY_TRANSCRIBER=elevenlabs` with no API key logs at `error` and leaves `transcribe` unavailable; it does **not** quietly fall back to another provider, on the same fail-closed principle as the webhook variables below.
 - **`stub` is only ever reachable by naming it.** A deployment that loses its API key reports the stage as unavailable and settles requests `skipped` — it never degrades into saving stub transcripts as real records. For stubs across the board, use `ANTIPHONY_PROCESSING_STUB` (below), which overrides all four of these.
 
 #### Choosing a provider or model per tenant
@@ -127,16 +127,7 @@ Processing runs out of band, never inside the create/patch request.
 
 **On Workers this is a binding, not a variable.** `PROCESSING_QUEUE` in `wrangler.jsonc` names a Cloudflare Queue whose consumer is the same Worker's `queue()` handler — so there is no worker URL to configure and no token stored per task. Batch size is deliberately **1**: one message is one full processing pass (a denoise call over a multi-megabyte upload, then transcription), the whole batch shares one 15-minute invocation, and blowing that budget retries every message in the batch including the ones that already succeeded. Concurrency belongs between invocations, where Cloudflare scales consumers on its own. Three attempts, then the dead-letter queue.
 
-On a **Node host** the queue binding doesn't exist, and dispatch falls to the Cloud Tasks adapter instead:
-
-| Variable | Purpose |
-|---|---|
-| `ANTIPHONY_TASKS_LOCATION` | Cloud Tasks region, e.g. `us-east4`. |
-| `ANTIPHONY_TASKS_QUEUE` | Cloud Tasks queue name. |
-| `ANTIPHONY_TASKS_WORKER_URL` | Absolute URL of this deployment's `/api/v1/system/process-audio` worker route, which the queue calls back. Must carry `SYSTEM_AUTH_TOKEN` (above) — the worker is system-auth'd. |
-| `ANTIPHONY_TASKS_PROJECT` | Optional. GCP project for the queue; falls back to `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT`. |
-
-The three non-optional `ANTIPHONY_TASKS_*` vars are **all-or-nothing**: set together, or a partial set is treated as a misconfiguration (logged at `error`, jobs dropped) rather than a silent opt-out. The runtime service account also needs `roles/cloudtasks.enqueuer`.
+The queue is the only durable dispatcher. Without the binding, processing runs inline only when `ANTIPHONY_PROCESSING_INLINE` is set (below); otherwise dispatch is a no-op. The Cloud Tasks adapter that served Node hosts was removed with the Cloud Run deployment.
 
 ### Stage-settled webhooks
 
@@ -162,7 +153,7 @@ Both flags below are for **local and test environments only**. In a production d
 | `ANTIPHONY_PROCESSING_INLINE` | When `true`, runs processing **synchronously inside the request** — the local/test trigger, no queue needed. Wins over every durable dispatcher in development/test, so a developer with queue config in their shell can't enqueue against a real queue by accident. |
 | `ANTIPHONY_PROCESSING_STUB` | When `true`, wires pass-through **stub providers** instead of ElevenLabs — exercises the full create → process → hydrate loop with no key and no billing. Wins over `ELEVENLABS_API_KEY`, so a real key in the shell can't accidentally bill from a test run. |
 
-With no queue binding, no `ANTIPHONY_PROCESSING_INLINE`, and no `ANTIPHONY_TASKS_*` vars, dispatch is a no-op (logged and dropped) — enrichment is effectively off. Note the two flags govern different axes and neither implies the other: `_STUB` decides which providers can do the work, `_INLINE` decides who runs it.
+With no queue binding and no `ANTIPHONY_PROCESSING_INLINE`, dispatch is a no-op (logged and dropped) — enrichment is effectively off. Note the two flags govern different axes and neither implies the other: `_STUB` decides which providers can do the work, `_INLINE` decides who runs it.
 
 ## Deployment
 
