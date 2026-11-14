@@ -94,7 +94,23 @@ back, adopt the protocol's three policies then. Don't keep a translation layer.
 | 6 | Dec 1 | **Beta.** Move the pins to the beta release (watch whether it ships as stable versions; if so, drop the Dependabot ignores and the root `overrides`). Rerun conformance. Deploy core-api. | antiphony | |
 | 7 | Dec 1 + days | **Live check.** Phase C against real accounts on Bluesky's PDS and a group on `opensocial.fyi`: a delegation from a test account, a record read with a verified MAC, a blob. This needs test accounts Brad creates. | antiphony, Brad | |
 | 8 | After Dec 1 | **People's PDSes hold spaces.** Members' records can move to their own PDSes (step 7 of [`audio-service-and-groups.md`](./audio-service-and-groups.md)). Antiphony's temporary repo hosting and custody pinning can then retire (step 8). | bardcast, antiphony | |
-| 9 | Optional | Evaluate `@atproto/lex-space` or the official SDK against the hand-rolled reader. Adopt it only if it runs on Workers and replaces code, not just wraps it. | antiphony | |
+| 9 | After the URI decision | Move the Phase C reader onto `@atproto/lex-space` (findings below). | antiphony | Spiked 2026-11-14 |
+
+## Upstream packages worth using (surveyed 2026-11-14)
+
+All 62 `@atproto` and 40 `@atproto-labs` packages on npm were checked. Most `@atproto-labs`
+entries are `0.0.1` placeholders from 2026-08-14. Every candidate below bundles for Workers
+(esbuild, browser platform) with no Node built-ins.
+
+| Package | Replaces | Verdict |
+| :--- | :--- | :--- |
+| **`@atproto/lex-space`** (`SpaceReader`) | Most of `space-repo.ts`: the credential exchange, request signing, MAC requests and verification, writer routing | **Adopt, after the URI decision.** Spiked against two reference PDSes: a `delegationTokenProvider` returning the tenant's single-use token, `authorize()`, a MAC-verified `getRecord` (CID matched), `getBlob`, and `RecordNotFound` as an `XrpcResponseError`. It never asked for the token twice. A space type schema is built from the URI at runtime (`l.space('any', type, [])`). It tracks protocol changes upstream, the `at:space/` URI included. Costs: about 140 KB minified over today's `@atproto/space` + `crypto` (with a second zod 3, from `@atproto/did`). And **`getBlob` buffers with no size cap**, so keep the cap by passing a `fetch` that enforces it (the `fetch` option covers every host but a user's PDS, which is all of Antiphony's calls). Keep `SpaceRepoPort` and its classification; map `XrpcResponseError.error` to the same kinds. |
+| `@atproto/did` + `@atproto-labs/did-resolver` | DID document parsing in `did-document.ts` (`extractPdsUrl`, `extractKemKey`, both key spellings) | Comes in with `lex-space` as its default resolver. Use its helpers in `did-document.ts` then. Keep `app-did.ts`'s own resolution: its HTTPS-only rules and gone-vs-unreachable classification drive custody and the sweep, and it retires with custody pinning (step 8 of `audio-service-and-groups.md`). |
+| `@atproto/lex-server` | The Hono XRPC adapter, and `signed-service-auth.ts`'s JWT verification (`serviceAuth`) | A candidate for the XRPC-first 1.0 ([`xrpc-surface.md`](./xrpc-surface.md) D-11): Web-standard `Request`/`Response`, so it runs on Workers. Not before then; it needs generated lexicon schemas, and Zod stays the runtime contract until 1.0 ([`xrpc-and-atproto-lex-strategy.md`](./xrpc-and-atproto-lex-strategy.md)). |
+| `@atproto/oauth-scopes` | Hand-built `space:` scope strings in the tenants | For Bardcast and Vox Pop, not Antiphony: it parses and checks scopes, `spaceType` included. |
+| `@atproto/lex-cbor` (`cidForLex`) | `lib/cid.ts` over `@ipld/dag-cbor` | Skip. 63 lines, and a swap risks changing CIDs already sealed into StrongRefs; only with a byte-identical test across stored records. |
+| `@atproto/tap` | A future firehose subscription for public remote posts (Phase D, `audio-service-mode.md` §8.1) | Later. It's a client for Tap, a Go service someone would have to host. |
+| Not useful here | | `@atproto/xrpc-server` (Express), `@atproto/api` (Bluesky's client), the OAuth clients (the tenants hold sessions), the reference services (`pds`, `bsky`, `ozone`), `@atproto-labs/fetch-node` (Node-only SSRF protection; Workers' `fetch` can't reach private networks anyway), and the deprecated `identifier`, `nsid`, `uri` and `lex-password-agent`. |
 
 Not needed for the beta, and not built: notification registration (`notify`,
 `confirmRegistration`, `notifySpaceUpdate`). Antiphony reads once per registration or recheck
