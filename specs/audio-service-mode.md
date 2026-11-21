@@ -842,7 +842,7 @@ settles what they left open:
   `@antiphony/shared` 0.13.0 ships Phase B's and Phase C's schemas together.
 - **Dependencies, as §12 says.**
   - `@atproto/space` and `@atproto/crypto` at `0.0.0-spaces-alpha-20261029171913` (moved to
-    `20261113224550` on 2026-11-14), exact, in core-api. Since 2026-11-14 also
+    `20261113224550` on 2026-11-14 and `20261117141222` on 2026-11-21), exact, in core-api. Since 2026-11-14 also
     `@atproto/lex-space`, `@atproto/lex-schema`, `@atproto/lex-json` and
     `@atproto-labs/did-resolver`, at the same pin. `@atproto/crypto` is direct because the adapter makes the credential's P-256 key
     and converts KEM keys with it.

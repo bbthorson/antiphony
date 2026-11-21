@@ -18,7 +18,9 @@ the contract version does not move.
 - **Space reads (remote posts, Phase C) speak the November 12 Spaces protocol.** Spaces-capable
   PDSes from December 1 no longer answer the October 29 alpha protocol, and the old one doesn't
   work against them. `@atproto/space`, `@atproto/syntax` and `@atproto/crypto` are pinned to
-  `0.0.0-spaces-alpha-20261113224550`, the last alpha before the beta.
+  `0.0.0-spaces-alpha-20261113224550` and then `0.0.0-spaces-alpha-20261117141222`, the latest
+  alpha before the beta (no migration prompt was published for it; unit suite and conformance
+  pass unchanged).
   - The credential exchange is `com.atproto.space.authorizeSpaceSync`, with `credentialKey`,
     replacing `getSpaceCredential` and `credentialKid`. It registers for no notifications.
   - The record MAC on `com.atproto.space.getRecord` is requested with `Accept-Signature` (tag
