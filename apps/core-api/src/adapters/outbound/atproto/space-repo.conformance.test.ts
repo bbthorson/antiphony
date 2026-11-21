@@ -17,7 +17,9 @@ import { spaceRepo } from './space-repo.js';
  *     npx vitest run --root apps/core-api src/adapters/outbound/atproto/space-repo.conformance.test.ts
  *
  * Install dev-env at exactly the pin, or the hosts and the adapter speak
- * different alphas.
+ * different alphas. Under npm 12, dev-env's sqlite needs its install script approved
+ * (`npm install-scripts approve better-sqlite3 && npm rebuild better-sqlite3`
+ * in that directory) when its prebuilt binary doesn't match the Node in use.
  */
 
 const DEV_ENV = process.env.DEV_ENV_PATH;

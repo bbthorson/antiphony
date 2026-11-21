@@ -97,8 +97,8 @@ updates:
           - dependencies
       ignore:
           # `@types/node` major version tracks the Node runtime. Antiphony runs
-          # on Node 22 (pinned in .nvmrc and package.json), so Node 26 types
-          # introduce type definitions for runtime APIs not present on Node 22.
+          # on Node 26 (pinned in .nvmrc and package.json), so Node 27+ types
+          # introduce type definitions for runtime APIs not present on Node 26.
           # Only bump this when the project's runtime Node major bumps.
           - dependency-name: '@types/node'
             update-types:

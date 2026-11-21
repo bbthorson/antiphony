@@ -120,7 +120,7 @@ because the container has ffmpeg and your machine might not, and the failure is
 otherwise invisible until the first cache miss.
 
 `ffmpeg` was never a declared dependency in the Vox Pop version and worked only
-because Google's Node runtime image happened to ship the binary. `node:22-slim`
+because Google's Node runtime image happened to ship the binary. `node:26-bookworm-slim`
 does not, so the Dockerfile installs it and **asserts it at build time**, and
 `src/index.ts` probes again at startup. Belt and braces on purpose: the build
 check catches a bad image, the startup probe catches a good image run somewhere

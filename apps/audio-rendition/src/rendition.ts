@@ -145,7 +145,7 @@ function runFfmpeg(inputPath: string, outputPath: string, args: readonly string[
  * The dependency is invisible: `runFfmpeg` spawns a bare `ffmpeg` and nothing
  * in `package.json` declares one. In the serverless function this began as, that
  * resolved only because Google's Node runtime image happened to ship the binary;
- * `node:22-slim` does not.
+ * `node:26-bookworm-slim` does not.
  *
  * A missing binary is otherwise undetectable until the first cache miss, which
  * on this workload could be weeks after a deploy — and the first symptom would
