@@ -35,9 +35,9 @@
     "@atproto/syntax": "0.0.0-spaces-alpha-20261113224550",
     "@hono/zod-openapi": "^1.6.3",
     "@ipld/dag-cbor": "^10.0.2",
-    "@neondatabase/serverless": "^1.2.0",
-    "hono": "^4.13.18",
-    "multiformats": "^14.0.5",
+    "@neondatabase/serverless": "^1.2.1",
+    "hono": "^4.13.19",
+    "multiformats": "^14.0.6",
     "zod": "^4.6.7"
   },
   "devDependencies": {
