@@ -54,7 +54,7 @@ what fails.
 
 ## Run it (local stack)
 
-Two terminals from the repo root. Requires Node 22 and a Postgres database
+Two terminals from the repo root. Requires Node 26 and a Postgres database
 reachable over HTTPS — the SQL client is `@neondatabase/serverless` in HTTP
 mode, so a plain `localhost` Postgres will not answer it. A throwaway
 [Neon](https://neon.tech) branch is the intended shape. There are no emulators

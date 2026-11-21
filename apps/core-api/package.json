@@ -26,13 +26,13 @@
   "dependencies": {
     "@antiphony/core": "*",
     "@antiphony/shared": "*",
-    "@atproto-labs/did-resolver": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/crypto": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/lex-json": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/lex-schema": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/lex-space": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/space": "0.0.0-spaces-alpha-20261113224550",
-    "@atproto/syntax": "0.0.0-spaces-alpha-20261113224550",
+    "@atproto-labs/did-resolver": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/crypto": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/lex-json": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/lex-schema": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/lex-space": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/space": "0.0.0-spaces-alpha-20261117141222",
+    "@atproto/syntax": "0.0.0-spaces-alpha-20261117141222",
     "@hono/zod-openapi": "^1.6.3",
     "@ipld/dag-cbor": "^10.0.2",
     "@neondatabase/serverless": "^1.2.0",
@@ -41,17 +41,17 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.13",
+    "@electric-sql/pglite": "^0.5.16",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
-    "eslint": "^10.13.0",
-    "globals": "^17.13.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.72.1",
-    "vitest": "^5.0.5",
-    "wrangler": "^4.156.0"
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.164.0"
   },
   "engines": {
     "node": ">=22"

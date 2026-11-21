@@ -9,7 +9,11 @@
 #     docker build -f apps/audio-rendition/Dockerfile .
 
 # ── build ─────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS build
+# `-bookworm-slim`, not `-slim`: from Node 26 the bare `-slim` tag is Debian 13
+# (trixie), which would also move ffmpeg from 5.1 to 7.1. Node 22's `-slim` was
+# bookworm, so pinning the codename keeps ffmpeg where it was. Move to trixie in
+# its own change, with renditions compared before and after.
+FROM node:26-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -35,14 +39,14 @@ RUN npm run build --workspace @antiphony/audio-rendition
 RUN test -s apps/audio-rendition/dist/index.js
 
 # ── runtime ───────────────────────────────────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 
 # ffmpeg, and the ASSERTION that it landed.
 #
 # This is the half that actually prevents shipping a broken image. The service
 # spawns a bare `ffmpeg` off PATH and nothing in package.json declares one — as
 # a Firebase Function that worked only because Google's Node runtime image
-# happened to ship the binary, and `node:22-slim` does not. Without the assert,
+# happened to ship the binary, and `node:26-bookworm-slim` does not. Without the assert,
 # a failed or renamed package produces an image that builds green, starts green,
 # answers /health green, and 502s on the first cache miss — which on this
 # workload could be weeks later, and presents as a caller hearing nothing.

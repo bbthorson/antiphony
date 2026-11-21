@@ -259,15 +259,19 @@ site's; core-api's is always passed with `-c`.
 
 ### Node version
 
-`.nvmrc` pins an exact patch (`22.23.2`), and every workflow reads it through
+`.nvmrc` pins an exact patch (`26.13.1`), and every workflow reads it through
 `actions/setup-node`, so a bump moves CI and every deploy together. It's exact because Cloudflare's
 build image only preinstalls a few versions. A bare `22` resolves to the newest release, which
-may need a download that has failed before. `apps/audio-rendition/Dockerfile` pins `node:22-slim`
+may need a download that has failed before. `apps/audio-rendition/Dockerfile` pins `node:26-bookworm-slim`
 separately.
 
-Node 22 is in maintenance until 2027-04-30. Node 24 is the active LTS. The full gate passed on
-24.18.0 on 2026-08-19, so the move is pre-validated. Bump `.nvmrc`, the Dockerfile and the root
-`engines` together.
+Node 26 is the active LTS line (supported until about April 2029). The repo moved to it from 22
+on 2026-11-21: the full gate, the docs build and the audio-rendition image passed on 26.13.1.
+Bump `.nvmrc`, `volta`, the root `engines` floor and the Dockerfile together. The published
+packages (`@antiphony/shared`, `@antiphony/capture-kit`) declare no `engines`, so consumers on
+older Node aren't affected by the repo's toolchain. The Dockerfile pins `node:26-bookworm-slim`, not `node:26-slim`: from 26 the bare tag is Debian 13
+(trixie), which would move ffmpeg from 5.1 to 7.1 as well. That's a separate change, to be made with
+renditions compared before and after.
 
 ---
 

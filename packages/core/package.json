@@ -10,13 +10,13 @@
   },
   "dependencies": {
     "@antiphony/shared": "*",
-    "@atproto/syntax": "0.0.0-spaces-alpha-20261113224550"
+    "@atproto/syntax": "0.0.0-spaces-alpha-20261117141222"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.13.0",
+    "eslint": "^10.15.0",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.72.1",
-    "vitest": "^5.0.5"
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1"
   }
 }
