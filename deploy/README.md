@@ -259,7 +259,7 @@ site's; core-api's is always passed with `-c`.
 
 ### Node version
 
-`.nvmrc` pins an exact patch (`22.23.2`), and every workflow reads it through
+`.nvmrc` pins an exact patch (`22.23.5`), and every workflow reads it through
 `actions/setup-node`, so a bump moves CI and every deploy together. It's exact because Cloudflare's
 build image only preinstalls a few versions. A bare `22` resolves to the newest release, which
 may need a download that has failed before. `apps/audio-rendition/Dockerfile` pins `node:22-slim`
