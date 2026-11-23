@@ -364,3 +364,16 @@ export const rateLimit = (
         return next();
     };
 };
+
+/**
+ * Rate-limit key for public-capable XRPC reads (specs/xrpc-surface.md D-13):
+ *   - Tenant caller → per acting actor (or IP when viewer-less), same as `actingActorKey`.
+ *   - ATProto inter-service caller → per `iss` DID (`atproto-service:<did>`).
+ *   - Anonymous public caller → `null` (falls back to client IP).
+ */
+export const readCallerKey = (c: Parameters<MiddlewareHandler>[0]): string | null => {
+    if (c.get('originAppId')) return actingActorKey(c);
+    const iss = c.get('serviceAuthIss');
+    if (iss) return `atproto-service:${iss}`;
+    return null;
+};

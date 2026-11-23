@@ -180,6 +180,17 @@ export function postgresAudioPostDependencies(
             return rows.length > 0 ? hydrateRows(rows)[0] ?? null : null;
         },
 
+        async getPublicPostById(id: string): Promise<AudioPostRecord | null> {
+            if (!id?.trim()) return null;
+            // Flat posts only (`record->'space' is null`): a space post is
+            // never visible to a non-tenant caller.
+            const rows = await sql.query<PostRow>(
+                `select ${SELECT_COLS} from posts where id = $1 and record->'space' is null`,
+                [id],
+            );
+            return rows.length > 0 ? hydrateRows(rows)[0] ?? null : null;
+        },
+
         async queryByAuthor(
             originAppId: string,
             authorId: string,
@@ -230,6 +241,26 @@ export function postgresAudioPostDependencies(
             // matches the partial index `posts_reply_parent_created_idx` (where kind = 'reply').
             const rows = await sql.query<PostRow>(
                 bind(paginated("origin_app_id = $1 and reply_parent_uri = $2 and kind = 'reply'", 'asc'), 3),
+                [originAppId, parentUri, cursorId ?? null, limit],
+            );
+            return hydrateRows(rows);
+        },
+
+        async queryPublicReplies(
+            originAppId: string,
+            parentUri: string,
+            options?: AudioPostThreadOptions,
+        ): Promise<AudioPostRecord[]> {
+            if (!originAppId?.trim() || !parentUri?.trim()) return [];
+            const { limit = 50, cursorId } = options ?? {};
+            const rows = await sql.query<PostRow>(
+                bind(
+                    paginated(
+                        "origin_app_id = $1 and reply_parent_uri = $2 and kind = 'reply' and record->'space' is null",
+                        'asc',
+                    ),
+                    3,
+                ),
                 [originAppId, parentUri, cursorId ?? null, limit],
             );
             return hydrateRows(rows);

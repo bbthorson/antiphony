@@ -706,6 +706,36 @@ export class AudioPostService {
     }
 
     /**
+     * Fetch a flat (public, non-space) post record by id for unauthenticated or
+     * ATProto inter-service XRPC reads. Callers hydrate via `hydratePublicPost`
+     * after ensuring the owning tenant's DID pin is loaded.
+     */
+    async getPublicPostRecord(id: string): Promise<AudioPostRecord | null> {
+        const record = await this.deps.getPublicPostById(id);
+        if (!record || record.space) return null;
+        return record;
+    }
+
+    /** Hydrate a flat (public) post record as an anonymous viewer. */
+    async hydratePublicPost(record: AudioPostRecord): Promise<AudioPostView | null> {
+        if (record.space) return null;
+        const [view] = await this.hydrateAudioPosts([record], null);
+        return view ?? null;
+    }
+
+    /** List flat (public, non-space) replies to a flat post, hydrated as an anonymous viewer. */
+    async getPublicReplies(
+        originAppId: string,
+        parentUri: string,
+        options?: AudioPostThreadOptions,
+    ): Promise<AudioPostView[]> {
+        const records = (await this.deps.queryPublicReplies(originAppId, parentUri, options)).filter(
+            (r) => !r.space,
+        );
+        return this.hydrateAudioPosts(records, null);
+    }
+
+    /**
      * Batched hydration (records → views). Loads transcript enrichments in ONE
      * round (N+1 ban), then assembles per-record views: lifts the transcript,
      * resolves the audio playback URL, and computes viewer state. Author identity is NOT

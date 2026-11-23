@@ -15,6 +15,8 @@ contract is unchanged, so the contract version does not move.
 
 ### Added
 
+- **Public & ATProto inter-service reads on `getPost` and `getThread` (D-2, D-13):**
+  - Both queries now accept anonymous requests (flat, non-space posts and flat replies only; rate-limited per IP) and ATProto inter-service JWTs (`Authorization: Bearer <jwt>`, `ES256`/`ES256K` verified against `iss`'s `#atproto` key, `aud` = Antiphony's service DID, `lxm` = method NSID; flat posts only; rate-limited per `iss` DID). Invalid Bearer tokens still 401.
 - **Five new XRPC methods** (19 total, 26 lexicon documents):
   - `dev.antiphony.audio.listPosts` (`GET`) — cursor-paginated hosted post listing (`{ posts, cursor? }`), supporting `limit`, `cursor`, `kind`, and `rootAuthor`.
   - `dev.antiphony.audio.uploadAudio` (`POST`) — raw `audio/*` upload (`com.atproto.repo.uploadBlob` style, 25 MB cap, optional space query parameters, `Idempotency-Key`), sharing storage and validation logic with `POST /api/v1/audio/upload`.

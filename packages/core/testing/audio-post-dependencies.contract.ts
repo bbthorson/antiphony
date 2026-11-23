@@ -234,5 +234,31 @@ export function audioPostDependenciesContract(name: string, hooks: ContractHooks
                 expect(page.map((p) => p.id)).toEqual(['3kreply2aaaa2', '3kreply2aaaa1']);
             });
         });
+
+        describe('getPublicPostById & queryPublicReplies', () => {
+            it('returns flat posts/replies and hides space-placed posts and replies', async () => {
+                await subject.seedSpace(TENANT, { type: 'game.bardcast.space.campaign', skey: 'c1' });
+                await subject.seedSpace(TENANT, { type: 'audio.voxpop.space.replies', skey: 'p1' });
+                const flatPrompt = post({ id: '3kflatprompt1', createdAt: day(1) });
+                const spacePrompt = post({
+                    id: '3kspaceprmpt1',
+                    createdAt: day(2),
+                    space: { type: 'game.bardcast.space.campaign', skey: 'c1', authorSegment: AUTHORITY },
+                });
+                const flatReply = reply('3kflatreply01', { createdAt: day(3) });
+                const spaceReply = reply('3kspacereply1', {
+                    createdAt: day(4),
+                    space: { type: 'audio.voxpop.space.replies', skey: 'p1', authorSegment: AUTHORITY },
+                });
+                await deps.savePost(flatPrompt);
+                await deps.savePost(spacePrompt);
+                await deps.savePost(flatReply);
+                await deps.savePost(spaceReply);
+
+                expect((await deps.getPublicPostById('3kflatprompt1'))?.id).toBe('3kflatprompt1');
+                expect(await deps.getPublicPostById('3kspaceprmpt1')).toBeNull();
+                expect((await deps.queryPublicReplies(TENANT, PARENT_URI)).map((p) => p.id)).toEqual(['3kflatreply01']);
+            });
+        });
     });
 }

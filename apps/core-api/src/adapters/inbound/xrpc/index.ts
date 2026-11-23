@@ -15,12 +15,13 @@ import {
     UnregisterRemotePostRequestSchema,
 } from 'shared/types/remote-posts';
 import { postUriOf } from '@antiphony/core/services/audio-posts';
-import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
-import { requireAuth, requireServiceToken } from '../../../middleware/auth.js';
+import { rateLimit, RATE_LIMITS, actingActorKey, readCallerKey } from '../../../middleware/rate-limit.js';
+import { optionalTenantOrServiceAuth, requireAuth, requireServiceToken } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
 import { runIdempotent } from '../../../lib/idempotent-create.js';
-import { getAppDid } from '../../../lib/app-did.js';
+import { ensureTenantPin, getAppDid, type PinCacheKV } from '../../../lib/app-did.js';
+import { APP_CONFIG } from '../../../lib/app-config.js';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { OPENAPI_INFO } from '../../../lib/openapi-info.js';
 import { serviceDidDocument } from '../../../lib/service-did-document.js';
@@ -178,25 +179,44 @@ export function xrpcRoute(): Hono {
     // -----------------------------------------------------------------------
     app.get(
         `/${XRPC_NSID.GetPost}`,
-        requireServiceToken(),
+        optionalTenantOrServiceAuth(XRPC_NSID.GetPost),
         rateLimit(RATE_LIMITS.readAggregate),
-        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        rateLimit(RATE_LIMITS.read, { keyBy: readCallerKey }),
         async (c) => {
             const parsed = parseInput(c, GetPostQuerySchema, { id: c.req.query('id') });
             if (!parsed.ok) return parsed.response;
 
-            const originAppId = getOriginAppId(c);
-            const services = servicesFor(c.env as Record<string, unknown> | undefined);
-            const view = await services.audioPostService.getPostView(
-                originAppId,
-                parsed.value.id,
-                c.get('viewerUid'),
-            );
-            if (!view) {
-                const deleted = await services.postDeletionService?.getDeletedPost(originAppId, parsed.value.id);
-                if (deleted) {
-                    return c.json(xrpcError('PostDeleted', `Post deleted: ${parsed.value.id}`), 410);
+            const env = c.env as Record<string, unknown> | undefined;
+            const services = servicesFor(env);
+            const originAppId = c.get('originAppId');
+
+            if (originAppId) {
+                const view = await services.audioPostService.getPostView(
+                    originAppId,
+                    parsed.value.id,
+                    c.get('viewerUid'),
+                );
+                if (!view) {
+                    const deleted = await services.postDeletionService?.getDeletedPost(originAppId, parsed.value.id);
+                    if (deleted) {
+                        return c.json(xrpcError('PostDeleted', `Post deleted: ${parsed.value.id}`), 410);
+                    }
+                    return c.json(xrpcError('RecordNotFound', `Post not found: ${parsed.value.id}`), 404);
                 }
+                return c.json(view);
+            }
+
+            // Public or ATProto inter-service caller: flat (non-space) posts only.
+            const record = await services.audioPostService.getPublicPostRecord(parsed.value.id);
+            if (!record) {
+                return c.json(xrpcError('RecordNotFound', `Post not found: ${parsed.value.id}`), 404);
+            }
+            await ensureTenantPin(record.originAppId, {
+                expectedPdsHost: APP_CONFIG.PDS_HOST,
+                kv: env?.PIN_CACHE as PinCacheKV | undefined,
+            });
+            const view = await services.audioPostService.hydratePublicPost(record);
+            if (!view) {
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${parsed.value.id}`), 404);
             }
             return c.json(view);
@@ -208,9 +228,9 @@ export function xrpcRoute(): Hono {
     // -----------------------------------------------------------------------
     app.get(
         `/${XRPC_NSID.GetThread}`,
-        requireServiceToken(),
+        optionalTenantOrServiceAuth(XRPC_NSID.GetThread),
         rateLimit(RATE_LIMITS.readAggregate),
-        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        rateLimit(RATE_LIMITS.read, { keyBy: readCallerKey }),
         async (c) => {
             const parsed = parseInput(c, GetThreadQuerySchema, {
                 id: c.req.query('id'),
@@ -220,31 +240,60 @@ export function xrpcRoute(): Hono {
             if (!parsed.ok) return parsed.response;
 
             const { id, limit, cursor } = parsed.value;
-            const originAppId = getOriginAppId(c);
-            const viewerUid = c.get('viewerUid');
+            const env = c.env as Record<string, unknown> | undefined;
+            const services = servicesFor(env);
+            const originAppId = c.get('originAppId');
 
-            // Resolve the parent first, for the same two reasons as the REST
-            // thread route: the reply query keys on the parent's `at://` uri,
-            // and a missing parent must read as 404 rather than an empty list.
-            const services = servicesFor(c.env as Record<string, unknown> | undefined);
-            const parent = await services.audioPostService.getPostView(originAppId, id, viewerUid);
-            if (!parent) {
-                const deleted = await services.postDeletionService?.getDeletedPost(originAppId, id);
-                if (deleted) {
-                    return c.json(xrpcError('PostDeleted', `Post deleted: ${id}`), 410);
+            if (originAppId) {
+                const viewerUid = c.get('viewerUid');
+                // Resolve the parent first, for the same two reasons as the REST
+                // thread route: the reply query keys on the parent's `at://` uri,
+                // and a missing parent must read as 404 rather than an empty list.
+                const parent = await services.audioPostService.getPostView(originAppId, id, viewerUid);
+                if (!parent) {
+                    const deleted = await services.postDeletionService?.getDeletedPost(originAppId, id);
+                    if (deleted) {
+                        return c.json(xrpcError('PostDeleted', `Post deleted: ${id}`), 410);
+                    }
+                    return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
                 }
-                return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
+
+                const replies = await services.audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
+                    limit,
+                    cursorId: cursor,
+                });
+
+                return c.json({
+                    parent,
+                    replies,
+                    // Only a full, non-empty page can have a next one behind it.
+                    cursor:
+                        replies.length > 0 && replies.length === limit
+                            ? rkeyFromUri(replies[replies.length - 1].uri)
+                            : null,
+                });
             }
 
-            const replies = await services.audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
+            // Public or ATProto inter-service caller: flat parent + flat replies only.
+            const parentRecord = await services.audioPostService.getPublicPostRecord(id);
+            if (!parentRecord) {
+                return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
+            }
+            await ensureTenantPin(parentRecord.originAppId, {
+                expectedPdsHost: APP_CONFIG.PDS_HOST,
+                kv: env?.PIN_CACHE as PinCacheKV | undefined,
+            });
+            const parent = await services.audioPostService.hydratePublicPost(parentRecord);
+            if (!parent) {
+                return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
+            }
+            const replies = await services.audioPostService.getPublicReplies(parentRecord.originAppId, parent.uri, {
                 limit,
                 cursorId: cursor,
             });
-
             return c.json({
                 parent,
                 replies,
-                // Only a full, non-empty page can have a next one behind it.
                 cursor:
                     replies.length > 0 && replies.length === limit
                         ? rkeyFromUri(replies[replies.length - 1].uri)

@@ -7,6 +7,7 @@ import {
     requestOperation,
     verifySignedServiceAuth,
 } from '../lib/signed-service-auth.js';
+import { verifyAtprotoServiceAuth } from '../lib/atproto-service-auth.js';
 import { APP_CONFIG, serviceDid } from '../lib/app-config.js';
 import { logger } from '../lib/logger.js';
 
@@ -53,6 +54,8 @@ declare module 'hono' {
         originAppId: string | null;
         /** App-asserted AT Protocol DID of the acting user, or null. */
         actingActorDid: string | null;
+        /** Verified ATProto inter-service JWT issuer DID (`iss`), or null. */
+        serviceAuthIss: string | null;
     }
 }
 
@@ -87,6 +90,7 @@ function setAnonymous(
     c.set('viewerUid', null);
     c.set('originAppId', null);
     c.set('actingActorDid', null);
+    c.set('serviceAuthIss', null);
 }
 
 /**
@@ -106,6 +110,7 @@ function tryServiceAuth(
     c.set('originAppId', appId);
     // A DID assertion without an actor is meaningless — ignore it.
     c.set('actingActorDid', actor ? did : null);
+    c.set('serviceAuthIss', null);
     return true;
 }
 
@@ -325,6 +330,61 @@ export const requireAuth = (): MiddlewareHandler => {
         }
         await tenantPinGate(c);
         await observeSignedServiceAuth(c);
+        return next();
+    };
+};
+
+/**
+ * Three-tier auth for public-capable XRPC read methods (`getPost`, `getThread`;
+ * specs/xrpc-surface.md D-2):
+ *
+ *   1. **No `Authorization` header** → anonymous public caller (`originAppId = null`,
+ *      `serviceAuthIss = null`). The handler serves flat (non-space) posts only.
+ *   2. **Tenant service token** → full tenant context (`originAppId` set), with
+ *      custody pinning and observation-only signed service auth.
+ *   3. **ATProto inter-service JWT** (`Authorization: Bearer <jwt>` that isn't a
+ *      tenant token) → verified against `iss`'s `#atproto` key, `aud = serviceDid()`,
+ *      and `lxm = expectedLxm`. Sets `serviceAuthIss = iss` (for per-`iss` rate
+ *      limiting, D-13) and serves flat posts only.
+ *
+ * A malformed or invalid `Authorization` header ALWAYS 401s — never silently
+ * downgrades a bad credential to anonymous.
+ */
+export const optionalTenantOrServiceAuth = (expectedLxm: string): MiddlewareHandler => {
+    return async (c, next) => {
+        const authHeader = c.req.header('authorization');
+        if (!authHeader) {
+            setAnonymous(c);
+            return next();
+        }
+
+        const token = extractBearer(authHeader);
+        if (!token) {
+            setAnonymous(c);
+            throw new ServiceError('Authentication required', 401);
+        }
+
+        if (tryServiceAuth(c, token)) {
+            await tenantPinGate(c);
+            await observeSignedServiceAuth(c);
+            return next();
+        }
+
+        const result = await verifyAtprotoServiceAuth(token, {
+            expectedAudience: serviceDid(),
+            expectedLxm,
+        });
+        if (!result.ok) {
+            setAnonymous(c);
+            logger.warn(
+                { requestId: c.get('requestId'), lxm: expectedLxm, reason: result.reason },
+                '[atproto-service-auth] rejected bearer token',
+            );
+            throw new ServiceError('Invalid authentication token', 401);
+        }
+
+        setAnonymous(c);
+        c.set('serviceAuthIss', result.iss);
         return next();
     };
 };
