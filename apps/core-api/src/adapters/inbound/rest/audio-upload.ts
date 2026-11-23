@@ -1,20 +1,14 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { bodyLimit } from 'hono/body-limit';
 import { BlobRefSchema } from 'shared/types/blob';
-import { ScopedSpaceKeySchema, type ScopedSpaceKey } from 'shared/types/spaces';
-import type { RemoteSpace } from 'shared/types/remote-posts';
-import { NotFoundError, ServiceError } from 'shared/errors';
-import { parseRemoteSpaceUri } from '@antiphony/core/services/remote-posts';
+import { ScopedSpaceKeySchema } from 'shared/types/spaces';
 import { rateLimit, RATE_LIMITS, actingActorKey } from '../../../middleware/rate-limit.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { servicesFor } from '../../../composition.js';
-import { cidForBytes } from '../../../lib/cid.js';
-import { blobObjectPath } from '../../../lib/blob-path.js';
-import { blobSpaceMetadata, blobSpaceOf } from '../../../lib/blob-space.js';
 import { getOriginAppId } from '../../../lib/origin-app.js';
-import { getAppDid } from '../../../lib/app-did.js';
 import { errorEnvelope } from '../../../lib/error-envelope.js';
 import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../lib/openapi-envelopes.js';
+import { MAX_AUDIO_UPLOAD_SIZE, storeUploadedAudio } from '../audio-upload-operation.js';
 
 /**
  * POST /api/v1/audio/upload
@@ -58,17 +52,7 @@ import { jsonResponse, errorResponse, envelopeValidationHook } from '../../../li
  * space refuses audio that doesn't live in that same space.
  */
 
-const ALLOWED_TYPES = new Set([
-    'audio/m4a',
-    'audio/x-m4a',
-    'audio/mp4',
-    'audio/mpeg',
-    'audio/webm',
-    'audio/ogg',
-    'audio/wav',
-]);
-
-const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const MAX_SIZE = MAX_AUDIO_UPLOAD_SIZE;
 
 /**
  * Transport-level cap, enforced before the body is read.
@@ -168,118 +152,25 @@ app.openapi(uploadRoute, async (c) => {
     }
 
     const mimeType = file.type || 'audio/mp4';
-    if (!ALLOWED_TYPES.has(mimeType)) {
-        return c.json(errorEnvelope(c, `Unsupported audio type: ${mimeType}`), 400);
-    }
-
-    const originAppId = getOriginAppId(c);
-    const services = servicesFor(c.env);
-
-    // Both or neither: half a space names nothing. An authority alone names nothing either.
-    const spaceType = formData.get('spaceType');
-    const skey = formData.get('skey');
-    const spaceAuthority = formData.get('spaceAuthority');
-    const remoteSpace = formData.get('remoteSpace');
-    let requested: ScopedSpaceKey | undefined;
-    if (remoteSpace !== null) {
-        if (spaceType !== null || skey !== null || spaceAuthority !== null) {
-            return c.json(errorEnvelope(c, 'Send "remoteSpace" or "spaceType" + "skey", not both'), 400);
-        }
-        let space: RemoteSpace;
-        try {
-            space = parseRemoteSpaceUri(typeof remoteSpace === 'string' ? remoteSpace : '');
-        } catch (err) {
-            if (err instanceof ServiceError) return c.json(errorEnvelope(c, err.message), 400);
-            throw err;
-        }
-        if (await isHostedAuthority(originAppId, space.authority, services)) {
-            return c.json(
-                errorEnvelope(
-                    c,
-                    'That space is under a DID this tenant hosts here; upload with "spaceType", "skey" and "spaceAuthority"',
-                ),
-                400,
-            );
-        }
-        // Recorded with its authority always: it is never the app DID.
-        requested = space;
-    } else if (spaceType !== null || skey !== null || spaceAuthority !== null) {
-        const parsed = ScopedSpaceKeySchema.safeParse({
-            type: spaceType,
-            skey,
-            ...(spaceAuthority !== null ? { authority: spaceAuthority } : {}),
-        });
-        if (!parsed.success) {
-            return c.json(
-                errorEnvelope(c, 'Invalid space: send both "spaceType" and "skey", and "spaceAuthority" only as a DID', {
-                    issues: parsed.error.issues,
-                }),
-                400,
-            );
-        }
-        // Throws 404 for a space this tenant doesn't have under that authority.
-        await services.spaceService.getSpace(originAppId, parsed.data);
-        // Recorded as the services store it: no authority for the app DID.
-        const { authority, ...key } = parsed.data;
-        requested = authority !== undefined && authority !== getAppDid(originAppId) ? { ...key, authority } : key;
-    }
+    const formString = (key: string): string | null => {
+        const val = formData.get(key);
+        if (val === null) return null;
+        return typeof val === 'string' ? val : '';
+    };
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const cid = await cidForBytes(buffer);
-    const path = blobObjectPath(originAppId, cid);
-    if (!path) {
-        // Only reachable with a misconfigured origin app id — surface loudly.
-        return c.json(errorEnvelope(c, 'Blob path could not be derived'), 400);
-    }
+    const data = await storeUploadedAudio({
+        originAppId: getOriginAppId(c),
+        bytes: buffer,
+        mimeType,
+        spaceType: formString('spaceType'),
+        skey: formString('skey'),
+        spaceAuthority: formString('spaceAuthority'),
+        remoteSpace: formString('remoteSpace'),
+        services: servicesFor(c.env),
+    });
 
-    // First upload wins: an object already there keeps its bytes and its
-    // visibility. Two concurrent first uploads race to the same bytes, and the
-    // later marker wins; both callers then see `space` on a re-read, and a
-    // post's placement check refuses the mismatch either way.
-    const existing = await services.storage.stat(path);
-    let space: ScopedSpaceKey | null;
-    if (existing) {
-        space = blobSpaceOf(existing.metadata);
-    } else {
-        await services.storage.uploadFile(
-            buffer,
-            path,
-            mimeType,
-            requested ? { metadata: blobSpaceMetadata(requested) } : undefined,
-        );
-        space = requested ?? null;
-    }
-
-    return c.json({
-        success: true as const,
-        data: {
-            blob: {
-                $type: 'blob' as const,
-                ref: { $link: cid },
-                mimeType,
-                size: buffer.byteLength,
-            },
-            ...(space
-                ? { space: { type: space.type, skey: space.skey, ...(space.authority !== undefined ? { authority: space.authority } : {}) } }
-                : {}),
-        },
-    }, 200);
+    return c.json({ success: true as const, data }, 200);
 });
-
-/** Whether `did` is the tenant's app DID or a DID it registered: its spaces are hosted here. */
-async function isHostedAuthority(
-    originAppId: string,
-    did: string,
-    services: ReturnType<typeof servicesFor>,
-): Promise<boolean> {
-    if (did === getAppDid(originAppId)) return true;
-    try {
-        await services.didRegistryService.get(originAppId, did);
-        return true;
-    } catch (err) {
-        if (err instanceof NotFoundError) return false;
-        throw err;
-    }
-}
 
 export { app as audioUploadRoute };

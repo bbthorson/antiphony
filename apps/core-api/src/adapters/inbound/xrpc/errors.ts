@@ -5,6 +5,17 @@ import { ServiceError } from 'shared/errors';
 import { reportError } from 'shared/observability/report-error';
 import { REPLY_CID_MISMATCH } from '@antiphony/core/services/audio-posts';
 import {
+    AUTHORITY_CUSTODY_UNPROVEN,
+    AUTHORITY_NOT_REGISTERED,
+    DID_CUSTODY_DISPROVED,
+    DID_IN_USE,
+    DID_REGISTERED_DIFFERENTLY,
+    DID_TAKEN,
+    DID_UNREACHABLE,
+    DIDS_UNAVAILABLE,
+} from '@antiphony/core/services/did-registry';
+import { SPACE_NOT_EMPTY } from '@antiphony/core/services/spaces';
+import {
     INVALID_CURSOR,
     REMOTE_BLOB_SPACE_MISMATCH,
     REMOTE_CID_MISMATCH,
@@ -88,6 +99,18 @@ const SYMBOL_BY_STATUS: Record<number, string> = {
 const SYMBOL_BY_CODE: Record<string, string> = {
     // dev.antiphony.audio.createPost: a reply StrongRef's CID isn't the stored record's.
     [REPLY_CID_MISMATCH]: 'ReplyCidMismatch',
+    // Hosted-post, space, and DID-registry domain codes (specs/xrpc-surface.md §4.2).
+    POST_DELETED: 'PostDeleted',
+    SPACES_UNAVAILABLE: 'SpacesUnavailable',
+    [SPACE_NOT_EMPTY]: 'SpaceNotEmpty',
+    [AUTHORITY_NOT_REGISTERED]: 'AuthorityNotRegistered',
+    [AUTHORITY_CUSTODY_UNPROVEN]: 'AuthorityCustodyUnproven',
+    [DID_TAKEN]: 'DidTaken',
+    [DID_REGISTERED_DIFFERENTLY]: 'DidRegisteredDifferently',
+    [DID_CUSTODY_DISPROVED]: 'DidCustodyDisproved',
+    [DID_UNREACHABLE]: 'DidUnreachable',
+    [DIDS_UNAVAILABLE]: 'DidsUnavailable',
+    [DID_IN_USE]: 'DidInUse',
     // dev.antiphony.audio.listRemotePosts: a cursor this service didn't issue.
     [INVALID_CURSOR]: 'InvalidCursor',
     // The remote-post methods (registerPost, getRemotePost, reprocessRemotePost,

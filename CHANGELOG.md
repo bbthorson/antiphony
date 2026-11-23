@@ -10,8 +10,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-Readiness for the atproto Spaces public beta (December 1). The OpenAPI contract is unchanged, so
-the contract version does not move.
+Readiness for the atproto Spaces public beta (December 1) and XRPC surface expansion. The OpenAPI
+contract is unchanged, so the contract version does not move.
+
+### Added
+
+- **Five new XRPC methods** (19 total, 26 lexicon documents):
+  - `dev.antiphony.audio.listPosts` (`GET`) — cursor-paginated hosted post listing (`{ posts, cursor? }`), supporting `limit`, `cursor`, `kind`, and `rootAuthor`.
+  - `dev.antiphony.audio.uploadAudio` (`POST`) — raw `audio/*` upload (`com.atproto.repo.uploadBlob` style, 25 MB cap, optional space query parameters, `Idempotency-Key`), sharing storage and validation logic with `POST /api/v1/audio/upload`.
+  - `dev.antiphony.audio.deletePost` (`POST`) and `dev.antiphony.audio.eraseAuthor` (`POST`) — tenant-level hosted post deletion and paged author erasure.
+  - `dev.antiphony.server.describeServer` (`GET`) — public deployment metadata (`service`, `version`, `status`, and `did` when published).
+- **Named XRPC domain errors & `410 PostDeleted`:** `getPost` and `getThread` now return `410 PostDeleted` for posts in the caller's deletion ledger, and hosted-post/space/DID-registry domain codes (`PostDeleted`, `SpacesUnavailable`, `SpaceNotEmpty`, `AuthorityNotRegistered`, `DidTaken`, etc.) map to named XRPC symbols.
 
 ### Changed
 

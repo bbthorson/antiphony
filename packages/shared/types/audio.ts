@@ -353,4 +353,12 @@ export const AudioPostViewSchema = z.object({
 });
 export type AudioPostView = z.infer<typeof AudioPostViewSchema>;
 
+/** `dev.antiphony.audio.listPosts`: one cursor-paginated page of hosted posts. */
+export const PostListViewSchema = z.object({
+    posts: z.array(AudioPostViewSchema),
+    /** Pass as `cursor` for the next page. Absent on the last page. */
+    cursor: z.string().optional(),
+});
+export type PostListView = z.infer<typeof PostListViewSchema>;
+
 // #endregion

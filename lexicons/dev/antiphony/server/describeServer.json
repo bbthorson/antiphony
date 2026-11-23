@@ -1,0 +1,38 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.server.describeServer",
+    "description": "Public service identity and contract metadata for this Antiphony deployment.",
+    "defs": {
+        "main": {
+            "type": "query",
+            "description": "Returns the service name, current API contract version, status, and (when configured) the service's own AT Protocol DID. Public — requires no authentication.",
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["service", "version", "status"],
+                    "properties": {
+                        "service": {
+                            "type": "string",
+                            "description": "Service identifier (e.g. `antiphony-core-api`)."
+                        },
+                        "version": {
+                            "type": "string",
+                            "description": "Current API contract version."
+                        },
+                        "status": {
+                            "type": "string",
+                            "knownValues": ["ok"],
+                            "description": "Liveness status."
+                        },
+                        "did": {
+                            "type": "string",
+                            "format": "did",
+                            "description": "This deployment's service DID (e.g. `did:web:api.antiphony.dev`), present when its DID document is published."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

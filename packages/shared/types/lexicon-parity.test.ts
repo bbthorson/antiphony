@@ -8,6 +8,7 @@ import {
     AudioEmbedViewSchema,
     AudioPostRecordSchema,
     AudioPostViewSchema,
+    PostListViewSchema,
     PostRecordPublicSchema,
     ReplyRefSchema,
     TimedTranscriptSchema,
@@ -16,7 +17,7 @@ import {
     ViewerStateSchema,
 } from './audio';
 import { ProcessingRequestSchema, ProcessingViewSchema } from './processing';
-import { SpaceKeySchema } from './spaces';
+import { ScopedSpaceKeySchema, SpaceKeySchema } from './spaces';
 import { PostStatsSchema, StatCountsSchema, StatWindowsSchema, TenantStatsSchema } from './stats';
 import {
     DeleteRemotePostResultSchema,
@@ -31,7 +32,20 @@ import {
     ReprocessRemotePostRequestSchema,
     UnregisterRemotePostRequestSchema,
 } from './remote-posts';
-import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from '../api-codecs';
+import {
+    DeletedPostRefSchema,
+    DeletePostRequestSchema,
+    DeletePostResultSchema,
+    EraseAuthorResultSchema,
+    KeptPostRefSchema,
+} from './deletion';
+import {
+    CreateAudioPostRequestSchema,
+    DescribeServerResultSchema,
+    EraseAuthorXrpcRequestSchema,
+    PatchAudioPostRequestSchema,
+    UploadAudioResultSchema,
+} from '../api-codecs';
 
 /**
  * Oracle tests: the `lexicons/dev/antiphony/*.json` documents are the contract,
@@ -345,6 +359,16 @@ const CASES: ParityCase[] = [
     },
     { lexicon: 'dev.antiphony.audio.defs#processingView', schema: ProcessingViewSchema },
     { lexicon: 'dev.antiphony.audio.defs#spaceKey', schema: SpaceKeySchema },
+    { lexicon: 'dev.antiphony.audio.defs#scopedSpaceKey', schema: ScopedSpaceKeySchema },
+    { lexicon: 'dev.antiphony.audio.defs#deletedPostRef', schema: DeletedPostRefSchema },
+    { lexicon: 'dev.antiphony.audio.defs#keptPostRef', schema: KeptPostRefSchema },
+    { lexicon: 'dev.antiphony.audio.listPosts#main', part: 'output', schema: PostListViewSchema },
+    { lexicon: 'dev.antiphony.audio.uploadAudio#main', part: 'output', schema: UploadAudioResultSchema },
+    { lexicon: 'dev.antiphony.audio.deletePost#main', part: 'input', schema: DeletePostRequestSchema },
+    { lexicon: 'dev.antiphony.audio.deletePost#main', part: 'output', schema: DeletePostResultSchema },
+    { lexicon: 'dev.antiphony.audio.eraseAuthor#main', part: 'input', schema: EraseAuthorXrpcRequestSchema },
+    { lexicon: 'dev.antiphony.audio.eraseAuthor#main', part: 'output', schema: EraseAuthorResultSchema },
+    { lexicon: 'dev.antiphony.server.describeServer#main', part: 'output', schema: DescribeServerResultSchema },
 
     // Remote posts (specs/audio-service-mode.md): the view, the inline
     // outputs of the methods over them, and the procedure inputs.
@@ -521,6 +545,7 @@ const NOT_COMPARED: Record<string, string> = {
         'the StrongRef `{ uri, cid }` the handler builds from the created record; no Zod schema (xrpc/index.test.ts asserts it)',
     'dev.antiphony.audio.getPost#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getThread#main:parameters': PARAMS_ELSEWHERE,
+    'dev.antiphony.audio.listPosts#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getPlaybackUrl#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.listRemotePosts#main:parameters': PARAMS_ELSEWHERE,
     'dev.antiphony.audio.getRemotePosts#main:parameters': PARAMS_ELSEWHERE,
