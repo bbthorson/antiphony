@@ -107,6 +107,10 @@
             // knip reads on its own — every published subpath counts as one.
             "project": ["**/*.ts"]
         },
+        "packages/client": {
+            // Same as shared: `exports` supplies the entry points.
+            "project": ["**/*.ts"]
+        },
         "packages/capture-kit": {
             // Same as shared: `exports` supplies the entry points. `.tsx` is in
             // `project` because AudioPlayer is a component — without it knip

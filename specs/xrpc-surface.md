@@ -208,7 +208,7 @@ the API, the lexicon becomes the source and Zod the runtime check derived or tes
 | :--- | :--- | :--- |
 | **A. Foundations** | Decide D-1 to D-4; Antiphony's DID document; named errors (§4.2); idempotency on `createPost` | none |
 | **B. Full surface** | `listPosts`, `listReplies` (or `getThread` paging), `uploadAudio`, space management, `describeServer`; public reads for flat posts | A |
-| **C. Client** | `@antiphony/client` generated from the lexicons, with the acting-actor headers, idempotency, the service-auth signer and a `checkUserAccess` helper. Vox Pop and Bardcast adopt it behind their existing gateway seams, calling XRPC | B |
+| **C. Client** | `@antiphony/client` (`packages/client`, built: all 19 XRPC methods, acting-actor headers, `Idempotency-Key`, ES256 service-auth signer, and `com.atproto.managedspace.checkAccess` helper). Vox Pop and Bardcast adopt it behind their existing gateway seams, calling XRPC | B |
 | **D. 1.0** | Freeze the lexicons, publish them (§4.7), switch the docs to lexicons, mark REST deprecated with a removal date | C, and the contract changes in flight (author segment, reply placement) landed |
 | **E. Remove REST** | Delete `/api/v1/*` except whatever D-8 keeps for media | D, both apps off REST |
 
