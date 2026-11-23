@@ -102,6 +102,23 @@ export interface AudioPostDependencies {
     ): Promise<AudioPostRecord[]>;
 
     /**
+     * Fetch a flat (public, non-space) post by id across tenancies, for
+     * unauthenticated or ATProto inter-service XRPC reads (specs/xrpc-surface.md
+     * D-2). MUST return null for any post placed in a space.
+     */
+    getPublicPostById(id: string): Promise<AudioPostRecord | null>;
+
+    /**
+     * List flat (public, non-space) direct replies to `parentUri`, oldest first,
+     * cursor-paginated. Never returns replies placed in a private space.
+     */
+    queryPublicReplies(
+        originAppId: string,
+        parentUri: string,
+        options?: AudioPostThreadOptions,
+    ): Promise<AudioPostRecord[]>;
+
+    /**
      * Batch-fetch transcript enrichment records by their subject post uris,
      * each within its own tenant (a transcript is keyed by tenant and subject,
      * migration 0006). Returned Map is keyed by `subject.uri`, which is unique

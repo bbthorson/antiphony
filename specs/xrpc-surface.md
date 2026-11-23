@@ -49,11 +49,14 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 - **Contract discipline:** each method touches a lexicon, a Zod schema and a handler together.
   `npm run test:lexicons` validates the documents against `@atproto/lex-document`, and the parity
   test in `@antiphony/shared` holds the Zod schemas to them.
-- **Auth:** every data method requires a tenant **service token**, the same middleware as REST
-  (`describeServer` is public). The hosted-post writes (`createPost`, `reprocessPost`, `uploadAudio`)
-  and `listPosts` also require an acting actor; deletion, the remote-post methods and `getStats`
-  are tenant-level and don't. There is no anonymous read access to posts and no atproto service
-  auth yet, so **no outside atproto service can read posts here today.**
+- **Auth:** every tenant method requires a **service token**, the same middleware as REST
+  (`describeServer` is public). `getPost` and `getThread` accept three tiers (D-2): a tenant
+  service token (full tenancy access, including spaces), an ATProto inter-service JWT
+  (`Authorization: Bearer <jwt>`, verified against `iss`'s `#atproto` key with `aud` = Antiphony's
+  service DID and `lxm` = method NSID, flat posts only, rate-limited per `iss` per D-13), or no
+  credential (anonymous public read of flat posts only, rate-limited per IP). The hosted-post
+  writes (`createPost`, `reprocessPost`, `uploadAudio`) and `listPosts` require an acting actor;
+  deletion, the remote-post methods and `getStats` are tenant-level.
 - **Errors:** `{ error, message }`. A domain code a lexicon declares by name is emitted by that
   name: `ReplyCidMismatch`, `PostDeleted`, `SpacesUnavailable`, `SpaceNotEmpty`, `InvalidCursor`,
   the DID-registry codes, and the ten `Remote…` errors (`xrpc/errors.ts`,
@@ -216,7 +219,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | # | Decision | Options | Lean |
 | :--- | :--- | :--- | :--- |
 | D-1 *(settled 2026-11-11: a)* | **Pre-1.0 change policy for lexicons** | (a) edit in place while unpublished and with no external consumers; (b) an `unstable` sub-namespace renamed at 1.0; (c) version suffixes from the start | (a): nothing resolves our lexicons yet, so editing is still honest; publish only at 1.0 |
-| D-2 *(document published 2026-11-11; service auth and public reads not built)* | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
+| D-2 *(built: public reads of flat posts + ATProto inter-service JWT on `getPost` and `getThread`)* | **Public and service-authenticated reads** | keep every method tenant-only; open public reads of flat posts; also accept atproto service auth | open public reads and service auth: otherwise "XRPC for the protocol" is not true |
 | D-3 | **Where the `dev.antiphony` lexicon repo lives** | a small PDS account for `antiphony.dev`'s DID; a hosted PDS; don't publish | a hosted PDS account (no infra to run), at 1.0 |
 | D-4 | **Acting actor in the protocol shape** | keep custom headers (client sets them); move into each procedure's input; express as a signed claim inside service auth | keep headers until signed service auth is the credential, then fold the actor into the JWT |
 | D-5 | **Idempotency on XRPC writes** | `Idempotency-Key` header; an input field (`clientRequestId`); none | **Settled: header, matching REST. Built for `createPost`.** |
@@ -227,7 +230,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-10 *(settled 2026-11-11: named arrays)* | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
 | D-11 | **Source of truth for shapes** | lexicons generate Zod; Zod stays hand-written with the parity test; validate with `@atproto/lex` at runtime | keep hand-written Zod plus parity until 1.0, then generate |
 | D-12 | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |
-| D-13 | **Rate limits for non-tenant callers** | per IP; per `iss` DID; per space credential | per `iss` for service auth, per IP for public |
+| D-13 *(built: `readCallerKey` in `middleware/rate-limit.ts`)* | **Rate limits for non-tenant callers** | per IP; per `iss` DID; per space credential | per `iss` for service auth, per IP for public |
 | D-14 | **Deprecation window for REST** | fixed date after D; when both apps are off it | when both apps are off it, plus a published date for any third-party tenant |
 
 ## 7. Where the wider strategy isn't settled

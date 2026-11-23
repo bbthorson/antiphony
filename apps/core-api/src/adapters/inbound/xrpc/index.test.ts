@@ -22,6 +22,9 @@ const audioPostService = {
     getReplies: vi.fn(),
     getPostsForAuthor: vi.fn(),
     getRepliesByRootAuthor: vi.fn(),
+    getPublicPostRecord: vi.fn(),
+    hydratePublicPost: vi.fn(),
+    getPublicReplies: vi.fn(),
     setProcessing: vi.fn(),
 };
 const postDeletionService = {
@@ -67,6 +70,12 @@ const idempotencyStore = {
 const getBlobSpace = vi.fn();
 /** What the rate-limit store answers. `under` except in the over-limit case. */
 let rateLimitVerdict: 'under' | 'over' = 'under';
+const rateLimitKeys: string[] = [];
+
+const verifyAtprotoServiceAuthMock = vi.fn();
+vi.mock('../../../lib/atproto-service-auth.js', () => ({
+    verifyAtprotoServiceAuth: verifyAtprotoServiceAuthMock,
+}));
 
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
@@ -80,7 +89,12 @@ vi.mock('../../../composition.js', () => ({
     // The rate-limit middleware resolves its store from here. Under limit except
     // in "over the rate limit" below: these suites assert route behaviour, not
     // rate-limit policy (that is middleware/rate-limit-policy.test.ts).
-    rateLimitStore: { hit: async () => rateLimitVerdict },
+    rateLimitStore: {
+        hit: async (key: string) => {
+            rateLimitKeys.push(key);
+            return rateLimitVerdict;
+        },
+    },
     }),
 }));
 
@@ -137,6 +151,7 @@ function anonHeaders(): Record<string, string> {
 }
 
 beforeEach(() => {
+    rateLimitKeys.length = 0;
     vi.clearAllMocks();
     idempotencyRecords.clear();
 });
@@ -145,7 +160,7 @@ beforeEach(() => {
 
 describe('error dialect', () => {
     it('renders an auth failure as XRPC { error, message }, not the REST envelope', async () => {
-        const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1');
+        const res = await app().request('/xrpc/dev.antiphony.audio.getPlaybackUrl?cid=bafy1');
 
         expect(res.status).toBe(401);
         const body = await res.json();
@@ -1152,5 +1167,77 @@ describe('surface wiring', () => {
         });
 
         expect(res.status).toBe(404);
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('public and ATProto inter-service reads (D-2, D-13)', () => {
+    it('serves a flat post anonymously on getPost and 404s when absent or in a space', async () => {
+        const flatRecord = { id: 'p1', originAppId: 'test-app', kind: 'prompt' as const };
+        audioPostService.getPublicPostRecord.mockResolvedValueOnce(flatRecord);
+        audioPostService.hydratePublicPost.mockResolvedValueOnce(VIEW);
+
+        const ok = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1');
+        expect(ok.status).toBe(200);
+        expect((await ok.json()).uri).toBe(VIEW.uri);
+        expect(audioPostService.getPostView).not.toHaveBeenCalled();
+
+        audioPostService.getPublicPostRecord.mockResolvedValueOnce(null);
+        const missing = await app().request('/xrpc/dev.antiphony.audio.getPost?id=space-post');
+        expect(missing.status).toBe(404);
+        expect((await missing.json()).error).toBe('RecordNotFound');
+        expect(postDeletionService.getDeletedPost).not.toHaveBeenCalled();
+    });
+
+    it('serves a flat thread anonymously on getThread using only flat replies', async () => {
+        const flatRecord = { id: 'p1', originAppId: 'test-app', kind: 'prompt' as const };
+        audioPostService.getPublicPostRecord.mockResolvedValueOnce(flatRecord);
+        audioPostService.hydratePublicPost.mockResolvedValueOnce(VIEW);
+        audioPostService.getPublicReplies.mockResolvedValueOnce([REPLY]);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getThread?id=p1&limit=10');
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.parent.uri).toBe(VIEW.uri);
+        expect(body.replies).toHaveLength(1);
+        expect(audioPostService.getPublicReplies).toHaveBeenCalledWith('test-app', VIEW.uri, {
+            limit: 10,
+            cursorId: undefined,
+        });
+    });
+
+    it('accepts a valid ATProto inter-service JWT and keys rate limiting on its iss DID (D-13)', async () => {
+        verifyAtprotoServiceAuthMock.mockResolvedValueOnce({
+            ok: true,
+            iss: 'did:plc:externalappview000000000',
+            claims: {
+                iss: 'did:plc:externalappview000000000',
+                aud: 'did:web:api.antiphony.test',
+                lxm: 'dev.antiphony.audio.getPost',
+                exp: Math.floor(Date.now() / 1000) + 60,
+            },
+        });
+        audioPostService.getPublicPostRecord.mockResolvedValueOnce({ id: 'p1', originAppId: 'test-app' });
+        audioPostService.hydratePublicPost.mockResolvedValueOnce(VIEW);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1', {
+            headers: { Authorization: 'Bearer header.payload.signature' },
+        });
+
+        expect(res.status).toBe(200);
+        expect(rateLimitKeys.some((k) => k.endsWith('atproto-service:did:plc:externalappview000000000'))).toBe(true);
+    });
+
+    it('401s an invalid Bearer token rather than silently downgrading to anonymous', async () => {
+        verifyAtprotoServiceAuthMock.mockResolvedValueOnce({ ok: false, reason: 'bad-signature' });
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=p1', {
+            headers: { Authorization: 'Bearer not-a-valid-token' },
+        });
+
+        expect(res.status).toBe(401);
+        expect((await res.json()).error).toBe('AuthenticationRequired');
+        expect(audioPostService.getPublicPostRecord).not.toHaveBeenCalled();
     });
 });

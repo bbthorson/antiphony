@@ -118,6 +118,12 @@ export function inMemoryAudioPostDependencies(
             return found && found.originAppId === originAppId ? clone(found) : null;
         },
 
+        async getPublicPostById(id) {
+            if (!id?.trim()) return null;
+            const found = posts.get(id);
+            return found && !found.space ? clone(found) : null;
+        },
+
         async queryByAuthor(originAppId, authorId, options: AudioPostQueryOptions = {}) {
             const { kind, limit = 20, cursorId } = options;
             const rows = inTenant(originAppId).filter((p) => p.authorId === authorId && (!kind || p.kind === kind));
@@ -133,6 +139,14 @@ export function inMemoryAudioPostDependencies(
         async queryReplies(originAppId, parentUri, options: AudioPostThreadOptions = {}) {
             const { limit = 50, cursorId } = options;
             const rows = inTenant(originAppId).filter((p) => p.kind === 'reply' && p.reply?.parent.uri === parentUri);
+            return page(rows, originAppId, 'asc', limit, cursorId, posts).map(clone);
+        },
+
+        async queryPublicReplies(originAppId, parentUri, options: AudioPostThreadOptions = {}) {
+            const { limit = 50, cursorId } = options;
+            const rows = inTenant(originAppId).filter(
+                (p) => p.kind === 'reply' && !p.space && p.reply?.parent.uri === parentUri,
+            );
             return page(rows, originAppId, 'asc', limit, cursorId, posts).map(clone);
         },
 
