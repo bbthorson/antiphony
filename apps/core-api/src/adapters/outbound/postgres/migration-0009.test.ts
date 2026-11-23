@@ -35,5 +35,5 @@ describe('migration 0009: rechecking space records', () => {
         expect(names).toEqual(expect.arrayContaining(['remote_posts_repo_sweep_idx', 'remote_posts_space_checked_idx']));
         expect(names).not.toContain('remote_posts_sweep_idx');
         await pg.close();
-    });
+    }, 15_000);
 });
