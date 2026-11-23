@@ -2,7 +2,12 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { XRPC_NSID } from 'shared/nsid';
-import { CreateAudioPostRequestSchema, PatchAudioPostRequestSchema } from 'shared/api-codecs';
+import {
+    CreateAudioPostRequestSchema,
+    EraseAuthorXrpcRequestSchema,
+    PatchAudioPostRequestSchema,
+} from 'shared/api-codecs';
+import { DeletePostRequestSchema } from 'shared/types/deletion';
 import {
     RecheckRemoteSpaceRequestSchema,
     RegisterRemotePostRequestSchema,
@@ -17,8 +22,15 @@ import { getOriginAppId } from '../../../lib/origin-app.js';
 import { runIdempotent } from '../../../lib/idempotent-create.js';
 import { getAppDid } from '../../../lib/app-did.js';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
+import { OPENAPI_INFO } from '../../../lib/openapi-info.js';
+import { serviceDidDocument } from '../../../lib/service-did-document.js';
 import { resolveInitialProcessing, hasPendingStage, dispatchProcessing } from '../../../lib/audio-processing.js';
 import { xrpcError, xrpcErrorHandler, xrpcSymbol } from './errors.js';
+import {
+    MAX_AUDIO_UPLOAD_SIZE,
+    normalizeAudioMimeType,
+    storeUploadedAudio,
+} from '../audio-upload-operation.js';
 import {
     GetRemotePostQuerySchema,
     GetRemotePostsQuerySchema,
@@ -86,6 +98,13 @@ export const GetThreadQuerySchema = z.object({
     id: z.string().min(1),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.string().min(1).optional(),
+});
+
+export const ListPostsQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().min(1).optional(),
+    kind: z.enum(['prompt', 'reply']).optional(),
+    rootAuthor: z.string().min(1).optional(),
 });
 
 export const GetPlaybackUrlQuerySchema = z.object({
@@ -166,12 +185,18 @@ export function xrpcRoute(): Hono {
             const parsed = parseInput(c, GetPostQuerySchema, { id: c.req.query('id') });
             if (!parsed.ok) return parsed.response;
 
-            const view = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(
-                getOriginAppId(c),
+            const originAppId = getOriginAppId(c);
+            const services = servicesFor(c.env as Record<string, unknown> | undefined);
+            const view = await services.audioPostService.getPostView(
+                originAppId,
                 parsed.value.id,
                 c.get('viewerUid'),
             );
             if (!view) {
+                const deleted = await services.postDeletionService?.getDeletedPost(originAppId, parsed.value.id);
+                if (deleted) {
+                    return c.json(xrpcError('PostDeleted', `Post deleted: ${parsed.value.id}`), 410);
+                }
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${parsed.value.id}`), 404);
             }
             return c.json(view);
@@ -201,12 +226,17 @@ export function xrpcRoute(): Hono {
             // Resolve the parent first, for the same two reasons as the REST
             // thread route: the reply query keys on the parent's `at://` uri,
             // and a missing parent must read as 404 rather than an empty list.
-            const parent = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getPostView(originAppId, id, viewerUid);
+            const services = servicesFor(c.env as Record<string, unknown> | undefined);
+            const parent = await services.audioPostService.getPostView(originAppId, id, viewerUid);
             if (!parent) {
+                const deleted = await services.postDeletionService?.getDeletedPost(originAppId, id);
+                if (deleted) {
+                    return c.json(xrpcError('PostDeleted', `Post deleted: ${id}`), 410);
+                }
                 return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
             }
 
-            const replies = await servicesFor(c.env as Record<string, unknown> | undefined).audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
+            const replies = await services.audioPostService.getReplies(originAppId, parent.uri, viewerUid, {
                 limit,
                 cursorId: cursor,
             });
@@ -573,6 +603,167 @@ export function xrpcRoute(): Hono {
             return c.json(
                 await recheckRemoteSpace(c.env as Record<string, unknown> | undefined, getOriginAppId(c), parsed.value),
             );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.audio.listPosts
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.ListPosts}`,
+        requireAuth(),
+        rateLimit(RATE_LIMITS.readAggregate),
+        rateLimit(RATE_LIMITS.read, { keyBy: actingActorKey }),
+        async (c) => {
+            const parsed = parseInput(c, ListPostsQuerySchema, {
+                limit: c.req.query('limit'),
+                cursor: c.req.query('cursor'),
+                kind: c.req.query('kind'),
+                rootAuthor: c.req.query('rootAuthor'),
+            });
+            if (!parsed.ok) return parsed.response;
+
+            const { limit, cursor, kind, rootAuthor } = parsed.value;
+            const originAppId = getOriginAppId(c);
+            const uid = c.get('viewerUid')!;
+            const { audioPostService } = servicesFor(c.env as Record<string, unknown> | undefined);
+
+            const posts = rootAuthor
+                ? await audioPostService.getRepliesByRootAuthor(originAppId, rootAuthor, uid, {
+                      limit,
+                      cursorId: cursor,
+                  })
+                : await audioPostService.getPostsForAuthor(originAppId, uid, uid, {
+                      limit,
+                      cursorId: cursor,
+                      kind,
+                  });
+
+            const nextCursor =
+                posts.length > 0 && posts.length === limit
+                    ? rkeyFromUri(posts[posts.length - 1].uri)
+                    : undefined;
+
+            return c.json({
+                posts,
+                ...(nextCursor ? { cursor: nextCursor } : {}),
+            });
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Query: dev.antiphony.server.describeServer (public)
+    // -----------------------------------------------------------------------
+    app.get(
+        `/${XRPC_NSID.DescribeServer}`,
+        rateLimit(RATE_LIMITS.read),
+        async (c) => {
+            const doc = await serviceDidDocument();
+            return c.json({
+                service: 'antiphony-core-api',
+                version: OPENAPI_INFO.version,
+                status: 'ok' as const,
+                ...(doc ? { did: doc.id } : {}),
+            });
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.uploadAudio
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.UploadAudio}`,
+        requireAuth(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.hourly, { keyBy: actingActorKey }),
+        xrpcBodyLimit(MAX_AUDIO_UPLOAD_SIZE),
+        async (c) => {
+            const uid = c.get('viewerUid')!;
+            return runIdempotent<Response>(
+                c,
+                uid,
+                XRPC_NSID.UploadAudio,
+                {
+                    replay: (body) => c.json(body as object),
+                    inFlight: () =>
+                        c.json(
+                            xrpcError('Conflict', 'An earlier request with the same idempotency key is still in flight'),
+                            409,
+                        ),
+                },
+                async () => {
+                    const bytes = Buffer.from(await c.req.arrayBuffer());
+                    if (bytes.byteLength === 0) {
+                        return {
+                            created: false,
+                            response: c.json(xrpcError('InvalidRequest', 'Request body must not be empty'), 400),
+                        };
+                    }
+                    const mimeType = normalizeAudioMimeType(c.req.header('content-type'));
+                    if (!mimeType) {
+                        return {
+                            created: false,
+                            response: c.json(xrpcError('InvalidRequest', 'Content-Type header is required'), 400),
+                        };
+                    }
+                    const data = await storeUploadedAudio({
+                        originAppId: getOriginAppId(c),
+                        bytes,
+                        mimeType,
+                        spaceType: c.req.query('spaceType') ?? null,
+                        skey: c.req.query('skey') ?? null,
+                        spaceAuthority: c.req.query('spaceAuthority') ?? null,
+                        remoteSpace: c.req.query('remoteSpace') ?? null,
+                        services: servicesFor(c.env as Record<string, unknown> | undefined),
+                    });
+                    return { created: true, body: data, response: c.json(data) };
+                },
+            );
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.deletePost
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.DeletePost}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: actingActorKey }),
+        xrpcBodyLimit(4 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, DeletePostRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+
+            const { id, replies } = parsed.value;
+            const result = await servicesFor(
+                c.env as Record<string, unknown> | undefined,
+            ).postDeletionService.deletePost(getOriginAppId(c), id, replies);
+            if (!result) {
+                return c.json(xrpcError('RecordNotFound', `Post not found: ${id}`), 404);
+            }
+            return c.json(result);
+        },
+    );
+
+    // -----------------------------------------------------------------------
+    // Procedure: dev.antiphony.audio.eraseAuthor
+    // -----------------------------------------------------------------------
+    app.post(
+        `/${XRPC_NSID.EraseAuthor}`,
+        requireServiceToken(),
+        rateLimit(RATE_LIMITS.writeAggregate),
+        rateLimit(RATE_LIMITS.burst, { keyBy: (c) => c.get('originAppId') ?? null }),
+        xrpcBodyLimit(4 * 1024),
+        async (c) => {
+            const parsed = parseInput(c, EraseAuthorXrpcRequestSchema, await c.req.json());
+            if (!parsed.ok) return parsed.response;
+
+            const { authorId, replies, limit } = parsed.value;
+            const result = await servicesFor(
+                c.env as Record<string, unknown> | undefined,
+            ).postDeletionService.eraseAuthor(getOriginAppId(c), authorId, replies, limit);
+            return c.json(result);
         },
     );
 

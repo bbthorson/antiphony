@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { AudioEmbedSchema, ReplyRefSchema } from './types/audio';
+import { BlobRefSchema } from './types/blob';
 import { ProcessingRequestSchema } from './types/processing';
 import { RepliesPolicySchema } from './types/deletion';
-import { SpaceAuthorSchema, SpaceKeySchema, SpacePolicySchema } from './types/spaces';
+import { ScopedSpaceKeySchema, SpaceAuthorSchema, SpaceKeySchema, SpacePolicySchema } from './types/spaces';
 import { DidStringSchema, TenantDidRoleSchema } from './types/dids';
 import { httpsUrl } from './types/url';
 
@@ -119,6 +120,28 @@ export const EraseAuthorRequestSchema = z.object({
   limit: z.number().int().min(1).max(200).default(100),
 });
 export type EraseAuthorRequest = z.infer<typeof EraseAuthorRequestSchema>;
+
+/** `dev.antiphony.audio.eraseAuthor`: XRPC procedure input (carries `authorId` in the body). */
+export const EraseAuthorXrpcRequestSchema = EraseAuthorRequestSchema.extend({
+  authorId: z.string().min(1),
+});
+export type EraseAuthorXrpcRequest = z.infer<typeof EraseAuthorXrpcRequestSchema>;
+
+/** `dev.antiphony.server.describeServer`: public deployment identity. */
+export const DescribeServerResultSchema = z.object({
+  service: z.string(),
+  version: z.string(),
+  status: z.enum(['ok']),
+  did: DidStringSchema.optional(),
+});
+export type DescribeServerResult = z.infer<typeof DescribeServerResultSchema>;
+
+/** `POST /api/v1/audio/upload` & `dev.antiphony.audio.uploadAudio`: stored blob ref. */
+export const UploadAudioResultSchema = z.object({
+  blob: BlobRefSchema,
+  space: ScopedSpaceKeySchema.optional(),
+});
+export type UploadAudioResult = z.infer<typeof UploadAudioResultSchema>;
 
 /**
  * `PUT /api/v1/dids/{did}` — register a DID the calling tenant may write under

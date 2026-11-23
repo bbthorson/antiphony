@@ -56,6 +56,7 @@ export const XRPC_NSID = {
     // Queries (GET).
     GetPost: 'dev.antiphony.audio.getPost',
     GetThread: 'dev.antiphony.audio.getThread',
+    ListPosts: 'dev.antiphony.audio.listPosts',
     GetPlaybackUrl: 'dev.antiphony.audio.getPlaybackUrl',
     // Remote posts (specs/audio-service-mode.md): records held in other repos.
     GetRemotePost: 'dev.antiphony.audio.getRemotePost',
@@ -64,9 +65,14 @@ export const XRPC_NSID = {
     GetRemotePosts: 'dev.antiphony.audio.getRemotePosts',
     // Counts for the calling tenancy (specs/tenancy-stats.md).
     GetStats: 'dev.antiphony.tenant.getStats',
+    // Public service metadata.
+    DescribeServer: 'dev.antiphony.server.describeServer',
     // Procedures (POST).
     CreatePost: 'dev.antiphony.audio.createPost',
     ReprocessPost: 'dev.antiphony.audio.reprocessPost',
+    UploadAudio: 'dev.antiphony.audio.uploadAudio',
+    DeletePost: 'dev.antiphony.audio.deletePost',
+    EraseAuthor: 'dev.antiphony.audio.eraseAuthor',
     // Remote posts. Tenant-level, so unlike the two above they need no acting
     // actor: a service token is enough, as on their REST twins.
     RegisterPost: 'dev.antiphony.audio.registerPost',

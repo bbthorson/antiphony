@@ -1,0 +1,52 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.uploadAudio",
+    "description": "Upload raw audio bytes content-addressed by CID, returning an AT Protocol blob ref to embed on a post.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Accepts raw audio bytes in the request body (max 25 MB; `Content-Type`: m4a, mp4, mpeg, webm, ogg, wav), matching `com.atproto.repo.uploadBlob`. Optional query parameters `spaceType` + `skey` (and `spaceAuthority`), or `remoteSpace` (`at://{authority}/space/{type}/{skey}`), store the blob privately in that space. Supports `Idempotency-Key`.",
+            "input": {
+                "encoding": "audio/*"
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["blob"],
+                    "properties": {
+                        "blob": {
+                            "type": "blob",
+                            "accept": ["audio/*"],
+                            "maxSize": 26214400,
+                            "description": "Canonical AT Protocol blob ref for the stored audio — pass verbatim as the post embed's `audio`."
+                        },
+                        "space": {
+                            "type": "ref",
+                            "ref": "dev.antiphony.audio.defs#scopedSpaceKey",
+                            "description": "The space the blob is stored in, when private. Absent means public. The first upload of identical bytes decides visibility."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidRequest",
+                    "description": "Empty body, unsupported audio Content-Type, invalid space parameters, or a `remoteSpace` hosted by this tenant."
+                },
+                {
+                    "name": "RecordNotFound",
+                    "description": "The named hosted space does not exist for this tenant."
+                },
+                {
+                    "name": "PayloadTooLarge",
+                    "description": "Audio payload exceeds the 25 MB limit."
+                },
+                {
+                    "name": "Conflict",
+                    "description": "An earlier request with the same Idempotency-Key is still in flight."
+                }
+            ]
+        }
+    }
+}

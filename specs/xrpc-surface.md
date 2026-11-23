@@ -39,29 +39,30 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 
 ## 2. What exists
 
-- **Fourteen methods** in `apps/core-api/src/adapters/inbound/xrpc/` (five when this was written):
-  for hosted posts, `dev.antiphony.audio.getPost`, `getThread`, `getPlaybackUrl` (queries),
-  `createPost` and `reprocessPost` (procedures); for remote posts, `getRemotePost`,
+- **Nineteen methods** in `apps/core-api/src/adapters/inbound/xrpc/` (five when this was written):
+  for hosted posts, `dev.antiphony.audio.getPost`, `getThread`, `listPosts`, `getPlaybackUrl` (queries),
+  `createPost`, `reprocessPost`, `uploadAudio`, `deletePost` and `eraseAuthor` (procedures); for remote posts, `getRemotePost`,
   `getRemoteThread`, `listRemotePosts`, `getRemotePosts` (queries), `registerPost`,
-  `reprocessRemotePost`, `unregisterPost` and `recheckRemoteSpace` (procedures); and
-  `dev.antiphony.tenant.getStats`. Lexicons in `lexicons/dev/antiphony/`, shared shapes in each
+  `reprocessRemotePost`, `unregisterPost` and `recheckRemoteSpace` (procedures);
+  `dev.antiphony.tenant.getStats`; and public `dev.antiphony.server.describeServer`. Lexicons in `lexicons/dev/antiphony/`, shared shapes in each
   namespace's `defs.json`.
 - **Contract discipline:** each method touches a lexicon, a Zod schema and a handler together.
   `npm run test:lexicons` validates the documents against `@atproto/lex-document`, and the parity
   test in `@antiphony/shared` holds the Zod schemas to them.
-- **Auth:** every method requires a tenant **service token**, the same middleware as REST.
-  The hosted-post procedures also require an acting actor; the remote-post methods and `getStats`
-  are tenant-level and don't. There is no anonymous access and no atproto service
-  auth, so **no outside atproto service can call these today.**
+- **Auth:** every data method requires a tenant **service token**, the same middleware as REST
+  (`describeServer` is public). The hosted-post writes (`createPost`, `reprocessPost`, `uploadAudio`)
+  and `listPosts` also require an acting actor; deletion, the remote-post methods and `getStats`
+  are tenant-level and don't. There is no anonymous read access to posts and no atproto service
+  auth yet, so **no outside atproto service can read posts here today.**
 - **Errors:** `{ error, message }`. A domain code a lexicon declares by name is emitted by that
-  name: `ReplyCidMismatch`, `InvalidCursor` and the ten `Remote…` errors (`xrpc/errors.ts`,
+  name: `ReplyCidMismatch`, `PostDeleted`, `SpacesUnavailable`, `SpaceNotEmpty`, `InvalidCursor`,
+  the DID-registry codes, and the ten `Remote…` errors (`xrpc/errors.ts`,
   `SYMBOL_BY_CODE`). Anything else gets a symbol from its HTTP status (`InvalidRequest`,
   `AuthenticationRequired`, `Forbidden`, `RecordNotFound`, `Conflict`, `Gone`, `PayloadTooLarge`,
-  `RateLimitExceeded`, `ServiceUnavailable`, `InternalServerError`), so the hosted-post codes
-  such as `AUDIO_PLACEMENT` and `SPACES_UNAVAILABLE` are still lost (§4.2).
+  `RateLimitExceeded`, `ServiceUnavailable`, `InternalServerError`).
 - **Gaps against REST:** `createPost` answers a StrongRef `{ uri, cid }` where REST answers
-  `{ postId }`. (It honours `Idempotency-Key` like REST, §4.3.) Upload, spaces, the DID registry, deletion and the hosted-post list have no
-  XRPC method yet.
+  `{ postId }`. (Both `createPost` and `uploadAudio` honour `Idempotency-Key` like REST, §4.3.)
+  Spaces and the DID registry have no XRPC methods yet.
 - **Antiphony publishes a DID document, but accepts nothing signed with it.**
   `https://api.antiphony.dev/.well-known/did.json` serves `did:web:api.antiphony.dev` with an
   `#atproto` P-256 key and an `#antiphony_audio` service entry once `ANTIPHONY_SERVICE_SIGNING_KEY`
@@ -76,13 +77,13 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | :--- | :--- | :--- | :--- | :--- |
 | `dev.antiphony.audio.getPost` | query | `GET /posts/{id}` | tenant; public for flat posts (D-2) | exists |
 | `dev.antiphony.audio.getThread` | query | thread reads | tenant; public for flat posts | exists |
-| `dev.antiphony.audio.listPosts` | query | `GET /posts` (`kind`, `rootAuthor`, cursor) | tenant | new |
+| `dev.antiphony.audio.listPosts` | query | `GET /posts` (`kind`, `rootAuthor`, cursor) | tenant + acting actor | exists |
 | `dev.antiphony.audio.listReplies` | query | `GET /posts/{id}/replies` | tenant | new, or folded into `getThread` (D-6) |
 | `dev.antiphony.audio.createPost` | procedure | `POST /posts` | tenant + acting actor | exists; honours `Idempotency-Key` (D-5, built) |
 | `dev.antiphony.audio.reprocessPost` | procedure | `PATCH /posts/{id}` | tenant + acting actor | exists |
-| `dev.antiphony.audio.deletePost` | procedure | `DELETE /posts/{id}` ([`deletion.md`](./deletion.md)) | tenant + acting actor | new |
-| `dev.antiphony.audio.eraseAuthor` | procedure | `POST /authors/{authorId}/erase` ([`deletion.md`](./deletion.md)) | tenant | new |
-| `dev.antiphony.audio.uploadAudio` | procedure, binary input | `POST /audio/upload` | tenant + acting actor | new (D-7) |
+| `dev.antiphony.audio.deletePost` | procedure | `DELETE /posts/{id}` ([`deletion.md`](./deletion.md)) | tenant | exists |
+| `dev.antiphony.audio.eraseAuthor` | procedure | `POST /authors/{authorId}/erase` ([`deletion.md`](./deletion.md)) | tenant | exists |
+| `dev.antiphony.audio.uploadAudio` | procedure, binary input | `POST /audio/upload` | tenant + acting actor | exists (D-7, raw body + `Idempotency-Key`) |
 | `dev.antiphony.audio.getPlaybackUrl` | query | URL minting | tenant | exists |
 | `dev.antiphony.audio.getAudio` | query, binary output | `GET /audio` (proxy) | capability (signed URL) | new, or stays a plain media route (D-8) |
 | space management | procedure / query | `PUT`/`GET /spaces/{type}/{skey}` | tenant | new (D-9) |
@@ -96,7 +97,7 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.reprocessRemotePost` | procedure | `PATCH /remote-posts?uri=` | tenant | exists (0.10.8); the URI in the body |
 | `dev.antiphony.audio.unregisterPost` | procedure | `DELETE /remote-posts?uri=` | tenant | exists (0.10.8) |
 | `dev.antiphony.audio.recheckRemoteSpace` | procedure | `POST /remote-posts/recheck` | tenant | exists (0.10.8) |
-| `dev.antiphony.server.describeServer` | query | `GET /` service info | public | new |
+| `dev.antiphony.server.describeServer` | query | `GET /` service info | public | exists |
 
 Inputs and outputs reuse `defs.json` (`postView`, `threadView`, `embed` views, `spaceKey`).
 Lists use `limit` + `cursor` and answer `{ items, cursor? }` (D-10).

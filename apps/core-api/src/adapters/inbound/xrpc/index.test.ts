@@ -20,7 +20,24 @@ const audioPostService = {
     createPost: vi.fn(),
     getPostView: vi.fn(),
     getReplies: vi.fn(),
+    getPostsForAuthor: vi.fn(),
+    getRepliesByRootAuthor: vi.fn(),
     setProcessing: vi.fn(),
+};
+const postDeletionService = {
+    deletePost: vi.fn(),
+    eraseAuthor: vi.fn(),
+    getDeletedPost: vi.fn(),
+};
+const spaceService = {
+    getSpace: vi.fn(),
+};
+const didRegistryService = {
+    get: vi.fn(),
+};
+const storage = {
+    stat: vi.fn(),
+    uploadFile: vi.fn(),
 };
 
 /**
@@ -54,6 +71,10 @@ let rateLimitVerdict: 'under' | 'over' = 'under';
 vi.mock('../../../composition.js', () => ({
     servicesFor: () => ({
         audioPostService,
+        postDeletionService,
+        spaceService,
+        didRegistryService,
+        storage,
         idempotencyStore,
         audioPostDeps: { getBlobSpace },
     // The rate-limit middleware resolves its store from here. Under limit except
@@ -784,6 +805,334 @@ describe('dev.antiphony.audio.reprocessPost', () => {
 
         expect(res.status).toBe(400);
         expect((await res.json()).error).toBe('InvalidRequest');
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('GET /xrpc/dev.antiphony.audio.getPost — deleted ledger', () => {
+    it('410s with PostDeleted when the post is in this tenant deletion ledger', async () => {
+        audioPostService.getPostView.mockResolvedValueOnce(null);
+        postDeletionService.getDeletedPost.mockResolvedValueOnce({
+            postId: 'gone-1',
+            uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/gone-1',
+            deletedAt: new Date(),
+        });
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getPost?id=gone-1', {
+            headers: anonHeaders(),
+        });
+
+        expect(res.status).toBe(410);
+        expect(await res.json()).toEqual({
+            error: 'PostDeleted',
+            message: 'Post deleted: gone-1',
+        });
+    });
+
+    it('410s with PostDeleted on getThread when the parent post was deleted', async () => {
+        audioPostService.getPostView.mockResolvedValueOnce(null);
+        postDeletionService.getDeletedPost.mockResolvedValueOnce({
+            postId: 'gone-2',
+            uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/gone-2',
+            deletedAt: new Date(),
+        });
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.getThread?id=gone-2', {
+            headers: anonHeaders(),
+        });
+
+        expect(res.status).toBe(410);
+        expect(await res.json()).toEqual({
+            error: 'PostDeleted',
+            message: 'Post deleted: gone-2',
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('GET /xrpc/dev.antiphony.audio.listPosts', () => {
+    it('401s without an acting actor', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.audio.listPosts', {
+            headers: anonHeaders(),
+        });
+
+        expect(res.status).toBe(401);
+        expect((await res.json()).error).toBe('AuthenticationRequired');
+    });
+
+    it('lists the acting actor posts and emits cursor only on a full page', async () => {
+        const postA = { ...VIEW, uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/p1' };
+        const postB = { ...VIEW, uri: 'at://did:web:test-app.example/dev.antiphony.audio.post/p2' };
+        audioPostService.getPostsForAuthor.mockResolvedValueOnce([postA, postB]);
+
+        const fullRes = await app().request('/xrpc/dev.antiphony.audio.listPosts?limit=2&kind=prompt', {
+            headers: authHeaders(),
+        });
+
+        expect(fullRes.status).toBe(200);
+        const fullBody = await fullRes.json();
+        expect(fullBody.posts).toHaveLength(2);
+        expect(fullBody.cursor).toBe('p2');
+        expect(audioPostService.getPostsForAuthor).toHaveBeenCalledWith('test-app', 'u1', 'u1', {
+            limit: 2,
+            cursorId: undefined,
+            kind: 'prompt',
+        });
+
+        audioPostService.getPostsForAuthor.mockResolvedValueOnce([postA]);
+        const lastRes = await app().request('/xrpc/dev.antiphony.audio.listPosts?limit=2&cursor=p2', {
+            headers: authHeaders(),
+        });
+        expect(lastRes.status).toBe(200);
+        const lastBody = await lastRes.json();
+        expect(lastBody.posts).toHaveLength(1);
+        expect('cursor' in lastBody).toBe(false);
+    });
+
+    it('switches to getRepliesByRootAuthor when rootAuthor is set', async () => {
+        audioPostService.getRepliesByRootAuthor.mockResolvedValueOnce([]);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.listPosts?rootAuthor=creator-1&limit=10', {
+            headers: authHeaders(),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ posts: [] });
+        expect(audioPostService.getRepliesByRootAuthor).toHaveBeenCalledWith('test-app', 'creator-1', 'u1', {
+            limit: 10,
+            cursorId: undefined,
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('POST /xrpc/dev.antiphony.audio.deletePost', () => {
+    it('deletes a post at the tenant level (no acting actor required) and 404s when missing', async () => {
+        const result = {
+            status: 'deleted' as const,
+            complete: true,
+            deleted: [{ postId: 'p1', uri: VIEW.uri, kind: 'prompt' as const }],
+            kept: [],
+        };
+        postDeletionService.deletePost.mockResolvedValueOnce(result);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.deletePost', {
+            method: 'POST',
+            headers: { ...anonHeaders(), 'content-type': 'application/json' },
+            body: JSON.stringify({ id: 'p1', replies: 'keep-with-did' }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual(result);
+        expect(postDeletionService.deletePost).toHaveBeenCalledWith('test-app', 'p1', 'keep-with-did');
+
+        postDeletionService.deletePost.mockResolvedValueOnce(null);
+        const missing = await app().request('/xrpc/dev.antiphony.audio.deletePost', {
+            method: 'POST',
+            headers: { ...anonHeaders(), 'content-type': 'application/json' },
+            body: JSON.stringify({ id: 'nope' }),
+        });
+        expect(missing.status).toBe(404);
+        expect((await missing.json()).error).toBe('RecordNotFound');
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('POST /xrpc/dev.antiphony.audio.eraseAuthor', () => {
+    it('erases an author with defaults and forwards explicit replies and limit', async () => {
+        const result = {
+            complete: true,
+            deleted: [{ postId: 'p1', uri: VIEW.uri, kind: 'prompt' as const }],
+            kept: [],
+        };
+        postDeletionService.eraseAuthor.mockResolvedValueOnce(result);
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.eraseAuthor', {
+            method: 'POST',
+            headers: { ...anonHeaders(), 'content-type': 'application/json' },
+            body: JSON.stringify({ authorId: 'user-9', replies: 'keep', limit: 25 }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual(result);
+        expect(postDeletionService.eraseAuthor).toHaveBeenCalledWith('test-app', 'user-9', 'keep', 25);
+    });
+
+    it('400s when authorId is missing', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.audio.eraseAuthor', {
+            method: 'POST',
+            headers: { ...anonHeaders(), 'content-type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('InvalidRequest');
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('GET /xrpc/dev.antiphony.server.describeServer', () => {
+    it('answers publicly without a service token', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.server.describeServer');
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toMatchObject({
+            service: 'antiphony-core-api',
+            status: 'ok',
+        });
+        expect(typeof body.version).toBe('string');
+    });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('POST /xrpc/dev.antiphony.audio.uploadAudio', () => {
+    it('401s without an acting actor', async () => {
+        const res = await app().request('/xrpc/dev.antiphony.audio.uploadAudio', {
+            method: 'POST',
+            headers: { ...anonHeaders(), 'content-type': 'audio/webm' },
+            body: Buffer.from([1, 2, 3]),
+        });
+
+        expect(res.status).toBe(401);
+        expect((await res.json()).error).toBe('AuthenticationRequired');
+    });
+
+    it('400s an empty body or unsupported audio Content-Type', async () => {
+        const empty = await app().request('/xrpc/dev.antiphony.audio.uploadAudio', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'audio/webm' }),
+            body: Buffer.alloc(0),
+        });
+        expect(empty.status).toBe(400);
+        expect((await empty.json()).error).toBe('InvalidRequest');
+
+        const badType = await app().request('/xrpc/dev.antiphony.audio.uploadAudio', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'image/png' }),
+            body: Buffer.from([1, 2, 3]),
+        });
+        expect(badType.status).toBe(400);
+        expect((await badType.json()).error).toBe('InvalidRequest');
+    });
+
+    it('stores raw audio bytes (normalising codecs parameter) and returns the blob ref', async () => {
+        storage.stat.mockResolvedValueOnce(null);
+        storage.uploadFile.mockResolvedValueOnce('r2://bucket/blobs/test-app/cid');
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.uploadAudio', {
+            method: 'POST',
+            headers: authHeaders({ 'content-type': 'audio/webm; codecs=opus' }),
+            body: Buffer.from([10, 20, 30, 40]),
+        });
+
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.blob).toMatchObject({
+            $type: 'blob',
+            mimeType: 'audio/webm',
+            size: 4,
+        });
+        expect(body.blob.ref.$link).toMatch(/^bafk/);
+        expect(body.space).toBeUndefined();
+        expect(storage.uploadFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores private audio in a hosted space named by query params and replays on Idempotency-Key', async () => {
+        spaceService.getSpace.mockResolvedValueOnce({ type: 'game.bardcast.space.campaign', skey: 'c1' });
+        storage.stat.mockResolvedValueOnce(null);
+        storage.uploadFile.mockResolvedValueOnce('r2://bucket/blobs/test-app/cid');
+
+        const url = '/xrpc/dev.antiphony.audio.uploadAudio?spaceType=game.bardcast.space.campaign&skey=c1';
+        const headers = authHeaders({
+            'content-type': 'audio/mpeg',
+            'Idempotency-Key': 'upload-key-1',
+        });
+
+        const first = await app().request(url, { method: 'POST', headers, body: Buffer.from([5, 6, 7]) });
+        expect(first.status).toBe(200);
+        const firstBody = await first.json();
+        expect(firstBody.space).toEqual({ type: 'game.bardcast.space.campaign', skey: 'c1' });
+
+        // Second call with same Idempotency-Key replays without touching storage again.
+        const second = await app().request(url, { method: 'POST', headers, body: Buffer.from([5, 6, 7]) });
+        expect(second.status).toBe(200);
+        expect(await second.json()).toEqual(firstBody);
+        expect(storage.uploadFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('409s with Conflict when the same Idempotency-Key is still in flight', async () => {
+        idempotencyStore.claim.mockResolvedValueOnce('in-progress');
+
+        const res = await app().request('/xrpc/dev.antiphony.audio.uploadAudio', {
+            method: 'POST',
+            headers: authHeaders({
+                'content-type': 'audio/webm',
+                'Idempotency-Key': 'in-flight-upload',
+            }),
+            body: Buffer.from([1, 2, 3]),
+        });
+
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toBe('Conflict');
+        expect(storage.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('404s when the named hosted space does not exist', async () => {
+        const { NotFoundError } = await import('shared/errors');
+        spaceService.getSpace.mockRejectedValueOnce(new NotFoundError('Space not found'));
+
+        const res = await app().request(
+            '/xrpc/dev.antiphony.audio.uploadAudio?spaceType=game.bardcast.space.campaign&skey=missing',
+            {
+                method: 'POST',
+                headers: authHeaders({ 'content-type': 'audio/webm' }),
+                body: Buffer.from([1, 2, 3]),
+            },
+        );
+
+        expect(res.status).toBe(404);
+        expect((await res.json()).error).toBe('RecordNotFound');
+    });
+
+    it('accepts remoteSpace for a space hosted elsewhere and rejects combining remoteSpace with spaceType', async () => {
+        const { NotFoundError } = await import('shared/errors');
+        didRegistryService.get.mockRejectedValueOnce(new NotFoundError('Not registered'));
+        storage.stat.mockResolvedValueOnce(null);
+        storage.uploadFile.mockResolvedValueOnce('r2://bucket/blobs/test-app/cid');
+
+        const remoteSpace = 'at://did:plc:group0000000000000000000/space/game.bardcast.space.campaign/c1';
+        const ok = await app().request(
+            `/xrpc/dev.antiphony.audio.uploadAudio?remoteSpace=${encodeURIComponent(remoteSpace)}`,
+            {
+                method: 'POST',
+                headers: authHeaders({ 'content-type': 'audio/webm' }),
+                body: Buffer.from([8, 9, 10]),
+            },
+        );
+        expect(ok.status).toBe(200);
+        expect((await ok.json()).space).toEqual({
+            type: 'game.bardcast.space.campaign',
+            skey: 'c1',
+            authority: 'did:plc:group0000000000000000000',
+        });
+
+        const both = await app().request(
+            `/xrpc/dev.antiphony.audio.uploadAudio?remoteSpace=${encodeURIComponent(remoteSpace)}&spaceType=game.bardcast.space.campaign&skey=c1`,
+            {
+                method: 'POST',
+                headers: authHeaders({ 'content-type': 'audio/webm' }),
+                body: Buffer.from([8, 9, 10]),
+            },
+        );
+        expect(both.status).toBe(400);
+        expect((await both.json()).error).toBe('InvalidRequest');
     });
 });
 

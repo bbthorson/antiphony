@@ -83,6 +83,7 @@ describe('the named errors the lexicons declare', () => {
     /** Every domain code a lexicon names an error for. */
     const CODES = [
         REPLY_CID_MISMATCH,
+        'POST_DELETED',
         remotePosts.INVALID_CURSOR,
         remotePosts.REMOTE_URI_UNSUPPORTED,
         remotePosts.REMOTE_REQUEST_INVALID,
@@ -161,6 +162,23 @@ describe('xrpcErrorHandler', () => {
         const unnamed = await appThatThrows(new ServiceError('Tenant temporarily unavailable', 503)).request('/boom');
         expect(unnamed.status).toBe(503);
         expect((await unnamed.json()).error).toBe('ServiceUnavailable');
+    });
+
+    it('maps hosted-post, space, and DID-registry domain codes to named XRPC symbols', async () => {
+        const cases: [number, string, string][] = [
+            [410, 'POST_DELETED', 'PostDeleted'],
+            [503, 'SPACES_UNAVAILABLE', 'SpacesUnavailable'],
+            [409, 'SPACE_NOT_EMPTY', 'SpaceNotEmpty'],
+            [400, 'AUTHORITY_NOT_REGISTERED', 'AuthorityNotRegistered'],
+            [503, 'AUTHORITY_CUSTODY_UNPROVEN', 'AuthorityCustodyUnproven'],
+            [409, 'DID_TAKEN', 'DidTaken'],
+            [409, 'DID_IN_USE', 'DidInUse'],
+        ];
+        for (const [status, code, expected] of cases) {
+            const res = await appThatThrows(new ServiceError('detail', status, undefined, code)).request('/boom');
+            expect(res.status).toBe(status);
+            expect((await res.json()).error).toBe(expected);
+        }
     });
 
     it('does not carry the REST envelope fields', async () => {

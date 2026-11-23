@@ -253,6 +253,49 @@
                     "description": "Waveform peak extraction (derived). Same values as `transcribe`; `ready` means the view's peaks describe the audio being played."
                 }
             }
+        },
+        "deletedPostRef": {
+            "type": "object",
+            "description": "A post a delete or erasure call removed.",
+            "required": ["postId", "uri", "kind"],
+            "properties": {
+                "postId": { "type": "string", "description": "The deleted post's record key (rkey)." },
+                "uri": { "type": "string", "format": "at-uri", "description": "at:// URI of the deleted post." },
+                "kind": { "type": "string", "knownValues": ["prompt", "reply"], "description": "Whether the deleted post was a prompt or a reply." }
+            }
+        },
+        "keptPostRef": {
+            "type": "object",
+            "description": "A reply left in place under a deleted post (`keep` or `keep-with-did`).",
+            "required": ["postId", "uri"],
+            "properties": {
+                "postId": { "type": "string", "description": "The kept reply's record key (rkey)." },
+                "uri": { "type": "string", "format": "at-uri", "description": "at:// URI of the kept reply." }
+            }
+        },
+        "scopedSpaceKey": {
+            "type": "object",
+            "description": "A space key with an optional authority DID. Absent `authority` means the calling tenant's own app DID.",
+            "required": ["type", "skey"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "format": "nsid",
+                    "maxLength": 317,
+                    "description": "The space type NSID, e.g. `game.bardcast.space.campaign`."
+                },
+                "skey": {
+                    "type": "string",
+                    "format": "record-key",
+                    "maxLength": 512,
+                    "description": "The space key, in atproto record-key syntax."
+                },
+                "authority": {
+                    "type": "string",
+                    "format": "did",
+                    "description": "The space's authority DID when it is not the calling tenant's own app DID."
+                }
+            }
         }
     }
 }

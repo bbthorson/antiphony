@@ -1,0 +1,74 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.deletePost",
+    "description": "Hard-delete a hosted audio post and its unreferenced audio blobs, recording a content-free ledger row.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Deletes a hosted post in the caller's tenancy. `replies` controls what happens to replies beneath it (`delete`, `keep`, or `keep-with-did`). Large subtrees are deleted over multiple calls deepest-first; repeat until `complete` is true. Idempotent and tenant-level (no acting actor required).",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["id"],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The post's record key (rkey)."
+                        },
+                        "replies": {
+                            "type": "string",
+                            "knownValues": ["delete", "keep", "keep-with-did"],
+                            "default": "delete",
+                            "description": "What happens to replies beneath the deleted post."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["status", "complete", "deleted", "kept"],
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "knownValues": ["deleted", "already-deleted", "pending"],
+                            "description": "Whether this call deleted the post, saw it was already deleted, or still has subtree work pending."
+                        },
+                        "complete": {
+                            "type": "boolean",
+                            "description": "True when nothing asked to be deleted remains."
+                        },
+                        "deleted": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#deletedPostRef"
+                            },
+                            "description": "Posts removed by this call."
+                        },
+                        "kept": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#keptPostRef"
+                            },
+                            "description": "Replies left in place under the deleted post."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidRequest",
+                    "description": "The input payload failed validation."
+                },
+                {
+                    "name": "RecordNotFound",
+                    "description": "No post with this key exists (and none was recorded as deleted) in the caller's tenancy."
+                }
+            ]
+        }
+    }
+}

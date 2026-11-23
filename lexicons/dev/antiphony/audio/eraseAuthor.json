@@ -1,0 +1,72 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.eraseAuthor",
+    "description": "Account erasure: delete every hosted audio post carrying the given opaque `authorId` in the caller's tenancy.",
+    "defs": {
+        "main": {
+            "type": "procedure",
+            "description": "Deletes up to `limit` hosted posts authored by `authorId`, applying `replies` to other people's replies below them. The author's own posts are always deleted. Repeat until `complete` is true; calling again after completion is a safe no-op. Tenant-level (no acting actor required).",
+            "input": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["authorId"],
+                    "properties": {
+                        "authorId": {
+                            "type": "string",
+                            "description": "The calling app's opaque id for the author."
+                        },
+                        "replies": {
+                            "type": "string",
+                            "knownValues": ["delete", "keep", "keep-with-did"],
+                            "default": "delete",
+                            "description": "What happens to other people's replies beneath the erased posts."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 100,
+                            "description": "Maximum posts to delete in this call."
+                        }
+                    }
+                }
+            },
+            "output": {
+                "encoding": "application/json",
+                "schema": {
+                    "type": "object",
+                    "required": ["complete", "deleted", "kept"],
+                    "properties": {
+                        "complete": {
+                            "type": "boolean",
+                            "description": "True when no posts for this author remain."
+                        },
+                        "deleted": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#deletedPostRef"
+                            },
+                            "description": "Posts removed by this call."
+                        },
+                        "kept": {
+                            "type": "array",
+                            "items": {
+                                "type": "ref",
+                                "ref": "dev.antiphony.audio.defs#keptPostRef"
+                            },
+                            "description": "Replies left in place under the erased posts."
+                        }
+                    }
+                }
+            },
+            "errors": [
+                {
+                    "name": "InvalidRequest",
+                    "description": "The input payload failed validation."
+                }
+            ]
+        }
+    }
+}

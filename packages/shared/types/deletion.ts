@@ -67,6 +67,13 @@ export const DeletePostResultSchema = DeletionPageSchema.extend({
 });
 export type DeletePostResult = z.infer<typeof DeletePostResultSchema>;
 
+/** `dev.antiphony.audio.deletePost`: XRPC procedure input. */
+export const DeletePostRequestSchema = z.object({
+    id: z.string().min(1),
+    replies: RepliesPolicySchema.default('delete'),
+});
+export type DeletePostRequest = z.infer<typeof DeletePostRequestSchema>;
+
 /** `POST /api/v1/authors/{authorId}/erase`. */
 export const EraseAuthorResultSchema = DeletionPageSchema;
 export type EraseAuthorResult = z.infer<typeof EraseAuthorResultSchema>;

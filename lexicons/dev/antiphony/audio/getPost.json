@@ -27,6 +27,10 @@
                 {
                     "name": "RecordNotFound",
                     "description": "No post with this key in the caller's tenancy. Also the answer for a post that exists in another tenancy."
+                },
+                {
+                    "name": "PostDeleted",
+                    "description": "This post was deleted in the caller's tenancy (HTTP 410)."
                 }
             ]
         }

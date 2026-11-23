@@ -57,6 +57,10 @@
                 {
                     "name": "RecordNotFound",
                     "description": "No parent post with this key in the caller's tenancy."
+                },
+                {
+                    "name": "PostDeleted",
+                    "description": "The parent post was deleted in the caller's tenancy (HTTP 410)."
                 }
             ]
         }

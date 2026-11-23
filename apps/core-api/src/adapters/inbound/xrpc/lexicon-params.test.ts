@@ -3,7 +3,12 @@ import { globSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve, dirname } from 'node:path';
 import type { z } from 'zod';
-import { GetPlaybackUrlQuerySchema, GetPostQuerySchema, GetThreadQuerySchema } from './index.js';
+import {
+    GetPlaybackUrlQuerySchema,
+    GetPostQuerySchema,
+    GetThreadQuerySchema,
+    ListPostsQuerySchema,
+} from './index.js';
 import {
     GetRemotePostQuerySchema,
     GetRemotePostsQuerySchema,
@@ -83,6 +88,7 @@ function queries(): Map<string, QueryDef> {
 const SCHEMAS: Record<string, z.ZodTypeAny> = {
     'dev.antiphony.audio.getPost': GetPostQuerySchema,
     'dev.antiphony.audio.getThread': GetThreadQuerySchema,
+    'dev.antiphony.audio.listPosts': ListPostsQuerySchema,
     'dev.antiphony.audio.getPlaybackUrl': GetPlaybackUrlQuerySchema,
     'dev.antiphony.audio.listRemotePosts': ListRemotePostsQuerySchema,
     'dev.antiphony.audio.getRemotePosts': GetRemotePostsQuerySchema,
