@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { validateAllPins, checkTenantRegistryDrift } from '../src/lib/app-did.js';
 import { canonicalJson, documentAcknowledgement, parseDocHashBaselines } from '../src/lib/did-document-hash.js';
 import { parseAppTokens } from '../src/middleware/service-auth.js';
@@ -75,7 +76,7 @@ import { parseAppTokens } from '../src/middleware/service-auth.js';
  * wrong here — the file is full of `https://` inside string values — so this
  * tracks whether it is inside a string, and honours escapes.
  */
-function stripJsonComments(text: string): string {
+export function stripJsonComments(text: string): string {
     let out = '';
     let inString = false;
     let inLine = false;
@@ -118,34 +119,60 @@ function workerVars(): Record<string, string> {
     }
 }
 
-// The environment wins, so a caller can point this at a config that is not the
-// committed one; otherwise read the Worker config that is about to ship.
-const vars = workerVars();
-const pdsHost = (process.env.ANTIPHONY_PDS_HOST ?? vars.ANTIPHONY_PDS_HOST)?.trim();
-const raw = (process.env.ANTIPHONY_APP_DIDS ?? vars.ANTIPHONY_APP_DIDS)?.trim();
-const rawHashes = process.env.ANTIPHONY_APP_DID_DOC_HASHES ?? vars.ANTIPHONY_APP_DID_DOC_HASHES;
-
-if (!raw) {
-    // An empty pin set is valid — a deployment with no tenants onboarded yet.
-    // Worth saying out loud rather than passing silently, because the state it
-    // is indistinguishable from is "the var did not make it into this
-    // environment", which is a much worse thing to discover at runtime.
-    console.warn(
-        '[validate-pins] ANTIPHONY_APP_DIDS is empty or unset — nothing to prove. This is valid for a deployment with no tenants, and a misconfiguration for any other.',
-    );
-    process.exit(0);
+export interface ValidatePinsOptions {
+    env?: Record<string, string | undefined>;
+    vars?: Record<string, string>;
+    validateAllPins?: typeof validateAllPins;
+    checkTenantRegistryDrift?: typeof checkTenantRegistryDrift;
+    parseAppTokens?: typeof parseAppTokens;
+    log?: Pick<Console, 'log' | 'warn' | 'error'>;
 }
 
-if (!pdsHost) {
-    console.warn(
-        '[validate-pins] ANTIPHONY_PDS_HOST unset — checking only that each DID document exists and names a custody endpoint (#atproto_space_host, or legacy #atproto_pds), NOT that it points at us. That is the weaker half of the custody claim.',
-    );
+export interface ValidatePinsResult {
+    status: 'empty' | 'ok';
+    provedCount: number;
+    legacyCount: number;
 }
 
-try {
-    const snapshot = await validateAllPins({ expectedPdsHost: pdsHost, raw });
+/**
+ * Core deploy-time validation gate. Extracted from the CLI entrypoint so unit
+ * tests can exercise every custody, hash-drift, and registry-drift branch
+ * without touching the network or calling `process.exit`.
+ */
+export async function runValidatePins(opts: ValidatePinsOptions = {}): Promise<ValidatePinsResult> {
+    const env = opts.env ?? process.env;
+    const vars = opts.vars ?? workerVars();
+    const runValidateAll = opts.validateAllPins ?? validateAllPins;
+    const runDriftCheck = opts.checkTenantRegistryDrift ?? checkTenantRegistryDrift;
+    const runParseTokens = opts.parseAppTokens ?? parseAppTokens;
+    const log = opts.log ?? console;
+
+    // The environment wins, so a caller can point this at a config that is not the
+    // committed one; otherwise read the Worker config that is about to ship.
+    const pdsHost = (env.ANTIPHONY_PDS_HOST ?? vars.ANTIPHONY_PDS_HOST)?.trim();
+    const raw = (env.ANTIPHONY_APP_DIDS ?? vars.ANTIPHONY_APP_DIDS)?.trim();
+    const rawHashes = env.ANTIPHONY_APP_DID_DOC_HASHES ?? vars.ANTIPHONY_APP_DID_DOC_HASHES;
+
+    if (!raw) {
+        // An empty pin set is valid — a deployment with no tenants onboarded yet.
+        // Worth saying out loud rather than passing silently, because the state it
+        // is indistinguishable from is "the var did not make it into this
+        // environment", which is a much worse thing to discover at runtime.
+        log.warn(
+            '[validate-pins] ANTIPHONY_APP_DIDS is empty or unset — nothing to prove. This is valid for a deployment with no tenants, and a misconfiguration for any other.',
+        );
+        return { status: 'empty', provedCount: 0, legacyCount: 0 };
+    }
+
+    if (!pdsHost) {
+        log.warn(
+            '[validate-pins] ANTIPHONY_PDS_HOST unset — checking only that each DID document exists and names a custody endpoint (#atproto_space_host, or legacy #atproto_pds), NOT that it points at us. That is the weaker half of the custody claim.',
+        );
+    }
+
+    const snapshot = await runValidateAll({ expectedPdsHost: pdsHost, raw });
     const proved = [...snapshot.values()].map((p) => `${p.originAppId} (via ${p.custody.kind})`);
-    console.log(`[validate-pins] proved custody for ${snapshot.size} tenant(s): ${proved.join(', ')}`);
+    log.log(`[validate-pins] proved custody for ${snapshot.size} tenant(s): ${proved.join(', ')}`);
 
     // Drift: every document must match the hash someone acknowledged. Checked
     // for ALL tenants before failing, so one deploy surfaces every change
@@ -161,7 +188,7 @@ try {
                 ack.status === 'changed'
                     ? `CHANGED since it was acknowledged (expected ${ack.expected})`
                     : 'has NO acknowledged baseline';
-            console.error(
+            log.error(
                 `[validate-pins] ${pin.originAppId} (${pin.did}): DID document ${why}.\n` +
                     `  observed ${pin.documentHash}\n` +
                     `  canonical document:\n  ${canonicalJson(pin.document)}`,
@@ -174,7 +201,7 @@ try {
                 `  "ANTIPHONY_APP_DID_DOC_HASHES": "${entries}"`,
         );
     }
-    console.log(`[validate-pins] every DID document matches its acknowledged hash`);
+    log.log(`[validate-pins] every DID document matches its acknowledged hash`);
 
     // Name the tenants still on the legacy claim. `#atproto_pds` asserts we are
     // an AT Protocol PDS, which we are not (#115) — it stays accepted only so
@@ -183,7 +210,7 @@ try {
     // "once tenants have migrated" is a condition no one can evaluate.
     const legacy = [...snapshot.values()].filter((p) => p.custody.kind === 'pds');
     if (legacy.length) {
-        console.warn(
+        log.warn(
             `[validate-pins] ${legacy.length} tenant(s) still prove custody via the legacy #atproto_pds entry, which claims Antiphony is a PDS: ${legacy
                 .map((p) => p.originAppId)
                 .join(', ')}. They can publish #atproto_space_host instead — see specs/tenant-onboarding.md.`,
@@ -200,15 +227,24 @@ try {
     // — and comparing against an empty set would report EVERY pin as
     // unreachable, which is exactly the noise that teaches people to ignore
     // this line.
-    if (process.env.ANTIPHONY_APP_TOKENS?.trim()) {
-        const drift = checkTenantRegistryDrift(parseAppTokens().map((a) => a.appId));
+    if (env.ANTIPHONY_APP_TOKENS?.trim()) {
+        const drift = runDriftCheck(runParseTokens().map((a) => a.appId));
         if (drift.tokensWithoutPin.length || drift.pinsWithoutToken.length) {
-            console.warn('[validate-pins] tenant registry drift:', drift);
+            log.warn('[validate-pins] tenant registry drift:', drift);
         }
     } else {
-        console.log('[validate-pins] ANTIPHONY_APP_TOKENS absent — skipping the drift check');
+        log.log('[validate-pins] ANTIPHONY_APP_TOKENS absent — skipping the drift check');
     }
-} catch (err) {
-    console.error(`[validate-pins] FAILED — not deploying.\n${(err as Error).message}`);
-    process.exit(1);
+
+    return { status: 'ok', provedCount: snapshot.size, legacyCount: legacy.length };
+}
+
+const isEntrypoint = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isEntrypoint) {
+    try {
+        await runValidatePins();
+    } catch (err) {
+        console.error(`[validate-pins] FAILED — not deploying.\n${(err as Error).message}`);
+        process.exit(1);
+    }
 }

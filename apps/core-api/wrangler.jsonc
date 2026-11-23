@@ -246,12 +246,13 @@
 	//
 	// ## Antiphony's own DID document (`/.well-known/did.json`)
 	//
-	// Two settings turn it on, and neither is in this file yet:
+	// Two settings turn it on (the public var is set in "vars" below; the
+	// private key is a secret):
 	//
 	//   - ANTIPHONY_SERVICE_SIGNING_KEY, a SECRET: the P-256 private key, as the
 	//     hex `npm run generate:service-key -w @antiphony/core-api` prints.
 	//   - ANTIPHONY_SERVICE_PUBLIC_KEY, a VAR: the matching public Multikey
-	//     (`z…`), printed by the same command. Add it to "vars" below.
+	//     (`z…`), printed by the same command (set in "vars" below).
 	//
 	// Set the secret FIRST (`npx wrangler secret put ANTIPHONY_SERVICE_SIGNING_KEY
 	// -c apps/core-api/wrangler.jsonc`), then add the var and deploy. The route

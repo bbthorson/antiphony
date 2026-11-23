@@ -6,10 +6,16 @@
  *
  *   - `no-success-envelope-extras`: enforces the post-Phase-4 envelope
  *     contract on Hono `c.json(...)` calls — only `data` may accompany
- *     `success: true`. See the rule file for details.
+ *     `success: true`. Enabled in `apps/core-api`.
  *   - `require-success-envelope`: the complement — requires inline
  *     `.json({ … })` route responses to BE an envelope (carry a `success`
- *     key) in the first place. (Carried over; not currently enabled here.)
+ *     key) in the first place. Carried over from `apps/web`; not currently
+ *     enabled in any workspace here.
+ *   - `no-bare-zod-url`: forbids bare `z.string().url()` / `z.url()` in favour
+ *     of the shared URL codecs so OpenAPI generation emits valid patterns.
+ *     Enabled in `apps/core-api` and `packages/shared`.
+ *   - `no-hardcoded-design-tokens`: forbids raw color values in favour of
+ *     design system tokens (`--ap-*` / `--sl-*`). Enabled in `apps/docs`.
  *
  * Add new rules by importing them here and registering them in the
  * `rules` map below — the import path stays stable (`../../eslint-rules/`)

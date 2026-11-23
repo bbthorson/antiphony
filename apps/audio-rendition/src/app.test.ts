@@ -15,6 +15,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 process.env.LOG_LEVEL = 'silent';
 
 const buildRendition = vi.fn();
+const trimStage = vi.fn();
+const waveformStage = vi.fn();
 
 vi.mock('./rendition.js', async (importOriginal) => ({
     // The real `parseRequest` / `InvalidRequestError`, so the validation
@@ -22,6 +24,11 @@ vi.mock('./rendition.js', async (importOriginal) => ({
     // stubbed.
     ...((await importOriginal()) as object),
     buildRendition,
+}));
+
+vi.mock('./stages.js', () => ({
+    trim: trimStage,
+    waveform: waveformStage,
 }));
 
 const { createApp } = await import('./app.js');
@@ -173,5 +180,113 @@ describe('POST /render — request handling', () => {
         buildRendition.mockRejectedValueOnce(new Error('ffmpeg exited with code 1'));
 
         expect((await post(BODY)).status).toBe(502);
+    });
+});
+
+function postBytes(
+    path: '/trim' | '/waveform',
+    bytes: Uint8Array,
+    opts: { token?: string | null; contentType?: string } = {},
+) {
+    const headers: Record<string, string> = {};
+    const token = opts.token === undefined ? TOKEN : opts.token;
+    if (token) headers.authorization = `Bearer ${token}`;
+    if (opts.contentType) headers['content-type'] = opts.contentType;
+    return createApp().request(path, {
+        method: 'POST',
+        headers,
+        body: Buffer.from(bytes),
+    });
+}
+
+describe('POST /trim', () => {
+    it('401s without a valid bearer and 503s when no token is configured', async () => {
+        expect((await postBytes('/trim', new Uint8Array([1, 2]), { token: null })).status).toBe(401);
+        expect(trimStage).not.toHaveBeenCalled();
+
+        delete process.env.SYSTEM_AUTH_TOKEN;
+        expect((await postBytes('/trim', new Uint8Array([1, 2]))).status).toBe(503);
+        expect(trimStage).not.toHaveBeenCalled();
+    });
+
+    it('400s an empty body before invoking trim', async () => {
+        const res = await postBytes('/trim', new Uint8Array(0), { contentType: 'audio/webm' });
+
+        expect(res.status).toBe(400);
+        expect(trimStage).not.toHaveBeenCalled();
+    });
+
+    it('returns trimmed bytes with content-type, content-length, and x-duration-ms headers', async () => {
+        trimStage.mockResolvedValueOnce({
+            bytes: Buffer.from([10, 20, 30, 40]),
+            mimeType: 'audio/webm',
+            durationMs: 3250,
+        });
+
+        const res = await postBytes('/trim', new Uint8Array([1, 2, 3]), { contentType: 'audio/mpeg' });
+
+        expect(res.status).toBe(200);
+        expect(trimStage).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]), 'audio/mpeg');
+        expect(res.headers.get('content-type')).toBe('audio/webm');
+        expect(res.headers.get('content-length')).toBe('4');
+        expect(res.headers.get('x-duration-ms')).toBe('3250');
+        expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([10, 20, 30, 40]));
+    });
+
+    it('defaults missing content-type to application/octet-stream', async () => {
+        trimStage.mockResolvedValueOnce({
+            bytes: Buffer.from([1]),
+            mimeType: 'audio/webm',
+            durationMs: 100,
+        });
+
+        const res = await postBytes('/trim', new Uint8Array([1, 2]));
+
+        expect(res.status).toBe(200);
+        expect(trimStage).toHaveBeenCalledWith(new Uint8Array([1, 2]), 'application/octet-stream');
+    });
+
+    it('502s when trim throws', async () => {
+        trimStage.mockRejectedValueOnce(new Error('ffmpeg failed'));
+
+        const res = await postBytes('/trim', new Uint8Array([1, 2]), { contentType: 'audio/webm' });
+
+        expect(res.status).toBe(502);
+    });
+});
+
+describe('POST /waveform', () => {
+    it('401s without a valid bearer and 503s when no token is configured', async () => {
+        expect((await postBytes('/waveform', new Uint8Array([1, 2]), { token: null })).status).toBe(401);
+        expect(waveformStage).not.toHaveBeenCalled();
+
+        delete process.env.SYSTEM_AUTH_TOKEN;
+        expect((await postBytes('/waveform', new Uint8Array([1, 2]))).status).toBe(503);
+        expect(waveformStage).not.toHaveBeenCalled();
+    });
+
+    it('400s an empty body before invoking waveform', async () => {
+        const res = await postBytes('/waveform', new Uint8Array(0));
+
+        expect(res.status).toBe(400);
+        expect(waveformStage).not.toHaveBeenCalled();
+    });
+
+    it('returns peaks JSON on success', async () => {
+        waveformStage.mockResolvedValueOnce({ peaks: [0.1, 0.5, 0.9] });
+
+        const res = await postBytes('/waveform', new Uint8Array([1, 2, 3]), { contentType: 'audio/webm' });
+
+        expect(res.status).toBe(200);
+        expect(waveformStage).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+        expect(await res.json()).toEqual({ peaks: [0.1, 0.5, 0.9] });
+    });
+
+    it('502s when waveform throws', async () => {
+        waveformStage.mockRejectedValueOnce(new Error('decode failed'));
+
+        const res = await postBytes('/waveform', new Uint8Array([1, 2]));
+
+        expect(res.status).toBe(502);
     });
 });
