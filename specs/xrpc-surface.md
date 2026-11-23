@@ -17,7 +17,7 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
   `@atproto/lex` can generate a typed client for any lexicon-described API. One surface, defined
   once, replaces two hand-written clients (Vox Pop's and Bardcast's) and a REST/XRPC pair.
 - **Lexicons are meant to be stable.** The Lexicon spec asks for a new method rather than a
-  breaking change to a published one. Antiphony was at contract 0.8.0 when this was written (0.10.8 on 2026-11-11) and still breaks
+  breaking change to a published one. Antiphony was at contract 0.8.0 when this was written (0.10.9 as of 2026-11-11) and still breaks
   in minor versions (spaces, then the author segment in 0.9.0, then deletion in 0.10.0). REST has `/api/v1/` and 0.x semver to
   absorb that; lexicons don't. So the surface is built out now, and frozen and adopted at 1.0.
 
@@ -34,8 +34,8 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 > remote-post operations as XRPC methods (`registerPost`, `getRemotePost`, `getRemoteThread`,
 > `reprocessRemotePost`, `unregisterPost`, `recheckRemoteSpace`), make fourteen. Those six were
 > REST routes first, so they are XRPC twins over the routes' code rather than lexicon-first
-> methods with a REST twin; they add no REST surface. §3.1 now has rows for remote posts; the DID
-> registry and deletion still need theirs.
+> methods with a REST twin; they add no REST surface. §3.1 now includes rows for remote posts,
+> deletion, and the DID registry.
 
 ## 2. What exists
 
@@ -80,10 +80,13 @@ adapter and lexicon tooling that exist), [`cross-repo-design.md`](./cross-repo-d
 | `dev.antiphony.audio.listReplies` | query | `GET /posts/{id}/replies` | tenant | new, or folded into `getThread` (D-6) |
 | `dev.antiphony.audio.createPost` | procedure | `POST /posts` | tenant + acting actor | exists; honours `Idempotency-Key` (D-5, built) |
 | `dev.antiphony.audio.reprocessPost` | procedure | `PATCH /posts/{id}` | tenant + acting actor | exists |
+| `dev.antiphony.audio.deletePost` | procedure | `DELETE /posts/{id}` ([`deletion.md`](./deletion.md)) | tenant + acting actor | new |
+| `dev.antiphony.audio.eraseAuthor` | procedure | `POST /authors/{authorId}/erase` ([`deletion.md`](./deletion.md)) | tenant | new |
 | `dev.antiphony.audio.uploadAudio` | procedure, binary input | `POST /audio/upload` | tenant + acting actor | new (D-7) |
 | `dev.antiphony.audio.getPlaybackUrl` | query | URL minting | tenant | exists |
 | `dev.antiphony.audio.getAudio` | query, binary output | `GET /audio` (proxy) | capability (signed URL) | new, or stays a plain media route (D-8) |
 | space management | procedure / query | `PUT`/`GET /spaces/{type}/{skey}` | tenant | new (D-9) |
+| DID registry | procedure / query | `PUT`/`GET`/`DELETE /dids/{did}`, `GET /dids` ([`did-plc-and-multi-did-tenancy.md`](./did-plc-and-multi-did-tenancy.md)) | tenant | new |
 | `dev.antiphony.tenant.getStats` | query | `GET /stats` ([`tenancy-stats.md`](./tenancy-stats.md)) | tenant | exists |
 | `dev.antiphony.audio.registerPost` | procedure | `PUT /remote-posts` ([`audio-service-mode.md`](./audio-service-mode.md)) | tenant | exists (0.10.8); always 200, where REST tells 201 from 200 |
 | `dev.antiphony.audio.getRemotePost` | query | `GET /remote-posts?uri=` | tenant | exists (0.10.8) |
