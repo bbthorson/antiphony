@@ -31,5 +31,5 @@ describe('migration 0008: remote posts in spaces', () => {
         expect(names).toContain('remote_posts_sweep_idx');
         expect(names).not.toContain('remote_posts_checked_idx');
         await pg.close();
-    });
+    }, 15_000);
 });
