@@ -2,13 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
     tenantProvider,
     tenantModel,
+    tenantAssessSets,
     TENANT_PROVIDER_VARS,
     TENANT_MODEL_VARS,
+    TENANT_ASSESS_SETS_VAR,
 } from './tenant-provider-config.js';
 
 const ALL_VARS = [
     ...Object.values(TENANT_PROVIDER_VARS),
     ...Object.values(TENANT_MODEL_VARS),
+    TENANT_ASSESS_SETS_VAR,
 ];
 
 function clearVars() {
@@ -74,5 +77,20 @@ describe('tenantModel', () => {
         expect(tenantModel('transcribe', 'voxpop')).toBe('scribe_v2');
         expect(tenantModel('transcribe', 'bardcast')).toBe('@cf/openai/whisper:v1');
         expect(tenantModel('transcribe', 'other')).toBeUndefined();
+    });
+
+    it('reads per-tenant assess models from ANTIPHONY_APP_ASSESS_MODELS', () => {
+        process.env.ANTIPHONY_APP_ASSESS_MODELS = 'voxpop:@cf/cloudflare/clef';
+        expect(tenantModel('assess', 'voxpop')).toBe('@cf/cloudflare/clef');
+        expect(tenantModel('assess', 'other')).toBeUndefined();
+    });
+});
+
+describe('tenantAssessSets', () => {
+    it('parses appId:set+set pairs from ANTIPHONY_APP_ASSESS_SETS', () => {
+        process.env.ANTIPHONY_APP_ASSESS_SETS = 'voxpop:quality+relevance, bardcast:quality';
+        expect(tenantAssessSets('voxpop')).toEqual(['quality', 'relevance']);
+        expect(tenantAssessSets('bardcast')).toEqual(['quality']);
+        expect(tenantAssessSets('other')).toBeUndefined();
     });
 });

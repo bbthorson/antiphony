@@ -8,6 +8,18 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.10] - 2026-11-23
+
+Additive enrichment stage (`assess`, Phase 1 — `specs/assess-stage.md`).
+
+### Added
+
+- **`assess` enrichment stage (Phase 1):**
+  - `processing.assess` opt-in key on `createPost`, `reprocessPost`, `registerPost`, `reprocessRemotePost`, and `PATCH /api/v1/posts/{postId}`.
+  - New `dev.antiphony.audio.assessment` enrichment record (`audio_assessments`, migration `0011`) lifted into `dev.antiphony.embed.audio#view.assessment` when `processing.assess === 'ready'`.
+  - Built-in question sets `quality` (speech, intelligibility, substantive) and `relevance` (reply-only: answers prompt, on-topic), backed by Cloudflare Workers AI Clef (`@cf/cloudflare/clef-flash`, configurable via `ANTIPHONY_ASSESSOR`, `ANTIPHONY_APP_ASSESSORS`, `WORKERS_AI_ASSESS_MODEL`, `ANTIPHONY_APP_ASSESS_MODELS`, `ANTIPHONY_APP_ASSESS_SETS`).
+  - `assess` added as a webhook `stage.settled` `stage` value. Receivers must ignore stage values they do not know so future stages remain additive.
+
 ## [Unreleased]
 
 Readiness for the atproto Spaces public beta (December 1) and XRPC surface expansion. The OpenAPI

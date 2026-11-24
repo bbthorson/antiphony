@@ -1,4 +1,4 @@
-import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type { AssessmentEnrichmentRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ProcessingState, ResolvedProcessing } from 'shared/types/processing';
 import type { RemoteAudioPostRecord, RemoteSpace } from 'shared/types/remote-posts';
 import type { ScopedSpaceKey } from 'shared/types/spaces';
@@ -148,6 +148,8 @@ export interface RemotePostDependencies {
     recordCheck(originAppId: string, uri: string, outcome: RemoteCheckOutcome): Promise<void>;
 
     getTranscripts(originAppId: string, uris: string[]): Promise<Map<string, TranscriptEnrichmentRecord>>;
+
+    getAssessments?(originAppId: string, uris: string[]): Promise<Map<string, AssessmentEnrichmentRecord>>;
 
     /**
      * Whether the tenant already stores these bytes, and the space they are

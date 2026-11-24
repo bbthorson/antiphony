@@ -64,6 +64,7 @@ describe('processingCapabilities', () => {
             denoise: false,
             trim: true,
             waveform: true,
+            assess: false,
         });
     });
 
@@ -76,6 +77,7 @@ describe('processingCapabilities', () => {
             denoise: false,
             trim: false,
             waveform: false,
+            assess: false,
         });
     });
 
@@ -89,6 +91,7 @@ describe('processingCapabilities', () => {
                 denoise: false,
                 trim: false,
                 waveform: false,
+                assess: false,
             });
         } finally {
             process.env.NODE_ENV = oldNodeEnv;
@@ -110,6 +113,7 @@ describe('processingCapabilities', () => {
             denoise: true,
             trim: true,
             waveform: true,
+            assess: true,
         });
     });
 
@@ -125,6 +129,7 @@ describe('processingCapabilities', () => {
             denoise: true,
             trim: true,
             waveform: true,
+            assess: false,
         });
     });
 });
@@ -182,6 +187,7 @@ describe('per-stage provider selection', () => {
             denoise: true,
             trim: true,
             waveform: true,
+            assess: true,
         });
     });
 });

@@ -89,6 +89,40 @@ export const TimedTranscriptSchema = z.object({
 });
 export type TimedTranscript = z.infer<typeof TimedTranscriptSchema>;
 
+/** Identifies one named question set and its version in an assessment. */
+export const AssessmentSetRefSchema = z.object({
+    name: z.string(),
+    version: z.number().int().min(1),
+});
+export type AssessmentSetRef = z.infer<typeof AssessmentSetRefSchema>;
+
+/** One option and its per-mille probability (0–1000; ATProto data has no floats). */
+export const AssessmentOptionSchema = z.object({
+    value: z.string(),
+    probability: z.number().int().min(0).max(1000),
+});
+export type AssessmentOption = z.infer<typeof AssessmentOptionSchema>;
+
+/** Probability distribution for one assessment question. */
+export const AssessmentAnswerSchema = z.object({
+    id: z.string(),
+    top: z.string(),
+    distribution: z.array(AssessmentOptionSchema),
+});
+export type AssessmentAnswer = z.infer<typeof AssessmentAnswerSchema>;
+
+/**
+ * `dev.antiphony.audio.assessment#view` — read-time assessment view lifted into
+ * `AudioEmbedView.assessment` when `processing.assess === 'ready'`.
+ */
+export const AssessmentViewSchema = z.object({
+    sets: z.array(AssessmentSetRefSchema),
+    answers: z.array(AssessmentAnswerSchema),
+    model: z.string(),
+    createdAt: TimestampSchema,
+});
+export type AssessmentView = z.infer<typeof AssessmentViewSchema>;
+
 /**
  * `dev.antiphony.embed.audio#view` — HYDRATED shape. Carries a resolved,
  * playable URL (a signed Storage URL in the centralized deployment) and the
@@ -121,9 +155,11 @@ export const AudioEmbedViewSchema = z.object({
     waveform: z.array(z.number().int().min(0).max(100)).max(1000).optional(),
     /** Lifted from the transcript enrichment record; absent until transcription completes. */
     transcript: TimedTranscriptSchema.optional(),
+    /** Lifted from the assessment enrichment record when `processing.assess === 'ready'`. */
+    assessment: AssessmentViewSchema.optional(),
     /**
      * Per-stage audio-processing status (denoise / trim / transcribe /
-     * waveform), when the app opted into processing. Absent otherwise. A
+     * waveform / assess), when the app opted into processing. Absent otherwise. A
      * `pending` stage means the client should poll (or re-render) for the
      * result — including a stage that returns to `pending` after having been
      * `ready`, which is how a recompute surfaces. Once a byte-mutating stage
@@ -258,6 +294,23 @@ export const TranscriptEnrichmentRecordSchema = z.object({
     createdAt: TimestampSchema,
 });
 export type TranscriptEnrichmentRecord = z.infer<typeof TranscriptEnrichmentRecordSchema>;
+
+/**
+ * `dev.antiphony.audio.assessment` — platform-enrichment record. Stored in the
+ * Antiphony enrichment namespace, referencing the post by StrongRef. Lifted
+ * into `AudioEmbedView.assessment` during hydration; never on the post.
+ */
+export const AssessmentEnrichmentRecordSchema = z.object({
+    id: z.string(),
+    /** The post this assessment evaluates. */
+    subject: StrongRefSchema,
+    sets: z.array(AssessmentSetRefSchema),
+    answers: z.array(AssessmentAnswerSchema),
+    /** Model/provider provenance (e.g. `@cf/cloudflare/clef-flash`). */
+    model: z.string(),
+    createdAt: TimestampSchema,
+});
+export type AssessmentEnrichmentRecord = z.infer<typeof AssessmentEnrichmentRecordSchema>;
 
 /**
  * `dev.antiphony.actor.profile` — portable actor-profile record shape.

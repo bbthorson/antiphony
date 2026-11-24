@@ -2,6 +2,8 @@ import type { TranscriberPort } from '@antiphony/core/ports/transcription';
 import type { DenoiserPort } from '@antiphony/core/ports/audio-denoiser';
 import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
 import type { WaveformPort } from '@antiphony/core/ports/audio-waveform';
+import type { AssessorPort, AssessAnswer } from '@antiphony/core/ports/assessor';
+import { optionKeysOf } from '@antiphony/core/assess/question-sets';
 
 /**
  * Processing providers.
@@ -70,5 +72,24 @@ export const stubTrimmer: TrimmerPort = {
 export const stubWaveform: WaveformPort = {
     async waveform() {
         return { peaks: Array.from({ length: 50 }, (_, i) => (i % 10) * 10) };
+    },
+};
+
+/**
+ * Placeholder assessor — answers every requested question with a uniform
+ * distribution across its allowed options and `model: 'stub'`
+ * (`specs/assess-stage.md` §5).
+ */
+export const stubAssessor: AssessorPort = {
+    async assess(input) {
+        const answers: Record<string, AssessAnswer> = {};
+        for (const q of input.questions) {
+            const keys = optionKeysOf(q);
+            const p = keys.length > 0 ? 1 / keys.length : 0;
+            const distribution: Record<string, number> = {};
+            for (const key of keys) distribution[key] = p;
+            answers[q.id] = { distribution, top: keys[0] ?? '' };
+        }
+        return { answers, model: 'stub' };
     },
 };

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { selectTranscriber } from './provider-registry.js';
+import { selectAssessor, selectTranscriber } from './provider-registry.js';
 import { setWorkersAiForTest } from '../adapters/outbound/workers-ai/binding.js';
 
 /**
@@ -152,5 +152,52 @@ describe('workers-ai transcriber selection', () => {
     it('disables the stage when workers-ai is requested but not bound', () => {
         process.env.ANTIPHONY_TRANSCRIBER = 'workers-ai';
         expect(selectTranscriber()).toBeUndefined();
+    });
+});
+
+describe('assessor selection', () => {
+    afterEach(() => {
+        delete process.env.ANTIPHONY_ASSESSOR;
+        delete process.env.ANTIPHONY_APP_ASSESSORS;
+        delete process.env.ANTIPHONY_APP_ASSESS_MODELS;
+        setWorkersAiForTest(undefined);
+    });
+
+    it('is unavailable by default when AI binding is absent (stub is explicit-only)', () => {
+        expect(selectAssessor()).toBeUndefined();
+    });
+
+    it('selects workers-ai when AI binding is present and honors per-tenant model pin', async () => {
+        const ai = {
+            run: vi.fn().mockResolvedValue({
+                answers: { 'quality.speech': { probability: 0.9 } },
+            }),
+        };
+        setWorkersAiForTest(ai);
+        process.env.ANTIPHONY_APP_ASSESS_MODELS = 'acme:@cf/cloudflare/clef';
+
+        const assessor = selectAssessor('acme');
+        expect(assessor).toBeDefined();
+        const res = await assessor!.assess({
+            text: 'hello',
+            questions: [{ id: 'quality.speech', prompt: 'speech?', kind: 'boolean' }],
+        });
+        expect(res.model).toBe('@cf/cloudflare/clef');
+        expect(ai.run).toHaveBeenCalledWith('@cf/cloudflare/clef', expect.any(Object));
+    });
+
+    it('supports explicit per-tenant stub pin and disables on unknown provider', async () => {
+        process.env.ANTIPHONY_APP_ASSESSORS = 'acme:stub,broken:does-not-exist';
+
+        const acme = selectAssessor('acme');
+        expect(acme).toBeDefined();
+        const res = await acme!.assess({
+            text: 'hello',
+            questions: [{ id: 'quality.speech', prompt: 'speech?', kind: 'boolean' }],
+        });
+        expect(res.model).toBe('stub');
+        expect(res.answers['quality.speech']!.distribution).toEqual({ true: 0.5, false: 0.5 });
+
+        expect(selectAssessor('broken')).toBeUndefined();
     });
 });

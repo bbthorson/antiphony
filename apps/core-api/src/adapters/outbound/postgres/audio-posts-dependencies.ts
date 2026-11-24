@@ -1,5 +1,7 @@
 import {
+    AssessmentEnrichmentRecordSchema,
     TranscriptEnrichmentRecordSchema,
+    type AssessmentEnrichmentRecord,
     type AudioPostRecord,
     type TranscriptEnrichmentRecord,
 } from 'shared/types/audio';
@@ -291,6 +293,37 @@ export function postgresAudioPostDependencies(
                     logger.error(
                         { issues: parsed.error.issues },
                         '[postgres] transcript enrichment validation failed; skipping',
+                    );
+                    continue;
+                }
+                map.set(parsed.data.subject.uri, parsed.data);
+            }
+            return map;
+        },
+
+        async getAssessmentsBySubjectUris(subjects): Promise<Map<string, AssessmentEnrichmentRecord>> {
+            const map = new Map<string, AssessmentEnrichmentRecord>();
+            const unique = Array.from(
+                new Map(subjects.filter((s) => s.uri?.trim()).map((s) => [`${s.originAppId} ${s.uri}`, s])).values(),
+            );
+            if (unique.length === 0) return map;
+
+            const rows = await sql.query<{ record: unknown }>(
+                `
+                select a.record
+                  from audio_assessments a
+                  join unnest($1::text[], $2::text[]) as s(origin_app_id, uri)
+                    on a.origin_app_id = s.origin_app_id and a.subject_uri = s.uri
+                `,
+                [unique.map((s) => s.originAppId), unique.map((s) => s.uri)],
+            );
+
+            for (const row of rows) {
+                const parsed = AssessmentEnrichmentRecordSchema.safeParse(row.record);
+                if (!parsed.success) {
+                    logger.error(
+                        { issues: parsed.error.issues },
+                        '[postgres] assessment enrichment validation failed; skipping',
                     );
                     continue;
                 }

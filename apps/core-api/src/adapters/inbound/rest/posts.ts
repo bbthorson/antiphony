@@ -495,7 +495,9 @@ app.openapi(patchRoute, async (c) => {
 
     // Resolve the opt-in against this tenant's capabilities (pending/skipped).
     // Undefined ⇒ the request named no stage (or only `false`s) — a no-op PATCH.
-    const resolved = resolveInitialProcessing(originAppId, validation.data.processing);
+    const resolved = resolveInitialProcessing(originAppId, validation.data.processing, {
+        allowExistingTranscript: true,
+    });
     if (!resolved) {
         return c.json(
             errorEnvelope(c, 'Request must enable at least one processing stage'),

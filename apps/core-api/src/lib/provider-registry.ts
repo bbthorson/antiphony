@@ -2,17 +2,20 @@ import type { TranscriberPort } from '@antiphony/core/ports/transcription';
 import type { DenoiserPort } from '@antiphony/core/ports/audio-denoiser';
 import type { TrimmerPort } from '@antiphony/core/ports/audio-trimmer';
 import type { WaveformPort } from '@antiphony/core/ports/audio-waveform';
+import type { AssessorPort } from '@antiphony/core/ports/assessor';
 import {
     stubTranscriber,
     stubDenoiser,
     stubTrimmer,
     stubWaveform,
+    stubAssessor,
 } from '../adapters/outbound/processing/providers.js';
 import { elevenLabsApiKey } from '../adapters/outbound/elevenlabs/client.js';
 import { elevenLabsTranscriber } from '../adapters/outbound/elevenlabs/transcriber.js';
 import { elevenLabsDenoiser } from '../adapters/outbound/elevenlabs/denoiser.js';
 import { workersAi } from '../adapters/outbound/workers-ai/binding.js';
 import { workersAiTranscriber } from '../adapters/outbound/workers-ai/transcriber.js';
+import { workersAiAssessor } from '../adapters/outbound/workers-ai/assessor.js';
 import { renditionServiceConfig } from '../adapters/outbound/rendition/http.js';
 import { httpTrimmer, httpWaveform } from '../adapters/outbound/rendition/stages.js';
 import {
@@ -166,6 +169,16 @@ const WAVEFORMS: ProviderEntry<WaveformPort>[] = [
     { name: 'stub', available: () => true, explicitOnly: true, create: () => stubWaveform },
 ];
 
+const ASSESSORS: ProviderEntry<AssessorPort>[] = [
+    {
+        name: 'workers-ai',
+        available: () => !!workersAi(),
+        create: (model) => workersAiAssessor(model),
+        acceptsModel: true,
+    },
+    { name: 'stub', available: () => true, explicitOnly: true, create: () => stubAssessor },
+];
+
 /**
  * Resolve one stage's provider.
  *
@@ -278,4 +291,9 @@ export function selectTrimmer(originAppId?: string): TrimmerPort | undefined {
 /** The waveform provider this tenant runs, or undefined when unavailable. */
 export function selectWaveform(originAppId?: string): WaveformPort | undefined {
     return select(WAVEFORMS, 'waveform', 'ANTIPHONY_WAVEFORM', originAppId);
+}
+
+/** The assessor this tenant runs, or undefined when the stage is unavailable. */
+export function selectAssessor(originAppId?: string): AssessorPort | undefined {
+    return select(ASSESSORS, 'assess', 'ANTIPHONY_ASSESSOR', originAppId);
 }

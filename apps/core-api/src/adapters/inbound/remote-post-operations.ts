@@ -174,7 +174,9 @@ export async function reprocessRemotePost(
     uri: string,
     processing: ProcessingRequest,
 ): Promise<RemotePostView> {
-    const resolved = resolveInitialProcessing(originAppId, processing);
+    const resolved = resolveInitialProcessing(originAppId, processing, {
+        allowExistingTranscript: true,
+    });
     if (!resolved) throw new ServiceError('Request must enable at least one processing stage', 400);
 
     const service = servicesFor(env).remotePostService;

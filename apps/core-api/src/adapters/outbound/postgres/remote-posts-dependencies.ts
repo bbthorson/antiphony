@@ -1,4 +1,9 @@
-import { TranscriptEnrichmentRecordSchema, type TranscriptEnrichmentRecord } from 'shared/types/audio';
+import {
+    AssessmentEnrichmentRecordSchema,
+    TranscriptEnrichmentRecordSchema,
+    type AssessmentEnrichmentRecord,
+    type TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
 import { ProcessingStateSchema, type ProcessingState } from 'shared/types/processing';
 import { RemoteAudioPostRecordSchema, RemoteSpaceSchema, type RemoteSpace } from 'shared/types/remote-posts';
 import type {
@@ -222,6 +227,10 @@ export function postgresRemotePostDependencies(
                     delete from audio_transcripts t
                      using removed r
                      where t.origin_app_id = $1 and t.subject_uri = r.uri
+                ), assessments as (
+                    delete from audio_assessments a
+                     using removed r
+                     where a.origin_app_id = $1 and a.subject_uri = r.uri
                 ), queued as (
                     insert into blob_deletions (origin_app_id, cid)
                     select distinct $1::text, c.cid
@@ -394,6 +403,20 @@ export function postgresRemotePostDependencies(
             );
             for (const row of rows) {
                 const parsed = TranscriptEnrichmentRecordSchema.safeParse(row.record);
+                if (parsed.success) map.set(parsed.data.subject.uri, parsed.data);
+            }
+            return map;
+        },
+
+        async getAssessments(originAppId, uris): Promise<Map<string, AssessmentEnrichmentRecord>> {
+            const map = new Map<string, AssessmentEnrichmentRecord>();
+            if (uris.length === 0) return map;
+            const rows = await sql.query<{ record: unknown }>(
+                'select record from audio_assessments where origin_app_id = $1 and subject_uri = any($2)',
+                [originAppId, uris],
+            );
+            for (const row of rows) {
+                const parsed = AssessmentEnrichmentRecordSchema.safeParse(row.record);
                 if (parsed.success) map.set(parsed.data.subject.uri, parsed.data);
             }
             return map;
