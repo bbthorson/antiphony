@@ -269,6 +269,48 @@ describe('postgresAudioProcessingDependencies', () => {
         });
     });
 
+    describe('saveAssessment', () => {
+        const assessment = (id: string, uri: string, model: string) => ({
+            id,
+            subject: { uri, cid: 'bafyreipost1' },
+            sets: [{ name: 'quality', version: 1 }],
+            answers: [
+                {
+                    id: 'quality.speech',
+                    top: 'true',
+                    distribution: [
+                        { value: 'true', probability: 900 },
+                        { value: 'false', probability: 100 },
+                    ],
+                },
+            ],
+            model,
+            createdAt: new Date('2026-08-01T00:00:00.000Z'),
+        });
+
+        it('is last-write-wins per tenant and subject uri (migration 0011)', async () => {
+            const uri = 'at://did:web:example.com/dev.antiphony.audio.post/post1';
+            await deps.saveAssessment!('app', assessment('a000000000001', uri, 'model-v1'));
+            await deps.saveAssessment!('app', assessment('a000000000002', uri, 'model-v2'));
+
+            const rows = await db.query<{ id: string }>('select id from audio_assessments');
+            expect(rows).toHaveLength(1);
+
+            const map = await posts.getAssessmentsBySubjectUris!([{ originAppId: 'app', uri }]);
+            expect(map.get(uri)?.model).toBe('model-v2');
+        });
+
+        it("keeps two tenants' assessments of the same subject apart", async () => {
+            const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
+            await deps.saveAssessment!('app', assessment('a000000000005', uri, 'ours'));
+            await deps.saveAssessment!('other-app', assessment('a000000000006', uri, 'theirs'));
+
+            expect(await db.query('select id from audio_assessments')).toHaveLength(2);
+            const ours = await posts.getAssessmentsBySubjectUris!([{ originAppId: 'app', uri }]);
+            expect(ours.get(uri)?.model).toBe('ours');
+        });
+    });
+
     describe('writeDerivedBlob', () => {
         // An in-memory bucket, so what was written can be read back the way the
         // audio proxy reads it: through the object's metadata.

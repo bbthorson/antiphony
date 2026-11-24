@@ -128,10 +128,28 @@ describe('post deletion (migration 0003)', () => {
             derivedBlobCids: ['bafyintermediate', 'bafyprocessed'],
         });
         const uri = buildPostUri(DID, p.id);
-        await postgresAudioProcessingDependencies(db, storage()).saveTranscript(TENANT, {
+        const processingDeps = postgresAudioProcessingDependencies(db, storage());
+        await processingDeps.saveTranscript(TENANT, {
             id: '3ktranscript01',
             subject: { uri, cid: p.cid },
             transcript: { segments: [{ startMs: 0, endMs: 10, text: 'hello' }] },
+            createdAt: new Date('2026-10-20T00:00:00.000Z'),
+        });
+        await processingDeps.saveAssessment!(TENANT, {
+            id: '3kassessment01',
+            subject: { uri, cid: p.cid },
+            sets: [{ name: 'quality', version: 1 }],
+            answers: [
+                {
+                    id: 'quality.speech',
+                    top: 'true',
+                    distribution: [
+                        { value: 'true', probability: 950 },
+                        { value: 'false', probability: 50 },
+                    ],
+                },
+            ],
+            model: '@cf/cloudflare/clef-flash',
             createdAt: new Date('2026-10-20T00:00:00.000Z'),
         });
 
@@ -145,6 +163,7 @@ describe('post deletion (migration 0003)', () => {
         });
         expect(await posts.getPostById(TENANT, p.id)).toBeNull();
         expect(await db.query(`select 1 from audio_transcripts`)).toHaveLength(0);
+        expect(await db.query(`select 1 from audio_assessments`)).toHaveLength(0);
         for (const cid of ['bafyoriginal', 'bafyintermediate', 'bafyprocessed']) {
             expect(hasBlob(cid), cid).toBe(false);
             expect(hasRendition(cid), `${cid}.mp3`).toBe(false);

@@ -44,7 +44,7 @@ describe('workersAiAssessor', () => {
         });
 
         expect(run).toHaveBeenCalledTimes(1);
-        expect(run.mock.calls[0]![0]).toBe('@cf/cloudflare/clef-flash');
+        expect(run).toHaveBeenCalledWith('@cf/cloudflare/clef-flash', expect.any(Object));
         expect(result.model).toBe('@cf/cloudflare/clef-flash');
         expect(result.answers['quality.speech']).toEqual({
             distribution: { true: 0.92, false: expect.closeTo(0.08, 6) },
@@ -82,7 +82,7 @@ describe('workersAiAssessor', () => {
             text: 'hello',
             questions: [QUALITY_SET.questions[0]!],
         });
-        expect(run.mock.calls[0]![0]).toBe('@cf/cloudflare/clef-omni');
+        expect(run).toHaveBeenCalledWith('@cf/cloudflare/clef-omni', expect.any(Object));
         expect(res.model).toBe('@cf/cloudflare/clef-omni');
     });
 
