@@ -61,6 +61,7 @@ on:
       # and a tag for one never publishes the other.
       - 'shared-v*'
       - 'capture-kit-v*'
+      - 'client-v*'
   workflow_dispatch:
     inputs:
       package:
@@ -69,6 +70,7 @@ on:
         options:
           - shared
           - capture-kit
+          - client
         default: shared
       dry_run:
         description: 'Run every check and pack the tarball, but do not publish'
@@ -155,6 +157,7 @@ jobs:
             case "$GITHUB_REF_NAME" in
               capture-kit-v*) SLUG=capture-kit ;;
               shared-v*)      SLUG=shared ;;
+              client-v*)      SLUG=client ;;
               *)
                 echo "::error::Tag ${GITHUB_REF_NAME} matches no known package prefix."
                 exit 1 ;;
