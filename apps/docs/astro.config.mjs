@@ -38,6 +38,8 @@ export default defineConfig({
 						// The canonical contract an adopter builds against — every
 						// REST shape is derived from these.
 						{ label: 'The Antiphony lexicons', slug: 'lexicons/overview' },
+						// Generated directly from lexicons/dev/antiphony/**/*.json at build time.
+						{ label: 'Lexicon reference', slug: 'lexicons/reference' },
 					],
 				},
 				{

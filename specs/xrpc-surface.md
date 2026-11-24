@@ -229,7 +229,7 @@ Phase 3 of spaces (§3.2) runs alongside B–D and shares A's auth work.
 | D-9 | **Space management names** | `com.atproto.space.createSpace`/`updateSpace`/`getSpace` (with a `personalspace`, `memberspace` or `managedspace` policy) for tenants too; `dev.antiphony.space.putSpace`/`getSpace` | the protocol's names, if their inputs fit tenant needs (policies as `$type` objects); else `dev.antiphony.space.*`. *2026-11-14:* `simplespace` is gone from the protocol; see `spaces-beta-readiness.md`. |
 | D-10 *(settled 2026-11-11: named arrays)* | **List output shape** | `{ items, cursor? }`; atproto-style named arrays (`{ posts, cursor }`) | named arrays, the atproto convention |
 | D-11 | **Source of truth for shapes** | lexicons generate Zod; Zod stays hand-written with the parity test; validate with `@atproto/lex` at runtime | keep hand-written Zod plus parity until 1.0, then generate |
-| D-12 | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |
+| D-12 *(built: generated lexicon reference at `/lexicons/reference/`, alongside OpenAPI)* | **API docs** | generate from lexicons; keep OpenAPI for REST until removal | both until E, lexicon docs primary from D |
 | D-13 *(built: `readCallerKey` in `middleware/rate-limit.ts`)* | **Rate limits for non-tenant callers** | per IP; per `iss` DID; per space credential | per `iss` for service auth, per IP for public |
 | D-14 | **Deprecation window for REST** | fixed date after D; when both apps are off it | when both apps are off it, plus a published date for any third-party tenant |
 

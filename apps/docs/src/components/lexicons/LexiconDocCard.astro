@@ -1,0 +1,618 @@
+---
+/**
+ * Renders a single AT Protocol lexicon document from `lexicons/dev/antiphony/`.
+ * Strictly uses `@antiphony/tokens` (`--ap-*`) and Starlight (`--sl-*`) tokens.
+ */
+import type { LexiconDocView, LexiconFieldRow, TypeRefLink } from '../../lib/lexicon-loader';
+
+interface Props {
+	doc: LexiconDocView;
+}
+
+const { doc } = Astro.props;
+
+function hasRefLinks(refs: TypeRefLink[]): boolean {
+	return refs.length > 0;
+}
+
+function formatEncoding(encoding: string): string {
+	return encoding;
+}
+
+const badgeClass =
+	doc.kind === 'procedure'
+		? 'badge-response'
+		: doc.kind === 'query' || doc.kind === 'record'
+			? 'badge-call'
+			: 'badge-neutral';
+
+const badgeText = doc.httpMethod ? `${doc.httpMethod} · ${doc.kindLabel}` : doc.kindLabel;
+---
+
+<article class="not-content ap-lex-card" id={doc.anchorId}>
+	<header class="ap-lex-head">
+		<div class="ap-lex-title-row">
+			<span class:list={['ap-lex-badge', badgeClass]}>{badgeText}</span>
+			<h3 class="ap-lex-nsid">
+				<a href={`#${doc.anchorId}`}>{doc.id}</a>
+			</h3>
+		</div>
+		<div class="ap-lex-meta">
+			{doc.xrpcPath && <code class="ap-lex-path">{doc.xrpcPath}</code>}
+			{doc.recordKey && <code class="ap-lex-path">key: {doc.recordKey}</code>}
+			<a
+				class="ap-lex-source"
+				href={doc.githubUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+			>
+				JSON ↗
+			</a>
+		</div>
+	</header>
+
+	{doc.description && <p class="ap-lex-desc">{doc.description}</p>}
+	{doc.mainDescription && <p class="ap-lex-desc ap-lex-desc-sub">{doc.mainDescription}</p>}
+
+	{doc.recordFields.length > 0 && (
+		<section class="ap-lex-section">
+			<h4 class="ap-lex-subhead">Record fields</h4>
+			<div class="ap-lex-fields">
+				{doc.recordFields.map((field: LexiconFieldRow) => (
+					<div class="ap-lex-row">
+						<div class="ap-lex-name">
+							<span class="ap-lex-field">
+								{field.name}
+								{field.required && <span class="ap-lex-req" title="Required">*</span>}
+							</span>
+							<span class="ap-lex-type">
+								{field.typeLabel}
+								{hasRefLinks(field.refs) && (
+									<span class="ap-lex-refs">
+										{field.refs.map((ref, idx) => (
+											<>
+												{idx > 0 && ' | '}
+												{ref.href ? (
+													<a href={ref.href}>{ref.label}</a>
+												) : (
+													<span>{ref.label}</span>
+												)}
+											</>
+										))}
+									</span>
+								)}
+							</span>
+							{field.constraints.length > 0 && (
+								<span class="ap-lex-constraints">{field.constraints.join(' · ')}</span>
+							)}
+						</div>
+						<div class="ap-lex-note">{field.description}</div>
+					</div>
+				))}
+			</div>
+		</section>
+	)}
+
+	{doc.parameters.length > 0 && (
+		<section class="ap-lex-section">
+			<h4 class="ap-lex-subhead">Query parameters</h4>
+			<div class="ap-lex-fields">
+				{doc.parameters.map((field: LexiconFieldRow) => (
+					<div class="ap-lex-row">
+						<div class="ap-lex-name">
+							<span class="ap-lex-field">
+								{field.name}
+								{field.required && <span class="ap-lex-req" title="Required">*</span>}
+							</span>
+							<span class="ap-lex-type">
+								{field.typeLabel}
+								{hasRefLinks(field.refs) && (
+									<span class="ap-lex-refs">
+										{field.refs.map((ref, idx) => (
+											<>
+												{idx > 0 && ' | '}
+												{ref.href ? (
+													<a href={ref.href}>{ref.label}</a>
+												) : (
+													<span>{ref.label}</span>
+												)}
+											</>
+										))}
+									</span>
+								)}
+							</span>
+							{field.constraints.length > 0 && (
+								<span class="ap-lex-constraints">{field.constraints.join(' · ')}</span>
+							)}
+						</div>
+						<div class="ap-lex-note">{field.description}</div>
+					</div>
+				))}
+			</div>
+		</section>
+	)}
+
+	{doc.input && (
+		<section class="ap-lex-section">
+			<div class="ap-lex-subhead-row">
+				<h4 class="ap-lex-subhead">Input</h4>
+				<code class="ap-lex-encoding">{formatEncoding(doc.input.encoding)}</code>
+				{doc.input.schemaRef && (
+					<span class="ap-lex-schema-ref">
+						→{' '}
+						{doc.input.schemaRef.href ? (
+							<a href={doc.input.schemaRef.href}>{doc.input.schemaRef.label}</a>
+						) : (
+							<span>{doc.input.schemaRef.label}</span>
+						)}
+					</span>
+				)}
+			</div>
+			{doc.input.description && <p class="ap-lex-body-desc">{doc.input.description}</p>}
+			{doc.input.fields.length > 0 && (
+				<div class="ap-lex-fields">
+					{doc.input.fields.map((field: LexiconFieldRow) => (
+						<div class="ap-lex-row">
+							<div class="ap-lex-name">
+								<span class="ap-lex-field">
+									{field.name}
+									{field.required && <span class="ap-lex-req" title="Required">*</span>}
+								</span>
+								<span class="ap-lex-type">
+									{field.typeLabel}
+									{hasRefLinks(field.refs) && (
+										<span class="ap-lex-refs">
+											{field.refs.map((ref, idx) => (
+												<>
+													{idx > 0 && ' | '}
+													{ref.href ? (
+														<a href={ref.href}>{ref.label}</a>
+													) : (
+														<span>{ref.label}</span>
+													)}
+												</>
+											))}
+										</span>
+									)}
+								</span>
+								{field.constraints.length > 0 && (
+									<span class="ap-lex-constraints">{field.constraints.join(' · ')}</span>
+								)}
+							</div>
+							<div class="ap-lex-note">{field.description}</div>
+						</div>
+					))}
+				</div>
+			)}
+		</section>
+	)}
+
+	{doc.output && (
+		<section class="ap-lex-section">
+			<div class="ap-lex-subhead-row">
+				<h4 class="ap-lex-subhead">Output</h4>
+				<code class="ap-lex-encoding">{formatEncoding(doc.output.encoding)}</code>
+				{doc.output.schemaRef && (
+					<span class="ap-lex-schema-ref">
+						→{' '}
+						{doc.output.schemaRef.href ? (
+							<a href={doc.output.schemaRef.href}>{doc.output.schemaRef.label}</a>
+						) : (
+							<span>{doc.output.schemaRef.label}</span>
+						)}
+					</span>
+				)}
+			</div>
+			{doc.output.description && <p class="ap-lex-body-desc">{doc.output.description}</p>}
+			{doc.output.fields.length > 0 && (
+				<div class="ap-lex-fields">
+					{doc.output.fields.map((field: LexiconFieldRow) => (
+						<div class="ap-lex-row">
+							<div class="ap-lex-name">
+								<span class="ap-lex-field">
+									{field.name}
+									{field.required && <span class="ap-lex-req" title="Required">*</span>}
+								</span>
+								<span class="ap-lex-type">
+									{field.typeLabel}
+									{hasRefLinks(field.refs) && (
+										<span class="ap-lex-refs">
+											{field.refs.map((ref, idx) => (
+												<>
+													{idx > 0 && ' | '}
+													{ref.href ? (
+														<a href={ref.href}>{ref.label}</a>
+													) : (
+														<span>{ref.label}</span>
+													)}
+												</>
+											))}
+										</span>
+									)}
+								</span>
+								{field.constraints.length > 0 && (
+									<span class="ap-lex-constraints">{field.constraints.join(' · ')}</span>
+								)}
+							</div>
+							<div class="ap-lex-note">{field.description}</div>
+						</div>
+					))}
+				</div>
+			)}
+		</section>
+	)}
+
+	{doc.errors.length > 0 && (
+		<section class="ap-lex-section">
+			<h4 class="ap-lex-subhead">Named errors</h4>
+			<div class="ap-lex-errors">
+				{doc.errors.map((err) => (
+					<div class="ap-lex-error-row">
+						<code class="ap-lex-error-name">{err.name}</code>
+						<span class="ap-lex-note">{err.description}</span>
+					</div>
+				))}
+			</div>
+		</section>
+	)}
+
+	{doc.subDefs.length > 0 && (
+		<div class="ap-lex-subdefs">
+			{doc.subDefs.map((sub) => (
+				<section class="ap-lex-section ap-lex-subdef" id={sub.anchorId}>
+					<div class="ap-lex-subhead-row">
+						<h4 class="ap-lex-subdef-name">
+							<a href={`#${sub.anchorId}`}>#{sub.name}</a>
+						</h4>
+						<code class="ap-lex-encoding">{sub.type}</code>
+					</div>
+					{sub.description && <p class="ap-lex-body-desc">{sub.description}</p>}
+					{sub.fields.length > 0 && (
+						<div class="ap-lex-fields">
+							{sub.fields.map((field: LexiconFieldRow) => (
+								<div class="ap-lex-row">
+									<div class="ap-lex-name">
+										<span class="ap-lex-field">
+											{field.name}
+											{field.required && <span class="ap-lex-req" title="Required">*</span>}
+										</span>
+										<span class="ap-lex-type">
+											{field.typeLabel}
+											{hasRefLinks(field.refs) && (
+												<span class="ap-lex-refs">
+													{field.refs.map((ref, idx) => (
+														<>
+															{idx > 0 && ' | '}
+															{ref.href ? (
+																<a href={ref.href}>{ref.label}</a>
+															) : (
+																<span>{ref.label}</span>
+															)}
+														</>
+													))}
+												</span>
+											)}
+										</span>
+										{field.constraints.length > 0 && (
+											<span class="ap-lex-constraints">{field.constraints.join(' · ')}</span>
+										)}
+									</div>
+									<div class="ap-lex-note">{field.description}</div>
+								</div>
+							))}
+						</div>
+					)}
+				</section>
+			))}
+		</div>
+	)}
+</article>
+
+<style>
+	.ap-lex-card {
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		background: var(--ap-surface-card);
+		padding: var(--ap-space-5) var(--ap-space-6);
+		scroll-margin-top: 5rem;
+	}
+
+	.ap-lex-card + .ap-lex-card {
+		margin-top: var(--ap-space-5);
+	}
+
+	.ap-lex-card:target,
+	.ap-lex-subdef:target {
+		border-color: var(--ap-border-call);
+		box-shadow: var(--ap-shadow-call-glow);
+	}
+
+	.ap-lex-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--ap-space-2) var(--ap-space-4);
+		padding-bottom: var(--ap-space-3);
+		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	.ap-lex-title-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--ap-space-3);
+		min-width: 0;
+	}
+
+	.ap-lex-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 2px 8px;
+		border-radius: var(--ap-radius-full);
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.badge-call {
+		background: var(--ap-call-subtle);
+		color: var(--ap-call-ink);
+	}
+
+	.badge-response {
+		background: var(--ap-response-subtle);
+		color: var(--ap-response-ink);
+	}
+
+	.badge-neutral {
+		background: var(--ap-surface-sunken);
+		color: var(--ap-text-secondary);
+	}
+
+	.ap-lex-nsid {
+		margin: 0;
+		font-family: var(--ap-font-mono);
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1.3;
+		word-break: break-word;
+	}
+
+	.ap-lex-nsid a {
+		color: var(--ap-text-primary);
+		text-decoration: none;
+	}
+
+	.ap-lex-nsid a:hover {
+		color: var(--ap-call-ink);
+	}
+
+	.ap-lex-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--ap-space-3);
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+	}
+
+	.ap-lex-path {
+		color: var(--ap-text-muted);
+		background: transparent;
+		padding: 0;
+	}
+
+	.ap-lex-source {
+		color: var(--ap-call-ink);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.ap-lex-source:hover {
+		color: var(--ap-response-ink);
+	}
+
+	.ap-lex-desc {
+		margin: var(--ap-space-3) 0 0;
+		font-size: 14px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+		max-width: 56rem;
+	}
+
+	.ap-lex-desc-sub {
+		color: var(--ap-text-muted);
+		font-size: 13px;
+	}
+
+	.ap-lex-section {
+		margin-top: var(--ap-space-5);
+	}
+
+	.ap-lex-subdef {
+		padding-top: var(--ap-space-4);
+		border-top: 1px solid var(--ap-border-subtle);
+		scroll-margin-top: 5rem;
+		border-radius: var(--ap-radius-sm);
+	}
+
+	.ap-lex-subhead-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--ap-space-2);
+		margin-bottom: var(--ap-space-2);
+	}
+
+	.ap-lex-subhead {
+		margin: 0 0 var(--ap-space-2);
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+	}
+
+	.ap-lex-subhead-row .ap-lex-subhead {
+		margin-bottom: 0;
+	}
+
+	.ap-lex-subdef-name {
+		margin: 0;
+		font-family: var(--ap-font-mono);
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.ap-lex-subdef-name a {
+		color: var(--ap-call-ink);
+		text-decoration: none;
+	}
+
+	.ap-lex-subdef-name a:hover {
+		color: var(--ap-response-ink);
+	}
+
+	.ap-lex-encoding {
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		padding: 1px 6px;
+		border-radius: var(--ap-radius-sm);
+		background: var(--ap-surface-sunken);
+		color: var(--ap-text-secondary);
+	}
+
+	.ap-lex-schema-ref {
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		color: var(--ap-text-secondary);
+	}
+
+	.ap-lex-schema-ref a {
+		color: var(--ap-call-ink);
+		text-decoration: none;
+	}
+
+	.ap-lex-schema-ref a:hover {
+		color: var(--ap-response-ink);
+	}
+
+	.ap-lex-body-desc {
+		margin: 0 0 var(--ap-space-2);
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--ap-text-secondary);
+	}
+
+	.ap-lex-fields {
+		border-top: 1px solid var(--ap-border-subtle);
+	}
+
+	.ap-lex-row {
+		display: grid;
+		grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+		gap: var(--ap-space-4);
+		padding: var(--ap-space-3) 0;
+		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	@media (max-width: 44rem) {
+		.ap-lex-row {
+			grid-template-columns: minmax(0, 1fr);
+			gap: var(--ap-space-1);
+		}
+	}
+
+	.ap-lex-name {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-family: var(--ap-font-mono);
+		min-width: 0;
+	}
+
+	.ap-lex-field {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--ap-text-primary);
+		word-break: break-word;
+	}
+
+	.ap-lex-req {
+		margin-left: 2px;
+		color: var(--ap-response-ink);
+		font-weight: 700;
+	}
+
+	.ap-lex-type {
+		font-size: 11px;
+		color: var(--ap-text-muted);
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		word-break: break-word;
+	}
+
+	.ap-lex-refs {
+		font-size: 11px;
+		color: var(--ap-call-ink);
+	}
+
+	.ap-lex-refs a {
+		color: var(--ap-call-ink);
+		text-decoration: none;
+	}
+
+	.ap-lex-refs a:hover {
+		color: var(--ap-response-ink);
+	}
+
+	.ap-lex-constraints {
+		font-size: 11px;
+		color: var(--ap-text-muted);
+		word-break: break-word;
+	}
+
+	.ap-lex-note {
+		font-size: 13.5px;
+		line-height: 1.6;
+		color: var(--ap-text-secondary);
+		min-width: 0;
+	}
+
+	.ap-lex-errors {
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-2);
+		border-top: 1px solid var(--ap-border-subtle);
+		padding-top: var(--ap-space-3);
+	}
+
+	.ap-lex-error-row {
+		display: grid;
+		grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+		gap: var(--ap-space-4);
+		align-items: baseline;
+	}
+
+	@media (max-width: 44rem) {
+		.ap-lex-error-row {
+			grid-template-columns: minmax(0, 1fr);
+			gap: var(--ap-space-1);
+		}
+	}
+
+	.ap-lex-error-name {
+		font-family: var(--ap-font-mono);
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--ap-response-ink);
+		background: transparent;
+		padding: 0;
+	}
+</style>
