@@ -1,0 +1,82 @@
+{
+  "name": "@antiphony/client",
+  "version": "0.1.0",
+  "description": "Typed, framework-free XRPC client, signed service-auth signer, and managed-space checkAccess helper for Antiphony.",
+  "license": "MIT",
+  "homepage": "https://docs.antiphony.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbthorson/antiphony.git",
+    "directory": "packages/client"
+  },
+  "bugs": "https://github.com/bbthorson/antiphony/issues",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    },
+    "./service-auth": {
+      "import": {
+        "types": "./dist/esm/service-auth.d.ts",
+        "default": "./dist/esm/service-auth.js"
+      },
+      "require": {
+        "types": "./dist/cjs/service-auth.d.cts",
+        "default": "./dist/cjs/service-auth.cjs"
+      }
+    },
+    "./check-access": {
+      "import": {
+        "types": "./dist/esm/check-access.d.ts",
+        "default": "./dist/esm/check-access.js"
+      },
+      "require": {
+        "types": "./dist/cjs/check-access.d.cts",
+        "default": "./dist/cjs/check-access.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "antiphony",
+    "atproto",
+    "xrpc",
+    "audio",
+    "client"
+  ],
+  "scripts": {
+    "build": "node ./scripts/clean.mjs && tsdown",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@antiphony/shared": "^0.15.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "tsdown": "^0.23.7",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

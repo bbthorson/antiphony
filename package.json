@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/capture-kit && npm run build -w @antiphony/core-api && npm run build -w @antiphony/audio-rendition",
+    "build": "npm run build -w @antiphony/shared && npm run build -w @antiphony/client && npm run build -w @antiphony/capture-kit && npm run build -w @antiphony/core-api && npm run build -w @antiphony/audio-rendition",
     "//dev": "Runs core-api on the Workers runtime against local bindings. Put DATABASE_URL in apps/core-api/.dev.vars (gitignored) first \u2014 the database is a Worker secret, not a Hyperdrive binding.",
     "dev": "npm run dev -w @antiphony/core-api",
     "gen:openapi": "npm run gen:openapi -w @antiphony/core-api",
