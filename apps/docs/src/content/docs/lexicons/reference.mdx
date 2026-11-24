@@ -1,0 +1,56 @@
+---
+title: Lexicon reference
+description: Generated reference for every dev.antiphony.* AT Protocol record, embed, shared definition, and XRPC method.
+eyebrow: Protocol / dev.antiphony.*
+---
+
+import LexiconDocCard from '../../../components/lexicons/LexiconDocCard.astro';
+import LexiconIndex from '../../../components/lexicons/LexiconIndex.astro';
+import WhereNext from '../../../components/lexicons/WhereNext.astro';
+import { loadLexiconCatalog } from '../../../lib/lexicon-loader';
+
+export const catalog = loadLexiconCatalog();
+
+<p class="lead">Every AT Protocol record, embed, shared definition, and XRPC endpoint in the <code>dev.antiphony.*</code> namespace — generated directly from the JSON schemas in <code>lexicons/dev/antiphony/</code> at build time.</p>
+
+<p class="note">Source of truth: <a href="https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony"><code>lexicons/dev/antiphony/</code></a>. Looking for the guided tour? Start with <a href="/lexicons/overview/">The Antiphony lexicons</a>. Required fields are marked with <code>*</code>.</p>
+
+<LexiconIndex catalog={catalog} />
+
+## Records & embeds
+
+{catalog.groups['records-and-embeds'].summary}
+
+{catalog.groups['records-and-embeds'].docs.map((doc) => <LexiconDocCard doc={doc} />)}
+
+## Hosted audio XRPC
+
+{catalog.groups['hosted-audio-xrpc'].summary}
+
+{catalog.groups['hosted-audio-xrpc'].docs.map((doc) => <LexiconDocCard doc={doc} />)}
+
+## Remote posts XRPC
+
+{catalog.groups['remote-posts-xrpc'].summary}
+
+{catalog.groups['remote-posts-xrpc'].docs.map((doc) => <LexiconDocCard doc={doc} />)}
+
+## Tenancy & server XRPC
+
+{catalog.groups['tenancy-and-server-xrpc'].summary}
+
+{catalog.groups['tenancy-and-server-xrpc'].docs.map((doc) => <LexiconDocCard doc={doc} />)}
+
+## Shared definitions
+
+{catalog.groups['shared-defs'].summary}
+
+{catalog.groups['shared-defs'].docs.map((doc) => <LexiconDocCard doc={doc} />)}
+
+<WhereNext
+	links={[
+		{ title: 'The Antiphony lexicons', desc: 'Guided tour of posts, audio embeds, transcripts, and CIDs.', href: '/lexicons/overview/' },
+		{ title: 'API reference', desc: 'Authentication, rate limits, and the REST compatibility surface.', href: '/api/overview/' },
+		{ title: 'Build your own app', desc: 'Put a client on top of the lexicons.', href: '/build-your-own/overview/' },
+	]}
+/>

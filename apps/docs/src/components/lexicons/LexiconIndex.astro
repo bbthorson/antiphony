@@ -1,0 +1,180 @@
+---
+/**
+ * Compact quick-jump index and live schema counts for the Lexicon reference.
+ * Strictly uses `@antiphony/tokens` (`--ap-*`) tokens.
+ */
+import type { LexiconCatalog, LexiconGroupId } from '../../lib/lexicon-loader';
+
+interface Props {
+	catalog: LexiconCatalog;
+}
+
+const { catalog } = Astro.props;
+
+const groupOrder: LexiconGroupId[] = [
+	'records-and-embeds',
+	'hosted-audio-xrpc',
+	'remote-posts-xrpc',
+	'tenancy-and-server-xrpc',
+	'shared-defs',
+];
+---
+
+<div class="not-content ap-lex-index">
+	<div class="ap-lex-stats">
+		<div class="ap-lex-stat">
+			<span class="ap-lex-stat-num">{catalog.counts.total}</span>
+			<span class="ap-lex-stat-label">Lexicons</span>
+		</div>
+		<div class="ap-lex-stat">
+			<span class="ap-lex-stat-num">{catalog.counts.xrpc}</span>
+			<span class="ap-lex-stat-label">
+				XRPC methods ({catalog.counts.queries} queries, {catalog.counts.procedures} procedures)
+			</span>
+		</div>
+		<div class="ap-lex-stat">
+			<span class="ap-lex-stat-num">{catalog.counts.recordsAndEmbeds}</span>
+			<span class="ap-lex-stat-label">Records &amp; embeds</span>
+		</div>
+		<div class="ap-lex-stat">
+			<span class="ap-lex-stat-num">{catalog.counts.sharedDefs}</span>
+			<span class="ap-lex-stat-label">Shared def bundles</span>
+		</div>
+	</div>
+
+	<div class="ap-lex-groups">
+		{groupOrder.map((groupId) => {
+			const group = catalog.groups[groupId];
+			return (
+				<div class="ap-lex-group">
+					<div class="ap-lex-group-title">{group.title}</div>
+					<div class="ap-lex-pills">
+						{group.docs.map((doc) => (
+							<a
+								class:list={[
+									'ap-lex-pill',
+									doc.kind === 'procedure'
+										? 'pill-response'
+										: doc.kind === 'query' || doc.kind === 'record'
+											? 'pill-call'
+											: 'pill-neutral',
+								]}
+								href={`#${doc.anchorId}`}
+							>
+								<span class="ap-lex-pill-kind">
+									{doc.httpMethod ?? doc.kindLabel}
+								</span>
+								<span class="ap-lex-pill-id">
+									{doc.id.replace(/^dev\.antiphony\./, '')}
+								</span>
+							</a>
+						))}
+					</div>
+				</div>
+			);
+		})}
+	</div>
+</div>
+
+<style>
+	.ap-lex-index {
+		margin-top: var(--ap-space-5);
+		border: 1px solid var(--ap-border-subtle);
+		border-radius: var(--ap-radius-lg);
+		background: var(--ap-surface-elevated);
+		padding: var(--ap-space-5) var(--ap-space-6);
+	}
+
+	.ap-lex-stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--ap-space-4) var(--ap-space-8);
+		padding-bottom: var(--ap-space-4);
+		border-bottom: 1px solid var(--ap-border-subtle);
+	}
+
+	.ap-lex-stat {
+		display: flex;
+		align-items: baseline;
+		gap: var(--ap-space-2);
+	}
+
+	.ap-lex-stat-num {
+		font-family: var(--ap-font-mono);
+		font-size: 20px;
+		font-weight: 700;
+		color: var(--ap-num);
+	}
+
+	.ap-lex-stat-label {
+		font-size: 13px;
+		color: var(--ap-text-secondary);
+	}
+
+	.ap-lex-groups {
+		display: flex;
+		flex-direction: column;
+		gap: var(--ap-space-4);
+		margin-top: var(--ap-space-4);
+	}
+
+	.ap-lex-group-title {
+		font-family: var(--ap-font-mono);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ap-text-muted);
+		margin-bottom: var(--ap-space-2);
+	}
+
+	.ap-lex-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--ap-space-2);
+	}
+
+	.ap-lex-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 9px;
+		border-radius: var(--ap-radius-full);
+		border: 1px solid var(--ap-border-subtle);
+		background: var(--ap-surface-card);
+		font-family: var(--ap-font-mono);
+		font-size: 12px;
+		text-decoration: none;
+		transition:
+			border-color var(--ap-transition-fast),
+			background var(--ap-transition-fast);
+	}
+
+	.ap-lex-pill:hover {
+		border-color: var(--ap-border-call);
+		background: var(--ap-call-subtle);
+	}
+
+	.ap-lex-pill-kind {
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.pill-call .ap-lex-pill-kind {
+		color: var(--ap-call-ink);
+	}
+
+	.pill-response .ap-lex-pill-kind {
+		color: var(--ap-response-ink);
+	}
+
+	.pill-neutral .ap-lex-pill-kind {
+		color: var(--ap-text-muted);
+	}
+
+	.ap-lex-pill-id {
+		color: var(--ap-text-primary);
+	}
+</style>

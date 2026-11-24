@@ -22,7 +22,7 @@ import {
 
 <p class="lead">The AT Protocol record definitions under <code>dev.antiphony.*</code> describe everything Antiphony stores. The REST API, the Zod schemas in <code>packages/shared</code>, and every app built on the core derive from them. If you read one page before building, read this one.</p>
 
-<p class="note">Source of truth: [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony). This page is the guided tour.</p>
+<p class="note">Source of truth: [`lexicons/dev/antiphony/`](https://github.com/bbthorson/antiphony/tree/master/lexicons/dev/antiphony). This page is the guided tour; see the [Lexicon reference](/lexicons/reference/) for every record, embed, definition, and XRPC method generated directly from those schemas.</p>
 
 ## Why do these look like Bluesky's records?
 
@@ -139,8 +139,8 @@ Records validate against the official `@atproto/lexicon` parser, blob refs use t
 
 <WhereNext
 	links={[
+		{ title: 'Lexicon reference', desc: 'Every dev.antiphony.* record, def, and XRPC method generated from JSON.', href: '/lexicons/reference/' },
 		{ title: 'API reference', desc: 'The REST surface derived from these records.', href: '/api/overview/' },
 		{ title: 'Build your own app', desc: 'Put a client on top of them.', href: '/build-your-own/overview/' },
-		{ title: 'Architecture', desc: 'Where the record-to-lexicon transform lives.', href: '/introduction/architecture/' },
 	]}
 />
