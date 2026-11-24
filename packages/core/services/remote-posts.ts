@@ -1,6 +1,10 @@
 import { isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
 import { ServiceError } from 'shared/errors';
-import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type {
+    AssessmentEnrichmentRecord,
+    AssessmentView,
+    TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
 import {
     PROCESSING_STAGES,
     resolveAudioVariant,
@@ -448,14 +452,17 @@ export class RemotePostService {
         return wanted.map((uri) => found.get(uri)).filter((row): row is RemotePostRow => row !== undefined);
     }
 
-    /** Views for one tenant's rows, transcripts loaded in one round. */
+    /** Views for one tenant's rows, transcripts and assessments loaded in one round. */
     async hydrate(originAppId: string, rows: RemotePostRow[]): Promise<RemotePostView[]> {
         if (rows.length === 0) return [];
-        const transcripts = await this.deps.getTranscripts(
-            originAppId,
-            rows.map((r) => r.uri),
-        );
-        return Promise.all(rows.map((row) => this.view(row, transcripts)));
+        const uris = rows.map((r) => r.uri);
+        const [transcripts, assessments] = await Promise.all([
+            this.deps.getTranscripts(originAppId, uris),
+            this.deps.getAssessments
+                ? this.deps.getAssessments(originAppId, uris)
+                : Promise.resolve(new Map<string, AssessmentEnrichmentRecord>()),
+        ]);
+        return Promise.all(rows.map((row) => this.view(row, transcripts, assessments)));
     }
 
     /**
@@ -937,7 +944,11 @@ export class RemotePostService {
         }
     }
 
-    private async view(row: RemotePostRow, transcripts: Map<string, TranscriptEnrichmentRecord>): Promise<RemotePostView> {
+    private async view(
+        row: RemotePostRow,
+        transcripts: Map<string, TranscriptEnrichmentRecord>,
+        assessments: Map<string, AssessmentEnrichmentRecord>,
+    ): Promise<RemotePostView> {
         const available =
             !row.unreachableSince || this.deps.now().getTime() - row.unreachableSince.getTime() < REMOTE_UNAVAILABLE_AFTER_MS;
         const { record } = row;
@@ -950,6 +961,16 @@ export class RemotePostService {
             );
             const url = await this.deps.resolveAudioUrl(row.originAppId, resolved.blobCid, row.blobPrivate);
             if (url) {
+                const assessmentRec =
+                    row.processing?.assess === 'ready' ? assessments.get(row.uri) : undefined;
+                const assessment: AssessmentView | undefined = assessmentRec
+                    ? {
+                          sets: assessmentRec.sets,
+                          answers: assessmentRec.answers,
+                          model: assessmentRec.model,
+                          createdAt: assessmentRec.createdAt,
+                      }
+                    : undefined;
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
                     url,
@@ -957,6 +978,7 @@ export class RemotePostService {
                     alt: record.embed.alt,
                     waveform: resolved.waveform,
                     transcript: transcripts.get(row.uri)?.transcript,
+                    ...(assessment ? { assessment } : {}),
                     processing: row.processing ? toProcessingView(row.processing) : undefined,
                 };
             }

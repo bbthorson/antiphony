@@ -1,4 +1,8 @@
-import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type {
+    AssessmentEnrichmentRecord,
+    AudioPostRecord,
+    TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
 import type { ScopedSpaceKey, SpaceKey, SpaceRecord } from 'shared/types/spaces';
 
@@ -130,6 +134,15 @@ export interface AudioPostDependencies {
     getTranscriptsBySubjectUris(
         subjects: { originAppId: string; uri: string }[],
     ): Promise<Map<string, TranscriptEnrichmentRecord>>;
+
+    /**
+     * Batch-fetch assessment enrichment records by their subject post uris,
+     * each within its own tenant. Returned Map is keyed by `subject.uri`.
+     * Lifted into `AudioEmbedView.assessment` when `processing.assess === 'ready'`.
+     */
+    getAssessmentsBySubjectUris?(
+        subjects: { originAppId: string; uri: string }[],
+    ): Promise<Map<string, AssessmentEnrichmentRecord>>;
 
     /**
      * Resolve a stored audio blob CID (`BlobRef.ref.$link`) to a playable URL,

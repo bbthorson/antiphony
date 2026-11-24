@@ -13,6 +13,7 @@ export const NSID = {
     // See lexicons/dev/antiphony/ + packages/shared/types/audio.ts.
     AudioPost: 'dev.antiphony.audio.post',
     AudioTranscript: 'dev.antiphony.audio.transcript',
+    AudioAssessment: 'dev.antiphony.audio.assessment',
     // Portable lexicon only — the core never stores actor profiles; the
     // caller BFF is the sole authority for profile data (see
     // specs/core-bff-boundary.md, "actor.profile lexicon"). Hence no
@@ -23,7 +24,10 @@ export const NSID = {
 export type NsidValue = typeof NSID[keyof typeof NSID];
 
 /** The subset of record NSIDs the core actually stores. */
-export type StoredNsidValue = typeof NSID.AudioPost | typeof NSID.AudioTranscript;
+export type StoredNsidValue =
+    | typeof NSID.AudioPost
+    | typeof NSID.AudioTranscript
+    | typeof NSID.AudioAssessment;
 
 /**
  * Antiphony embed NSIDs. Embeds live inline on a post's `embed` field, not in
@@ -89,7 +93,8 @@ export type XrpcNsidValue = typeof XRPC_NSID[keyof typeof XRPC_NSID];
  * `actor.profile` is deliberately absent — portable schema, no core storage.
  */
 export const COLLECTIONS: Record<StoredNsidValue, string> = {
-    // One post collection + the transcript enrichment namespace.
+    // One post collection + the transcript & assessment enrichment namespaces.
     [NSID.AudioPost]: 'posts',
     [NSID.AudioTranscript]: 'audio_transcripts',
+    [NSID.AudioAssessment]: 'audio_assessments',
 };

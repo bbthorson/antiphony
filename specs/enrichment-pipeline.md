@@ -51,7 +51,7 @@ must not leak into the ports.
 
 ## Stage taxonomy
 
-Four stages, classified on two independent axes. **Class** determines ordering and
+Five stages, classified on two independent axes. **Class** determines ordering and
 recompute behavior; **execution** determines where a stage can be deployed
 (see [Deployment portability](#deployment-portability)).
 
@@ -61,6 +61,7 @@ recompute behavior; **execution** determines where a stage can be deployed
 | `trim` | byte-mutating | local compute | contributes to the processed variant |
 | `transcribe` | derived | external API (Workers AI binding or ElevenLabs) | `dev.antiphony.audio.transcript` record |
 | `waveform` | derived | local compute | normalized peaks on `ProcessingState` |
+| `assess` | derived | external API (Workers AI binding, Clef) | `dev.antiphony.audio.assessment` record |
 
 **Byte-mutating** stages produce new audio. They **compose in order into a single
 variant** — trimmed-and-denoised audio is one artifact, not two. This replaces the
@@ -71,11 +72,13 @@ derived, recomputation is always the correct response to their input changing.
 
 ## Ordering
 
-**denoise → trim → (transcribe, waveform)**
+**denoise → trim → transcribe → assess**, with **waveform** independent
 
 All byte-mutating stages run first, in the order above; derived stages then consume
-the final variant. The two derived stages are mutually independent and may run
-concurrently.
+the final variant. Phase 1 `assess` reads the transcript, so it runs after `transcribe`
+(and a recomputed transcript invalidates an existing `ready` assessment; see
+[`assess-stage.md`](./assess-stage.md)). `waveform` remains mutually independent of
+`transcribe` and `assess`.
 
 Denoise precedes trim deliberately: silence detection keys off a noise floor, so on
 noisy input the "silence" is not actually quiet and trim under-cuts. Denoising first

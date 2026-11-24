@@ -1,5 +1,7 @@
 import {
     AudioPostRecordSchema,
+    type AssessmentEnrichmentRecord,
+    type AssessmentView,
     type AudioPostRecord,
     type AudioPostView,
     type AudioEmbed,
@@ -755,16 +757,24 @@ export class AudioPostService {
             uri: postUriOf(r, (id) => this.deps.getAppDid(id)),
         }));
 
-        const transcriptMap = await this.deps.getTranscriptsBySubjectUris(subjects);
+        const [transcriptMap, assessmentMap] = await Promise.all([
+            this.deps.getTranscriptsBySubjectUris(subjects),
+            this.deps.getAssessmentsBySubjectUris
+                ? this.deps.getAssessmentsBySubjectUris(subjects)
+                : Promise.resolve(new Map<string, AssessmentEnrichmentRecord>()),
+        ]);
 
         return Promise.all(
-            records.map((record) => this.hydrateOne(record, transcriptMap, viewerUid)),
+            records.map((record) =>
+                this.hydrateOne(record, transcriptMap, assessmentMap, viewerUid),
+            ),
         );
     }
 
     private async hydrateOne(
         record: AudioPostRecord,
         transcriptMap: Map<string, TranscriptEnrichmentRecord>,
+        assessmentMap: Map<string, AssessmentEnrichmentRecord>,
         viewerUid: string | null,
     ): Promise<AudioPostView> {
         const uri = postUriOf(record, (id) => this.deps.getAppDid(id));
@@ -795,6 +805,16 @@ export class AudioPostService {
                 record.space ? { type: record.space.type, skey: record.space.skey } : undefined,
             );
             if (playbackUrl) {
+                const assessmentRec =
+                    proc?.assess === 'ready' ? assessmentMap.get(uri) : undefined;
+                const assessment: AssessmentView | undefined = assessmentRec
+                    ? {
+                          sets: assessmentRec.sets,
+                          answers: assessmentRec.answers,
+                          model: assessmentRec.model,
+                          createdAt: assessmentRec.createdAt,
+                      }
+                    : undefined;
                 embed = {
                     $type: 'dev.antiphony.embed.audio#view',
                     url: playbackUrl,
@@ -802,6 +822,7 @@ export class AudioPostService {
                     alt: embedRecord.alt,
                     waveform: resolved.waveform,
                     transcript: transcriptMap.get(uri)?.transcript,
+                    ...(assessment ? { assessment } : {}),
                     // Surface per-stage processing status (no internal fields)
                     // when the app opted in; absent otherwise.
                     processing: proc ? toProcessingView(proc) : undefined,

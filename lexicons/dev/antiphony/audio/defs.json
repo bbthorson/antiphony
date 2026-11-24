@@ -221,6 +221,7 @@
                 "trim": { "type": "boolean", "description": "Leading/trailing silence removal. Byte-mutating; runs after denoise." },
                 "transcribe": { "type": "boolean", "description": "Machine transcription. Derived — analysis over the final audio variant." },
                 "waveform": { "type": "boolean", "description": "Waveform peak extraction. Derived." },
+                "assess": { "type": "boolean", "description": "Typed quality/relevance assessment. Derived — runs after transcribe in Phase 1." },
                 "reprocess": {
                     "type": "boolean",
                     "default": true,
@@ -251,6 +252,11 @@
                     "type": "string",
                     "knownValues": ["pending", "ready", "failed", "skipped"],
                     "description": "Waveform peak extraction (derived). Same values as `transcribe`; `ready` means the view's peaks describe the audio being played."
+                },
+                "assess": {
+                    "type": "string",
+                    "knownValues": ["pending", "ready", "failed", "skipped"],
+                    "description": "Typed quality/relevance assessment (derived; runs after transcribe). Same values as `transcribe`; `ready` means `embed.assessment` is available."
                 }
             }
         },

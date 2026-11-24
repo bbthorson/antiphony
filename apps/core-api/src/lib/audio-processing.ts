@@ -3,6 +3,7 @@ import {
     type ProcessingCapabilities,
     type ProcessingProviders,
 } from '@antiphony/core/services/audio-processing';
+import { resolveQuestionSets } from '@antiphony/core/assess/question-sets';
 import type { ProcessingDispatchPort } from '@antiphony/core/ports/processing-dispatch';
 import type { ProcessingNotifierPort } from '@antiphony/core/ports/processing-notifier';
 import {
@@ -17,13 +18,16 @@ import {
     stubDenoiser,
     stubTrimmer,
     stubWaveform,
+    stubAssessor,
 } from '../adapters/outbound/processing/providers.js';
 import {
     selectTranscriber,
     selectDenoiser,
     selectTrimmer,
     selectWaveform,
+    selectAssessor,
 } from './provider-registry.js';
+import { tenantAssessSets } from './tenant-provider-config.js';
 import { inlineDispatcher } from '../adapters/outbound/dispatch/inline.js';
 import { webhookNotifier } from '../adapters/outbound/webhook/notifier.js';
 import { noopDispatcher } from '../adapters/outbound/dispatch/noop.js';
@@ -82,6 +86,10 @@ export function resolveProviders(originAppId?: string): ProcessingProviders {
                 denoiser: stubDenoiser,
                 trimmer: stubTrimmer,
                 waveform: stubWaveform,
+                assessor: stubAssessor,
+                assessSets: resolveQuestionSets(
+                    originAppId ? tenantAssessSets(originAppId) : undefined,
+                ),
             };
         }
     }
@@ -104,6 +112,8 @@ export function resolveProviders(originAppId?: string): ProcessingProviders {
         denoiser: selectDenoiser(originAppId),
         trimmer: selectTrimmer(originAppId),
         waveform: selectWaveform(originAppId),
+        assessor: selectAssessor(originAppId),
+        assessSets: resolveQuestionSets(originAppId ? tenantAssessSets(originAppId) : undefined),
     };
 }
 
@@ -134,12 +144,24 @@ export function processingCapabilities(originAppId?: string): ProcessingCapabili
 export function resolveInitialProcessing(
     originAppId: string,
     request: ProcessingRequest | undefined,
+    options?: { allowExistingTranscript?: boolean },
 ): ResolvedProcessing | undefined {
     if (!request || !PROCESSING_STAGES.some((stage) => request[stage])) return undefined;
     const caps = processingCapabilities(originAppId);
     const state: ResolvedProcessing = {};
     for (const stage of PROCESSING_STAGES) {
         if (request[stage]) state[stage] = caps[stage] ? 'pending' : 'skipped';
+    }
+    // Phase 1 `assess` reads the transcript, so on create/register requesting
+    // `assess` without a runnable `transcribe` settles `assess` as `skipped`
+    // at request time (specs/assess-stage.md §3.3). On reprocess/PATCH, the
+    // post may already have a `ready` transcript, so the worker checks it.
+    if (
+        state.assess === 'pending' &&
+        !options?.allowExistingTranscript &&
+        state.transcribe !== 'pending'
+    ) {
+        state.assess = 'skipped';
     }
     // Always written, including the default. `setProcessing` MERGES onto the
     // stored state, so omitting it would let an earlier request's `false`

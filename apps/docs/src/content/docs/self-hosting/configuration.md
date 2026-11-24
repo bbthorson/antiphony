@@ -70,14 +70,15 @@ Applications (BFFs, workers) are the intended callers of the posts/audio surface
 
 ## Audio enrichment
 
-Opt-in processing runs four stages over a post's audio: **transcribe** (Whisper on Cloudflare Workers AI, or ElevenLabs Scribe), **denoise** (ElevenLabs), and **trim** and **waveform** (ffmpeg, in the rendition service). None run unless the relevant variables below are set; a deployment with none of them still serves audio, it just does no enrichment. Stages requested against a deployment that can't run them settle `skipped`, not `pending`.
+Opt-in processing runs five stages over a post's audio: **transcribe** (Whisper on Cloudflare Workers AI, or ElevenLabs Scribe), **denoise** (ElevenLabs), **trim** and **waveform** (ffmpeg, in the rendition service), and **assess** (Clef decision models on Cloudflare Workers AI, reading the transcript in Phase 1). None run unless the relevant variables below are set; a deployment with none of them still serves audio, it just does no enrichment. Stages requested against a deployment that can't run them settle `skipped`, not `pending`.
 
 ### Providers
 
 | Variable | Purpose |
 |---|---|
-| `AI` binding | On a Cloudflare Worker, an `"ai": { "binding": "AI" }` block in `wrangler.jsonc` enables the `workers-ai` transcriber (Whisper, `@cf/openai/whisper-large-v3-turbo`). It needs no key: the binding is the credential. When bound it is **preferred over ElevenLabs** for transcription; denoise has no Workers AI equivalent. Not available under the Node entry. |
+| `AI` binding | On a Cloudflare Worker, an `"ai": { "binding": "AI" }` block in `wrangler.jsonc` enables the `workers-ai` transcriber (Whisper, `@cf/openai/whisper-large-v3-turbo`) and assessor (Clef-flash, `@cf/cloudflare/clef-flash`). It needs no key: the binding is the credential. When bound it is **preferred over ElevenLabs** for transcription; denoise has no Workers AI equivalent. Not available under the Node entry. |
 | `WORKERS_AI_STT_MODEL` | Optional. Overrides the Whisper model id. |
+| `WORKERS_AI_ASSESS_MODEL` | Optional. Overrides the Clef model id used by `assess` (default `@cf/cloudflare/clef-flash`). |
 | `ELEVENLABS_API_KEY` | Enables the ElevenLabs providers — Scribe (transcription) and Voice Isolator (denoise). **Presence alone selects them**; there is no separate enable flag. Absent → `denoise`/`transcribe` settle `skipped`. Store as a secret. |
 | `ELEVENLABS_STT_MODEL` | Optional. Overrides the default Scribe model id used for transcription. Not validated against a list of known ids — a typo reaches the provider and fails the stage — so the resolved value is logged on first use. |
 | `ANTIPHONY_RENDITION_SERVICE_URL` | Base URL of the transcode backend ([`apps/audio-rendition`](https://github.com/bbthorson/antiphony/tree/master/apps/audio-rendition)). Enables `trim` and `waveform`, and lets `GET /api/v1/audio?format=mp3` build a rendition on a miss instead of 404ing. Absent is a **supported state**: both stages resolve unavailable and settle `skipped`, and the audio proxy serves only renditions that already exist. Requires `SYSTEM_AUTH_TOKEN` — the service is system-authed, so a URL without a token is the same failure wearing a 401. |
@@ -96,6 +97,7 @@ Optional, and rarely needed: with none of these set, each stage takes the first 
 | `ANTIPHONY_DENOISER` | `elevenlabs` \| `stub` |
 | `ANTIPHONY_TRIMMER` | `service` \| `stub` |
 | `ANTIPHONY_WAVEFORM` | `service` \| `stub` |
+| `ANTIPHONY_ASSESSOR` | `workers-ai` \| `stub` |
 
 Naming a stage's provider explicitly lets you mix them — a real transcriber next to a stub denoiser while evaluating one of them, say. Two behaviors are worth knowing before you reach for these:
 
@@ -112,7 +114,10 @@ Optional. Pins one tenant (`originAppId`) to a provider or model of its own, lea
 | `ANTIPHONY_APP_DENOISERS` | same shape |
 | `ANTIPHONY_APP_TRIMMERS` | same shape |
 | `ANTIPHONY_APP_WAVEFORMS` | same shape |
+| `ANTIPHONY_APP_ASSESSORS` | same shape (`voxpop:workers-ai,acme:stub`) |
 | `ANTIPHONY_APP_STT_MODELS` | `voxpop:scribe_v2,acme:scribe_v1` — the transcription model per tenant |
+| `ANTIPHONY_APP_ASSESS_MODELS` | `voxpop:@cf/cloudflare/clef` — the `assess` model per tenant |
+| `ANTIPHONY_APP_ASSESS_SETS` | `voxpop:quality+relevance` — named question sets evaluated by `assess` per tenant (default `quality`; `relevance` always includes `quality` and applies its questions to replies only) |
 
 Selection resolves in three layers, narrowest first: **tenant pin → deployment default → first available provider.** A tenant with no entry is unaffected by these existing at all.
 

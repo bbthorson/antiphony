@@ -29,6 +29,7 @@ export const TENANT_PROVIDER_VARS = {
     denoise: 'ANTIPHONY_APP_DENOISERS',
     trim: 'ANTIPHONY_APP_TRIMMERS',
     waveform: 'ANTIPHONY_APP_WAVEFORMS',
+    assess: 'ANTIPHONY_APP_ASSESSORS',
 } as const;
 
 /**
@@ -40,7 +41,11 @@ export const TENANT_PROVIDER_VARS = {
  */
 export const TENANT_MODEL_VARS = {
     transcribe: 'ANTIPHONY_APP_STT_MODELS',
+    assess: 'ANTIPHONY_APP_ASSESS_MODELS',
 } as const;
+
+/** Env var carrying per-tenant assess question sets (`appId:set+set`, e.g. `voxpop:quality+relevance`). */
+export const TENANT_ASSESS_SETS_VAR = 'ANTIPHONY_APP_ASSESS_SETS';
 
 export type TenantProviderStage = keyof typeof TENANT_PROVIDER_VARS;
 export type TenantModelStage = keyof typeof TENANT_MODEL_VARS;
@@ -65,6 +70,20 @@ export function tenantProvider(
  */
 export function tenantModel(stage: TenantModelStage, originAppId: string): string | undefined {
     return pairsFor(TENANT_MODEL_VARS[stage]).get(originAppId);
+}
+
+/**
+ * This tenant's configured assess question set names (`appId:set+set`), or
+ * undefined to take the default (`['quality']`).
+ */
+export function tenantAssessSets(originAppId: string): string[] | undefined {
+    const raw = pairsFor(TENANT_ASSESS_SETS_VAR).get(originAppId);
+    if (!raw) return undefined;
+    const names = raw
+        .split('+')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+    return names.length > 0 ? names : undefined;
 }
 
 function pairsFor(varName: string): Map<string, string> {

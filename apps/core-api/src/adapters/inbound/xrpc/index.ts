@@ -546,7 +546,9 @@ export function xrpcRoute(): Hono {
             const { id, processing } = validation.data;
             const originAppId = getOriginAppId(c);
 
-            const resolved = resolveInitialProcessing(originAppId, processing);
+            const resolved = resolveInitialProcessing(originAppId, processing, {
+                allowExistingTranscript: true,
+            });
             if (!resolved) {
                 return c.json(
                     xrpcError('InvalidRequest', 'Request must enable at least one processing stage'),

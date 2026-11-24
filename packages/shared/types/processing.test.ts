@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolveAudioVariant, type ProcessingState } from './processing';
+import {
+    DERIVED_STAGES,
+    PROCESSING_STAGES,
+    resolveAudioVariant,
+    toProcessingView,
+    type ProcessingState,
+} from './processing';
 
 /**
  * Tests for read-time variant resolution (plan step 7).
@@ -145,5 +151,24 @@ describe('resolveAudioVariant', () => {
             state({ waveform: 'ready', waveformPeaks: [5], processedBlobCid: 'v' }),
         );
         expect(canonical).toEqual(CANONICAL);
+    });
+});
+
+describe('assess stage registration', () => {
+    it('includes assess in PROCESSING_STAGES (last) and DERIVED_STAGES', () => {
+        expect(PROCESSING_STAGES).toContain('assess');
+        expect(PROCESSING_STAGES[PROCESSING_STAGES.length - 1]).toBe('assess');
+        expect(DERIVED_STAGES).toContain('assess');
+    });
+
+    it('projects assess onto ProcessingView via toProcessingView', () => {
+        const view = toProcessingView(
+            state({
+                transcribe: 'ready',
+                assess: 'ready',
+                processedBlobCid: 'internal-only',
+            }),
+        );
+        expect(view).toEqual({ transcribe: 'ready', assess: 'ready' });
     });
 });

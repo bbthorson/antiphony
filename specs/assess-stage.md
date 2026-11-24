@@ -1,6 +1,6 @@
 # The `assess` stage — typed judgements about a post
 
-**Status:** 📝 proposal 2026-10-10. Nothing is built. Adds a fifth enrichment
+**Status:** 🚧 Phase 1 built (2026-11-23); Phase 2 (`clef-omni` audio mode) deferred. Adds a fifth enrichment
 stage to the pipeline in [`enrichment-pipeline.md`](./enrichment-pipeline.md),
 selected through the seam in [`provider-selection.md`](./provider-selection.md),
 and reported through [`enrichment-webhooks.md`](./enrichment-webhooks.md).

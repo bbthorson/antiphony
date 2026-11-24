@@ -7,7 +7,13 @@ import {
 } from './audio-processing';
 import { buildPostUri } from './audio-posts';
 import type { AudioProcessingDependencies } from '../ports/audio-processing-dependencies';
-import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type {
+    AssessmentEnrichmentRecord,
+    AudioPostRecord,
+    TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
+import { QUALITY_SET, RELEVANCE_SET } from '../assess/question-sets';
+import type { AssessorPort } from '../ports/assessor';
 import { BYTE_MUTATING_STAGES, type ProcessingState } from 'shared/types/processing';
 
 const AUDIO_CID = 'bafkreioriginal';
@@ -983,6 +989,282 @@ describe('AudioProcessingService.process', () => {
             await new AudioProcessingService(deps, p).process('vox-pop', 'p1');
 
             expect(deps.releaseProcessingLease).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('assess', () => {
+        function makeAssessor(over?: Partial<AssessorPort>): AssessorPort {
+            return {
+                assess: vi.fn(async (input) => ({
+                    answers: Object.fromEntries(
+                        input.questions.map((q) => {
+                            if (q.kind === 'boolean') {
+                                return [q.id, { distribution: { true: 0.85, false: 0.15 }, top: 'true' }];
+                            }
+                            if (q.kind === 'choice') {
+                                return [
+                                    q.id,
+                                    {
+                                        distribution: { yes: 0.7, partly: 0.2, no: 0.1 },
+                                        top: 'yes',
+                                    },
+                                ];
+                            }
+                            return [
+                                q.id,
+                                {
+                                    distribution: { '1': 0.05, '2': 0.05, '3': 0.1, '4': 0.3, '5': 0.5 },
+                                    top: '5',
+                                },
+                            ];
+                        }),
+                    ),
+                    model: '@cf/cloudflare/clef-flash',
+                })),
+                ...over,
+            };
+        }
+
+        it('runs after transcribe, reads its transcript, and saves an assessment record', async () => {
+            const savedAssessments: AssessmentEnrichmentRecord[] = [];
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post, {
+                saveAssessment: vi.fn(async (_app, rec) => {
+                    savedAssessments.push(rec);
+                }),
+                newAssessmentId: vi.fn(() => 'a1'),
+            });
+
+            await new AudioProcessingService(deps, { ...p, assessor }).process('vox-pop', 'p1');
+
+            expect(assessor.assess).toHaveBeenCalledTimes(1);
+            expect((assessor.assess as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({
+                text: 'hello',
+            });
+            expect(savedAssessments).toHaveLength(1);
+            expect(savedAssessments[0]).toMatchObject({
+                id: 'a1',
+                subject: { uri: buildPostUri(appDidFor('vox-pop'), 'p1'), cid: 'bafyreipost' },
+                sets: [{ name: 'quality', version: 1 }],
+                model: '@cf/cloudflare/clef-flash',
+            });
+            const speech = savedAssessments[0]!.answers.find((a) => a.id === 'quality.speech');
+            expect(speech).toEqual({
+                id: 'quality.speech',
+                top: 'true',
+                distribution: [
+                    { value: 'true', probability: 850 },
+                    { value: 'false', probability: 150 },
+                ],
+            });
+            expect(patches).toEqual([{ transcribe: 'ready' }, { assess: 'ready' }]);
+        });
+
+        it('settles assess as skipped without calling the port when no transcript exists', async () => {
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post, {
+                getTranscriptBySubjectUri: vi.fn(async () => null),
+            });
+
+            await new AudioProcessingService(deps, { ...p, assessor }).process('vox-pop', 'p1');
+
+            expect(assessor.assess).not.toHaveBeenCalled();
+            expect(patches).toEqual([{ assess: 'skipped' }]);
+        });
+
+        it('settles assess as failed without calling the port when transcribe fails', async () => {
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post);
+            const failingTranscriber = {
+                transcribe: vi.fn(async () => {
+                    throw new Error('stt down');
+                }),
+            };
+
+            await new AudioProcessingService(deps, {
+                ...p,
+                transcriber: failingTranscriber,
+                assessor,
+            }).process('vox-pop', 'p1');
+
+            expect(assessor.assess).not.toHaveBeenCalled();
+            expect(patches).toEqual([{ transcribe: 'failed' }, { assess: 'failed' }]);
+        });
+
+        it('still runs assess when the transcript is empty (silence)', async () => {
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post, {
+                saveAssessment: vi.fn(async () => undefined),
+            });
+            const silentTranscriber = {
+                transcribe: vi.fn(async () => ({
+                    transcript: { segments: [], text: '' },
+                    model: 'stub-1',
+                })),
+            };
+
+            await new AudioProcessingService(deps, {
+                ...p,
+                transcriber: silentTranscriber,
+                assessor,
+            }).process('vox-pop', 'p1');
+
+            expect(assessor.assess).toHaveBeenCalledWith(expect.objectContaining({ text: '' }));
+            expect(patches).toEqual([{ transcribe: 'ready' }, { assess: 'ready' }]);
+        });
+
+        it('re-marks a ready assess as pending and recomputes when transcribe re-runs', async () => {
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'ready',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post, {
+                saveAssessment: vi.fn(async () => undefined),
+            });
+
+            await new AudioProcessingService(deps, { ...p, assessor }).process('vox-pop', 'p1');
+
+            expect(patches).toEqual([
+                { assess: 'pending' },
+                { transcribe: 'ready' },
+                { assess: 'ready' },
+            ]);
+            expect(assessor.assess).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves a ready assess alone when reprocess is false', async () => {
+            const assessor = makeAssessor();
+            const post = makePost({
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'ready',
+                    reprocess: false,
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps, patches } = makeDeps(post, {
+                saveAssessment: vi.fn(async () => undefined),
+            });
+
+            await new AudioProcessingService(deps, { ...p, assessor }).process('vox-pop', 'p1');
+
+            expect(assessor.assess).not.toHaveBeenCalled();
+            expect(patches).toEqual([{ transcribe: 'ready' }]);
+        });
+
+        it('drops relevance questions for a non-reply post and includes them with parent context for a reply', async () => {
+            const assessor = makeAssessor();
+            const savedAssessments: AssessmentEnrichmentRecord[] = [];
+
+            // 1. Prompt (non-reply): relevance questions must be omitted
+            const promptPost = makePost({
+                kind: 'prompt',
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps: promptDeps } = makeDeps(promptPost, {
+                saveAssessment: vi.fn(async (_app, rec) => {
+                    savedAssessments.push(rec);
+                }),
+            });
+
+            await new AudioProcessingService(promptDeps, {
+                ...p,
+                assessor,
+                assessSets: [QUALITY_SET, RELEVANCE_SET],
+            }).process('vox-pop', 'p1');
+
+            const promptInput = (assessor.assess as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+            expect(promptInput.questions.map((q: { id: string }) => q.id)).toEqual([
+                'quality.speech',
+                'quality.intelligible',
+                'quality.substantive',
+            ]);
+            expect(promptInput.parent).toBeUndefined();
+            expect(savedAssessments[0]!.sets).toEqual([{ name: 'quality', version: 1 }]);
+
+            // 2. Reply: relevance questions included + parent context passed
+            const parentUri = buildPostUri(appDidFor('vox-pop'), 'root1');
+            const replyPost = makePost({
+                id: 'r1',
+                kind: 'reply',
+                rootAuthorId: 'u0',
+                reply: {
+                    root: { uri: parentUri, cid: 'bafyreiroot' },
+                    parent: { uri: parentUri, cid: 'bafyreiroot' },
+                },
+                processing: {
+                    transcribe: 'pending',
+                    assess: 'pending',
+                    updatedAt: new Date('2026-07-03T00:00:00Z'),
+                },
+            });
+            const { deps: replyDeps } = makeDeps(replyPost, {
+                getParentContextByUri: vi.fn(async () => ({
+                    text: 'What is your favorite book?',
+                    transcript: 'Tell me about your favorite book.',
+                })),
+                saveAssessment: vi.fn(async (_app, rec) => {
+                    savedAssessments.push(rec);
+                }),
+            });
+
+            await new AudioProcessingService(replyDeps, {
+                ...p,
+                assessor,
+                assessSets: [QUALITY_SET, RELEVANCE_SET],
+            }).process('vox-pop', 'r1');
+
+            const replyInput = (assessor.assess as ReturnType<typeof vi.fn>).mock.calls[1]![0];
+            expect(replyInput.questions.map((q: { id: string }) => q.id)).toEqual([
+                'quality.speech',
+                'quality.intelligible',
+                'quality.substantive',
+                'relevance.answers',
+                'relevance.on_topic',
+            ]);
+            expect(replyInput.parent).toEqual({
+                text: 'What is your favorite book?',
+                transcript: 'Tell me about your favorite book.',
+            });
+            expect(savedAssessments[1]!.sets).toEqual([
+                { name: 'quality', version: 1 },
+                { name: 'relevance', version: 1 },
+            ]);
         });
     });
 });

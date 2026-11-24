@@ -85,8 +85,27 @@ export function postgresRemoteProcessingDependencies(
         readBlobBytes: shared.readBlobBytes,
         writeDerivedBlob: shared.writeDerivedBlob,
         saveTranscript: shared.saveTranscript,
+        getTranscriptBySubjectUri: shared.getTranscriptBySubjectUri,
+        saveAssessment: shared.saveAssessment,
+        newAssessmentId: shared.newAssessmentId,
         newTranscriptId: shared.newTranscriptId,
         now: shared.now,
+
+        async getParentContextByUri(originAppId, parentUri) {
+            const [parentRow, transcriptRec] = await Promise.all([
+                remote.getRemotePost(originAppId, parentUri),
+                shared.getTranscriptBySubjectUri?.(originAppId, parentUri) ?? Promise.resolve(null),
+            ]);
+            const transcriptText = transcriptRec
+                ? (transcriptRec.transcript.text ??
+                  transcriptRec.transcript.segments.map((s) => s.text).join(' ').trim())
+                : undefined;
+            if (!parentRow && transcriptText === undefined) return null;
+            return {
+                ...(parentRow?.record.text ? { text: parentRow.record.text } : {}),
+                ...(transcriptText !== undefined ? { transcript: transcriptText } : {}),
+            };
+        },
 
         async patchProcessingState(originAppId, uri, patch: Partial<Omit<ProcessingState, 'updatedAt'>>) {
             // As the hosted binding: a jsonb merge of the patch's own keys, the

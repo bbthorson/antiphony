@@ -56,7 +56,7 @@ export type ProcessingStageStatus = z.infer<typeof ProcessingStageStatusSchema>;
  * deliberately — silence detection keys off a noise floor, so on noisy input
  * the "silence" is not actually quiet and trim under-cuts.
  */
-export const PROCESSING_STAGES = ['denoise', 'trim', 'transcribe', 'waveform'] as const;
+export const PROCESSING_STAGES = ['denoise', 'trim', 'transcribe', 'waveform', 'assess'] as const;
 export const ProcessingStageSchema = z.enum(PROCESSING_STAGES);
 export type ProcessingStage = z.infer<typeof ProcessingStageSchema>;
 
@@ -64,7 +64,7 @@ export type ProcessingStage = z.infer<typeof ProcessingStageSchema>;
 export const BYTE_MUTATING_STAGES = ['denoise', 'trim'] as const satisfies readonly ProcessingStage[];
 
 /** Stages that are pure analysis over the final variant, modifying no audio. */
-export const DERIVED_STAGES = ['transcribe', 'waveform'] as const satisfies readonly ProcessingStage[];
+export const DERIVED_STAGES = ['transcribe', 'waveform', 'assess'] as const satisfies readonly ProcessingStage[];
 
 /**
  * What the calling app opts into, on `CreateAudioPostRequest`. All default
@@ -75,6 +75,7 @@ export const ProcessingRequestSchema = z.object({
     denoise: z.boolean().optional(),
     trim: z.boolean().optional(),
     waveform: z.boolean().optional(),
+    assess: z.boolean().optional(),
     /**
      * Whether a completed byte-mutating stage should invalidate and recompute
      * the derived artifacts that describe the old audio. Defaults to **true**
@@ -98,6 +99,7 @@ export const ProcessingStageMapSchema = z.object({
     denoise: ProcessingStageStatusSchema.optional(),
     trim: ProcessingStageStatusSchema.optional(),
     waveform: ProcessingStageStatusSchema.optional(),
+    assess: ProcessingStageStatusSchema.optional(),
 });
 export type ProcessingStageMap = z.infer<typeof ProcessingStageMapSchema>;
 

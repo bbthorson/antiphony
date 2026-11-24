@@ -4,6 +4,11 @@ import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import {
     ActorProfileRecordSchema,
+    AssessmentAnswerSchema,
+    AssessmentEnrichmentRecordSchema,
+    AssessmentOptionSchema,
+    AssessmentSetRefSchema,
+    AssessmentViewSchema,
     AudioEmbedSchema,
     AudioEmbedViewSchema,
     AudioPostRecordSchema,
@@ -330,6 +335,15 @@ const CASES: ParityCase[] = [
     },
     { lexicon: 'dev.antiphony.audio.transcript#timedTranscript', schema: TimedTranscriptSchema },
     { lexicon: 'dev.antiphony.audio.transcript#segment', schema: TranscriptSegmentSchema },
+    {
+        lexicon: 'dev.antiphony.audio.assessment#main',
+        schema: AssessmentEnrichmentRecordSchema,
+        extras: { id: STORAGE_FIELDS },
+    },
+    { lexicon: 'dev.antiphony.audio.assessment#view', schema: AssessmentViewSchema },
+    { lexicon: 'dev.antiphony.audio.assessment#setRef', schema: AssessmentSetRefSchema },
+    { lexicon: 'dev.antiphony.audio.assessment#answer', schema: AssessmentAnswerSchema },
+    { lexicon: 'dev.antiphony.audio.assessment#option', schema: AssessmentOptionSchema },
     { lexicon: 'dev.antiphony.actor.profile#main', schema: ActorProfileRecordSchema },
 
     // The XRPC view and request shapes (specs/xrpc-and-atproto-lex-strategy.md

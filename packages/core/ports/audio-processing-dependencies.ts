@@ -1,4 +1,8 @@
-import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type {
+    AssessmentEnrichmentRecord,
+    AudioPostRecord,
+    TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
 import type { ScopedSpaceKey } from 'shared/types/spaces';
 
@@ -60,6 +64,30 @@ export interface AudioProcessingDependencies {
 
     /** Persist a transcript enrichment record (last-write-wins by tenant and subject uri). */
     saveTranscript(originAppId: string, record: TranscriptEnrichmentRecord): Promise<void>;
+
+    /**
+     * Load the current transcript enrichment record for a post by tenant and
+     * subject URI, when `assess` runs without `transcribe` in the same pass.
+     */
+    getTranscriptBySubjectUri?(
+        originAppId: string,
+        subjectUri: string,
+    ): Promise<TranscriptEnrichmentRecord | null>;
+
+    /**
+     * Load parent post text + transcript for reply relevance assessment.
+     * Returns null when the parent post is not stored in this tenant.
+     */
+    getParentContextByUri?(
+        originAppId: string,
+        parentUri: string,
+    ): Promise<{ text?: string; transcript?: string } | null>;
+
+    /** Persist an assessment enrichment record (last-write-wins by tenant and subject uri). */
+    saveAssessment?(originAppId: string, record: AssessmentEnrichmentRecord): Promise<void>;
+
+    /** Generate a new unique assessment record id. */
+    newAssessmentId?(): string;
 
     /**
      * Merge a partial processing-state patch onto the post (sets `updatedAt`).

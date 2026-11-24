@@ -62,6 +62,11 @@
                     "ref": "dev.antiphony.audio.transcript#timedTranscript",
                     "description": "Machine transcript, lifted from the dev.antiphony.audio.transcript enrichment record at read time. Absent until transcription completes."
                 },
+                "assessment": {
+                    "type": "ref",
+                    "ref": "dev.antiphony.audio.assessment#view",
+                    "description": "Typed quality/relevance assessment, lifted from the dev.antiphony.audio.assessment enrichment record at read time when `processing.assess === 'ready'`."
+                },
                 "processing": {
                     "type": "ref",
                     "ref": "dev.antiphony.audio.defs#processingView",

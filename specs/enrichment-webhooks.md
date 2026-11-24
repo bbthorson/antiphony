@@ -67,8 +67,9 @@ One POST per stage that reaches a terminal state in a pass (not one per pass):
 
 - **`type`**, **`uri`** — added later (see below); the example shows the body as sent today.
 - **`postId`**, **`stage`**, **`status`** — exactly the three the consumer asked for.
-  `stage` ∈ `denoise | trim | transcribe | waveform`; `status` ∈ `ready | failed | skipped`
-  (the terminal states — `pending` never fires).
+  `stage` ∈ `denoise | trim | transcribe | waveform | assess`; `status` ∈ `ready | failed | skipped`
+  (the terminal states — `pending` never fires). **Receivers must ignore `stage` values they do
+  not know** (acknowledge 2xx and move on) so future stages remain additive.
 - **`originAppId`** — the tenant. A multi-tenant receiver needs it to route; a
   single-tenant one can ignore it. Cheap to include, expensive to retrofit.
 - **`occurredAt`** — server settle time, so a receiver can order events and detect a

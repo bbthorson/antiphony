@@ -1,4 +1,4 @@
-import type { AudioPostRecord } from 'shared/types/audio';
+import type { AudioPostRecord, TimedTranscript } from 'shared/types/audio';
 import type { ScopedSpaceKey } from 'shared/types/spaces';
 import {
     BYTE_MUTATING_STAGES,
@@ -8,11 +8,18 @@ import {
     type ProcessingStageMap,
     type ProcessingState,
 } from 'shared/types/processing';
+import {
+    ASSESS_QUESTION_SETS,
+    questionsForPost,
+    toPerMilleDistribution,
+    type AssessQuestionSet,
+} from '../assess/question-sets';
 import type { AudioProcessingDependencies, ProcessingSubject } from '../ports/audio-processing-dependencies';
 import type { TranscriberPort } from '../ports/transcription';
 import type { DenoiserPort } from '../ports/audio-denoiser';
 import type { TrimmerPort } from '../ports/audio-trimmer';
 import type { WaveformPort } from '../ports/audio-waveform';
+import type { AssessorPort } from '../ports/assessor';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { type ProcessingNotifierPort, noopNotifier } from '../ports/processing-notifier';
 import { postUriOf } from './audio-posts';
@@ -22,6 +29,9 @@ export interface ProcessingProviders {
     denoiser?: DenoiserPort;
     trimmer?: TrimmerPort;
     waveform?: WaveformPort;
+    assessor?: AssessorPort;
+    /** Question sets to run when `assess` executes. Defaults to `[quality]`. */
+    assessSets?: readonly AssessQuestionSet[];
 }
 
 /** Which stages a deployment can actually perform, given its wired providers. */
@@ -43,6 +53,7 @@ export function capabilitiesOf(providers: ProcessingProviders): ProcessingCapabi
         denoise: !!providers.denoiser,
         trim: !!providers.trimmer,
         waveform: !!providers.waveform,
+        assess: !!providers.assessor,
     };
 }
 
@@ -514,10 +525,26 @@ export class AudioProcessingService {
         // callback, since the property is mutable and the callback could run
         // later. Same reason as the `.some()` above. Removing it does not
         // compile.
-        const superseded =
+        const supersededSet = new Set<(typeof DERIVED_STAGES)[number]>(
             variantChanged && post.processing.reprocess !== false
                 ? DERIVED_STAGES.filter((stage) => post.processing?.[stage] === 'ready')
-                : [];
+                : [],
+        );
+
+        // Phase 1 `assess` reads the transcript, so a transcript that runs in
+        // this pass invalidates an existing `ready` assessment even when no
+        // byte-mutating stage ran (specs/assess-stage.md §3.2).
+        const transcribeWillRun =
+            (post.processing.transcribe === 'pending' || supersededSet.has('transcribe')) &&
+            this.hasRunnerFor('transcribe');
+        if (
+            transcribeWillRun &&
+            post.processing.reprocess !== false &&
+            post.processing.assess === 'ready'
+        ) {
+            supersededSet.add('assess');
+        }
+        const superseded = [...supersededSet];
 
         // A stage this deployment cannot run is excluded rather than marked
         // pending. Marking it would settle it `skipped` below, downgrading a
@@ -552,10 +579,14 @@ export class AudioProcessingService {
         }
 
         // --- Transcribe (uses the cleaned audio when denoise produced it) ---
+        let transcribeOutcome: 'not-run' | 'ready' | 'failed' | 'skipped' = 'not-run';
+        let freshTranscriptText: string | undefined;
         if (post.processing.transcribe === 'pending' || recompute.includes('transcribe')) {
             if (!this.providers.transcriber) {
+                transcribeOutcome = 'skipped';
                 await this.settle(originAppId, postId, subject, { transcribe: 'skipped' });
             } else if (!working) {
+                transcribeOutcome = 'failed';
                 await this.settle(originAppId, postId, subject, { transcribe: 'failed' });
             } else {
                 try {
@@ -573,9 +604,96 @@ export class AudioProcessingService {
                         model: result.model,
                         createdAt: this.deps.now(),
                     });
+                    freshTranscriptText = transcriptTextOf(result.transcript);
+                    transcribeOutcome = 'ready';
                     await this.settle(originAppId, postId, subject, { transcribe: 'ready' });
                 } catch {
+                    transcribeOutcome = 'failed';
                     await this.settle(originAppId, postId, subject, { transcribe: 'failed' });
+                }
+            }
+        }
+
+        // --- Assess (Phase 1 reads the transcript; runs after transcribe) ---
+        if (post.processing.assess === 'pending' || recompute.includes('assess')) {
+            if (!this.providers.assessor) {
+                await this.settle(originAppId, postId, subject, { assess: 'skipped' });
+            } else if (transcribeOutcome === 'failed') {
+                await this.settle(originAppId, postId, subject, { assess: 'failed' });
+            } else if (transcribeOutcome === 'skipped') {
+                await this.settle(originAppId, postId, subject, { assess: 'skipped' });
+            } else {
+                let transcriptText: string | null;
+                if (transcribeOutcome === 'ready') {
+                    transcriptText = freshTranscriptText ?? '';
+                } else {
+                    const existing = await this.deps.getTranscriptBySubjectUri?.(
+                        originAppId,
+                        subject.uri,
+                    );
+                    transcriptText = existing ? transcriptTextOf(existing.transcript) : null;
+                }
+
+                if (transcriptText === null) {
+                    await this.settle(originAppId, postId, subject, { assess: 'skipped' });
+                } else {
+                    try {
+                        const configuredSets =
+                            this.providers.assessSets && this.providers.assessSets.length > 0
+                                ? this.providers.assessSets
+                                : [ASSESS_QUESTION_SETS.quality!];
+                        const { sets, questions } = questionsForPost(
+                            configuredSets,
+                            post.kind === 'reply',
+                        );
+
+                        let parent: { text?: string; transcript?: string } | undefined;
+                        if (
+                            post.kind === 'reply' &&
+                            post.reply?.parent.uri &&
+                            questions.some((q) => q.appliesTo === 'reply')
+                        ) {
+                            const ctx = await this.deps.getParentContextByUri?.(
+                                originAppId,
+                                post.reply.parent.uri,
+                            );
+                            if (ctx) parent = ctx;
+                        }
+
+                        const result = await this.providers.assessor.assess({
+                            text: transcriptText,
+                            ...(parent ? { parent } : {}),
+                            questions,
+                        });
+
+                        const answers = questions.map((q) => {
+                            const ans = result.answers[q.id];
+                            if (!ans) {
+                                throw new Error(
+                                    `[assess] adapter omitted answer for question "${q.id}"`,
+                                );
+                            }
+                            return {
+                                id: q.id,
+                                top: ans.top,
+                                distribution: toPerMilleDistribution(ans.distribution),
+                            };
+                        });
+
+                        await this.deps.saveAssessment?.(originAppId, {
+                            id:
+                                this.deps.newAssessmentId?.() ??
+                                this.deps.newTranscriptId(),
+                            subject: { uri: subject.uri, cid: post.cid },
+                            sets,
+                            answers,
+                            model: result.model,
+                            createdAt: this.deps.now(),
+                        });
+                        await this.settle(originAppId, postId, subject, { assess: 'ready' });
+                    } catch {
+                        await this.settle(originAppId, postId, subject, { assess: 'failed' });
+                    }
                 }
             }
         }
@@ -670,4 +788,9 @@ function derivedSpace(post: AudioPostRecord): ScopedSpaceKey | undefined {
         skey: post.space.skey,
         ...(post.authority !== undefined ? { authority: post.authority } : {}),
     };
+}
+
+function transcriptTextOf(transcript: TimedTranscript): string {
+    if (transcript.text !== undefined) return transcript.text;
+    return transcript.segments.map((s) => s.text).join(' ').trim();
 }

@@ -1,0 +1,121 @@
+{
+    "lexicon": 1,
+    "id": "dev.antiphony.audio.assessment",
+    "description": "Typed probability judgements about a post's audio (speech presence, intelligibility, relevance to its prompt). PLATFORM enrichment owned by Antiphony, stored as its own record referencing the post by StrongRef — the same pattern as dev.antiphony.audio.transcript. Lifted into dev.antiphony.embed.audio#view.assessment at read time; never stored on the post itself.",
+    "defs": {
+        "main": {
+            "type": "record",
+            "description": "The assessment enrichment record for one post.",
+            "key": "tid",
+            "record": {
+                "type": "object",
+                "required": ["subject", "sets", "answers", "model", "createdAt"],
+                "properties": {
+                    "subject": {
+                        "type": "ref",
+                        "ref": "com.atproto.repo.strongRef",
+                        "description": "The post this assessment evaluates (uri + cid)."
+                    },
+                    "sets": {
+                        "type": "array",
+                        "items": { "type": "ref", "ref": "#setRef" },
+                        "description": "Named question sets and versions evaluated in this pass."
+                    },
+                    "answers": {
+                        "type": "array",
+                        "items": { "type": "ref", "ref": "#answer" },
+                        "description": "Typed probability distributions keyed by stable question id."
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Identifier of the model/provider that produced this assessment (provenance)."
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "datetime",
+                        "description": "When the assessment was generated (ISO 8601)."
+                    }
+                }
+            }
+        },
+        "view": {
+            "type": "object",
+            "description": "The read-time view of an assessment lifted into dev.antiphony.embed.audio#view.assessment (omits `subject`, which is already the enclosing post).",
+            "required": ["sets", "answers", "model", "createdAt"],
+            "properties": {
+                "sets": {
+                    "type": "array",
+                    "items": { "type": "ref", "ref": "#setRef" },
+                    "description": "Named question sets and versions evaluated in this pass."
+                },
+                "answers": {
+                    "type": "array",
+                    "items": { "type": "ref", "ref": "#answer" },
+                    "description": "Typed probability distributions keyed by stable question id."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Identifier of the model/provider that produced this assessment (provenance)."
+                },
+                "createdAt": {
+                    "type": "string",
+                    "format": "datetime",
+                    "description": "When the assessment was generated (ISO 8601)."
+                }
+            }
+        },
+        "setRef": {
+            "type": "object",
+            "description": "Identifies a question set and its version so prompt edits stay distinguishable from model changes.",
+            "required": ["name", "version"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Stable question set name (e.g. `quality`, `relevance`)."
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Monotonic version of the question set prompts."
+                }
+            }
+        },
+        "answer": {
+            "type": "object",
+            "description": "Probability distribution for a single assessment question.",
+            "required": ["id", "top", "distribution"],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Stable question identifier (e.g. `quality.speech`, `relevance.answers`)."
+                },
+                "top": {
+                    "type": "string",
+                    "description": "The option with the highest probability (convenience, not a verdict)."
+                },
+                "distribution": {
+                    "type": "array",
+                    "items": { "type": "ref", "ref": "#option" },
+                    "description": "Per-option probability mass in per-mille integers."
+                }
+            }
+        },
+        "option": {
+            "type": "object",
+            "description": "One allowed answer option and its per-mille probability.",
+            "required": ["value", "probability"],
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "description": "Option label (`true`/`false` for booleans, choice value, or score string)."
+                },
+                "probability": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000,
+                    "description": "Per-mille probability (0–1000). AT Protocol data has no floats."
+                }
+            }
+        }
+    }
+}

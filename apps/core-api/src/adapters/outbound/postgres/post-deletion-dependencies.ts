@@ -104,6 +104,10 @@ export function postgresPostDeletionDependencies(
                     delete from audio_transcripts t
                      using removed r
                      where t.origin_app_id = $1 and t.subject_uri = r.uri
+                ), assessments as (
+                    delete from audio_assessments a
+                     using removed r
+                     where a.origin_app_id = $1 and a.subject_uri = r.uri
                 ), queued as (
                     insert into blob_deletions (origin_app_id, cid)
                     select distinct $1::text, c.cid

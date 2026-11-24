@@ -1,4 +1,7 @@
-import type { TranscriptEnrichmentRecord } from 'shared/types/audio';
+import type {
+    AssessmentEnrichmentRecord,
+    TranscriptEnrichmentRecord,
+} from 'shared/types/audio';
 import type { ProcessingState } from 'shared/types/processing';
 import { cidForBytes } from '../../../lib/cid.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
@@ -79,6 +82,57 @@ export function postgresAudioProcessingDependencies(
                 `,
                 [record.id, JSON.stringify(record), record.createdAt, originAppId],
             );
+        },
+
+        async getTranscriptBySubjectUri(
+            originAppId: string,
+            subjectUri: string,
+        ): Promise<TranscriptEnrichmentRecord | null> {
+            const map = await posts.getTranscriptsBySubjectUris([
+                { originAppId, uri: subjectUri },
+            ]);
+            return map.get(subjectUri) ?? null;
+        },
+
+        async getParentContextByUri(
+            originAppId: string,
+            parentUri: string,
+        ): Promise<{ text?: string; transcript?: string } | null> {
+            const rkey = parentUri.split('/').pop();
+            const [parentPost, transcriptMap] = await Promise.all([
+                rkey ? posts.getPostById(originAppId, rkey) : Promise.resolve(null),
+                posts.getTranscriptsBySubjectUris([{ originAppId, uri: parentUri }]),
+            ]);
+            const parentTranscript = transcriptMap.get(parentUri)?.transcript;
+            const transcriptText = parentTranscript
+                ? (parentTranscript.text ??
+                  parentTranscript.segments.map((s) => s.text).join(' ').trim())
+                : undefined;
+            if (!parentPost && transcriptText === undefined) return null;
+            return {
+                ...(parentPost?.text ? { text: parentPost.text } : {}),
+                ...(transcriptText !== undefined ? { transcript: transcriptText } : {}),
+            };
+        },
+
+        async saveAssessment(originAppId: string, record: AssessmentEnrichmentRecord): Promise<void> {
+            // Last-write-wins by tenant and subject uri (migration 0011),
+            // mirroring saveTranscript.
+            await sql.query(
+                `
+                insert into audio_assessments (id, origin_app_id, record, created_at)
+                values ($1, $4, $2::jsonb, $3)
+                on conflict (origin_app_id, subject_uri) do update
+                    set id         = excluded.id,
+                        record     = excluded.record,
+                        created_at = excluded.created_at
+                `,
+                [record.id, JSON.stringify(record), record.createdAt, originAppId],
+            );
+        },
+
+        newAssessmentId(): string {
+            return newTid();
         },
 
         async patchProcessingState(
