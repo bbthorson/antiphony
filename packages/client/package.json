@@ -66,7 +66,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@antiphony/shared": "^0.15.1"
+    "@antiphony/shared": "^0.16.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

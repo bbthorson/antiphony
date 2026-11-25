@@ -25,7 +25,7 @@ const TENANT = 'vox-pop';
 /** A Bardcast table's group DID, and a player's record in its campaign space (Phase B). */
 const GROUP = 'did:plc:group0000000000000000000';
 const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
-const SPACE_URI = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
+const SPACE_URI = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
 
 /** Stand-in hashes: the real ones are DAG-CBOR and raw sha2-256 (core-api lib/cid.ts). */
 const recordCid = (value: unknown) => `bafyrec-${JSON.stringify(value).length}-${JSON.stringify(value).slice(-12)}`;
@@ -87,7 +87,7 @@ function fakeSpaces(clock: { now: Date }) {
         open: vi.fn(async (space, delegation) => {
             opened.push({ space, token: delegation.delegationToken });
             if (answer) return answer;
-            const prefix = `at://${space.authority}/space/${space.type}/${space.skey}/`;
+            const prefix = `at:space/${space.authority}/${space.type}/${space.skey}/`;
             return {
                 ok: true,
                 reader: {
@@ -282,27 +282,29 @@ describe('parseRemotePostUri', () => {
     });
 
     it.each([
-        ['a space record whose author is not a DID', `at://${GROUP}/space/${SPACE.type}/c1/alice/dev.antiphony.audio.post/3k`],
-        ['a space record with a bad type', `at://${GROUP}/space/campaign/c1/${DID}/dev.antiphony.audio.post/3k`],
-        ['a space record in another collection', `at://${GROUP}/space/${SPACE.type}/c1/${DID}/app.bsky.feed.post/3k`],
+        ['a space record whose author is not a DID', `at:space/${GROUP}/${SPACE.type}/c1/alice/dev.antiphony.audio.post/3k`],
+        ['a space record with a bad type', `at:space/${GROUP}/campaign/c1/${DID}/dev.antiphony.audio.post/3k`],
+        ['a space record in another collection', `at:space/${GROUP}/${SPACE.type}/c1/${DID}/app.bsky.feed.post/3k`],
         ['another collection', `at://${DID}/app.bsky.feed.post/3k`],
         ['a handle authority', 'at://alice.example/dev.antiphony.audio.post/3k'],
         ['not an at URI', 'https://example.com/x'],
+        ['the alpha-era space form', `at://${GROUP}/space/${SPACE.type}/c1/${DID}/dev.antiphony.audio.post/3k`],
     ])('refuses %s', (_label, uri) => {
         expect(() => parseRemotePostUri(uri)).toThrow(expect.objectContaining({ status: 400, code: 'REMOTE_URI_UNSUPPORTED' }));
     });
 });
 
 describe('parseRemoteSpaceUri', () => {
-    it('parses at://{authority}/space/{type}/{skey}', () => {
-        expect(parseRemoteSpaceUri(`at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`)).toEqual(SPACE);
+    it('parses at:space/{authority}/{type}/{skey}', () => {
+        expect(parseRemoteSpaceUri(`at:space/${GROUP}/${SPACE.type}/${SPACE.skey}`)).toEqual(SPACE);
     });
 
     it.each([
-        `at://${GROUP}/space/${SPACE.type}`,
-        `at://alice.example/space/${SPACE.type}/t`,
-        `at://${GROUP}/space/notannsid/t`,
+        `at:space/${GROUP}/${SPACE.type}`,
+        `at:space/alice.example/${SPACE.type}/t`,
+        `at:space/${GROUP}/notannsid/t`,
         `at://${GROUP}/notspace/${SPACE.type}/t`,
+        `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`, // the alpha-era form
     ])('refuses %s', (uri) => {
         expect(() => parseRemoteSpaceUri(uri)).toThrow(expect.objectContaining({ status: 400 }));
     });
@@ -698,7 +700,7 @@ describe('RemotePostService', () => {
     });
 
     describe('recheckSpace (Phase C)', () => {
-        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+        const SPACE_REF = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}`;
         const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
         const later = (ms: number) => (clock.now = new Date(clock.now.getTime() + ms));
         async function registered() {
@@ -803,7 +805,7 @@ describe('RemotePostService', () => {
 
     describe('sweep: recheck requests (Phase C)', () => {
         const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
-        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+        const SPACE_REF = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}`;
 
         it('asks for a recheck of a space with a row read on a delegation, once due', async () => {
             const cid = sp.publish(SPACE_URI, audioRecord());

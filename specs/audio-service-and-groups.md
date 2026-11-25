@@ -185,13 +185,13 @@ of the URI:
 
 | Record | URI | Author segment |
 | :--- | :--- | :--- |
-| Bardcast campaign prompt (asked by the DM, a member) | `at://{tableDid}/space/{campaignType}/{campaignId}/{dmDid}/…` | the DM's DID |
-| Bardcast player reply | `at://{tableDid}/space/{campaignType}/{campaignId}/{playerDid}/…` | the player's DID |
-| Bardcast chapter, seat, action log, state events | `at://{tableDid}/space/{campaignType}/{campaignId}/{tableDid}/…` | the table's DID |
-| Bardcast creation recording | `at://{playerDid}/space/{playerType}/{skey}/{playerDid}/…` | the player's DID (personal-private) |
+| Bardcast campaign prompt (asked by the DM, a member) | `at:space/{tableDid}/{campaignType}/{campaignId}/{dmDid}/…` | the DM's DID |
+| Bardcast player reply | `at:space/{tableDid}/{campaignType}/{campaignId}/{playerDid}/…` | the player's DID |
+| Bardcast chapter, seat, action log, state events | `at:space/{tableDid}/{campaignType}/{campaignId}/{tableDid}/…` | the table's DID |
+| Bardcast creation recording | `at:space/{playerDid}/{playerType}/{skey}/{playerDid}/…` | the player's DID (personal-private) |
 | Vox Pop org prompt | `at://{orgDid}/dev.antiphony.audio.post/{rkey}` (flat, public) | — |
 | Vox Pop personal prompt | `at://{voxPopDid}/dev.antiphony.audio.post/{rkey}` | — |
-| Vox Pop reply | `at://{authority}/space/audio.voxpop.space.replies/{promptRkey}/{authority}/…` | the prompt's authority (unchanged) |
+| Vox Pop reply | `at:space/{authority}/audio.voxpop.space.replies/{promptRkey}/{authority}/…` | the prompt's authority (unchanged) |
 
 Bardcast's narrator prompts during creation are posted by Bardcast into the player's personal
 space. Whether a personal-private space accepts a second writer is a protocol detail to check

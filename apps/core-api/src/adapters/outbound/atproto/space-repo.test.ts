@@ -26,7 +26,7 @@ import { spaceRepo } from './space-repo.js';
 const GROUP = 'did:plc:groupaaaaaaaaaaaaaaaaaaa';
 const PLAYER = 'did:plc:playeraaaaaaaaaaaaaaaaaa';
 const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
-const SPACE_URI = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+const SPACE_URI = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}`;
 const REF = { did: PLAYER, collection: 'dev.antiphony.audio.post', rkey: '3kspace000001' };
 const RECORD_URI = `${SPACE_URI}/${PLAYER}/${REF.collection}/${REF.rkey}`;
 const BLOB = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 9, 9]);

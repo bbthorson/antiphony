@@ -24,50 +24,57 @@ From [Getting ready for the Spaces public beta](https://atproto.com/blog/getting
   November 12) already does the whole credential exchange and MAC verification.
 - **Promotion to end users starts in early 2027.** December is for developers.
 
-## The one open protocol change: the URI format
+## The URI format: `at:space/` (decided 2026-11-24)
 
-The protocol team is about 75% confident that space URIs move to an `at:space/` form before the
-beta ([proposal thread](https://discourse.atmosphere.community/t/combined-uri-syntax-proposal-at-public-and-at-space/1393)):
+Space URIs moved to their own form in the [2026-11-24 alpha](https://discourse.atmosphere.community/t/atproto-spaces-alpha-updates/1129/20)
+([migration prompt](https://github.com/bluesky-social/atproto/blob/permissioned-data/alpha-migrations/prompt-11-24-26.md)):
 
 ```
-at:space/<space-account>/<space-type>/<skey>/<repo-account>/<collection>/<rkey>
+at:space/{spaceDid}/{spaceType}/{skey}                                   a space (`space-ref`)
+at:space/{spaceDid}/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}   a record in it
 ```
 
-The decision follows the IETF working group meeting the week of 2026-11-16. Public URIs keep
-`at://` indefinitely, so flat records are unaffected.
+in place of `at://{spaceDid}/space/{spaceType}/{skey}/…`. Public URIs keep `at://`, so flat
+records are unaffected. Both DIDs must be DIDs, never handles, and only those two lengths are
+valid. The alpha SDKs read the old form leniently and write only the new one. **At the beta the
+old form stops parsing.**
 
-**Status 2026-11-21: still undecided.** The IETF 127 meeting (week of 11-16) didn't settle it. The
-ATP working group floated the path-based form above because `at://` puts a DID, with its several
-colons, in the RFC 3986 authority position, which generic URI syntax doesn't allow. Proposal 0016
-and the reference PDS still use `at://{spaceDid}/space/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`,
-and so does Antiphony. The protocol team calls the URI syntax the one spec detail that may still
-change before the beta. Expect the answer in the December 1 beta docs and SDK.
+**What Antiphony did (contract `0.11.0`, `@antiphony/shared` `0.16.0`).** It switched outright,
+as decided on 2026-11-14 (before any kept recording), with no period of accepting both on input:
 
-**A format change is caught when we bump the pin.** Antiphony builds space URIs through
-`@atproto/syntax` (`SpaceRef`), but `parsePostUri` checks the `at://` prefix itself. Two tests in
-`packages/core/services/audio-posts.spaces.test.ts` cover the gap. One compares a built URI with
-the literal `at://…/space/…` string, and the other parses a built URI back. If the beta SDK builds
-`at:space/`, both fail at step 6's pin bump. So the change can't ship silently, with URIs built in
-one form and rejected on read.
+- **Emits only `at:space/`.** Post URIs (`buildRecordUri`, through `SpaceRef#recordUri`), space
+  views (`spaceUri`), and the remote-space URI (`spaceUriOf`) all print the new form.
+- **Accepts only `at:space/` as input.** `parsePostUri`, `parseRemotePostUri`,
+  `parseRemoteSpaceUri`, `RemoteSpaceUriSchema` and `SpaceViewSchema` refuse the old form.
+  `StrongRefSchema` admits both prefixes, because it also parses stored records (next point);
+  the services check the shape they need.
+- **Reads alpha-era record values leniently.** A record's StrongRefs and an enrichment's
+  `subject` are sealed into its CID, so a space reply recorded before 11-24 names its parent in
+  the old form for good. Those values go through `normalizeAtUri`
+  (`packages/core/services/space-uri.ts`, over upstream's temporary `fromLegacySpaceUri`) before
+  they are compared or used as keys: the thread-root check, the deletion walk, the parent
+  context for `assess`, and the transcript and assessment maps.
+- **Migration `0012_space_uri_form.sql`.** Rewrites the columns Antiphony writes itself
+  (`deleted_posts.uri`, `remote_posts.uri`, `deleted_remote_posts.uri`), widens
+  `remote_posts_uri_shape`, and redefines the generated `reply_parent_uri`, `reply_root_uri` and
+  `subject_uri` columns to normalize, so every index holds the current form. Re-runnable: it only
+  matches the old form. Record JSON is untouched.
+- **Pins** moved to `0.0.0-spaces-alpha-20261124235736`. That alpha depends on the stable
+  `lex-data` and `lex-cbor` `0.1.11`, so `lex-json` moved to stable `0.1.10` (what `lex-rpc` pins)
+  and the root `overrides` came out: the alpha packages now pin each other exactly.
 
-**Why it matters here.** Antiphony mints and stores space URIs in several places. Changing them
-breaks the contract (a `0.x` minor):
-- the `RemoteSpaceUriSchema` regex in `@antiphony/shared` (`types/remote-posts.ts`);
-- `spaceUriOf` and the space parsers in `packages/core/services/remote-posts.ts`;
-- `buildRecordUri` and `parsePostUri` in `packages/core/services/audio-posts.ts`. The builder
-  goes through `SpaceRef#recordUri`, so it follows `@atproto/syntax`; the parser doesn't;
-- the descriptions in the `registerPost`, `listRemotePosts` and `recheckRemoteSpace` lexicons,
-  `defs.json`, the REST route descriptions, and `migrations/0002_spaces.sql`'s comment;
-- stored rows: hosted posts placed in a space, and remote posts registered from a space.
+**Left alone, deliberately.** `migrations/0002_spaces.sql` still describes the old form in a
+comment; an applied migration's checksum is verified, so it is never edited. Idempotency-key
+replays of responses cached before the deploy can still carry old-form URIs until they expire.
 
-**Decision for now:** no Bardcast recording is kept until the URI format is announced. Nothing
-is kept yet ([`audio-service-and-groups.md`](./audio-service-and-groups.md), "Why now"), so
-switching costs a contract bump and nothing more. If `at:space/` is chosen, switch outright
-before the first kept recording. With no corpus, there's nothing to stay compatible with.
+**Not affected.** The 11-24 alpha's other changes: Antiphony makes no space call on an app
+password (it reads on a delegation and a space credential), runs no PDS, imports no archives,
+declares no space type with collections (`anySpace` lists none), and doesn't use `lex-space`'s
+typed record helpers or `records()`.
 
-**Decided 2026-11-21: wait for the beta (Brad).** Don't prepare the switch ahead of time, and don't
-let Bardcast keep recordings under `at://` early. Revisit around **2026-12-05** if the beta hasn't
-answered it by then. Bardcast stays unable to keep recordings until it does.
+**Deploy order (tenants).** A tenant that validates Antiphony's responses with
+`@antiphony/shared` `0.15.x` refuses an `at:space/` URI in `SpaceView.uri`, `RemoteSpaceUriSchema`
+or a StrongRef. Tenants move to `0.16.0` first; then core-api deploys and migration 0012 runs.
 
 ## Names: October 29 alpha → November 12 alpha
 
@@ -90,9 +97,8 @@ place. Sources: the [November 12 migration prompt](https://github.com/bluesky-so
 | `createSpaceToken`, `createSpaceSigHeaders(key, opts)` | `createDelegationToken`, `createSpaceCredential`, `createSpaceSigHeaders({ …, keypair })` → `{ headers }` | `@atproto/space`. |
 | Space type declaration `name`; scope parameter `type` | `title`; `spaceType` (`space?spaceType=…&authority=*`) | The positional scope form `space:<type>?…` is unchanged. |
 
-Unchanged: `#atproto_kem`, `com.atproto.space.getDelegationToken`, `getRecord`, `getBlob`, token
-lifetimes (delegation 60 s and single use; credential 600 s), and the `at://…/space/…` URI shape
-(for now; see above).
+Unchanged: `#atproto_kem`, `com.atproto.space.getDelegationToken`, `getRecord`, `getBlob`, and token
+lifetimes (delegation 60 s and single use; credential 600 s). The URI shape changed on 11-24 (above).
 
 **Antiphony's own policy names.** The tenant spaces API (`/api/v1/spaces`, Phase 2 of
 [`spaces.md`](./spaces.md)) still takes `readPolicy` / `writePolicy` of `public`, `member-list`
@@ -106,8 +112,8 @@ back, adopt the protocol's three policies then. Don't keep a translation layer.
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | Now | Pin `@atproto/space`, `syntax` and `crypto` to `0.0.0-spaces-alpha-20261113224550`. Port Phase C's reader to `authorizeSpaceSync` and the new MAC. Check it against the reference PDS. | antiphony | **Done 2026-11-14** (CHANGELOG, Unreleased). Conformance: `space-repo.conformance.test.ts`, 6 of 6. |
 | 2 | Now | Update the specs and docs to these names, so tenants don't build to old ones. | antiphony | **Done 2026-11-14** |
-| 3 | Week of 11-16, now Dec 1 | **URI decision.** Watch the thread and the beta docs and SDK. If `at:space/`, switch every place listed above in one contract minor, before any kept recording. | antiphony | **Waiting on upstream.** Still undecided after IETF 127 (2026-11-21); expected with the beta. Revisit 12-05. |
-| 4 | Each Thursday alpha (11-19, 11-26 if any) | Bump the pin, run the unit suite and the conformance test, and read that week's migration prompt. | antiphony | **11-17 alpha done 2026-11-21:** pinned to `0.0.0-spaces-alpha-20261117141222`; no migration prompt published for it; unit suite and conformance (6 of 6) pass with no code changes. |
+| 3 | Week of 11-16, now Dec 1 | **URI decision.** Watch the thread and the beta docs and SDK. If `at:space/`, switch every place listed above in one contract minor, before any kept recording. | antiphony | **Done 2026-11-25.** `at:space/` chosen in the 11-24 alpha; switched in contract `0.11.0` (above). Bardcast may keep recordings once it deploys. |
+| 4 | Each Thursday alpha (11-19, 11-26 if any) | Bump the pin, run the unit suite and the conformance test, and read that week's migration prompt. | antiphony | **11-17 alpha done 2026-11-21:** pinned to `0.0.0-spaces-alpha-20261117141222`; no migration prompt published for it; unit suite and conformance (6 of 6) pass with no code changes. **11-24 alpha done 2026-11-25:** pinned to `0.0.0-spaces-alpha-20261124235736`, with its [migration prompt](https://github.com/bluesky-social/atproto/blob/permissioned-data/alpha-migrations/prompt-11-24-26.md) applied (the URI switch, step 3). Unit suites pass; conformance not rerun here. |
 | 5 | Before Dec 1 | **Tenants:** Bardcast and Vox Pop build `com.atproto.managedspace.checkAccess` (not `checkUserAccess`) where they manage spaces. They rename `name` → `title` in space type declarations and `type` → `spaceType` in named OAuth scopes. They create spaces with one of the three policies. | bardcast, vox-pop | |
 | 6 | Dec 1 | **Beta.** Move the pins to the beta release (watch whether it ships as stable versions; if so, drop the Dependabot ignores and the root `overrides`). Rerun conformance. Deploy core-api. | antiphony | |
 | 7 | Dec 1 + days | **Live check.** Phase C against real accounts on Bluesky's PDS and a group on `opensocial.fyi`: a delegation from a test account, a record read with a verified MAC, a blob. This needs test accounts Brad creates. | antiphony, Brad | |

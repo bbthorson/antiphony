@@ -15,7 +15,7 @@ import {
 const AT = '2026-11-12T10:00:00.000Z';
 const HOSTED = 'at://did:web:voxpop.example/dev.antiphony.audio.post/3kb2hosted';
 const REMOTE = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
-const SPACE = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+const SPACE = 'at:space/did:plc:groupaaaaaaaaaaaaaaaaaaa/game.bardcast.space.campaign/thornwood';
 
 const SETTLED_MIN = { type: 'stage.settled', uri: REMOTE, originAppId: 'vox-pop', stage: 'waveform', status: 'skipped', occurredAt: AT };
 const SETTLED_FULL = { ...SETTLED_MIN, uri: HOSTED, postId: '3kb2hosted', stage: 'transcribe', status: 'ready' };

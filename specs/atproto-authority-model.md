@@ -132,7 +132,7 @@ Decided by Brad. The full model is in Vox Pop's `specs/organizations.md` § 0.
 - **Prompts stay public, outside any space.** A prompt is meant to be seen and answered
   everywhere, so relays, AppViews, unfurls and embeds must reach it.
 - **Each prompt's replies live in a reply space for that prompt**, under the prompt's authority:
-  `at://{authority}/space/audio.voxpop.space.replies/{promptRkey}`. The org keeps its replies as
+  `at:space/{authority}/audio.voxpop.space.replies/{promptRkey}`. The org keeps its replies as
   well as its prompts; Vox Pop keeps the id map (D5).
 - **Access is Vox Pop's decision**, through `managing-app` policies: the prompt's author, org
   members when the prompt's replies are open to the org, and people the author approved. Never
@@ -148,7 +148,7 @@ hosted for them until their PDS can hold spaces. Outsiders' contributions (Vox P
 works an app generates for a group keep the authority's DID, as below.
 
 Decided by Brad. A space record's URI has an author segment:
-`at://{authority}/space/{type}/{skey}/{author}/{collection}/{rkey}`. For everything Antiphony
+`at:space/{authority}/{type}/{skey}/{author}/{collection}/{rkey}`. For everything Antiphony
 holds, that segment is the **authority's DID**, and the person who recorded it is the
 `authorId` / `authorDid` facet.
 

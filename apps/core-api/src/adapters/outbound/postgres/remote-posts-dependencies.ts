@@ -13,6 +13,7 @@ import type {
     RemoteSweepRow,
 } from '@antiphony/core/ports/remote-posts-dependencies';
 import type { StorageService } from '@antiphony/core/services/storage';
+import { normalizeAtUri } from '@antiphony/core/services/space-uri';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import {
@@ -403,7 +404,7 @@ export function postgresRemotePostDependencies(
             );
             for (const row of rows) {
                 const parsed = TranscriptEnrichmentRecordSchema.safeParse(row.record);
-                if (parsed.success) map.set(parsed.data.subject.uri, parsed.data);
+                if (parsed.success) map.set(normalizeAtUri(parsed.data.subject.uri), parsed.data);
             }
             return map;
         },
@@ -417,7 +418,7 @@ export function postgresRemotePostDependencies(
             );
             for (const row of rows) {
                 const parsed = AssessmentEnrichmentRecordSchema.safeParse(row.record);
-                if (parsed.success) map.set(parsed.data.subject.uri, parsed.data);
+                if (parsed.success) map.set(normalizeAtUri(parsed.data.subject.uri), parsed.data);
             }
             return map;
         },

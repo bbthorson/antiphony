@@ -16,7 +16,7 @@
                     },
                     "space": {
                         "type": "string",
-                        "description": "Only records in this space, as a space URI: at://{authority}/space/{type}/{skey}."
+                        "description": "Only records in this space, as a space URI: at:space/{authority}/{type}/{skey}."
                     },
                     "kind": {
                         "type": "string",

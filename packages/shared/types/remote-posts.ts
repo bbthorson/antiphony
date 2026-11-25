@@ -19,18 +19,20 @@ import { SpaceKeySchema } from './spaces';
 
 /**
  * A remote post's URI: a repo record, `at://{did}/{collection}/{rkey}`, or a
- * space record, `at://{authority}/space/{type}/{skey}/{authorDid}/{collection}/{rkey}`.
+ * space record, `at:space/{authority}/{type}/{skey}/{authorDid}/{collection}/{rkey}`.
  */
 export const RemotePostUriSchema = StrongRefSchema.shape.uri;
 
 /**
- * A space held outside Antiphony, as a URI: `at://{authority}/space/{type}/{skey}`.
- * The authority is the group's DID; it is never registered here.
+ * A space held outside Antiphony, as a URI: `at:space/{authority}/{type}/{skey}`.
+ * The authority is the group's DID; it is never registered here. The alpha-era
+ * form, `at://{authority}/space/{type}/{skey}`, is refused: upstream moved to
+ * `at:space/` on 2026-11-24, and drops the old form at the beta.
  */
 export const RemoteSpaceUriSchema = z
     .string()
     .max(512)
-    .regex(/^at:\/\/did:[a-z]+:[^/]+\/space\/[^/]+\/[^/]+$/, 'Must be at://{did}/space/{type}/{skey}');
+    .regex(/^at:space\/did:[a-z]+:[^/]+\/[^/]+\/[^/]+$/, 'Must be at:space/{did}/{type}/{skey}');
 
 /** A space held outside Antiphony: its authority's DID, type and key. */
 export const RemoteSpaceSchema = SpaceKeySchema.extend({ authority: DidStringSchema });
@@ -261,7 +263,7 @@ export type DeleteRemotePostResult = z.infer<typeof DeleteRemotePostResultSchema
  * records in one space against their writers' PDSes, on a fresh delegation.
  */
 export const RecheckRemoteSpaceRequestSchema = z.object({
-    /** The space, `at://{authority}/space/{type}/{skey}`. */
+    /** The space, `at:space/{authority}/{type}/{skey}`. */
     space: RemoteSpaceUriSchema,
     /** A fresh delegation from a member who can read the space. Single use. */
     delegationToken: SpaceTokenSchema,

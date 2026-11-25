@@ -80,6 +80,7 @@ Neither break so far has introduced `/v2` — both were staged in place under
 | `0.10.7` | Listing remote posts: `dev.antiphony.audio.listRemotePosts` and `getRemotePosts`, each an XRPC query with a REST twin (`GET /api/v1/remote-posts/list` and `/batch`). The first methods built lexicon-first ([`xrpc-surface.md`](./xrpc-surface.md)). New routes, so patch. |
 | `0.10.8` | Tenancy stats ([`tenancy-stats.md`](./tenancy-stats.md)): `dev.antiphony.tenant.getStats` and `GET /api/v1/stats`. New route, so patch. The remote-post XRPC methods (`registerPost` and five more) and the service DID document landed with it; neither is part of the OpenAPI contract. |
 | `0.10.9` | The `DIDs` descriptions stop offering opensocial groups (a Vox Pop org, a Bardcast table) as examples: their DIDs can't pass the custody check. Documentation of unchanged behaviour, so patch. |
+| `0.11.0` | Space URIs move to `at:space/…` (the 2026-11-24 Spaces alpha, [`spaces-beta-readiness.md`](./spaces-beta-readiness.md)): emitted in the new form and accepted only in it. Breaking, so minor. `@antiphony/shared` 0.16.0. |
 
 ### Next: the enrichment pipeline
 

@@ -15,7 +15,7 @@
                         "uri": {
                             "type": "string",
                             "format": "at-uri",
-                            "description": "The record's URI: at://{did}/dev.antiphony.audio.post/{rkey}, or for a space record at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}."
+                            "description": "The record's URI: at://{did}/dev.antiphony.audio.post/{rkey}, or for a space record at:space/{authority}/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}."
                         },
                         "cid": {
                             "type": "string",

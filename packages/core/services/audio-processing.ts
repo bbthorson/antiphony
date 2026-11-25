@@ -23,6 +23,7 @@ import type { AssessorPort } from '../ports/assessor';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { type ProcessingNotifierPort, noopNotifier } from '../ports/processing-notifier';
 import { postUriOf } from './audio-posts';
+import { normalizeAtUri } from './space-uri';
 
 export interface ProcessingProviders {
     transcriber?: TranscriberPort;
@@ -655,7 +656,7 @@ export class AudioProcessingService {
                         ) {
                             const ctx = await this.deps.getParentContextByUri?.(
                                 originAppId,
-                                post.reply.parent.uri,
+                                normalizeAtUri(post.reply.parent.uri),
                             );
                             if (ctx) parent = ctx;
                         }

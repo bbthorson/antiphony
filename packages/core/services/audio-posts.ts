@@ -24,7 +24,8 @@ import type {
     AudioPostThreadOptions,
 } from '../ports/audio-posts-dependencies';
 import { NSID } from 'shared/nsid';
-import { AtUri, SpaceRef, isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
+import { AtUri, SPACE_URI_PREFIX, SpaceRef, isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
+import { normalizeAtUri } from './space-uri';
 
 /**
  * AudioPostService — CRUD + batched hydration for the Antiphony canonical
@@ -93,10 +94,10 @@ export interface CreateAudioPostInput {
 }
 
 /**
- * Build a record's canonical `at://` uri, flat or in a space:
+ * Build a record's canonical uri, flat or in a space:
  *
  *     at://{authority}/{collection}/{rkey}                                            flat (public)
- *     at://{authority}/space/{type}/{skey}/{authorSegment}/{collection}/{rkey}        in a space
+ *     at:space/{authority}/{type}/{skey}/{authorSegment}/{collection}/{rkey}          in a space
  *
  * The authority is the tenant's **app DID** — the repo owner under Antiphony's
  * app-as-repo-owner custody model (Model B), NOT the author. Author identity
@@ -176,7 +177,7 @@ export function postUriOf(
 }
 
 /**
- * Parse a post `at://` uri, flat or in a space — the inverse of `buildPostUri`.
+ * Parse a post uri, flat or in a space — the inverse of `buildPostUri`.
  * With `expectedAuthority`, ONLY a uri under that authority parses.
  *
  * Without it, any authority parses, and the CALLER must check the parsed
@@ -187,9 +188,12 @@ export function postUriOf(
  * exactly that, since a tenant's posts may sit under several DIDs.
  *
  * Returns null for a malformed/empty/non-matching uri, and for any collection
- * other than the audio-post one.
+ * other than the audio-post one. Strict: an alpha-era space uri
+ * (`at://{authority}/space/…`) is null. Normalize one read out of a stored
+ * record with `normalizeAtUri` (`./space-uri`) first.
  */
 export function parsePostUri(uri: string, expectedAuthority?: string): ParsedPostUri | null {
+    if (uri.startsWith(SPACE_URI_PREFIX)) return parseSpacePostUri(uri, expectedAuthority);
     const AT = 'at://';
     if (!uri.startsWith(AT)) return null;
     // Segments: [authority, collection, rkey] for a flat uri. filter(Boolean)
@@ -200,8 +204,6 @@ export function parsePostUri(uri: string, expectedAuthority?: string): ParsedPos
     if (!authority || !isValidDid(authority)) return null;
     if (expectedAuthority !== undefined && authority !== expectedAuthority) return null;
 
-    if (segments[1] === 'space') return parseSpacePostUri(uri, authority);
-
     // A well-formed flat post uri is exactly [authority, collection, rkey].
     if (segments.length !== 3) return null;
     // Collection MUST be the audio-post collection — reject cross-collection spoofing.
@@ -211,14 +213,16 @@ export function parsePostUri(uri: string, expectedAuthority?: string): ParsedPos
 }
 
 /** The space shape, read by `@atproto/syntax` and then held to the same rules as a flat uri. */
-function parseSpacePostUri(uri: string, authority: string): ParsedPostUri | null {
+function parseSpacePostUri(uri: string, expectedAuthority: string | undefined): ParsedPostUri | null {
     let parsed: AtUri;
     try {
         parsed = new AtUri(uri);
     } catch {
         return null;
     }
-    if (!parsed.isSpace || parsed.spaceDid !== authority) return null;
+    const authority = parsed.spaceDid;
+    if (!parsed.isSpace || !authority) return null;
+    if (expectedAuthority !== undefined && authority !== expectedAuthority) return null;
     const { spaceType, skey, authorDid } = parsed;
     if (!spaceType || !skey || !authorDid) return null;
     if (parsed.collection !== NSID.AudioPost) return null;
@@ -613,7 +617,9 @@ export class AudioPostService {
                 ? { uri: postUriOf(parent, getAppDid), cid: parent.cid }
                 : parent.reply?.root;
         if (!threadRoot) throw new Error('Invariant: reply parent is missing its reply.root StrongRef');
-        if (reply.root.uri !== threadRoot.uri) {
+        // A reply recorded before 2026-11-24 holds its root in the alpha-era
+        // space form; the caller's must be in the current one.
+        if (reply.root.uri !== normalizeAtUri(threadRoot.uri)) {
             throw new ValidationError("reply.root must name the thread's root post");
         }
         if (reply.root.cid !== threadRoot.cid) {

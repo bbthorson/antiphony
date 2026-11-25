@@ -222,7 +222,7 @@ describe('remote posts (migration 0006)', () => {
     describe('pushed space records (Phase B, migration 0008)', () => {
         const GROUP = 'did:plc:group0000000000000000000';
         const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
-        const SPACE_URI = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
+        const SPACE_URI = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kspace000001`;
         const path = async (bytes: Uint8Array) => `blobs/${TENANT}/${await cidForBytes(bytes)}`;
         const marking = async (bytes: Uint8Array) => bucket.objects.get(await path(bytes))?.customMetadata;
 
@@ -343,7 +343,7 @@ describe('remote posts (migration 0006)', () => {
     describe('space records on a delegation (Phase C, migration 0009)', () => {
         const GROUP = 'did:plc:groupaaaaaaaaaaaaaaaaaaa';
         const SPACE = { authority: GROUP, type: 'game.bardcast.space.campaign', skey: 'thornwood' };
-        const SPACE_REF = `at://${GROUP}/space/${SPACE.type}/${SPACE.skey}`;
+        const SPACE_REF = `at:space/${GROUP}/${SPACE.type}/${SPACE.skey}`;
         const SPACE_URI = `${SPACE_REF}/${DID}/dev.antiphony.audio.post/3kspace000001`;
         const TOKEN = 'eyJ0eXAiOiJkZWxlZ2F0aW9uIn0.payload.sig';
         let spaceRecords: Map<string, RepoResult<FetchedRecord>>;

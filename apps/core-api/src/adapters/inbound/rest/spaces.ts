@@ -53,7 +53,7 @@ const putRoute = createRoute({
     tags: ['Spaces'],
     summary: 'Create or replace a space',
     description:
-        'Creates the space `at://{authority}/space/{spaceType}/{skey}`, or replaces its policies (replace, not merge: ' +
+        'Creates the space `at:space/{authority}/{spaceType}/{skey}`, or replaces its policies (replace, not merge: ' +
         'an omitted policy goes back to `member-list`). Idempotent. Posts and audio uploaded into a space are ' +
         'private: their audio plays only through signed, expiring URLs. A deployment without a playback secret ' +
         'refuses to create spaces (503) rather than store audio it could not keep private. `?authority=` puts the ' +

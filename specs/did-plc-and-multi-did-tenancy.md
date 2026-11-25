@@ -250,7 +250,7 @@ What landed, and where it differs from the proposal above:
 ### Which DID a write goes under
 
 The space URI is
-`at://{spaceDid}/space/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`.
+`at:space/{spaceDid}/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`.
 The rules, from the decisions:
 
 | Record | Authority | `{authorDid}` segment (in a space) | Person |

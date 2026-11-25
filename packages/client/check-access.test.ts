@@ -24,7 +24,7 @@ describe('handleCheckAccess', () => {
         const decide = vi.fn().mockResolvedValue({ read: true, write: false });
 
         const denied = await handleCheckAccess(
-            new Request('https://app.example/xrpc/checkAccess?space=at://did:plc:g/space/t/k'),
+            new Request('https://app.example/xrpc/checkAccess?space=at:space/did:plc:g/t/k'),
             {
                 verifyAuth: async () => ({ ok: false, message: 'Bad service JWT' }),
                 decide,
@@ -36,7 +36,7 @@ describe('handleCheckAccess', () => {
 
         const allowed = await handleCheckAccess(
             new Request(
-                'https://app.example/xrpc/checkAccess?space=at://did:plc:g/space/t/k&repo=did:plc:u1&clientId=https://app.example/client.json',
+                'https://app.example/xrpc/checkAccess?space=at:space/did:plc:g/t/k&repo=did:plc:u1&clientId=https://app.example/client.json',
                 { headers: { authorization: 'Bearer jwt' } },
             ),
             {
@@ -49,7 +49,7 @@ describe('handleCheckAccess', () => {
         expect(await allowed.json()).toEqual({ read: true, write: false });
         expect(decide).toHaveBeenCalledWith(
             {
-                space: 'at://did:plc:g/space/t/k',
+                space: 'at:space/did:plc:g/t/k',
                 repo: 'did:plc:u1',
                 clientId: 'https://app.example/client.json',
             },

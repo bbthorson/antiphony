@@ -129,7 +129,7 @@
         },
         "remoteSpace": {
             "type": "object",
-            "description": "A space held outside Antiphony, such as a group's on its group host: the space `at://{authority}/space/{type}/{skey}`. The authority is never registered with Antiphony.",
+            "description": "A space held outside Antiphony, such as a group's on its group host: the space `at:space/{authority}/{type}/{skey}`. The authority is never registered with Antiphony.",
             "required": ["authority", "type", "skey"],
             "properties": {
                 "authority": {

@@ -10,6 +10,7 @@ import type { DeletedPostRecord, PostDeletionDependencies, PostToDelete } from '
 import { noopDeletionNotifier, type DeletionNotifierPort } from '../ports/deletion-notifier';
 import { type Logger, defaultLogger } from '../ports/logger';
 import { postUriOf } from './audio-posts';
+import { normalizeAtUri } from './space-uri';
 
 /**
  * PostDeletionService — hard deletes of posts and their audio
@@ -154,11 +155,13 @@ export class PostDeletionService {
 
         // Every reply in the thread, then the walk from this post down. A prompt
         // is its own thread root; a reply's root is named on it.
-        const rootUri = post.kind === 'prompt' ? postUri : post.reply!.root.uri;
+        // URIs read out of stored records are normalized: a reply recorded
+        // before 2026-11-24 names its space parent in the alpha-era form.
+        const rootUri = post.kind === 'prompt' ? postUri : normalizeAtUri(post.reply!.root.uri);
         const threadReplies = await this.deps.listThreadReplies(originAppId, rootUri);
         const children = new Map<string, AudioPostRecord[]>();
         for (const reply of threadReplies) {
-            const parentUri = reply.reply!.parent.uri;
+            const parentUri = normalizeAtUri(reply.reply!.parent.uri);
             const siblings = children.get(parentUri);
             if (siblings) siblings.push(reply);
             else children.set(parentUri, [reply]);

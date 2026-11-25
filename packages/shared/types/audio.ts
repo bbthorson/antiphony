@@ -26,7 +26,13 @@ import { httpsUrl } from './url';
  * record (`com.atproto.repo.strongRef`). Replaces the legacy flat `promptId`.
  */
 export const StrongRefSchema = z.object({
-    uri: z.string().regex(/^at:\/\/.+/, 'Must be an at:// URI').max(512),
+    /**
+     * `at://…` for a public record, `at:space/…` for one in a space (since the
+     * 2026-11-24 Spaces alpha). Light on purpose: records stored before then
+     * hold space URIs in the alpha-era `at://{did}/space/…` form and must still
+     * parse, so the services check the shape they need (`parsePostUri`).
+     */
+    uri: z.string().regex(/^at:(\/\/|space\/).+/, 'Must be an at:// or at:space/ URI').max(512),
     cid: z.string().max(128),
 });
 export type StrongRef = z.infer<typeof StrongRefSchema>;

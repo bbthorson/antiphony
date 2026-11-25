@@ -52,7 +52,7 @@ referenced from a record in the author's repo. Antiphony never writes into anoth
 | Case | Example | Record at | Blob readable by |
 | :--- | :--- | :--- | :--- |
 | **Public repo record** | A Vox Pop org prompt, `at://{orgDid}/dev.antiphony.audio.post/{rkey}` | The authority's PDS (for a group, its group host) | Anyone: `com.atproto.sync.getBlob` |
-| **Space record, member-authored** | A Bardcast player's reply, `at://{tableDid}/space/{type}/{campaign}/{playerDid}/…` | The player's own PDS, in its space repo | A space credential the table's group host issues |
+| **Space record, member-authored** | A Bardcast player's reply, `at:space/{tableDid}/{type}/{campaign}/{playerDid}/…` | The player's own PDS, in its space repo | A space credential the table's group host issues |
 | **Space record, group-authored** | A Bardcast chapter, or a Vox Pop reply kept by the org | The group's repo on its group host | The same |
 
 ## 2. Prior art
@@ -171,7 +171,7 @@ two steps:
 
 - **Phase B: the tenant pushes the bytes.** The tenant already reads the space for its own
   product, so it uploads the bytes it read: `POST /api/v1/audio/upload` with a new
-  `remoteSpace` field naming the space URI (`at://{authority}/space/{type}/{skey}`). That marks
+  `remoteSpace` field naming the space URI (`at:space/{authority}/{type}/{skey}`). That marks
   the blob private (§7) without a registered Antiphony space. Then it registers with
   `bytesFrom: "upload"` and the record body. Antiphony checks that the blob ref's CID equals
   an uploaded blob of that tenant, marked private for that same space. Needs no
@@ -634,7 +634,7 @@ Where the build differs from the sections above, or settles what they left open:
   `{authority, type, skey}`) and `verified` (`fetched` | `pushed`). Checks: a pushed row is
   always a space row, and a space names a DID authority, a type and a key. `repo_did` is the
   author segment for a space record. The sweep's index now covers fetched rows only.
-- **Upload.** `remoteSpace` (`at://{authority}/space/{type}/{skey}`) marks the blob with that
+- **Upload.** `remoteSpace` (`at:space/{authority}/{type}/{skey}`) marks the blob with that
   space and its authority. It can't be sent beside `spaceType` / `skey` / `spaceAuthority`.
   It is refused for a space under the app DID or a DID the tenant registered: those spaces are
   hosted here and are named the hosted way. Without that rule, a "remote" upload could make a

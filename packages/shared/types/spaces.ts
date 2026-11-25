@@ -67,7 +67,7 @@ export type SpaceAuthor = z.infer<typeof SpaceAuthorSchema>;
 /**
  * Where a post lives, when it lives in a space. Absent ⇒ the post is flat and
  * public: `at://{appDid}/{collection}/{rkey}`. Present ⇒
- * `at://{appDid}/space/{type}/{skey}/{authorSegment}/{collection}/{rkey}`, and
+ * `at:space/{appDid}/{type}/{skey}/{authorSegment}/{collection}/{rkey}`, and
  * its visibility is the space's read policy, not a field on the post.
  *
  * Storage-layer, like `originAppId`: NOT in the lexicon and NOT in the record
@@ -124,8 +124,8 @@ export type SpaceRecord = z.infer<typeof SpaceRecordSchema>;
 
 /** A space as the API returns it. */
 export const SpaceViewSchema = SpaceKeySchema.extend({
-    /** The space's own `at://` reference: `at://{authority}/space/{type}/{skey}`. */
-    uri: z.string().regex(/^at:\/\/.+\/space\/.+\/.+$/, 'Must be a space at:// URI'),
+    /** The space's own reference: `at:space/{authority}/{type}/{skey}`. */
+    uri: z.string().regex(/^at:space\/[^/]+\/[^/]+\/[^/]+$/, 'Must be a space reference, at:space/{authority}/{type}/{skey}'),
     /** The space's authority: the app's own DID, or a DID the app registered. */
     authority: DidStringSchema,
     readPolicy: SpacePolicySchema,
