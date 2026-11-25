@@ -5,7 +5,7 @@
     "defs": {
         "main": {
             "type": "procedure",
-            "description": "Accepts raw audio bytes in the request body (max 25 MB; `Content-Type`: m4a, mp4, mpeg, webm, ogg, wav), matching `com.atproto.repo.uploadBlob`. Optional query parameters `spaceType` + `skey` (and `spaceAuthority`), or `remoteSpace` (`at://{authority}/space/{type}/{skey}`), store the blob privately in that space. Supports `Idempotency-Key`.",
+            "description": "Accepts raw audio bytes in the request body (max 25 MB; `Content-Type`: m4a, mp4, mpeg, webm, ogg, wav), matching `com.atproto.repo.uploadBlob`. Optional query parameters `spaceType` + `skey` (and `spaceAuthority`), or `remoteSpace` (`at:space/{authority}/{type}/{skey}`), store the blob privately in that space. Supports `Idempotency-Key`.",
             "input": {
                 "encoding": "audio/*"
             },

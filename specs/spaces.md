@@ -57,7 +57,7 @@ first two are built (API contract 0.9.0, 2026-10-11), with the parent-CID check 
 Spaces is alpha. Treat every name below as liable to move, and re-check before
 each phase starts.
 
-- **Address:** `at://{spaceDid}/space/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`.
+- **Address:** `at:space/{spaceDid}/{spaceType}/{skey}/{authorDid}/{collection}/{rkey}`.
   A space is the triple *(authority DID, space type NSID, skey)*. The author is
   a path segment, not the authority.
 - **Roles:** the *space authority* (the DID) issues space credentials
@@ -94,7 +94,7 @@ packages, both alpha, **pinned to an exact version** and upgraded deliberately:
   server, store or policy engine in it.
 - **`@atproto/syntax`** at the same alpha, for space URIs: `AtUri.makeSpace(spaceDid,
   spaceType, skey, authorDid?, collection?, rkey?)`, `AtUri#isSpace`, `#spaceDid`,
-  `#spaceType`, and `SpaceRef` for a space itself (`at://{spaceDid}/space/{type}/{skey}`).
+  `#spaceType`, and `SpaceRef` for a space itself (`at:space/{spaceDid}/{type}/{skey}`).
 
 **Why pin exactly.** The alpha already broke once: between the 2026-08-18 and 2026-10-01
 builds, credentials moved from DPoP binding to HTTP message signatures over the token and an

@@ -53,7 +53,7 @@ describe('SpaceService', () => {
         const svc = new SpaceService(makeDeps());
         const view = await svc.putSpace({ originAppId: 'bardcast', key, readPolicy: 'managing-app', writePolicy: 'managing-app' });
         expect(view).toEqual({
-            uri: `at://${APP}/space/game.bardcast.space.player/did:plc:abc123player`,
+            uri: `at:space/${APP}/game.bardcast.space.player/did:plc:abc123player`,
             authority: APP,
             ...key,
             readPolicy: 'managing-app',
@@ -110,7 +110,7 @@ describe('SpaceService under another authority (did-plc-and-multi-did-tenancy.md
             writePolicy: 'managing-app',
         });
         expect(mine.authority).toBe(APP);
-        expect(table).toMatchObject({ authority: TABLE, uri: `at://${TABLE}/space/${key.type}/${key.skey}` });
+        expect(table).toMatchObject({ authority: TABLE, uri: `at:space/${TABLE}/${key.type}/${key.skey}` });
         expect(deps.stored.size).toBe(2);
         expect(deps.assertWritableAuthority).toHaveBeenCalledTimes(1);
         await expect(svc.getSpace('bardcast', { ...key, authority: TABLE })).resolves.toMatchObject({ authority: TABLE });

@@ -37,7 +37,7 @@ import { MAX_AUDIO_UPLOAD_SIZE, storeUploadedAudio } from '../audio-upload-opera
  * ## Uploading for a space held elsewhere
  *
  * Optional `remoteSpace` names a space Antiphony doesn't host, as a URI
- * (`at://{authority}/space/{type}/{skey}`), typically a group's space on its
+ * (`at:space/{authority}/{type}/{skey}`), typically a group's space on its
  * group host (specs/audio-service-mode.md §4.2, Phase B). The tenant read the
  * bytes from that space and pushes them here, then registers the space record
  * with `PUT /api/v1/remote-posts`. The blob is private, marked with that space
@@ -96,7 +96,7 @@ const uploadRoute = createRoute({
         'Optional `spaceType` + `skey` fields store it privately in one of the tenant\'s spaces, with an optional ' +
         '`spaceAuthority` for a space under a DID the tenant registered; the first upload of the same bytes ' +
         'decides where they live, and the response\'s `space` says which. Optional `remoteSpace` ' +
-        '(`at://{authority}/space/{type}/{skey}`, instead of the other space fields) stores it privately for a space ' +
+        '(`at:space/{authority}/{type}/{skey}`, instead of the other space fields) stores it privately for a space ' +
         'held outside Antiphony, such as a group\'s space on its group host, before registering the space record with ' +
         '`PUT /api/v1/remote-posts`; no Antiphony space is needed.',
     middleware: [

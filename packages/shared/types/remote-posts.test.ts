@@ -11,24 +11,25 @@ import {
 } from './remote-posts';
 
 const VALID_JWT = 'eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJkaWQ6cGxjOmFiYyJ9.c2lnbmF0dXJlMTIzNDU';
-const VALID_SPACE_URI = 'at://did:plc:ewvi7nxzyoun6zhxrhs64oiz/space/dev.bardcast.campaign/camp1';
+const VALID_SPACE_URI = 'at:space/did:plc:ewvi7nxzyoun6zhxrhs64oiz/dev.bardcast.campaign/camp1';
 const VALID_POST_URI = 'at://did:plc:ewvi7nxzyoun6zhxrhs64oiz/dev.antiphony.audio.post/3k2abc';
 
 describe('RemoteSpaceUriSchema', () => {
-    it('accepts valid at://{did}/space/{type}/{skey} URIs', () => {
+    it('accepts valid at:space/{did}/{type}/{skey} URIs', () => {
         expect(RemoteSpaceUriSchema.safeParse(VALID_SPACE_URI).success).toBe(true);
         expect(
-            RemoteSpaceUriSchema.safeParse('at://did:web:did.voxpop.audio/space/dev.voxpop.replies/prompt1').success,
+            RemoteSpaceUriSchema.safeParse('at:space/did:web:did.voxpop.audio/dev.voxpop.replies/prompt1').success,
         ).toBe(true);
     });
 
     it('rejects non-space AT URIs, trailing segments, non-DID authorities, and overlong strings', () => {
         expect(RemoteSpaceUriSchema.safeParse(VALID_POST_URI).success).toBe(false);
         expect(RemoteSpaceUriSchema.safeParse(`${VALID_SPACE_URI}/extra`).success).toBe(false);
-        expect(RemoteSpaceUriSchema.safeParse('at://handle.bsky.social/space/t/k').success).toBe(false);
-        expect(RemoteSpaceUriSchema.safeParse('at:space/did:plc:abc/type/skey').success).toBe(false);
+        expect(RemoteSpaceUriSchema.safeParse('at:space/handle.bsky.social/t/k').success).toBe(false);
+        // The alpha-era form, before 2026-11-24.
+        expect(RemoteSpaceUriSchema.safeParse('at://did:plc:abc/space/type/skey').success).toBe(false);
         expect(
-            RemoteSpaceUriSchema.safeParse(`at://did:plc:abc/space/type/${'a'.repeat(500)}`).success,
+            RemoteSpaceUriSchema.safeParse(`at:space/did:plc:abc/type/${'a'.repeat(500)}`).success,
         ).toBe(false);
     });
 });

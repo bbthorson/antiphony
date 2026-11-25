@@ -91,7 +91,7 @@ Antiphony or in the apps": both, for different roles.
 
 | Role | What it does | Who plays it |
 | :--- | :--- | :--- |
-| **Authority** (the DID in `at://{did}/space/…`) | Owns the space; its DID document names the host and the credential key | The tenant's DID (`spaces.md` decision 1). Never Antiphony's. |
+| **Authority** (the DID in `at:space/{did}/…`) | Owns the space; its DID document names the host and the credential key | The tenant's DID (`spaces.md` decision 1). Never Antiphony's. |
 | **Space host** (`#atproto_space_host`) | `getSpace`, credentials, the writer list, routing `notifyWrite` | Antiphony |
 | **Managing app** (`com.atproto.managedspace.policy`) | Answers `com.atproto.managedspace.checkAccess(space, repo?, clientId?)` with `{ read, write }` | The tenant: Vox Pop or Bardcast |
 | **Repo host** | Holds one author's records in the space and signs their commits | Antiphony for audio posts; the app for its own records (Bardcast's seats and chapters) |
@@ -137,8 +137,8 @@ that touch Antiphony are below.
 
 ```
 org prompt:   at://{orgDid}/dev.antiphony.audio.post/{rkey}                      (public, no space)
-reply space:  at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}
-reply:        at://{orgDid}/space/audio.voxpop.space.replies/{promptRkey}/{orgDid}/dev.antiphony.audio.post/{rkey}
+reply space:  at:space/{orgDid}/audio.voxpop.space.replies/{promptRkey}
+reply:        at:space/{orgDid}/audio.voxpop.space.replies/{promptRkey}/{orgDid}/dev.antiphony.audio.post/{rkey}
 ```
 
 - **Prompts stay public, outside any space.** A prompt is like a tweet: the poster wants it

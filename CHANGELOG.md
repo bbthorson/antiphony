@@ -8,6 +8,35 @@ major (`/api/v1/`) is unchanged; these are in-place `0.x` revisions.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.11.0] — 2026-11-25
+
+Space URIs move to the `at:space/` form, following the atproto Spaces alpha of 2026-11-24
+([`specs/spaces-beta-readiness.md`](./specs/spaces-beta-readiness.md)). Breaking, so minor.
+`@antiphony/shared` 0.16.0 carries it.
+
+### Changed
+
+- **Space URIs are `at:space/{authority}/{type}/{skey}[/{authorDid}/{collection}/{rkey}]`**, in place of
+  `at://{authority}/space/…`. Every post URI in a space, `SpaceView.uri`, and the remote-space URI
+  in responses and webhooks (`remote.recheck_requested`) use the new form. Public URIs are unchanged.
+- **Inputs take only the new form.** `reply.parent` / `reply.root` on post create, `uri` on
+  `registerPost` / `PUT /api/v1/remote-posts`, `space` on `listRemotePosts` and `recheckRemoteSpace`,
+  and `remoteSpace` on upload refuse `at://{authority}/space/…` (`RemoteUriUnsupported` / 400, or
+  404 for a reply parent).
+- `StrongRefSchema.uri` admits `at://` and `at:space/`. `RemoteSpaceUriSchema` and `SpaceViewSchema.uri`
+  admit only `at:space/`.
+
+### Migration
+
+- `0012_space_uri_form.sql` rewrites stored space URIs and makes the generated reply and enrichment
+  subject columns normalize, so posts recorded before the switch keep threading. Record values,
+  and so CIDs, are unchanged: an alpha-era reply still holds its refs in the old form.
+
+### Dependencies
+
+- `@atproto/*` spaces alpha pins → `0.0.0-spaces-alpha-20261124235736`; `@atproto/lex-json` → `0.1.10`;
+  root `overrides` removed.
+
 ## [0.10.10] - 2026-11-23
 
 Additive enrichment stage (`assess`, Phase 1 — `specs/assess-stage.md`).

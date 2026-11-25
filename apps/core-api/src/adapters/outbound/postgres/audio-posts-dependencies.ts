@@ -10,6 +10,7 @@ import { logger } from '../../../lib/logger.js';
 import { cidForRecord } from '../../../lib/cid.js';
 import { getAppDid as resolveAppDid } from '../../../lib/app-did.js';
 import type { StorageService } from '@antiphony/core/services/storage';
+import { normalizeAtUri } from '@antiphony/core/services/space-uri';
 import { audioPlaybackUrl, signedAudioPlaybackUrl } from '../../../lib/audio-url.js';
 import { blobObjectPath } from '../../../lib/blob-path.js';
 import { blobSpaceOf } from '../../../lib/blob-space.js';
@@ -296,7 +297,7 @@ export function postgresAudioPostDependencies(
                     );
                     continue;
                 }
-                map.set(parsed.data.subject.uri, parsed.data);
+                map.set(normalizeAtUri(parsed.data.subject.uri), parsed.data);
             }
             return map;
         },
@@ -327,7 +328,7 @@ export function postgresAudioPostDependencies(
                     );
                     continue;
                 }
-                map.set(parsed.data.subject.uri, parsed.data);
+                map.set(normalizeAtUri(parsed.data.subject.uri), parsed.data);
             }
             return map;
         },

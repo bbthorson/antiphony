@@ -53,7 +53,7 @@ const SAMPLE_BY_FORMAT: Record<string, string> = {
  * space URI; the Lexicon validator here doesn't know it yet.)
  */
 const SAMPLE_BY_PARAM: Record<string, string> = {
-    'dev.antiphony.audio.listRemotePosts space': 'at://did:plc:group0000000000000000000/space/audio.voxpop.space.replies/3kprompt',
+    'dev.antiphony.audio.listRemotePosts space': 'at:space/did:plc:group0000000000000000000/audio.voxpop.space.replies/3kprompt',
 };
 
 /** A query-string value the schema should accept for this parameter, and what it parses to. */

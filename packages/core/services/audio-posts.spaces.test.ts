@@ -25,10 +25,13 @@ const PLAYER = 'did:plc:abc123player';
 const OTHER_PLAYER = 'did:plc:xyz789other';
 const CAMPAIGN: SpacePlacement = { type: 'game.bardcast.space.campaign', skey: '3kcampaign2abc', authorSegment: APP };
 
+/** A current space uri in the alpha-era form, `at://{authority}/space/â€¦`, as records written before 2026-11-24 hold it. */
+const alphaEra = (uri: string) => uri.replace(/^at:space\/([^/]+)\//, 'at://$1/space/');
+
 describe('space post URIs', () => {
     it('builds the space shape through @atproto/syntax', () => {
         expect(buildPostUri(APP, '3kabc2def3ghi', CAMPAIGN)).toBe(
-            `at://${APP}/space/game.bardcast.space.campaign/3kcampaign2abc/${APP}/dev.antiphony.audio.post/3kabc2def3ghi`,
+            `at:space/${APP}/game.bardcast.space.campaign/3kcampaign2abc/${APP}/dev.antiphony.audio.post/3kabc2def3ghi`,
         );
     });
 
@@ -57,12 +60,18 @@ describe('space post URIs', () => {
     });
 
     it('rejects space uris that are not posts this service would mint', () => {
-        const base = `at://${APP}/space/game.bardcast.space.campaign/3kcampaign2abc`;
+        const base = `at:space/${APP}/game.bardcast.space.campaign/3kcampaign2abc`;
         expect(parsePostUri(base, APP)).toBeNull(); // the space itself, not a record
         expect(parsePostUri(`${base}/${PLAYER}/app.bsky.feed.post/3kabc2def3ghi`, APP)).toBeNull(); // other collection
         expect(parsePostUri(`${base}/not-a-did/dev.antiphony.audio.post/3kabc2def3ghi`, APP)).toBeNull();
         expect(parsePostUri(`${base}/${PLAYER}/dev.antiphony.audio.post/3kabc2def3ghi/extra`, APP)).toBeNull();
-        expect(parsePostUri(`at://${APP}/space/not_an_nsid/3kcampaign2abc/${PLAYER}/dev.antiphony.audio.post/x`, APP)).toBeNull();
+        expect(parsePostUri(`at:space/${APP}/not_an_nsid/3kcampaign2abc/${PLAYER}/dev.antiphony.audio.post/x`, APP)).toBeNull();
+    });
+
+    it('refuses the alpha-era space form (before 2026-11-24)', () => {
+        const uri = buildPostUri(APP, '3kabc2def3ghi', CAMPAIGN);
+        expect(parsePostUri(alphaEra(uri), APP)).toBeNull();
+        expect(parsePostUri(alphaEra(uri))).toBeNull();
     });
 
     it('refuses to mint a space uri from invalid parts', () => {
@@ -147,6 +156,31 @@ describe('createPost in a space', () => {
         expect(next.space).toEqual(CAMPAIGN);
     });
 
+    it('threads on from a reply recorded before 2026-11-24, whose refs hold the alpha-era form', async () => {
+        const prompt = await svc.createPost(input({ authorDid: PLAYER, space: { type: CAMPAIGN.type, skey: CAMPAIGN.skey } }));
+        const reply = await svc.createPost(
+            input({ authorId: 'p2', text: 'my answer', reply: { root: refTo(prompt), parent: refTo(prompt) } }),
+        );
+        // What an alpha-era reply looks like at rest: its sealed refs in the old form.
+        const stored = (await deps.getPostById('bardcast', reply.id))!;
+        await deps.savePost({
+            ...stored,
+            reply: {
+                root: { ...stored.reply!.root, uri: alphaEra(stored.reply!.root.uri) },
+                parent: { ...stored.reply!.parent, uri: alphaEra(stored.reply!.parent.uri) },
+            },
+        });
+
+        // A new reply names the root in the current form, and is accepted.
+        const next = await svc.createPost(
+            input({ authorId: 'dm', text: 'and then', reply: { root: refTo(prompt), parent: refTo(reply) } }),
+        );
+        expect(next.space).toEqual(CAMPAIGN);
+        // And the alpha-era reply is found by its parent's current uri.
+        const replies = await svc.getReplies('bardcast', buildPostUri(APP, prompt.id, prompt.space), null);
+        expect(replies.map((p) => p.uri)).toContain(buildPostUri(APP, reply.id, reply.space));
+    });
+
     it('accepts a reply that names its parentâ€™s own space', async () => {
         const prompt = await svc.createPost(input({ authorDid: PLAYER, space: { type: CAMPAIGN.type, skey: CAMPAIGN.skey } }));
         const reply = await svc.createPost(
@@ -229,7 +263,7 @@ describe('a reply to a flat post may name a space (cross-repo-design.md Â§3.2)',
         expect(prompt.space).toBeUndefined();
         expect(reply.space).toEqual({ ...REPLIES, authorSegment: APP });
         expect(buildPostUri(APP, reply.id, reply.space)).toBe(
-            `at://${APP}/space/${REPLIES.type}/${REPLIES.skey}/${APP}/dev.antiphony.audio.post/${reply.id}`,
+            `at:space/${APP}/${REPLIES.type}/${REPLIES.skey}/${APP}/dev.antiphony.audio.post/${reply.id}`,
         );
     });
 
@@ -408,7 +442,7 @@ describe("a member's own record: spaceAuthor 'actor' (audio-service-and-groups.m
         const prompt = await svc.createPost(input({ authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
         expect(prompt.space).toEqual({ ...IN_CAMPAIGN, authorSegment: PLAYER });
         const uri = buildPostUri(APP, prompt.id, prompt.space);
-        expect(uri).toBe(`at://${APP}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
+        expect(uri).toBe(`at:space/${APP}/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
         expect(parsePostUri(uri, APP)).toEqual({ authority: APP, id: prompt.id, space: prompt.space });
     });
 
@@ -482,14 +516,14 @@ describe('posts under a registered authority (did-plc-and-multi-did-tenancy.md Â
         expect(prompt.authority).toBe(TABLE);
         // The author segment is the authority's DID, which is now the table's.
         expect(prompt.space).toEqual({ ...IN_CAMPAIGN, authorSegment: TABLE });
-        expect(refTo(prompt).uri).toBe(`at://${TABLE}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${TABLE}/dev.antiphony.audio.post/${prompt.id}`);
+        expect(refTo(prompt).uri).toBe(`at:space/${TABLE}/${CAMPAIGN.type}/${CAMPAIGN.skey}/${TABLE}/dev.antiphony.audio.post/${prompt.id}`);
         const [view] = await svc.hydrateAudioPosts([prompt], null);
         expect(view!.uri).toBe(refTo(prompt).uri);
     });
 
     it("puts a member's own DID in the segment under the group's authority", async () => {
         const prompt = await svc.createPost(input({ authority: TABLE, authorDid: PLAYER, space: IN_CAMPAIGN, spaceAuthor: 'actor' }));
-        expect(refTo(prompt).uri).toBe(`at://${TABLE}/space/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
+        expect(refTo(prompt).uri).toBe(`at:space/${TABLE}/${CAMPAIGN.type}/${CAMPAIGN.skey}/${PLAYER}/dev.antiphony.audio.post/${prompt.id}`);
     });
 
     it("refuses an authority the tenant hasn't registered, saving nothing", async () => {
@@ -551,6 +585,6 @@ describe('posts under a registered authority (did-plc-and-multi-did-tenancy.md Â
         const reply = await svc.createPost(
             input({ authorId: 'caller', text: 'a reply', reply: { root: refTo(prompt), parent: refTo(prompt) }, space: REPLIES }),
         );
-        expect(refTo(reply).uri).toBe(`at://${TABLE}/space/${REPLIES.type}/${REPLIES.skey}/${TABLE}/dev.antiphony.audio.post/${reply.id}`);
+        expect(refTo(reply).uri).toBe(`at:space/${TABLE}/${REPLIES.type}/${REPLIES.skey}/${TABLE}/dev.antiphony.audio.post/${reply.id}`);
     });
 });

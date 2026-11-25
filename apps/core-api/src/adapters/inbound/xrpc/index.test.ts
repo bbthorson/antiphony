@@ -506,7 +506,7 @@ describe('dev.antiphony.audio.createPost', () => {
         expect(audioPostService.createPost).toHaveBeenCalledWith(expect.objectContaining({ space }));
         // The author segment is the authority's DID (atproto-authority-model.md D8).
         expect((await res.json()).uri).toBe(
-            'at://did:web:test-app.example/space/audio.voxpop.space.replies/root/did:web:test-app.example/dev.antiphony.audio.post/r1',
+            'at:space/did:web:test-app.example/audio.voxpop.space.replies/root/did:web:test-app.example/dev.antiphony.audio.post/r1',
         );
     });
 
@@ -527,7 +527,7 @@ describe('dev.antiphony.audio.createPost', () => {
         expect(res.status).toBe(200);
         expect(audioPostService.createPost).toHaveBeenCalledWith(expect.objectContaining({ spaceAuthor: 'actor', authorDid: PLAYER }));
         expect((await res.json()).uri).toBe(
-            `at://did:web:test-app.example/space/game.bardcast.space.campaign/thornwood/${PLAYER}/dev.antiphony.audio.post/r2`,
+            `at:space/did:web:test-app.example/game.bardcast.space.campaign/thornwood/${PLAYER}/dev.antiphony.audio.post/r2`,
         );
     });
 
@@ -1122,7 +1122,7 @@ describe('POST /xrpc/dev.antiphony.audio.uploadAudio', () => {
         storage.stat.mockResolvedValueOnce(null);
         storage.uploadFile.mockResolvedValueOnce('r2://bucket/blobs/test-app/cid');
 
-        const remoteSpace = 'at://did:plc:group0000000000000000000/space/game.bardcast.space.campaign/c1';
+        const remoteSpace = 'at:space/did:plc:group0000000000000000000/game.bardcast.space.campaign/c1';
         const ok = await app().request(
             `/xrpc/dev.antiphony.audio.uploadAudio?remoteSpace=${encodeURIComponent(remoteSpace)}`,
             {

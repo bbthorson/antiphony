@@ -10,7 +10,7 @@
 export const CHECK_ACCESS_NSID = 'com.atproto.managedspace.checkAccess';
 
 export interface CheckAccessQuery {
-    /** The space URI (`at://{authority}/space/{type}/{skey}` or `at:space/...`). */
+    /** The space URI, `at:space/{authority}/{type}/{skey}`. */
     space: string;
     /** The requesting user's DID, when authenticated. Absent asks whether the space is publicly readable. */
     repo?: string;

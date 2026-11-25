@@ -29,7 +29,7 @@ const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as Lo
 const AT = '2026-11-12T10:00:00.000Z';
 const HOSTED = 'at://did:web:voxpop.example/dev.antiphony.audio.post/p1';
 const REMOTE = 'at://did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3kremote00001';
-const SPACE = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+const SPACE = 'at:space/did:plc:groupaaaaaaaaaaaaaaaaaaa/game.bardcast.space.campaign/thornwood';
 
 afterEach(() => {
     delete process.env.ANTIPHONY_APP_WEBHOOK_URLS;

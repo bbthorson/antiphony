@@ -1,4 +1,4 @@
-import { isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
+import { SpaceRef, isValidDid, isValidNsid, isValidRecordKey } from '@atproto/syntax';
 import { ServiceError } from 'shared/errors';
 import type {
     AssessmentEnrichmentRecord,
@@ -139,13 +139,17 @@ export interface RemoteUriRef extends RepoRecordRef {
 /**
  * Parse a remote post's URI, either
  *  - a repo record, `at://{did}/dev.antiphony.audio.post/{rkey}`, or
- *  - a space record, `at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.
+ *  - a space record, `at:space/{authority}/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.
+ *
+ * The alpha-era space form, `at://{authority}/space/…`, is refused
+ * (specs/spaces-beta-readiness.md): it fails the repo shape on segment count,
+ * and its collection would be `space`, which isn't an NSID.
  */
 export function parseRemotePostUri(uri: string): RemoteUriRef {
     const unsupported = (why: string) =>
         new ServiceError(`${why}: ${uri}`, 400, undefined, REMOTE_URI_UNSUPPORTED);
     const repo = /^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
-    const spaced = /^at:\/\/([^/]+)\/space\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
+    const spaced = /^at:space\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
     let space: RemoteSpace | null = null;
     let did: string, collection: string, rkey: string;
     if (repo) {
@@ -157,7 +161,7 @@ export function parseRemotePostUri(uri: string): RemoteUriRef {
     } else {
         throw unsupported(
             'Expected at://{did}/dev.antiphony.audio.post/{rkey} or ' +
-                'at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}',
+                'at:space/{authority}/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}',
         );
     }
     if (!isValidDid(did)) throw unsupported('The URI authority must be a DID');
@@ -169,14 +173,14 @@ export function parseRemotePostUri(uri: string): RemoteUriRef {
 }
 
 /**
- * Parse a space held outside Antiphony, `at://{authority}/space/{type}/{skey}`,
+ * Parse a space held outside Antiphony, `at:space/{authority}/{type}/{skey}`,
  * as `POST /api/v1/audio/upload` takes it in `remoteSpace` (Phase B). Throws a
  * 400 `ServiceError` for anything else.
  */
 export function parseRemoteSpaceUri(uri: string): RemoteSpace {
     const unsupported = (why: string) => new ServiceError(`${why}: ${uri}`, 400, undefined, REMOTE_URI_UNSUPPORTED);
-    const match = /^at:\/\/([^/]+)\/space\/([^/]+)\/([^/]+)$/.exec(uri);
-    if (!match) throw unsupported('Expected at://{authority}/space/{type}/{skey}');
+    const match = /^at:space\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(uri);
+    if (!match) throw unsupported('Expected at:space/{authority}/{type}/{skey}');
     return checkSpace(match[1], match[2], match[3], unsupported);
 }
 
@@ -1016,9 +1020,13 @@ function delegationOf(input: RegisterInput): SpaceDelegation | undefined {
     };
 }
 
-/** A space's URI, `at://{authority}/space/{type}/{skey}`. */
+/** A space's URI, `at:space/{authority}/{type}/{skey}`. Parts are checked by `checkSpace` before this. */
 export function spaceUriOf(space: RemoteSpace): string {
-    return `at://${space.authority}/space/${space.type}/${space.skey}`;
+    return new SpaceRef(
+        space.authority as `did:${string}:${string}`,
+        space.type as `${string}.${string}.${string}`,
+        space.skey,
+    ).toString();
 }
 
 /** What a failed credential exchange tells the caller. */

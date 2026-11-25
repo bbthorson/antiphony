@@ -119,7 +119,7 @@ describe('webhookNotifier', () => {
         configureTenant();
         const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
         const notifier = webhookNotifier(loggerStub(), fetchImpl as unknown as typeof fetch, noSleep);
-        const space = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+        const space = 'at:space/did:plc:groupaaaaaaaaaaaaaaaaaaa/game.bardcast.space.campaign/thornwood';
         const first = '2026-11-02T12:00:00.000Z';
         const second = '2026-11-02T13:00:00.000Z';
 

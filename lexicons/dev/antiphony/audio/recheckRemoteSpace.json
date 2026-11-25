@@ -15,7 +15,7 @@
                         "space": {
                             "type": "string",
                             "maxLength": 512,
-                            "description": "The space, as a space URI: at://{authority}/space/{type}/{skey}."
+                            "description": "The space, as a space URI: at:space/{authority}/{type}/{skey}."
                         },
                         "delegationToken": {
                             "type": "string",

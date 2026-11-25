@@ -236,7 +236,7 @@ describe('POST /api/v1/audio/upload', () => {
 
     describe('for a space held elsewhere (remoteSpace)', () => {
         const GROUP = 'did:plc:group0000000000000000000';
-        const REMOTE = `at://${GROUP}/space/game.bardcast.space.campaign/thornwood`;
+        const REMOTE = `at:space/${GROUP}/game.bardcast.space.campaign/thornwood`;
         function remote(remoteSpace: string, extra: Record<string, string> = {}): FormData {
             const fd = makeFormData(new File([new Uint8Array([9, 9])], 'a.m4a', { type: 'audio/m4a' }));
             fd.append('remoteSpace', remoteSpace);
@@ -276,14 +276,14 @@ describe('POST /api/v1/audio/upload', () => {
         });
 
         it('400s a malformed URI, or one beside the hosted space fields', async () => {
-            expect((await post(remote('at://did:plc:x/space/campaign'))).status).toBe(400);
-            expect((await post(remote('at://not-a-did/space/game.bardcast.space.campaign/thornwood'))).status).toBe(400);
+            expect((await post(remote('at:space/did:plc:x/campaign'))).status).toBe(400);
+            expect((await post(remote('at:space/not-a-did/game.bardcast.space.campaign/thornwood'))).status).toBe(400);
             expect((await post(remote(REMOTE, { spaceType: 'game.bardcast.space.campaign', skey: 'x' }))).status).toBe(400);
             expect(uploadFile).not.toHaveBeenCalled();
         });
 
         it('400s a space under a DID hosted here: the app DID, or one the tenant registered', async () => {
-            expect((await post(remote('at://did:web:antiphony.example/space/game.bardcast.space.campaign/t'))).status).toBe(400);
+            expect((await post(remote('at:space/did:web:antiphony.example/game.bardcast.space.campaign/t'))).status).toBe(400);
             getTenantDid.mockResolvedValue({ did: GROUP });
             expect((await post(remote(REMOTE))).status).toBe(400);
             expect(uploadFile).not.toHaveBeenCalled();

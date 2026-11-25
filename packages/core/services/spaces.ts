@@ -88,7 +88,7 @@ export function assertValidSpaceKey(key: SpaceKey): void {
     if (!isValidRecordKey(key.skey)) throw new ValidationError(`Invalid space key (must be a record key): ${key.skey}`);
 }
 
-/** A space's own `at://` reference: `at://{authority}/space/{type}/{skey}`. */
+/** A space's own reference: `at:space/{authority}/{type}/{skey}`. */
 export function spaceUri(authority: string, key: SpaceKey): string {
     // Validated by the caller; SpaceRef wants the branded string types.
     return new SpaceRef(authority as `did:${string}:${string}`, key.type as `${string}.${string}.${string}`, key.skey).toString();

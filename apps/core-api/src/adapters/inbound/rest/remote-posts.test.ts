@@ -106,7 +106,7 @@ describe('/api/v1/remote-posts', () => {
 
         it('passes a pushed space record on with its body and bytesFrom', async () => {
             remotePostService.register.mockResolvedValue({ row: ROW, outcome: 'created', dispatch: false });
-            const spaced = `at://did:plc:group0000000000000000000/space/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
+            const spaced = `at:space/did:plc:group0000000000000000000/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
             const record = { $type: 'dev.antiphony.audio.post', text: 'x'.repeat(3000), createdAt: '2026-11-02T10:00:00.000Z' };
             const res = await put({ uri: spaced, cid: 'bafyreirecord', bytesFrom: 'upload', record });
 
@@ -122,7 +122,7 @@ describe('/api/v1/remote-posts', () => {
 
         it('passes a delegation and attestation on for a space record', async () => {
             remotePostService.register.mockResolvedValue({ row: ROW, outcome: 'created', dispatch: false });
-            const spaced = `at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
+            const spaced = `at:space/did:plc:groupaaaaaaaaaaaaaaaaaaa/game.bardcast.space.campaign/c1/did:plc:abcdefghijklmnopqrstuvwx/dev.antiphony.audio.post/3k`;
             await put({ uri: spaced, cid: 'bafyreirecord', delegationToken: 'eyJhbGciOiJFUzI1NiJ9.e30.c2ln', clientAttestation: 'eyJhbGciOiJFUzI1NiJ9.e30.YXR0' });
             expect(remotePostService.register).toHaveBeenCalledWith('test-app', {
                 uri: spaced,
@@ -202,7 +202,7 @@ describe('/api/v1/remote-posts', () => {
 
         it('passes the filters through, with the space parsed', async () => {
             remotePostService.list.mockResolvedValue({ rows: [ROW] });
-            const space = 'at://did:plc:group0000000000000000000/space/audio.voxpop.space.replies/3kprompt';
+            const space = 'at:space/did:plc:group0000000000000000000/audio.voxpop.space.replies/3kprompt';
             const query = new URLSearchParams({ repo: 'did:plc:abcdefghijklmnopqrstuvwx', space, kind: 'reply', limit: '5', cursor: 'c' });
             expect((await list(`?${query}`)).status).toBe(200);
             expect(remotePostService.list).toHaveBeenCalledWith(
@@ -271,7 +271,7 @@ describe('/api/v1/remote-posts', () => {
     });
 
     describe('POST /recheck', () => {
-        const SPACE = 'at://did:plc:groupaaaaaaaaaaaaaaaaaaa/space/game.bardcast.space.campaign/thornwood';
+        const SPACE = 'at:space/did:plc:groupaaaaaaaaaaaaaaaaaaa/game.bardcast.space.campaign/thornwood';
         const TOKEN = 'eyJhbGciOiJFUzI1NiJ9.e30.c2ln';
         const recheck = (body: unknown) =>
             app().request('/api/v1/remote-posts/recheck', { method: 'POST', headers: json, body: JSON.stringify(body) });

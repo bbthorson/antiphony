@@ -1,6 +1,7 @@
 import type { AudioPostRecord, TranscriptEnrichmentRecord } from 'shared/types/audio';
 import type { ScopedSpaceKey, SpaceRecord } from 'shared/types/spaces';
 import { authorityNotRegistered } from '../services/did-registry';
+import { normalizeAtUri } from '../services/space-uri';
 import type {
     AudioPostDependencies,
     AudioPostQueryOptions,
@@ -138,14 +139,14 @@ export function inMemoryAudioPostDependencies(
 
         async queryReplies(originAppId, parentUri, options: AudioPostThreadOptions = {}) {
             const { limit = 50, cursorId } = options;
-            const rows = inTenant(originAppId).filter((p) => p.kind === 'reply' && p.reply?.parent.uri === parentUri);
+            const rows = inTenant(originAppId).filter((p) => p.kind === 'reply' && normalizeAtUri(p.reply?.parent.uri ?? '') === parentUri);
             return page(rows, originAppId, 'asc', limit, cursorId, posts).map(clone);
         },
 
         async queryPublicReplies(originAppId, parentUri, options: AudioPostThreadOptions = {}) {
             const { limit = 50, cursorId } = options;
             const rows = inTenant(originAppId).filter(
-                (p) => p.kind === 'reply' && !p.space && p.reply?.parent.uri === parentUri,
+                (p) => p.kind === 'reply' && !p.space && normalizeAtUri(p.reply?.parent.uri ?? '') === parentUri,
             );
             return page(rows, originAppId, 'asc', limit, cursorId, posts).map(clone);
         },

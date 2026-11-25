@@ -80,7 +80,7 @@ describe('/api/v1/spaces', () => {
         expect(res.status).toBe(200);
         const { data } = await res.json();
         expect(data).toMatchObject({
-            uri: 'at://did:web:test-app.example/space/game.bardcast.space.campaign/thornwood',
+            uri: 'at:space/did:web:test-app.example/game.bardcast.space.campaign/thornwood',
             type: 'game.bardcast.space.campaign',
             skey: 'thornwood',
             readPolicy: 'member-list',
@@ -98,7 +98,7 @@ describe('/api/v1/spaces', () => {
     it('takes a DID as the space key, as a per-player space does', async () => {
         const res = await put({}, SERVICE_TOKEN, '/api/v1/spaces/game.bardcast.space.player/did:plc:alice');
         expect(res.status).toBe(200);
-        expect((await res.json()).data.uri).toBe('at://did:web:test-app.example/space/game.bardcast.space.player/did:plc:alice');
+        expect((await res.json()).data.uri).toBe('at:space/did:web:test-app.example/game.bardcast.space.player/did:plc:alice');
     });
 
     it('400s a type that is not an NSID, or an unknown policy', async () => {
@@ -118,7 +118,7 @@ describe('/api/v1/spaces', () => {
         expect(res.status).toBe(200);
         expect((await res.json()).data).toMatchObject({
             authority: TABLE,
-            uri: `at://${TABLE}/space/game.bardcast.space.campaign/thornwood`,
+            uri: `at:space/${TABLE}/game.bardcast.space.campaign/thornwood`,
         });
         expect((await get()).status).toBe(404); // not the app DID's
         expect((await get(SERVICE_TOKEN, q)).status).toBe(200);

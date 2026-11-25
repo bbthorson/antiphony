@@ -63,7 +63,7 @@ const UriQuerySchema = z.object({
     uri: RemotePostUriSchema.openapi({
         description:
             'The record URI: `at://{did}/dev.antiphony.audio.post/{rkey}`, or for a space record ' +
-            '`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.',
+            '`at:space/{authority}/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`.',
     }),
 });
 
@@ -89,7 +89,7 @@ const putRoute = createRoute({
         '(`bytesFrom: "upload"` requires that), except that bytes stored private for a space are downloaded from the ' +
         "record's repo and checked, then turned public: a verified public record makes its audio public here, for " +
         'good, on the original and every processed variant.\n\n' +
-        '**Space records** (`at://{authority}/space/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`) are ' +
+        '**Space records** (`at:space/{authority}/{type}/{skey}/{authorDid}/dev.antiphony.audio.post/{rkey}`) are ' +
         'registered one of two ways.\n\n' +
         "**On a delegation** (Phase C): send `delegationToken`, minted from a member's PDS with " +
         '`com.atproto.space.getDelegationToken` just before the call (single use, 60 s), and `clientAttestation` for ' +
@@ -252,7 +252,7 @@ const listRoute = createRoute({
                 description: "Only records held in this DID's repo (a space record's author segment)",
             }),
             space: ListRemotePostsQuerySchema.shape.space.openapi({
-                description: 'Only records in this space: `at://{authority}/space/{type}/{skey}`',
+                description: 'Only records in this space: `at:space/{authority}/{type}/{skey}`',
             }),
             kind: ListRemotePostsQuerySchema.shape.kind.openapi({ description: 'Only prompts, or only replies' }),
             limit: ListRemotePostsQuerySchema.shape.limit.openapi({ description: '1–100 (default 50)' }),

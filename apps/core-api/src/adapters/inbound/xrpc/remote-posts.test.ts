@@ -17,7 +17,7 @@ const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 const URI = `at://${DID}/dev.antiphony.audio.post/3kremote00001`;
 const URI_2 = `at://${DID}/dev.antiphony.audio.post/3kremote00002`;
 const SPACE = { authority: 'did:plc:group0000000000000000000', type: 'audio.voxpop.space.replies', skey: '3kprompt' };
-const SPACE_URI = `at://${SPACE.authority}/space/${SPACE.type}/${SPACE.skey}`;
+const SPACE_URI = `at:space/${SPACE.authority}/${SPACE.type}/${SPACE.skey}`;
 const row = (uri: string) => ({ uri }) as RemotePostRow;
 const view = (uri: string): RemotePostView => ({
     uri,
@@ -285,7 +285,7 @@ describe('dev.antiphony.audio.getRemoteThread', () => {
 
 describe('dev.antiphony.audio.registerPost', () => {
     const NSID = 'dev.antiphony.audio.registerPost';
-    const SPACED = `at://${SPACE.authority}/space/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kremote00003`;
+    const SPACED = `at:space/${SPACE.authority}/${SPACE.type}/${SPACE.skey}/${DID}/dev.antiphony.audio.post/3kremote00003`;
 
     it('needs a service token, and no acting actor', async () => {
         const res = await post(NSID, { uri: URI, cid: 'bafyreirecord' }, {});

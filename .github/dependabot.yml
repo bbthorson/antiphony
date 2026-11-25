@@ -117,5 +117,7 @@ updates:
           - dependency-name: '@atproto/crypto'
           - dependency-name: '@atproto/lex-space'
           - dependency-name: '@atproto/lex-schema'
+          # lex-json is on a stable release (0.1.10) since the 11-24 alpha, but must
+          # match the version lex-space's lex-rpc pins exactly, so it moves by hand too.
           - dependency-name: '@atproto/lex-json'
           - dependency-name: '@atproto-labs/did-resolver'
